@@ -112,8 +112,12 @@ application:
       allow-uninvited-login: true
   stripe:
     enabled: true
-    secret-key: ${STRIPE_SECRET_KEY:sk_test}
-    webhook-secret: ${STRIPE_WEBHOOK_SECRET:whsec}
+    # Fail fast at startup if the Stripe credentials are missing instead of
+    # falling back to literal "sk_test"/"whsec" placeholders that lead to
+    # confusing "session not found" errors downstream.
+    # Keys MUST come from the environment (.env / boat4you_vars.env).
+    secret-key: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY required}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET required}
   viva:
     enabled: true
     oauth-url: ${VIVA_OAUTH_URL:https://demo-accounts.vivapayments.com/connect/token}

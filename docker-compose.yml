@@ -6,9 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
- #       - "8443:8443"
-#      uncomment the following lines to disable SSL and change the port
-      - "8085:8085"
+      - "8443:8443"
     environment:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://boat4you_db:5432/${DB_NAME:-boat4you_db}
       - SPRING_DATASOURCE_USERNAME=${DB_USER:?DB_USER required}
@@ -18,13 +16,18 @@ services:
       - SPRING_FLYWAY_PASSWORD=${FLYWAY_PASSWORD:?FLYWAY_PASSWORD required}
       - SPRING_PROFILES_ACTIVE=dev,data-sync
       - APPLICATION_UPLOAD_DIRECTORY=/app/data
-      - SERVER_SSL_ENABLED=false
-      - SERVER_PORT=8085
+      - SERVER_SSL_ENABLED=true
+      - SERVER_PORT=8443
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY required}
       - SSL_KEYSTORE_PASSWORD=${SSL_KEYSTORE_PASSWORD:-changeme}
       - NAUSYS_USERNAME=${NAUSYS_USERNAME:-}
       - NAUSYS_PASSWORD=${NAUSYS_PASSWORD:-}
       - MMK_TOKEN=${MMK_TOKEN:-}
+      # Stripe — both must be present for card payments to work. If empty,
+      # application.yml falls back to the literal "sk_test"/"whsec" placeholders
+      # which are invalid and Stripe API calls return 401 ("oops, something went wrong").
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
     depends_on:
       boat4you_db:
         condition: service_healthy

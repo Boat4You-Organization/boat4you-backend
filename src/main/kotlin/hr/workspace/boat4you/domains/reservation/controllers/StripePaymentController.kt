@@ -33,7 +33,15 @@ class StripePaymentController(
         @Parameter(description = "Used when paying later installments") @RequestParam(value = "paymentPhaseId", required = false) paymentPhaseId: Long? = null,
     ): ResponseEntity<CheckoutSessionDto> {
         val session = paymentService.initiatePayment(reservationId, payFullAmount, paymentPhaseId)
-        return ResponseEntity.ok(CheckoutSessionDto(sessionIdOrOrderCode = session.id, status = CheckoutSessionStatusEnum.PAYMENT_PENDING))
+        return ResponseEntity.ok(
+            CheckoutSessionDto(
+                sessionIdOrOrderCode = session.id,
+                status = CheckoutSessionStatusEnum.PAYMENT_PENDING,
+                // session.url is the Stripe-hosted Checkout URL the browser
+                // must land on. Without it the frontend can't redirect the user.
+                redirectUrl = session.url,
+            ),
+        )
     }
 
     @Operation(summary = "Check payment status for Stripe", description = "Used when performing card payment via Stripe, after redirect to the success URL")

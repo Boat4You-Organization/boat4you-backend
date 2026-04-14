@@ -29,6 +29,7 @@ internal class UserController(
     private val userMutationService: UserMutationService,
     private val userInviteService: UserInviteService,
 ) : UsersApi {
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN')")
     override fun getAllUsers(
         sortBy: String?,
         sortDirection: String?,
@@ -69,11 +70,13 @@ internal class UserController(
         return ResponseEntity(userMutationService.createUser(user), HttpStatus.OK)
     }
 
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN')")
     override fun deleteUser(id: Long): ResponseEntity<Unit> {
         userMutationService.deleteUser(id)
         return ResponseEntity(HttpStatus.OK)
     }
 
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN')")
     override fun updateUser(
         id: Long,
         user: User,
@@ -87,6 +90,7 @@ internal class UserController(
         @RequestParam(required = false) currency: CurrencyEnum?,
         @RequestParam(required = false) language: LanguageEnum?,
     ): ResponseEntity<User> {
+        checkAccessForAdminOrSelf(userId)
         if (currency == null && language == null) {
             return ResponseEntity.badRequest().build()
         }
@@ -94,6 +98,7 @@ internal class UserController(
         return ResponseEntity.ok(userMutationService.updateUserPreferences(userId, currency, language))
     }
 
+    @PreAuthorize("hasAnyRole('SYSTEM_ADMIN')")
     override fun inviteUsers(ids: List<Long>): ResponseEntity<Unit> {
         return ResponseEntity(userInviteService.inviteUsers(ids), HttpStatus.OK)
     }
