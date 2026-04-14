@@ -1,0 +1,1 @@
+ALTER TABLE yacht_image ADD COLUMN synced BOOLEAN DEFAULT false;

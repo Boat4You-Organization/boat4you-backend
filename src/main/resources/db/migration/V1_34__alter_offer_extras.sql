@@ -1,0 +1,1 @@
+ALTER TABLE boat4you_db.public.offer_extras DROP COLUMN yacht_extras_id;

@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+ #       - "8443:8443"
+#      uncomment the following lines to disable SSL and change the port
+      - "8085:8085"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://boat4you_db:5432/boat4you_db
+      - SPRING_DATASOURCE_USERNAME=boat4you_owner
+      - SPRING_DATASOURCE_PASSWORD=boat4you_owner
+      - SPRING_FLYWAY_URL=jdbc:postgresql://boat4you_db:5432/boat4you_db
+      - SPRING_FLYWAY_USER=boat4you_owner
+      - SPRING_FLYWAY_PASSWORD=boat4you_owner
+      - SPRING_PROFILES_ACTIVE=dev,data-sync
+      - APPLICATION_UPLOAD_DIRECTORY=/app/data
+#      uncomment the following lines to disable SSL and change the port
+      - SERVER_SSL_ENABLED=false
+      - SERVER_PORT=8085
+    depends_on:
+      boat4you_db:
+        condition: service_healthy
+    networks:
+      - spring-postgres-net
+    volumes:
+      - ./app-data:/app/data
+
+  boat4you_db:
+    image: postgres:17-alpine
+    ports:
+      - "5435:5432"
+    environment:
+      - POSTGRES_PASSWORD=boat4you_owner
+      - POSTGRES_USER=boat4you_owner
+      - POSTGRES_DB=boat4you_db
+    volumes:
+      - ./model/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - spring-postgres-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U boat4you_owner -d boat4you_db"]
+      interval: 1s
+      timeout: 2s
+      retries: 5
+
+networks:
+  spring-postgres-net:
+    driver: bridge
+
+volumes:
+  postgres-data:

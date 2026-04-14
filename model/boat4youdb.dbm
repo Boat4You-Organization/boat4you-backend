@@ -1,0 +1,2521 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+CAUTION: Do not modify this file unless you know what you are doing.
+ Unexpected results may occur if the code is changed deliberately.
+-->
+<dbmodel pgmodeler-ver="1.1.6" use-changelog="false" max-obj-count="50"
+	 last-position="-936,0" last-zoom="0.75" scene-rect="-1248,0,3542.68,2872.12"
+	 default-schema="public" default-owner="postgres"
+	 layers="Default layer"
+	 active-layers="0"
+	 layer-name-colors="#000000"
+	 layer-rect-colors="#b4b4b4"
+	 show-layer-names="false" show-layer-rects="false">
+<role name="boat4you_owner"
+ superuser="true"
+ login="true"
+ password="boat4you_owner">
+</role>
+
+<role name="boat4you_app"
+ login="true"
+ password="boat4you_app">
+</role>
+
+<database name="boat4you_db" is-template="false" allow-conns="true">
+</database>
+
+<schema name="public" layers="0" rect-visible="true" fill-color="#e1e1e1" name-color="#000000" sql-disabled="true">
+</schema>
+
+<table name="agency" layers="0" collapse-mode="2" max-obj-count="20" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="540" y="440"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="address">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="city">
+		<type name="varchar" length="150"/>
+	</column>
+	<column name="country">
+		<type name="varchar" length="100"/>
+	</column>
+	<column name="zip">
+		<type name="varchar" length="30"/>
+	</column>
+	<column name="vat_code">
+		<type name="varchar" length="100"/>
+	</column>
+	<column name="web">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="email">
+		<type name="varchar" length="150"/>
+	</column>
+	<column name="phone">
+		<type name="varchar" length="200"/>
+	</column>
+	<column name="mobile">
+		<type name="varchar" length="200"/>
+	</column>
+	<column name="iban">
+		<type name="varchar" length="34"/>
+		<comment> <![CDATA[Maybe we should remove this.]]> </comment>
+	</column>
+	<column name="bank_accounts">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="active" not-null="true" default-value="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="discount">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[Boat4you discount for given agency]]> </comment>
+	</column>
+	<column name="director">
+		<type name="varchar" length="100"/>
+	</column>
+	<column name="skip_external_system" not-null="true" default-value="false">
+		<type name="boolean" length="0"/>
+	</column>
+	<constraint name="agency_pk" type="pk-constr" table="public.agency">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<table name="yacht" layers="0" collapse-mode="2" max-obj-count="54" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="60" y="660"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="deposit">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="insured_deposit">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[Deposit when insurance is applied]]> </comment>
+	</column>
+	<column name="build_year">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="launch_year">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="engine_power">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="length">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="draught">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="beam">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="water_tank">
+		<type name="integer" length="0"/>
+	</column>
+	<column name="fuel_tank">
+		<type name="integer" length="0"/>
+	</column>
+	<column name="cabins">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="crew_cabins">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="wc">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="crew_wc">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="berths">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="crew_berths">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="max_persons">
+		<type name="smallint" length="0"/>
+		<comment> <![CDATA[Max number of people on board]]> </comment>
+	</column>
+	<column name="default_checkin">
+		<type name="varchar" length="10"/>
+		<comment> <![CDATA[Time of detault check-in]]> </comment>
+	</column>
+	<column name="default_checkout">
+		<type name="varchar" length="10"/>
+		<comment> <![CDATA[Time of default check-out]]> </comment>
+	</column>
+	<column name="mainsail_type">
+		<type name="smallint" length="50"/>
+		<comment> <![CDATA[Sail type]]> </comment>
+	</column>
+	<column name="mainsail_area">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="genoa_type">
+		<type name="smallint" length="50"/>
+		<comment> <![CDATA[Sail type]]> </comment>
+	</column>
+	<column name="genoa_area">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="registration_number">
+		<type name="varchar" length="50"/>
+		<comment> <![CDATA[MMK certificate, Nausys registrationNumber]]> </comment>
+	</column>
+	<column name="option_approval">
+		<type name="boolean" length="0"/>
+		<comment> <![CDATA[if created option needs to be approved by charter company]]> </comment>
+	</column>
+	<column name="option_to_reservation">
+		<type name="boolean" length="0"/>
+		<comment> <![CDATA[if you can create fix booking by yourself
+(convert option to reservation) through
+API or Agency portal, or you charter
+company needs to do it for you]]> </comment>
+	</column>
+	<column name="commision">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[Commision in total]]> </comment>
+	</column>
+	<column name="commision_perc">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[MMK has only commision perc. We need to calc commision]]> </comment>
+	</column>
+	<column name="exclude_discount">
+		<type name="boolean" length="0"/>
+		<comment> <![CDATA[Exclude agency discount for this ship]]> </comment>
+	</column>
+	<column name="max_discount">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[From Nausys. Not sure if needed]]> </comment>
+	</column>
+	<column name="agency_discount_type">
+		<type name="varchar" length="50"/>
+		<comment> <![CDATA[From Nausys. Not sure if needed]]> </comment>
+	</column>
+	<column name="max_discount_from_commision">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[From Nausys. Not sure if needed]]> </comment>
+	</column>
+	<column name="charter_type">
+		<type name="varchar" length="250"/>
+		<comment> <![CDATA[Is bareboat or crewed - Nausys - charterType, MMK - products]]> </comment>
+	</column>
+	<column name="crewed_type">
+		<type name="varchar" length="20"/>
+		<comment> <![CDATA[Nausys - Indicates whether crewed charter type SKIPPER, SKIPPER_HOSTESS or
+ALL_INCLUSIVE]]> </comment>
+	</column>
+	<column name="vessel_type" not-null="true">
+		<type name="smallint" length="50"/>
+		<comment> <![CDATA[Yacht type. MMK - Kind can be - Sail boat , Motor boat, Catamaran, Power Catamaran, Gulet, Motorsailer, Motoryacht, Trimaran, Other. Nausys - ???]]> </comment>
+	</column>
+	<column name="entry_type" not-null="true">
+		<type name="smallint" length="0"/>
+		<comment> <![CDATA[custom or external]]> </comment>
+	</column>
+	<column name="sys_active" not-null="true" default-value="true">
+		<type name="boolean" length="0"/>
+		<comment> <![CDATA[If yacht is deactivated (deleted) by external system.]]> </comment>
+	</column>
+	<column name="main_image_id">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="deposit_currency">
+		<type name="varchar" length="20"/>
+	</column>
+	<column name="crew_number">
+		<type name="smallint" length="0"/>
+	</column>
+	<constraint name="yacht_pk" type="pk-constr" table="public.yacht">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="agency_id" index="2"/>
+		<object name="location_id" index="3"/>
+		<object name="model_id" index="4"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="agency_fk" index="1"/>
+		<object name="location_fk" index="2"/>
+		<object name="model_fk" index="3"/>
+	</customidxs></table>
+
+<table name="extras" layers="0" collapse-mode="2" max-obj-count="6" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-620" y="2320"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="label_code" not-null="true">
+		<type name="varchar" length="100"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="100"/>
+	</column>
+	<column name="match_keys" not-null="true">
+		<type name="varchar" length="0"/>
+		<comment> <![CDATA[List of keys to match mmk and nausys extras]]> </comment>
+	</column>
+	<column name="filter_order">
+		<type name="smallint" length="0"/>
+		<comment> <![CDATA[If its returned for UI filters and position in order.]]> </comment>
+	</column>
+	<constraint name="extras_pk" type="pk-constr" table="public.extras">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<table name="yacht_extras" layers="0" collapse-mode="2" max-obj-count="15" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-360" y="1740"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="name">
+		<type name="varchar" length="0"/>
+	</column>
+	<column name="price" not-null="true">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="payable_in_base" not-null="true">
+		<type name="boolean" length="0"/>
+		<comment> <![CDATA[Can be oweriden by atribute from extras table]]> </comment>
+	</column>
+	<column name="unit" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="obligatory" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="external_unit">
+		<type name="varchar" length="0"/>
+	</column>
+	<column name="external_id">
+		<type name="bigint" length="0"/>
+		<comment> <![CDATA[might be duplicate]]> </comment>
+	</column>
+	<column name="valid_from">
+		<type name="date" length="0"/>
+	</column>
+	<column name="valid_to">
+		<type name="date" length="0"/>
+	</column>
+	<column name="type" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<constraint name="yacht_extras_pk" type="pk-constr" table="public.yacht_extras">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="extras_id" index="2"/>
+		<object name="yacht_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="extras_fk" index="1"/>
+		<object name="yacht_fk" index="2"/>
+	</customidxs></table>
+
+<relationship name="agency_has_many_yacht" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#0b4cc8"
+	 src-table="public.agency"
+	 dst-table="public.yacht"
+	 src-required="false" dst-required="false"/>
+
+<table name="external_reservations" layers="0" collapse-mode="2" max-obj-count="8" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<comment> <![CDATA[Currently only for nausys reservations]]> </comment>
+	<position x="980" y="860"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="date_from" not-null="true">
+		<type name="date" length="0"/>
+	</column>
+	<column name="date_to" not-null="true">
+		<type name="date" length="0"/>
+	</column>
+	<column name="status" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="option_expiration">
+		<type name="timestamp" length="0"/>
+	</column>
+	<column name="external_id">
+		<type name="smallint" length="0"/>
+	</column>
+	<constraint name="reservations_pk" type="pk-constr" table="public.external_reservations">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="yacht_id" index="6"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="yacht_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="yacht_has_many_reservations" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#2a1f8f"
+	 src-table="public.yacht"
+	 dst-table="public.external_reservations"
+	 src-required="false" dst-required="false"/>
+
+<table name="external_system" layers="0" collapse-mode="2" max-obj-count="2" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="1520" y="440"/>
+	<column name="id" not-null="true">
+		<type name="serial" length="0"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="50"/>
+	</column>
+	<constraint name="external_system_pk" type="pk-constr" table="public.external_system">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<table name="agency_source" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="960" y="440"/>
+	<column name="primary" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="external_id" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+
+	<customidxs object-type="column">
+		<object name="agency_id" index="0"/>
+		<object name="external_system_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="agency_fk" index="0"/>
+		<object name="agency_source_pk" index="2"/>
+		<object name="external_system_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="agency_has_many_agency_source" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#1bc74a"
+	 src-table="public.agency"
+	 dst-table="public.agency_source"
+	 src-required="true" dst-required="false">
+	<special-pk-cols indexes="0"/>
+</relationship>
+
+<relationship name="external_system_has_many_agency_source" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#5cd986"
+	 src-table="public.external_system"
+	 dst-table="public.agency_source"
+	 src-required="true" dst-required="false">
+	<constraint name="agency_source_pk" type="pk-constr" alias="agency_source_pk" protected="true" table="public.agency_source">
+		</constraint>
+	<special-pk-cols indexes="0"/>
+</relationship>
+
+<table name="sync_job" layers="0" collapse-mode="2" max-obj-count="3" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="1200" y="200"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="sync_time" not-null="true">
+		<type name="timestamptz" length="0"/>
+	</column>
+	<constraint name="sync_job_pk" type="pk-constr" table="public.sync_job">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="external_system_id" index="2"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="external_system_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="external_system_has_many_sync_job" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#90ef78"
+	 src-table="public.external_system"
+	 dst-table="public.sync_job"
+	 src-required="true" dst-required="false"/>
+
+<table name="synced_entity" layers="0" collapse-mode="2" max-obj-count="7" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="800" y="180"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="entity_id" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="entity_name" not-null="true">
+		<type name="varchar" length="80"/>
+		<comment> <![CDATA[table name of an synced entity]]> </comment>
+	</column>
+	<column name="sync_time">
+		<type name="timestamptz" length="0"/>
+	</column>
+	<column name="external_id" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<constraint name="synced_entity_pk" type="pk-constr" table="public.synced_entity">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="sync_job_id" index="4"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="sync_job_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="sync_job_has_many_synced_entity" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#bc5450"
+	 src-table="public.sync_job"
+	 dst-table="public.synced_entity"
+	 src-required="true" dst-required="false"/>
+
+<table name="service_call" layers="0" collapse-mode="2" max-obj-count="7" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="1580" y="160"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="route">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="request_body">
+		<type name="jsonb" length="0"/>
+	</column>
+	<column name="response_body">
+		<type name="jsonb" length="0"/>
+	</column>
+	<column name="response_status">
+		<type name="smallint" length="0"/>
+	</column>
+	<constraint name="service_call_pk" type="pk-constr" table="public.service_call">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="external_system_id" index="5"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="external_system_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="external_system_has_many_service_call" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#a50ce1"
+	 src-table="public.external_system"
+	 dst-table="public.service_call"
+	 src-required="true" dst-required="false"/>
+
+<table name="external_mapping" layers="0" collapse-mode="2" max-obj-count="7" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<comment> <![CDATA[Used for mapping of external system id to boat4you id]]> </comment>
+	<position x="1900" y="540"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="external_id" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="system_id" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="type" not-null="true">
+		<type name="varchar" length="100"/>
+		<comment> <![CDATA[Name of destination table for mapping]]> </comment>
+	</column>
+	<column name="extended_type">
+		<type name="varchar" length="100"/>
+	</column>
+	<constraint name="external_mapping_pk" type="pk-constr" table="public.external_mapping">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="external_system_id" index="5"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="external_system_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="external_system_has_many_external_mapping" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#dcfcbe"
+	 src-table="public.external_system"
+	 dst-table="public.external_mapping"
+	 src-required="true" dst-required="false"/>
+
+<table name="reservation_options" layers="0" collapse-mode="2" max-obj-count="22" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<comment> <![CDATA[Reservation options like shorter than 7 day reservation, checkin days, etc]]> </comment>
+	<position x="60" y="140"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="date_from" not-null="true">
+		<type name="date" length="0"/>
+	</column>
+	<column name="date_to">
+		<type name="date" length="0"/>
+	</column>
+	<column name="minimal_duration" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="checkin_mon" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkin_tue" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkin_wed" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkin_thu" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkin_fri" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkin_sat" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkin_sun" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkout_mon" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkout_tue" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkout_wed" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkout_thu" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkout_fri" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkout_sat" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="checkout_sun" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<constraint name="reservation_options_pk" type="pk-constr" table="public.reservation_options">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="yacht_id" index="4"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="yacht_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="yacht_has_many_reservation_options" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#84d6da"
+	 src-table="public.yacht"
+	 dst-table="public.reservation_options"
+	 src-required="true" dst-required="false"/>
+
+<table name="location" layers="0" collapse-mode="2" max-obj-count="8" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-1200" y="920"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="country_code" not-null="true">
+		<type name="varchar" length="2"/>
+		<comment> <![CDATA[2 letter country code]]> </comment>
+	</column>
+	<column name="lat">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="lon">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="city">
+		<type name="varchar" length="100"/>
+	</column>
+	<constraint name="location_pk" type="pk-constr" table="public.location">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="country_id" index="5"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="country_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="location_has_many_yacht" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#a1596d"
+	 src-table="public.location"
+	 dst-table="public.yacht"
+	 src-required="false" dst-required="false"/>
+
+<table name="model" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-340" y="440"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="external_category_id">
+		<type name="bigint" length="0"/>
+		<comment> <![CDATA[Only for nausys model category (vessel type)]]> </comment>
+	</column>
+	<constraint name="model_pk" type="pk-constr" table="public.model">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="manufacturer_id" index="2"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="manufacturer_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="model_has_many_yacht" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#72f9be"
+	 src-table="public.model"
+	 dst-table="public.yacht"
+	 src-required="false" dst-required="false"/>
+
+<table name="manufacturer" layers="0" collapse-mode="2" max-obj-count="2" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-340" y="180"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="255"/>
+	</column>
+	<constraint name="manufacturer_pk" type="pk-constr" table="public.manufacturer">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<relationship name="manufacturer_has_many_model" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#80e637"
+	 src-table="public.manufacturer"
+	 dst-table="public.model"
+	 src-required="false" dst-required="false"/>
+
+<index name="idx_yacht_location" table="public.yacht"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="location_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_yacht_agency" table="public.yacht"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="agency_id"/>
+		</idxelement>
+</index>
+
+<table name="equipment" layers="0" collapse-mode="2" max-obj-count="7" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="1560" y="1200"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="100"/>
+	</column>
+	<column name="label_code" not-null="true">
+		<type name="varchar" length="100"/>
+	</column>
+	<column name="category" not-null="true">
+		<type name="smallint" length="20"/>
+	</column>
+	<column name="match_keys" not-null="true">
+		<type name="varchar" length="0"/>
+	</column>
+	<column name="filter_order">
+		<type name="smallint" length="0"/>
+		<comment> <![CDATA[If its returned for UI filters and position in order.]]> </comment>
+	</column>
+	<constraint name="equipment_pk" type="pk-constr" table="public.equipment">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<table name="yacht_equipment" layers="0" collapse-mode="2" max-obj-count="6" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="1020" y="1100"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="name">
+		<type name="varchar" length="0"/>
+	</column>
+	<column name="external_id">
+		<type name="bigint" length="0"/>
+	</column>
+	<constraint name="yacht_equipment_pk" type="pk-constr" table="public.yacht_equipment">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="equipment_id" index="1"/>
+		<object name="yacht_id" index="2"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="equipment_fk" index="1"/>
+		<object name="yacht_fk" index="2"/>
+	</customidxs></table>
+
+<constraint name="external_system_uk1" type="uq-constr" table="public.external_mapping">
+	<columns names="external_id,external_system_id,system_id,type" ref-type="src-columns"/>
+</constraint>
+
+<table name="yacht_image" layers="0" collapse-mode="2" max-obj-count="7" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="1480" y="980"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="url">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="external_url">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="position">
+		<type name="smallint" length="0"/>
+		<comment> <![CDATA[Position in images array displayed on FE]]> </comment>
+	</column>
+	<column name="main_image">
+		<type name="boolean" length="0"/>
+		<comment> <![CDATA[From Nausys only.]]> </comment>
+	</column>
+	<constraint name="yacht_image_pk" type="pk-constr" table="public.yacht_image">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="yacht_id" index="4"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="yacht_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="yacht_has_many_yacht_image" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#fb6fbb"
+	 src-table="public.yacht"
+	 dst-table="public.yacht_image"
+	 src-required="true" dst-required="false"/>
+
+<index name="idx_yacht_image_yacht_id" table="public.yacht_image"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_yacht_model" table="public.yacht"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="model_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_reservation_options_yacht_id" table="public.reservation_options"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_reservation_options_yacht_id_date_from_date_to" table="public.reservation_options"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="date_from"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="date_to"/>
+		</idxelement>
+</index>
+
+<index name="idx_model_manufacturer_id" table="public.model"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="manufacturer_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_agency_source_ext_system" table="public.agency_source"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="agency_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="external_system_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="primary"/>
+		</idxelement>
+</index>
+
+<table name="offer" layers="0" collapse-mode="2" max-obj-count="27" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-740" y="1380"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="location_from" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="location_to" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="date_from" not-null="true">
+		<type name="date" length="0"/>
+	</column>
+	<column name="date_to" not-null="true">
+		<type name="date" length="0"/>
+	</column>
+	<column name="client_price" not-null="true">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="total_price" not-null="true">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[Price with obligatory extras]]> </comment>
+	</column>
+	<column name="ext_base_price">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="ext_client_price">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="ext_total_price">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[Sometimes nausys returns null and empty obligatory extras]]> </comment>
+	</column>
+	<column name="deposit">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="deposit_insured">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="obligatory_extras_price">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="total_discount">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="ext_total_discount">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[For Nausys sum of all discounts. Not applying boat4you agency discount]]> </comment>
+	</column>
+	<column name="ext_discount_perc">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="status" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="payment_plans">
+		<type name="jsonb" length="0"/>
+	</column>
+	<column name="type" not-null="true">
+		<type name="smallint" length="0"/>
+		<comment> <![CDATA[standard sat-sat or other]]> </comment>
+	</column>
+	<column name="product" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="checkin" not-null="true">
+		<type name="varchar" length="20"/>
+	</column>
+	<column name="checkout" not-null="true">
+		<type name="varchar" length="20"/>
+	</column>
+	<constraint name="offers_pk" type="pk-constr" table="public.offer">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="yacht_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="yacht_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="yacht_has_many_offers" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#a521ff"
+	 src-table="public.yacht"
+	 dst-table="public.offer"
+	 src-required="true" dst-required="false"/>
+
+<table name="region" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<comment> <![CDATA[Region is helper table since Nausys doesn't have direct location - country relationship]]> </comment>
+	<position x="-800" y="440"/>
+	<column name="id" not-null="true">
+		<type name="serial" length="0"/>
+	</column>
+	<column name="name">
+		<type name="varchar" length="100"/>
+	</column>
+	<column name="country_code">
+		<type name="varchar" length="2"/>
+	</column>
+	<constraint name="region_pk" type="pk-constr" table="public.region">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="country_id" index="2"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="country_fk" index="1"/>
+	</customidxs></table>
+
+<table name="country" layers="0" collapse-mode="2" max-obj-count="6" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-820" y="740"/>
+	<column name="id" not-null="true">
+		<type name="serial" length="0"/>
+	</column>
+	<column name="name">
+		<type name="varchar" length="100"/>
+	</column>
+	<column name="code2" not-null="true">
+		<type name="varchar" length="2"/>
+	</column>
+	<column name="code3" not-null="true">
+		<type name="varchar" length="3"/>
+	</column>
+	<column name="continent" not-null="true">
+		<type name="varchar" length="15"/>
+	</column>
+	<constraint name="country_pk" type="pk-constr" table="public.country">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<relationship name="country_has_many_region" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#517512"
+	 src-table="public.country"
+	 dst-table="public.region"
+	 src-required="false" dst-required="false"/>
+
+<relationship name="country_has_many_location" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#59348c"
+	 src-table="public.country"
+	 dst-table="public.location"
+	 src-required="true" dst-required="false"/>
+
+<table name="category" layers="0" collapse-mode="2" max-obj-count="3" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<comment> <![CDATA[Sync for nausys category]]> </comment>
+	<position x="-680" y="240"/>
+	<column name="id" not-null="true">
+		<type name="serial" length="0"/>
+	</column>
+	<column name="name">
+		<type name="varchar" length="50"/>
+	</column>
+	<column name="external_id" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<constraint name="category_pk" type="pk-constr" table="public.category">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<index name="idx_ext_mapping_type_ext_system" table="public.external_mapping"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+	<comment> <![CDATA[Used for the most searches from the app]]> </comment>
+		<idxelement use-sorting="false">
+			<column name="type"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="external_system_id"/>
+		</idxelement>
+</index>
+
+<table name="offer_extras" layers="0" collapse-mode="2" max-obj-count="13" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-1120" y="2060"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="name">
+		<type name="varchar" length="0"/>
+	</column>
+	<column name="obligatory" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="price" not-null="true">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="payable_in_base" not-null="true">
+		<type name="boolean" length="0"/>
+	</column>
+	<column name="unit" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="external_unit">
+		<type name="varchar" length="0"/>
+	</column>
+	<column name="external_id">
+		<type name="bigint" length="0"/>
+		<comment> <![CDATA[might be duplicate!]]> </comment>
+	</column>
+	<constraint name="offer_extras_pk" type="pk-constr" table="public.offer_extras">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="extras_id" index="2"/>
+		<object name="offer_id" index="1"/>
+		<object name="yacht_extras_id" index="10"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="extras_fk" index="1"/>
+		<object name="offer_fk" index="2"/>
+		<object name="yacht_extras_fk" index="3"/>
+	</customidxs></table>
+
+<relationship name="extras_has_many_offer_extras" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#e8cb3f"
+	 src-table="public.extras"
+	 dst-table="public.offer_extras"
+	 src-required="false" dst-required="false"/>
+
+<relationship name="offer_has_many_offer_extras" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#4073c3"
+	 src-table="public.offer"
+	 dst-table="public.offer_extras"
+	 src-required="true" dst-required="false">
+	<label ref-type="name-label">
+		<position x="0" y="0"/>
+	</label>
+</relationship>
+
+<table name="offer_payment_plan" layers="0" collapse-mode="2" max-obj-count="6" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-1180" y="1660"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="date" not-null="true">
+		<type name="date" length="0"/>
+	</column>
+	<column name="amount">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="percentage">
+		<type name="decimal" length="0"/>
+	</column>
+	<constraint name="payment_plan_pk" type="pk-constr" table="public.offer_payment_plan">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="offer_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="offer_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="offer_has_many_payment_plan" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#9050b4"
+	 src-table="public.offer"
+	 dst-table="public.offer_payment_plan"
+	 src-required="false" dst-required="false"/>
+
+<table name="location_region" layers="0" collapse-mode="2" max-obj-count="2" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<comment> <![CDATA[In MMK one location can have relation to multiple sailing areas]]> </comment>
+	<position x="-1180" y="600"/>
+
+	<customidxs object-type="column">
+		<object name="location_id" index="1"/>
+		<object name="region_id" index="0"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="location_fk" index="1"/>
+		<object name="region_fk" index="0"/>
+	</customidxs></table>
+
+<relationship name="region_has_many_location_region" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#a02e3d"
+	 src-table="public.region"
+	 dst-table="public.location_region"
+	 src-required="true" dst-required="false"/>
+
+<relationship name="location_has_many_location_region" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#825f66"
+	 src-table="public.location"
+	 dst-table="public.location_region"
+	 src-required="true" dst-required="false"/>
+
+<table name="exchange_rate" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-1100" y="180"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="valid_at" not-null="true">
+		<type name="date" length="0"/>
+	</column>
+	<column name="currency" not-null="true">
+		<type name="varchar" length="3"/>
+	</column>
+	<column name="rate" not-null="true">
+		<type name="decimal" length="0"/>
+	</column>
+	<constraint name="exchange_rate_pk" type="pk-constr" table="public.exchange_rate">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<index name="idx_location_region_location_id_region_id" table="public.location_region"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="region_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="location_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_location_region_region_id" table="public.location_region"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="location_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_region_country_id" table="public.region"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="country_id"/>
+		</idxelement>
+</index>
+
+<index name="country_idx1" table="public.country"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="code2"/>
+		</idxelement>
+</index>
+
+<index name="idx_offer_yacht_date_from_date_to" table="public.offer"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="date_from"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="date_to"/>
+		</idxelement>
+</index>
+
+<index name="idx_offer_location_from_location_to" table="public.offer"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="location_from"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="location_to"/>
+		</idxelement>
+</index>
+
+<table name="yacht_locations" layers="0" collapse-mode="2" max-obj-count="3" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<comment> <![CDATA[Used for custom boats as they can be related to multiple countries and locations.]]> </comment>
+	<position x="-460" y="840"/>
+
+	<customidxs object-type="column">
+		<object name="location_id" index="0"/>
+		<object name="yacht_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="location_fk" index="0"/>
+		<object name="yacht_fk" index="1"/>
+		<object name="yacht_locations_pk" index="2"/>
+	</customidxs></table>
+
+<relationship name="location_has_many_yacht_locations" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#5a96ce"
+	 src-table="public.location"
+	 dst-table="public.yacht_locations"
+	 src-required="true" dst-required="false">
+	<special-pk-cols indexes="0"/>
+</relationship>
+
+<relationship name="yacht_has_many_yacht_locations" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#a4af5d"
+	 src-table="public.yacht"
+	 dst-table="public.yacht_locations"
+	 src-required="true" dst-required="false">
+	<constraint name="yacht_locations_pk" type="pk-constr" alias="yacht_locations_pk" protected="true" table="public.yacht_locations">
+		</constraint>
+	<special-pk-cols indexes="0"/>
+</relationship>
+
+<table name="reservation" layers="0" collapse-mode="2" max-obj-count="33" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="60" y="2220"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="date_from" not-null="true">
+		<type name="timestamp" length="0"/>
+	</column>
+	<column name="date_to" not-null="true">
+		<type name="timestamp" length="0"/>
+	</column>
+	<column name="external_id" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="response">
+		<type name="jsonb" length="0"/>
+	</column>
+	<column name="status" not-null="true">
+		<type name="smallint" length="0"/>
+		<comment> <![CDATA[represents mapped external status]]> </comment>
+	</column>
+	<column name="sys_status" not-null="true">
+		<type name="smallint" length="0"/>
+		<comment> <![CDATA[boat4you status. Mostly for debuging]]> </comment>
+	</column>
+	<column name="external_status">
+		<type name="varchar" length="30"/>
+		<comment> <![CDATA[Original external status int for MMK values, string for Nausys]]> </comment>
+	</column>
+	<column name="option_expires_at">
+		<type name="timestamp" length="0"/>
+	</column>
+	<column name="external_reservation_code" not-null="true">
+		<type name="varchar" length="100"/>
+		<comment> <![CDATA[reservation code mmk, uuid nausys]]> </comment>
+	</column>
+	<column name="external_created_at" not-null="true">
+		<type name="timestamp" length="0"/>
+	</column>
+	<column name="created_at" not-null="true">
+		<type name="timestamp" length="0"/>
+	</column>
+	<column name="product">
+		<type name="smallint" length="50"/>
+		<comment> <![CDATA[bareboat, crewed, etc]]> </comment>
+	</column>
+	<column name="location_from" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="location_to" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="base_price" not-null="true">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="client_price" not-null="true">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="commission">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="deposit">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="total_price" not-null="true">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="payment_note">
+		<type name="varchar" length="500"/>
+	</column>
+	<column name="currency">
+		<type name="varchar" length="3"/>
+	</column>
+	<column name="bank_details">
+		<type name="varchar" length="200"/>
+	</column>
+	<column name="note">
+		<type name="varchar" length="500"/>
+	</column>
+	<column name="discount">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="reservation_number">
+		<type name="varchar" length="9"/>
+	</column>
+	<column name="crew_list_url">
+		<type name="varchar" length="1000"/>
+	</column>
+	<constraint name="reservation_pk" type="pk-constr" table="public.reservation">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+	<constraint name="uq_reservation_number" type="uq-constr" table="public.reservation">
+		<columns names="reservation_number" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="reservation_flow_id" index="26"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="reservation_flow_fk" index="4"/>
+	</customidxs></table>
+
+<view name="location_view" layers="0" collapse-mode="2" max-obj-count="0" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-1200" y="800"/>
+	<definition> <![CDATA[SELECT 'l-' || l.id as id,
+       l.id         as real_id,
+       l.name,
+       'MARINA'     as location_type,
+       country_code as country_code
+FROM location l
+WHERE EXISTS (SELECT 1
+              FROM yacht y
+              WHERE y.location_id = l.id)
+UNION ALL
+SELECT 'r-' || r.id as id,
+       r.id         as real_id,
+       r.name,
+       'REGION',
+       country_code as country_code
+FROM region r
+WHERE EXISTS (SELECT 1
+              FROM yacht y
+                       JOIN location_region lr
+                            ON lr.location_id = y.location_id
+              WHERE lr.region_id = r.id)
+UNION ALL
+SELECT 'c-' || c.id as id,
+       c.id         as real_id,
+       c.name,
+       'COUNTRY',
+       code2        as country_code
+FROM country c
+WHERE EXISTS (SELECT 1
+              FROM yacht y
+                       JOIN location l
+                            ON l.id = y.location_id
+                          JOIN country c2
+                                 ON c2.id = l.country_id
+              WHERE c2.id = c.id)]]> </definition>
+</view>
+
+<index name="idx_ext_mapping_type_ext_system_extended" table="public.external_mapping"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="external_system_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="extended_type"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="type"/>
+		</idxelement>
+</index>
+
+<table name="external_reservation_payment_plan" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="640" y="2700"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="date" not-null="true">
+		<type name="date" length="0"/>
+	</column>
+	<column name="amount" not-null="true">
+		<type name="decimal" length="0"/>
+	</column>
+	<constraint name="reservation_payment_plan_pk" type="pk-constr" table="public.external_reservation_payment_plan">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="reservation_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="reservation_fk" index="0"/>
+	</customidxs></table>
+
+<relationship name="reservation_has_many_reservation_payment_plan" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#fee2c3"
+	 src-table="public.reservation"
+	 dst-table="public.external_reservation_payment_plan"
+	 src-required="true" dst-required="false"/>
+
+<table name="external_reservation_extras" layers="0" collapse-mode="2" max-obj-count="9" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-460" y="2640"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="external_id">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="name">
+		<type name="varchar" length="200"/>
+	</column>
+	<column name="quantity">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="unit">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="price">
+		<type name="numeric" length="0"/>
+	</column>
+	<column name="payable_in_base">
+		<type name="bool" length="0"/>
+	</column>
+	<constraint name="reservations_extras_pk" type="pk-constr" table="public.external_reservation_extras">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="reservation_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="reservation_fk" index="0"/>
+	</customidxs></table>
+
+<relationship name="reservation_has_many_reservations_extras" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#7ab613"
+	 src-table="public.reservation"
+	 dst-table="public.external_reservation_extras"
+	 src-required="true" dst-required="false"/>
+
+<relationship name="extras_has_many_yacht_extras" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#df7651"
+	 src-table="public.extras"
+	 dst-table="public.yacht_extras"
+	 src-required="false" dst-required="false"/>
+
+<relationship name="yacht_has_many_yacht_extras" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#29ac87"
+	 src-table="public.yacht"
+	 dst-table="public.yacht_extras"
+	 src-required="true" dst-required="false"/>
+
+<table name="external_equipment" layers="0" collapse-mode="2" max-obj-count="6" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="1520" y="640"/>
+	<column name="id" not-null="true">
+		<type name="serial" length="0"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="0"/>
+	</column>
+	<column name="external_id" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="type" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<constraint name="external_equipment_pk" type="pk-constr" table="public.external_equipment">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="external_system_id" index="2"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="external_system_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="external_system_has_many_external_equipment" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#cdc776"
+	 src-table="public.external_system"
+	 dst-table="public.external_equipment"
+	 src-required="true" dst-required="false"/>
+
+<relationship name="equipment_has_many_yacht_equipment" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#797f2b"
+	 src-table="public.equipment"
+	 dst-table="public.yacht_equipment"
+	 src-required="false" dst-required="false"/>
+
+<relationship name="yacht_has_many_yacht_equipment" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#099d04"
+	 src-table="public.yacht"
+	 dst-table="public.yacht_equipment"
+	 src-required="true" dst-required="false"/>
+
+<table name="reservation_flow" layers="0" collapse-mode="2" max-obj-count="18" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<comment> <![CDATA[Represents started flow of the reservation]]> </comment>
+	<position x="840" y="1620"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="created_at" not-null="true">
+		<type name="timestamptz" length="0"/>
+	</column>
+	<column name="status" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="created_by" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="user_id" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="email" not-null="true">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="surname" not-null="true">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="phone">
+		<type name="varchar" length="63"/>
+	</column>
+	<column name="request">
+		<type name="varchar" length="1000"/>
+	</column>
+	<column name="calculated_total_price" not-null="true">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[Represents total price calculated by boat4you system]]> </comment>
+	</column>
+	<column name="cancelation_request">
+		<type name="varchar" length="1000"/>
+	</column>
+	<column name="cancelation_request_at">
+		<type name="timestamp" length="0"/>
+	</column>
+	<constraint name="reservation_flow_pk" type="pk-constr" table="public.reservation_flow">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="offer_id" index="2"/>
+		<object name="yacht_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="offer_fk" index="2"/>
+		<object name="yacht_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="yacht_has_many_reservation_flow" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#e22edf"
+	 src-table="public.yacht"
+	 dst-table="public.reservation_flow"
+	 src-required="true" dst-required="false"/>
+
+<relationship name="offer_has_many_reservation_flow" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#dc7bbb"
+	 src-table="public.offer"
+	 dst-table="public.reservation_flow"
+	 src-required="true" dst-required="false"/>
+
+<relationship name="reservation_flow_has_many_reservation" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#e7e33d"
+	 src-table="public.reservation_flow"
+	 dst-table="public.reservation"
+	 src-required="true" dst-required="false"/>
+
+<table name="yacht_charter_type" layers="0" collapse-mode="2" max-obj-count="3" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="340" y="1540"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="type" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<constraint name="yacht_charter_type_pk" type="pk-constr" table="public.yacht_charter_type">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="yacht_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="yacht_fk" index="0"/>
+	</customidxs></table>
+
+<relationship name="yacht_has_many_charter_type" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#372ef1"
+	 src-table="public.yacht"
+	 dst-table="public.yacht_charter_type"
+	 src-required="true" dst-required="false"/>
+
+<index name="idx_yact_charter_type_yacht_id" table="public.yacht_charter_type"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<table name="reservation_extras" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="140" y="1780"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="price">
+		<type name="decimal" length="0"/>
+		<comment> <![CDATA[price is only expresed when extras is paid with the price]]> </comment>
+	</column>
+	<constraint name="selected_extra_pk" type="pk-constr" table="public.reservation_extras">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="reservation_flow_id" index="2"/>
+		<object name="yacht_extras_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="reservation_flow_fk" index="2"/>
+		<object name="yacht_extras_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="yacht_extras_has_many_offer_extras" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#532b31"
+	 src-table="public.yacht_extras"
+	 dst-table="public.offer_extras"
+	 src-required="true" dst-required="false">
+	<label ref-type="name-label">
+		<position x="0" y="0"/>
+	</label>
+</relationship>
+
+<relationship name="yacht_extras_has_many_selected_extra" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#0d0581"
+	 src-table="public.yacht_extras"
+	 dst-table="public.reservation_extras"
+	 src-required="false" dst-required="false"/>
+
+<relationship name="reservation_flow_has_many_selected_extra" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#ada70c"
+	 src-table="public.reservation_flow"
+	 dst-table="public.reservation_extras"
+	 src-required="false" dst-required="false"/>
+
+<table name="custom_yacht_details" layers="0" collapse-mode="2" max-obj-count="13" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-620" y="1040"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="low_price" not-null="true">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="mid_price">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="high_price">
+		<type name="decimal" length="0"/>
+	</column>
+	<column name="video_url">
+		<type name="varchar" length="500"/>
+	</column>
+	<column name="pdf_url">
+		<type name="varchar" length="500"/>
+		<comment> <![CDATA[Saved on our services]]> </comment>
+	</column>
+	<column name="country_id">
+		<type name="varchar" length="20"/>
+		<comment> <![CDATA[Id of country in a format c-id]]> </comment>
+	</column>
+	<column name="low_price_description">
+		<type name="varchar" length="500"/>
+	</column>
+	<column name="mid_price_description">
+		<type name="varchar" length="500"/>
+	</column>
+	<column name="high_price_description">
+		<type name="varchar" length="500"/>
+	</column>
+	<constraint name="custom_yacht_details_pk" type="pk-constr" table="public.custom_yacht_details">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="yacht_id" index="4"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="yacht_fk" index="0"/>
+	</customidxs></table>
+
+<relationship name="yacht_has_many_custom_boat_details" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#8b0365"
+	 src-table="public.yacht"
+	 dst-table="public.custom_yacht_details"
+	 src-required="true" dst-required="false"/>
+
+<index name="idx_custom_yacht_details_yacht_id" table="public.custom_yacht_details"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<view name="yacht_search_view" layers="0" collapse-mode="2" max-obj-count="0" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="-420" y="680"/>
+	<definition> <![CDATA[SELECT y.id                                    as id
+     , y.name                                  as yacht_name
+     , o.location_from                         as location_from
+     , lfrom.name || '-' || lfrom.country_code as location_full_name
+     , o.location_to                           as location_to
+     , o.client_price                          as client_price
+     , o.date_from                             as date_from
+     , o.date_to                               as date_to
+     , y.build_year                            as build_year
+     , y.model_id                              as model_id
+     , m.name                                  as model_name
+     , mf.id                                   AS manufacturer_id
+     , mf.name                                 AS manufacturer_name
+     , yct.type                                as charter_type
+     , y.vessel_type                           as vessel_type
+     , y.mainsail_type                         as mainsail_type
+     , y.max_persons                           as max_persons
+     , y.cabins                                as cabins
+     , y.berths                                as berths
+     , y.length                                as length
+     , y.wc                                    as wc
+     , y.engine_power                          as engine_power
+     , o.deposit                               AS lowest_prepayment
+     , (
+    ((COALESCE(y.cabins, 0) + COALESCE(y.max_persons, 0))::numeric /
+     NULLIF(COALESCE(o.client_price, 1), 0)) +
+    (0.01 * (SELECT COUNT(*)
+             FROM yacht_extras ye
+             WHERE ye.yacht_id = y.id))
+    )                                          AS recommended_score
+     , CASE
+           WHEN o.location_from = o.location_to THEN o.location_from
+           ELSE o.location_from + o.location_to
+    END                                        AS total_locations
+     , y.main_image_id                         as main_image
+     , a.id                                    as agency_id
+     , a.name                                  as agency_name
+     , y.entry_type                            as entry_type
+FROM yacht y
+         JOIN agency a
+              ON y.agency_id = a.id AND a.active = true
+         JOIN offer o
+              ON o.yacht_id = y.id
+         JOIN location lfrom
+              ON lfrom.id = o.location_from
+         LEFT JOIN model m
+                   ON m.id = y.model_id
+         LEFT JOIN manufacturer mf
+                   ON mf.id = m.manufacturer_id
+         LEFT JOIN yacht_charter_type yct
+                   ON yct.yacht_id = y.id
+WHERE y.entry_type = 1
+  AND y.sys_active = true
+UNION ALL
+SELECT y.id                                 as id
+     , y.name                               as yacht_name
+     , yl.location_id                       as location_from
+     , l.name || '-' || l.country_code      as location_full_name
+     , yl.location_id                       as location_to
+     , cyd.low_price                        as client_price
+     , null                                 as date_from
+     , null                                 as date_to
+     , y.build_year                         as build_year
+     , y.model_id                           as model_id
+     , m.name                               as model_name
+     , mf.id                                AS manufacturer_id
+     , mf.name                              AS manufacturer_name
+     , yct.type                             as charter_type
+     , y.vessel_type                        as vessel_type
+     , y.mainsail_type                      as mainsail_type
+     , y.max_persons                        as max_persons
+     , y.cabins                             as cabins
+     , y.berths                             as berths
+     , y.length                             as length
+     , y.wc                                 as wc
+     , y.engine_power                       as engine_power
+     , y.deposit                            AS lowest_prepayment
+     , (
+    ((COALESCE(y.cabins, 0) + COALESCE(y.max_persons, 0))::numeric /
+     NULLIF(COALESCE(cyd.low_price, 1), 0)) +
+    (0.01 * (SELECT COUNT(*)
+             FROM yacht_extras ye
+             WHERE ye.yacht_id = y.id))
+    )                                       AS recommended_score
+     , (SELECT COUNT(DISTINCT yl2.location_id)
+        FROM yacht_locations yl2
+        WHERE yl2.yacht_id = y.id)::INTEGER AS total_locations
+     , y.main_image_id                      as main_image
+     , a.id                                 as agency_id
+     , a.name                               as agency_name
+     , y.entry_type                         as entry_type
+FROM yacht y
+         LEFT JOIN agency a
+              ON y.agency_id = a.id AND a.active = true
+         JOIN LATERAL (
+    SELECT *
+    FROM yacht_locations yl_inner
+    WHERE yl_inner.yacht_id = y.id
+    LIMIT 1
+    ) yl ON true
+         LEFT JOIN location l ON l.id = yl.location_id
+         LEFT JOIN model m ON m.id = y.model_id
+         LEFT JOIN manufacturer mf
+                   ON mf.id = m.manufacturer_id
+         LEFT JOIN yacht_charter_type yct
+                   ON yct.yacht_id = y.id
+         JOIN custom_yacht_details cyd
+              ON cyd.yacht_id = y.id
+WHERE y.entry_type = 2
+  AND y.sys_active = true]]> </definition>
+</view>
+
+<table name="language" layers="0" collapse-mode="2" max-obj-count="3" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="1060" y="660"/>
+	<column name="id" not-null="true">
+		<type name="serial" length="0"/>
+	</column>
+	<column name="locale" not-null="true">
+		<type name="varchar" length="2"/>
+	</column>
+	<column name="name" not-null="true">
+		<type name="varchar" length="30"/>
+	</column>
+	<constraint name="language_pk" type="pk-constr" table="public.language">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<table name="yacht_translations" layers="0" collapse-mode="2" max-obj-count="6" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="560" y="800"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="value" not-null="true">
+		<type name="varchar" length="0"/>
+	</column>
+	<column name="type" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<constraint name="yacht_translations_pk" type="pk-constr" table="public.yacht_translations">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="language_id" index="2"/>
+		<object name="yacht_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="language_fk" index="2"/>
+		<object name="yacht_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="yacht_has_many_yacht_translations" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#0eb23c"
+	 src-table="public.yacht"
+	 dst-table="public.yacht_translations"
+	 src-required="true" dst-required="false"/>
+
+<relationship name="language_has_many_yacht_translations" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#243aa7"
+	 src-table="public.language"
+	 dst-table="public.yacht_translations"
+	 src-required="true" dst-required="false"/>
+
+<index name="idx_yacht_langauge" table="public.yacht_translations"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="language_id"/>
+		</idxelement>
+</index>
+
+<table name="inquiry" layers="0" collapse-mode="2" max-obj-count="13" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<position x="960" y="1320"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="created_at" not-null="true">
+		<type name="timestamp" length="0"/>
+	</column>
+	<column name="date_from">
+		<type name="date" length="0"/>
+	</column>
+	<column name="date_to">
+		<type name="date" length="0"/>
+	</column>
+	<column name="name">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="surname">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="email" not-null="true">
+		<type name="varchar" length="255"/>
+	</column>
+	<column name="phone">
+		<type name="varchar" length="63"/>
+	</column>
+	<column name="message">
+		<type name="varchar" length="2000"/>
+	</column>
+	<column name="status" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<constraint name="inquiry_pk" type="pk-constr" table="public.inquiry">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="yacht_id" index="1"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="yacht_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="yacht_has_many_inquiry" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#5a656a"
+	 src-table="public.yacht"
+	 dst-table="public.inquiry"
+	 src-required="false" dst-required="false"/>
+
+<index name="idx_inquiry_yacht_id" table="public.inquiry"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_ext_squipment_ext_system" table="public.external_equipment"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="external_system_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_ext_reservation_yacht_id" table="public.external_reservations"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_yacht_equipment_yacht_id_equipment_id" table="public.yacht_equipment"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="equipment_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_location_country_id" table="public.location"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="country_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_location_country_code" table="public.location"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="country_code"/>
+		</idxelement>
+</index>
+
+<index name="idx_yacht_locations_yacht_id_location_id" table="public.yacht_locations"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="location_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_offer_yacht_id" table="public.offer"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_offer_extras_offer_id" table="public.offer_extras"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="offer_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_offer_extras_yacht_extras_id" table="public.offer_extras"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_extras_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_yacht_extras_yacht_id" table="public.yacht_extras"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_offer_payment_plan_offer_id" table="public.offer_payment_plan"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="offer_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_reservation_flow_yacht_id" table="public.reservation_flow"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_reservation_flow_yacht_id_offer_id" table="public.reservation_flow"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="offer_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_reservation_flow_user_id" table="public.reservation_flow"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="user_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_reservation_extras_flow_id_yacht_extras_id" table="public.reservation_extras"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="yacht_extras_id"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="reservation_flow_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_reservation_extras_flow_id" table="public.reservation_extras"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="reservation_flow_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_reservation_reservation_flow_id" table="public.reservation"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="reservation_flow_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_external_reservation_payment_plan_reservation_id" table="public.external_reservation_payment_plan"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="reservation_id"/>
+		</idxelement>
+</index>
+
+<index name="idx_external_reservation_extras_reservation_id" table="public.external_reservation_extras"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="reservation_id"/>
+		</idxelement>
+</index>
+
+<table name="custom_offer" layers="0" collapse-mode="2" max-obj-count="9" z-value="0">
+	<schema name="public"/>
+	<role name="boat4you_owner"/>
+	<comment> <![CDATA[Custom offer can be created based on user inquiry over the system, over phone call, email, etc.
+]]> </comment>
+	<position x="1440" y="1520"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="created_at" not-null="true">
+		<type name="timestamp" length="0"/>
+	</column>
+	<column name="short_url" not-null="true">
+		<type name="varchar" length="6"/>
+		<comment> <![CDATA[6 chars should be enugh for 56.8 billion combinations]]> </comment>
+	</column>
+	<column name="long_url" not-null="true">
+		<type name="varchar" length="1000"/>
+		<comment> <![CDATA[This is query string for yacht search]]> </comment>
+	</column>
+	<column name="request" not-null="true">
+		<type name="jsonb" length="0"/>
+		<comment> <![CDATA[Original parameters that triggered creation of this offer]]> </comment>
+	</column>
+	<column name="user_id">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="email">
+		<type name="varchar" length="255"/>
+	</column>
+	<constraint name="custom_offer_pk" type="pk-constr" table="public.custom_offer">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+
+	<customidxs object-type="column">
+		<object name="inquiry_id" index="2"/>
+	</customidxs>
+	<customidxs object-type="constraint">
+		<object name="inquiry_fk" index="1"/>
+	</customidxs></table>
+
+<relationship name="inquiry_has_many_custom_offer" type="rel1n" layers="0"
+	 src-col-pattern="{st}_{sc}"
+	 pk-pattern="{dt}_pk" uq-pattern="{dt}_uq"
+	 src-fk-pattern="{st}_fk"
+	 custom-color="#d6252f"
+	 src-table="public.inquiry"
+	 dst-table="public.custom_offer"
+	 src-required="false" dst-required="false"/>
+
+<index name="uidx_short_url" table="public.custom_offer"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="short_url"/>
+		</idxelement>
+</index>
+
+<table name="service_call_cache" layers="0" collapse-mode="2" max-obj-count="4" z-value="0">
+	<schema name="public"/>
+	<role name="postgres"/>
+	<position x="1908" y="950.667"/>
+	<column name="id" not-null="true">
+		<type name="bigserial" length="0"/>
+	</column>
+	<column name="method" not-null="true">
+		<type name="smallint" length="0"/>
+	</column>
+	<column name="hash_code" not-null="true">
+		<type name="bigint" length="0"/>
+	</column>
+	<column name="created_at" not-null="true">
+		<type name="timestamp" length="0"/>
+	</column>
+	<constraint name="service_call_cache_pk" type="pk-constr" table="public.service_call_cache">
+		<columns names="id" ref-type="src-columns"/>
+	</constraint>
+</table>
+
+<index name="idx_serice_call_method_hash_code" table="public.service_call_cache"
+	 concurrent="false" unique="false" fast-update="false" buffering="false" nulls-not-distinct="false"
+	 index-type="btree" factor="0">
+		<idxelement use-sorting="false">
+			<column name="method"/>
+		</idxelement>
+		<idxelement use-sorting="false">
+			<column name="hash_code"/>
+		</idxelement>
+</index>
+
+<constraint name="location_from_fk" type="fk-constr" comparison-type="MATCH SIMPLE"
+	 upd-action="NO ACTION" del-action="NO ACTION" ref-table="public.location" table="public.offer">
+	<columns names="location_from" ref-type="src-columns"/>
+	<columns names="id" ref-type="dst-columns"/>
+</constraint>
+
+<constraint name="location_to_fk" type="fk-constr" comparison-type="MATCH SIMPLE"
+	 upd-action="NO ACTION" del-action="NO ACTION" ref-table="public.location" table="public.offer">
+	<columns names="location_to" ref-type="src-columns"/>
+	<columns names="id" ref-type="dst-columns"/>
+</constraint>
+
+<constraint name="location_from_fk" type="fk-constr" comparison-type="MATCH SIMPLE"
+	 upd-action="NO ACTION" del-action="NO ACTION" ref-table="public.location" table="public.reservation">
+	<columns names="location_from" ref-type="src-columns"/>
+	<columns names="id" ref-type="dst-columns"/>
+</constraint>
+
+<constraint name="location_to_fk" type="fk-constr" comparison-type="MATCH SIMPLE"
+	 upd-action="NO ACTION" del-action="NO ACTION" ref-table="public.location" table="public.reservation">
+	<columns names="location_to" ref-type="src-columns"/>
+	<columns names="id" ref-type="dst-columns"/>
+</constraint>
+
+<relationship name="rel_offer_location" type="relfk" layers="0"
+	 src-table="public.offer"
+	 dst-table="public.location" reference-fk="location_from_fk"
+	 src-required="false" dst-required="true"/>
+
+<relationship name="rel_offer_location1" type="relfk" layers="0"
+	 src-table="public.offer"
+	 dst-table="public.location" reference-fk="location_to_fk"
+	 src-required="false" dst-required="true">
+	<label ref-type="name-label">
+		<position x="0" y="0"/>
+	</label>
+</relationship>
+
+<relationship name="rel_reservation_location" type="relfk" layers="0"
+	 src-table="public.reservation"
+	 dst-table="public.location" reference-fk="location_from_fk"
+	 src-required="false" dst-required="true"/>
+
+<relationship name="rel_reservation_location1" type="relfk" layers="0"
+	 src-table="public.reservation"
+	 dst-table="public.location" reference-fk="location_to_fk"
+	 src-required="false" dst-required="true"/>
+
+<permission>
+	<object name="public.region" type="table"/>
+	<roles names="boat4you_app"/>
+	<privileges select="true" delete="true" insert="true" update="true"/>
+</permission>
+<permission>
+	<object name="public.country" type="table"/>
+	<roles names="boat4you_app"/>
+	<privileges select="true" delete="true" insert="true" update="true"/>
+</permission>
+<permission>
+	<object name="public.category" type="table"/>
+	<roles names="boat4you_app"/>
+	<privileges select="true" delete="true" insert="true" update="true"/>
+</permission>
+</dbmodel>

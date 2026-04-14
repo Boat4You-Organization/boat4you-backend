@@ -1,0 +1,1 @@
+ALTER TABLE offer ADD COLUMN ext_status varchar(50);

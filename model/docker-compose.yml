@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  boat4you_postgres_new:
+    image: postgres:17-alpine
+    container_name: boat4you_postgres_new
+    environment:
+      POSTGRES_USER: boat4you_owner
+      POSTGRES_PASSWORD: boat4you_owner
+      POSTGRES_DB: boat4you_db
+      LANG: en_US.utf8
+    ports:
+      - "5434:5432"
+    restart: always
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+  mail:
+    image: rnwood/smtp4dev:prerelease
+    container_name: boat4you_test_mail_server
+    ports:
+      - "3025:25"
+      - "3144:80"

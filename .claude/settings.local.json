@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(grep -E \"\\(Entity|\\\\.kt$\\)\")",
+      "Bash(cat)",
+      "Read(//tmp/**)",
+      "Bash(grep:*)",
+      "Bash(bash /tmp/fk_check.sh)",
+      "Bash(ls -1 /Users/mariokuzmanic/Downloads/boat4you-delivery/boat4you-backend/boat4you-ws-main/src/main/resources/db/migration/*.sql)"
+    ]
+  }
+}

@@ -1,0 +1,120 @@
+package hr.workspace.boat4you.domains.catalouge.jpa
+
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
+import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
+
+interface AgencyRepository : JpaRepository<Agency, Long> {
+    @Query(
+        """
+        SELECT a
+        FROM Agency a
+        JOIN FETCH a.agencySources ar
+        JOIN FETCH ar.externalSystem es
+        WHERE ar.primary = true 
+        AND es.id = :extarnalSystemId
+        AND a.active = true
+        """,
+    )
+    fun findAllActiveByPrimarySyncProvider(extarnalSystemId: Long): Set<Agency>
+
+    @Query(
+        """
+        SELECT a.id
+        FROM Agency a
+        JOIN a.agencySources ar
+        JOIN ar.externalSystem es
+        WHERE ar.primary = true 
+        AND es.id = :extarnalSystemId
+        AND a.active = true
+        AND NOT EXISTS (
+            SELECT 1 FROM Yacht y WHERE y.agency.id = a.id
+            )
+    """,
+    )
+    fun findAllActiveWithoutYachts(extarnalSystemId: Long): Set<Long>
+
+    @Query(
+        """
+        SELECT a
+        FROM Agency a
+        JOIN FETCH a.agencySources ar
+        JOIN FETCH ar.externalSystem es
+        WHERE ar.primary = true 
+        AND es.id = :extarnalSystemId
+        AND a.active = true
+        AND EXISTS (
+            SELECT 1 FROM Yacht y WHERE y.agency.id = a.id
+            )
+        """,
+    )
+    fun findAllActiveByPrimarySyncProviderAndActiveYachts(extarnalSystemId: Long): Set<Agency>
+
+    @Query(
+        """
+        SELECT a
+        FROM Agency a
+        JOIN FETCH a.agencySources ar
+        JOIN FETCH ar.externalSystem es
+        WHERE ar.primary = true 
+        AND es.id = :extarnalSystemId
+        AND a.active = true
+        AND EXISTS (
+            SELECT 1 FROM Yacht y WHERE y.agency.id = a.id
+        )
+        """,
+    )
+    fun findAllActiveByPrimarySyncProviderAndHasYacht(extarnalSystemId: Long): Set<Agency>
+
+    fun findByVatCode(vatCode: String): Agency?
+
+    @Query(
+        """
+        SELECT a
+        FROM Agency a
+        WHERE LOWER(a.name) = LOWER(:name)
+        AND NOT EXISTS (
+            SELECT 1 FROM AgencySource ar WHERE ar.id.agencyId = a.id AND ar.id.externalSystemId = :externalSystemId
+        )
+    """,
+    )
+    fun findByNameAndNotExistsInOtherSystem(
+        name: String,
+        externalSystemId: Int,
+    ): Agency?
+
+    @Query(
+        """
+        SELECT a FROM Agency a 
+        LEFT JOIN FETCH AgencySource ar ON a.id = ar.id.agencyId AND ar.primary = true
+        WHERE 1 = 1 
+        AND (:active IS NULL OR a.active = :active)
+        AND (:name IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%', STR(:name), '%')))
+        AND (:countryCode IS NULL OR a.country = :countryCode)
+        AND (:primarySource IS NULL OR ar.externalSystem.id = :primarySource)
+        """,
+    )
+    fun findAllByParamsForAdmin(
+        @Param("name") name: String?,
+        @Param("active") active: Boolean?,
+        @Param("countryCode") countryCode: String?,
+        @Param("primarySource") primarySource: Int?,
+        pageable: Pageable,
+    ): Page<Agency>
+
+    @Query(
+        """
+        SELECT a FROM Agency a
+        JOIN ExternalMapping em ON a.id = em.systemId
+        WHERE em.externalSystem.id = :externalSystemId
+        AND em.externalId = :externalId
+        AND em.type = 'Agency'
+    """,
+    )
+    fun findByExternalIdAndExternalSystemId(
+        externalId: Long,
+        externalSystemId: Long,
+    ): Agency?
+}

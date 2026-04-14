@@ -1,0 +1,1 @@
+ALTER TABLE service_call ALTER COLUMN request_body TYPE TEXT;

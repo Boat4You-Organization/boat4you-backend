@@ -1,0 +1,639 @@
+package hr.workspace.boat4you.domains.external.nausys.service
+
+import hr.workspace.boat4you.common.services.FileSystemService
+import hr.workspace.boat4you.domains.catalouge.enums.CharterType
+import hr.workspace.boat4you.domains.catalouge.enums.EntryType
+import hr.workspace.boat4you.domains.catalouge.enums.ExternalEquipmentType
+import hr.workspace.boat4you.domains.catalouge.enums.ExtrasType
+import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
+import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
+import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
+import hr.workspace.boat4you.domains.catalouge.enums.TranslationType
+import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.catalouge.jpa.Agency
+import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.EquipmentRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalEquipmentRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSeasonRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.ExtraRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.LanguageRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.Location
+import hr.workspace.boat4you.domains.catalouge.jpa.Model
+import hr.workspace.boat4you.domains.catalouge.jpa.ModelRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.ReservationOption
+import hr.workspace.boat4you.domains.catalouge.jpa.ReservationOptionRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtCharterType
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtEquipment
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtEquipmentRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtraRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtImage
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtImageRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslationRepository
+import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
+import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
+import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.service.ExternalMappingService
+import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
+import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.YACHT_AGENCY_EXTERNAL_MAPPING_KEY
+import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMappingRepository
+import hr.workspace.boat4you.domains.external.utils.Matchers
+import org.openapitools.client.nausys.model.RestInternationalText
+import org.openapitools.client.nausys.model.RestYacht
+import org.openapitools.client.nausys.model.RestYachtCheckInPeriod
+import org.openapitools.client.nausys.model.RestYachtList
+import org.openapitools.client.nausys.model.RestYachtPicture
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
+import kotlin.collections.forEach
+
+@Service
+@Transactional(readOnly = true)
+class NauSysYachtSyncService(
+    private val yachtRepository: YachtRepository,
+    private val externalMappingRepository: ExternalMappingRepository,
+    private val externalSystemService: ExternalSystemService,
+    private val modelRepository: ModelRepository,
+    private val externalMappingService: ExternalMappingService,
+    private val yachtImageRepository: YachtImageRepository,
+    private val reservationOptionRepository: ReservationOptionRepository,
+    private val yachtEquipmentRepository: YachtEquipmentRepository,
+    private val equipmentRepository: EquipmentRepository,
+    private val locationQueryingService: LocationQueryingService,
+    private val externalEquipmentRepository: ExternalEquipmentRepository,
+    private val yachtExtraRepository: YachtExtraRepository,
+    private val extraRepository: ExtraRepository,
+    private val languageRepository: LanguageRepository,
+    private val yachtTranslationRepository: YachtTranslationRepository,
+    private val fileSystemService: FileSystemService,
+    private val agencyRepository: AgencyRepository,
+    private val externalSeasonRepository: ExternalSeasonRepository,
+) {
+    private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
+    @Transactional
+    fun syncYachtsForAgency(
+        agencyId: Long,
+        nausysResponse: RestYachtList,
+    ) {
+        val agency =
+            agencyRepository
+                .findById(agencyId)
+                .orElseThrow { IllegalArgumentException("Agency with id $agencyId not found") }
+        val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
+        val allMappings =
+            externalMappingService.getAllMappingsByTypeAndExtendedType(
+                Yacht::class.simpleName.toString(),
+                externalSystem,
+                YACHT_AGENCY_EXTERNAL_MAPPING_KEY + agency.id,
+            )
+        val allLocationMappings =
+            externalMappingService.getCachedAllMappingsByType(Location::class.simpleName.toString(), externalSystem)
+
+        nausysResponse.yachts?.forEach { nausysYacht ->
+            val mapping = allMappings.find { mapping -> mapping.externalId == nausysYacht.id!!.toLong() }
+
+            var isNewEntity = false
+            val yacht =
+                if (mapping != null) {
+                    yachtRepository.findById(mapping.systemId!!).get()
+                } else {
+                    isNewEntity = true
+                    Yacht()
+                }
+
+            val model = getModel(nausysYacht)
+            if (shouldSkip(nausysYacht, model)) {
+                return@forEach
+            }
+
+            val updatedYacht = updateFromNausysModel(yacht, nausysYacht, agency, allLocationMappings, model)
+
+            nausysYacht.highlightsIntText?.let { createTranslations(updatedYacht, it, TranslationType.DESCRIPTION) }
+
+            syncPictures(nausysYacht.pictures, isNewEntity, updatedYacht)
+            yacht.mainImageId = getMainImage(updatedYacht)?.id
+            syncEquipment(updatedYacht, nausysYacht)
+            syncExtras(updatedYacht, nausysYacht)
+            syncReservationOptions(updatedYacht, nausysYacht.checkInPeriods)
+
+            yachtRepository.saveAndFlush(updatedYacht)
+
+            if (mapping == null) {
+                externalMappingRepository.save(
+                    ExternalMapping(
+                        externalId = nausysYacht.id!!.toLong(),
+                        externalSystem = externalSystem,
+                        systemId = updatedYacht.id!!,
+                        type = Yacht::class.simpleName.toString(),
+                        extendedType = YACHT_AGENCY_EXTERNAL_MAPPING_KEY + agency.id,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun deactivateYachtsForAgency(
+        agencyId: Long,
+        allYachts: List<Long>,
+    ) {
+        val agency =
+            agencyRepository
+                .findById(agencyId)
+                .orElseThrow { IllegalArgumentException("Agency with id $agencyId not found") }
+
+        val yachtsToDeactivate = yachtRepository.findAllByAgencyAndExternalIdNotIn(agency, allYachts)
+        log.warn("Deactivating ${yachtsToDeactivate.size} yachts for agency ${agency.id} ${agency.name}")
+        yachtsToDeactivate.forEach {
+            it.sysActive = false
+            yachtRepository.save(it)
+        }
+    }
+
+    private fun updateFromNausysModel(
+        yacht: Yacht,
+        nausysYacht: RestYacht,
+        agency: Agency,
+        allLocationMappings: List<ExternalMapping>,
+        model: Model,
+    ): Yacht {
+        val locationMapping =
+            allLocationMappings.find { location -> location.externalId == nausysYacht.locationId!!.toLong() }
+        val location = locationQueryingService.getCachedLocationById(locationMapping!!.systemId!!)
+
+        yacht.agency = agency
+        yacht.location = location
+        yacht.model = model
+        yacht.name = nausysYacht.name
+        yacht.deposit = nausysYacht.deposit
+        yacht.insuredDeposit = nausysYacht.depositWhenInsured
+        yacht.depositCurrency = nausysYacht.depositCurrency
+        yacht.buildYear = nausysYacht.buildYear?.toShort()
+        yacht.launchYear = nausysYacht.launchedYear?.toShort()
+        yacht.enginePower = calcEnginePower(nausysYacht.enginePower?.toShort(), nausysYacht.engines?.toShort())
+        yacht.draught = nausysYacht.draft
+        yacht.beam = null
+        yacht.waterTank = nausysYacht.waterTank
+        yacht.fuelTank = nausysYacht.fuelTank
+        yacht.cabins = nausysYacht.cabins?.toShort()
+        yacht.crewCabins = nausysYacht.cabinsCrew?.toShort()
+        yacht.wc = nausysYacht.wc?.toShort()
+        yacht.crewWc = nausysYacht.wc?.toShort()
+        yacht.berths = nausysYacht.berthsTotal?.toShort()
+        yacht.crewBerths = nausysYacht.berthsCrew?.toShort()
+        yacht.maxPersons = nausysYacht.maxPersons?.toShort()
+        yacht.defaultCheckin = nausysYacht.checkInTime
+        yacht.defaultCheckout = nausysYacht.checkOutTime
+        yacht.mainsailType = SailTypeEnum.fromNausysValue(nausysYacht.sailTypeId)
+        yacht.mainsailArea = null // MMK only
+        yacht.genoaType = SailTypeEnum.fromNausysValue(nausysYacht.genoaTypeId)
+        yacht.genoaArea = null // MMK only
+        yacht.registrationNumber = nausysYacht.registrationNumber
+        yacht.optionApproval = nausysYacht.needsOptionApproval
+        yacht.optionToReservation = nausysYacht.canMakeBookingFixed
+        yacht.commision = nausysYacht.commission
+        yacht.commisionPerc = null // not in nausys
+        yacht.maxDiscount = nausysYacht.maxDiscount
+        yacht.maxDiscountFromCommision = nausysYacht.maxDiscountFromCommission
+        yacht.agencyDiscountType = nausysYacht.agencyDiscountType
+        yacht.length = null
+        yacht.crewNumber = nausysYacht.crewCount?.toShort()
+
+        yacht.entryType = EntryType.EXTERNAL
+        yacht.extCharterType = nausysYacht.charterType
+        syncCharterTypes(yacht, nausysYacht)
+        yacht.extCrewedType = nausysYacht.crewedCharterType
+
+        yacht.vesselType = VesselType.fromNauSysCategoryId(model.externalCategoryId!!)
+
+        yacht.sysActive = true
+        // we don't update fileds: excludeDiscount
+        return yachtRepository.save(yacht)
+    }
+
+    private fun syncCharterTypes(
+        yacht: Yacht,
+        nausysYacht: RestYacht,
+    ) {
+        val yachtCharterTypes = yacht.yachtCharterTypes
+        val charterType = CharterType.fromNausysValue(nausysYacht.charterType)
+        val isAllInclusive = nausysYacht.crewedCharterType == "ALL_INCLUSIVE" && charterType == CharterType.CREWED
+        val types =
+            if (isAllInclusive) {
+                setOf(charterType, CharterType.ALL_INCLUSIVE)
+            } else {
+                setOf(charterType)
+            }
+
+        if (yachtCharterTypes.map { it.type }.containsAll(types)) {
+            return
+        }
+
+        when (charterType) {
+            CharterType.BAREBOAT -> {
+                yachtCharterTypes.removeIf { it.type != CharterType.BAREBOAT }
+                if (yachtCharterTypes.none { it.type == CharterType.BAREBOAT }) {
+                    yachtCharterTypes.add(YachtCharterType(yacht = yacht, type = CharterType.BAREBOAT))
+                }
+            }
+
+            CharterType.CREWED -> {
+                if (isAllInclusive) {
+                    yachtCharterTypes.removeIf { it.type != CharterType.ALL_INCLUSIVE || it.type != CharterType.CREWED }
+                    if (yachtCharterTypes.none { it.type == CharterType.ALL_INCLUSIVE }) {
+                        yachtCharterTypes.add(YachtCharterType(yacht = yacht, type = CharterType.ALL_INCLUSIVE))
+                    }
+                    if (yachtCharterTypes.none { it.type == CharterType.CREWED }) {
+                        yachtCharterTypes.add(YachtCharterType(yacht = yacht, type = CharterType.CREWED))
+                    }
+                } else {
+                    yachtCharterTypes.removeIf { it.type != CharterType.CREWED }
+                    if (yachtCharterTypes.none { it.type == CharterType.CREWED }) {
+                        yachtCharterTypes.add(YachtCharterType(yacht = yacht, type = CharterType.CREWED))
+                    }
+                }
+            }
+
+            else -> {
+                log.warn("Unknown charter type: ${nausysYacht.charterType}")
+                return
+            }
+        }
+    }
+
+    private fun syncReservationOptions(
+        yacht: Yacht,
+        checkInPeriods: List<RestYachtCheckInPeriod>?,
+    ) {
+        val allOptions = reservationOptionRepository.findAllByYacht(yacht)
+        checkInPeriods?.forEach { checkInPeriod ->
+            val existing =
+                allOptions.find { option -> option.dateFrom == checkInPeriod.dateFrom?.value && option.dateTo == checkInPeriod.dateTo?.value }
+            val reservationOption = existing ?: ReservationOption()
+
+            if (existing == null) {
+                reservationOption.yacht = yacht
+                reservationOption.dateFrom = checkInPeriod.dateFrom?.value
+                reservationOption.dateTo = checkInPeriod.dateTo?.value
+            }
+
+            reservationOption.minimalDuration = checkInPeriod.minimalReservationDuration?.toShort() ?: 7
+            reservationOption.checkinMon = checkInPeriod.checkInMonday
+            reservationOption.checkinTue = checkInPeriod.checkInTuesday
+            reservationOption.checkinWed = checkInPeriod.checkInWednesday
+            reservationOption.checkinThu = checkInPeriod.checkInThursday
+            reservationOption.checkinFri = checkInPeriod.checkInFriday
+            reservationOption.checkinSat = checkInPeriod.checkInSaturday
+            reservationOption.checkinSun = checkInPeriod.checkOutFriday
+            reservationOption.checkoutMon = checkInPeriod.checkOutMonday
+            reservationOption.checkoutTue = checkInPeriod.checkOutTuesday
+            reservationOption.checkoutWed = checkInPeriod.checkOutWednesday
+            reservationOption.checkoutThu = checkInPeriod.checkOutThursday
+            reservationOption.checkoutFri = checkInPeriod.checkOutFriday
+            reservationOption.checkoutSat = checkInPeriod.checkOutSaturday
+            reservationOption.checkoutSun = checkInPeriod.checkOutSunday
+            reservationOptionRepository.save(reservationOption)
+        }
+    }
+
+    private fun syncPictures(
+        nausysPictures: List<RestYachtPicture>?,
+        isNewEntity: Boolean,
+        yacht: Yacht,
+    ) {
+        if (nausysPictures.isNullOrEmpty()) {
+            return
+        }
+        if (isNewEntity) {
+            nausysPictures.forEachIndexed { index, restYachtPicture ->
+                createNewYachtImage(yacht, index, restYachtPicture)
+            }
+        } else {
+            val allYachImages = yacht.yachtImages
+            nausysPictures.forEachIndexed { index, nausysPicture ->
+                val yachtImage = allYachImages.find { it.externalUrl == nausysPicture.src }
+                if (yachtImage == null) {
+                    createNewYachtImage(yacht, index, nausysPicture)
+                } else {
+                    yachtImage.position = index.toShort()
+                    yachtImage.mainImage = nausysPicture.mainPicture
+                    yachtImageRepository.save(yachtImage)
+                }
+            }
+            // delete images that are not in the list
+            val toRemove = mutableListOf<YachtImage>()
+            allYachImages.forEach { yachtImage ->
+                if (nausysPictures.none { it.src == yachtImage.externalUrl }) {
+                    yachtImage.url?.let { fileSystemService.deleteFile(it) }
+                    toRemove.add(yachtImage)
+                }
+            }
+            if (toRemove.isNotEmpty()) {
+                yacht.yachtImages.removeAll(toRemove)
+                yachtImageRepository.deleteAll(toRemove)
+            }
+        }
+    }
+
+    private fun createNewYachtImage(
+        yacht: Yacht,
+        index: Int,
+        restYachtPicture: RestYachtPicture,
+    ) {
+        try {
+            if (restYachtPicture.src.isNullOrBlank()) {
+                return
+            }
+            val newYachtImage = YachtImage()
+            newYachtImage.yacht = yacht
+            newYachtImage.url = null
+            newYachtImage.externalUrl = restYachtPicture.src
+            newYachtImage.position = index.toShort()
+            newYachtImage.mainImage = restYachtPicture.mainPicture
+            newYachtImage.synced = false
+            yacht.yachtImages.add(newYachtImage)
+            yachtImageRepository.save(newYachtImage)
+        } catch (e: Exception) {
+            log.error("Failed to create yacht image for yacht ${yacht.id} at index $index: ${e.message}")
+        }
+    }
+
+    private fun getMainImage(yacht: Yacht): YachtImage? {
+        return yacht.yachtImages.firstOrNull { it.mainImage == true } ?: yacht.yachtImages.firstOrNull()
+    }
+
+    private fun syncEquipment(
+        yacht: Yacht,
+        nausysYacht: RestYacht,
+    ) {
+        if (nausysYacht.standardYachtEquipment.isNullOrEmpty()) {
+            return
+        }
+
+        val allYachtEquipment = yacht.yachtEquipments
+        val allEquipment = equipmentRepository.findAll()
+        val allExternalEquipment =
+            externalEquipmentRepository.getCachedByExternalSystemId(ExternalSystemEnum.NAUSYS.value)
+        val matchedIds = mutableSetOf<Long>()
+
+        nausysYacht.standardYachtEquipment?.forEach { nausysEquipment ->
+            // for each nausys equipment, find the external nausys equipment and try to match it with our equipment
+            val externalEquipmentMatch =
+                allExternalEquipment.firstOrNull { eq -> eq.externalId == nausysEquipment.equipmentId!!.toLong() && eq.type == ExternalEquipmentType.EQUIPMENT }
+            if (externalEquipmentMatch == null) {
+                log.error("Nausys equipment not found in Nausys external equipment: $nausysEquipment")
+                return@forEach
+            }
+            val boat4youEquipmentMatch =
+                allEquipment.firstOrNull { eq ->
+                    Matchers.extrasNameMatch(eq.getMatchKeysList(), externalEquipmentMatch.name)
+                }
+
+            val equipmentAlreadyOnYacht =
+                allYachtEquipment.find { eq ->
+                    eq.equipment?.id == boat4youEquipmentMatch?.id || eq.name == externalEquipmentMatch.name
+                }
+
+            if (equipmentAlreadyOnYacht != null) {
+                // change equipment match
+                if (equipmentAlreadyOnYacht.equipment == null && boat4youEquipmentMatch != null) {
+                    equipmentAlreadyOnYacht.equipment = boat4youEquipmentMatch
+                    yachtEquipmentRepository.save(equipmentAlreadyOnYacht)
+                }
+
+                matchedIds.add(equipmentAlreadyOnYacht.id!!)
+                return@forEach
+            }
+
+            val yachtEquipment = YachtEquipment()
+            yachtEquipment.equipment = boat4youEquipmentMatch
+            yachtEquipment.name = externalEquipmentMatch.name
+            yachtEquipment.externalId = externalEquipmentMatch.externalId!!
+            yachtEquipment.yacht = yacht
+            yachtEquipmentRepository.save(yachtEquipment)
+
+            yacht.yachtEquipments.add(yachtEquipment)
+            matchedIds.add(yachtEquipment.id!!)
+        }
+
+        val toRemove = mutableListOf<YachtEquipment>()
+        allYachtEquipment.forEach { yachtEquipment ->
+            if (matchedIds.none { it == yachtEquipment.id }) {
+                toRemove.add(yachtEquipment)
+            }
+        }
+        if (toRemove.isNotEmpty()) {
+            yacht.yachtEquipments.removeAll(toRemove)
+            yachtEquipmentRepository.deleteAll(toRemove)
+        }
+    }
+
+    private fun syncExtras(
+        yacht: Yacht,
+        nausysYacht: RestYacht,
+    ) {
+        if (nausysYacht.seasonSpecificData.isNullOrEmpty()) {
+            return
+        }
+
+        val allYachtExtras = yacht.yachtExtras
+        val allExtras = extraRepository.findAll()
+        val allExternalEquipment =
+            externalEquipmentRepository.getCachedByExternalSystemId(ExternalSystemEnum.NAUSYS.value)
+        val matchedIds = mutableSetOf<Long>()
+
+        nausysYacht.seasonSpecificData?.forEach { season ->
+            val externalSeason = externalSeasonRepository.findByExternalId(season.seasonId!!)
+            if (externalSeason == null) {
+                log.warn("Nausys season not found in Nausys external seasons: ${season.seasonId}")
+            }
+            season.additionalYachtEquipment?.forEach { nausysEquipment ->
+                // for each nausys equipment, find the external nausys equipment and try to match it with our equipment
+                val externalEquipmentMatch =
+                    allExternalEquipment.firstOrNull { eq -> eq.externalId == nausysEquipment.equipmentId!! && eq.type == ExternalEquipmentType.EQUIPMENT }
+                if (externalEquipmentMatch == null) {
+                    log.warn("Nausys equipment not found in Nausys external equipment: $nausysEquipment")
+                    return@forEach
+                }
+                val boat4youMatch =
+                    allExtras.firstOrNull { eq ->
+                        Matchers.extrasNameMatch(eq.getMatchKeysList(), externalEquipmentMatch.name)
+                    }
+
+                val equipmentAlreadyOnYacht =
+                    allYachtExtras.find { ex ->
+                        ex.externalId == nausysEquipment.id
+                    }
+
+                if (equipmentAlreadyOnYacht != null) {
+                    equipmentAlreadyOnYacht.extras = boat4youMatch
+                    equipmentAlreadyOnYacht.price = nausysEquipment.amount?.toBigDecimal()
+                    equipmentAlreadyOnYacht.payableInBase = nausysEquipment.calculationType == "SEPARATE_PAYMENT"
+                    equipmentAlreadyOnYacht.unit = ExtrasUnitType.fromNausysValue(nausysEquipment.priceMeasureId)
+                    equipmentAlreadyOnYacht.externalUnit = nausysEquipment.priceMeasureId.toString()
+                    equipmentAlreadyOnYacht.validFrom = externalSeason?.validFrom
+                    equipmentAlreadyOnYacht.validTo = externalSeason?.validTo
+                    equipmentAlreadyOnYacht.validForBases = nausysEquipment.validForBases
+                    matchedIds.add(equipmentAlreadyOnYacht.id!!)
+                    return@forEach
+                }
+
+                val yachtExtra = YachtExtra()
+                yachtExtra.extras = boat4youMatch
+                yachtExtra.name = externalEquipmentMatch.name
+                yachtExtra.externalId = nausysEquipment.id
+                yachtExtra.yacht = yacht
+                yachtExtra.price =
+                    if (nausysEquipment.amountIsPercentage != true) nausysEquipment.amount?.toBigDecimal() else BigDecimal.ZERO // amount in percentage will be resolved with offer calculation
+                yachtExtra.payableInBase = nausysEquipment.calculationType == "SEPARATE_PAYMENT"
+                yachtExtra.unit = ExtrasUnitType.fromNausysValue(nausysEquipment.priceMeasureId)
+                yachtExtra.externalUnit = nausysEquipment.priceMeasureId.toString()
+                yachtExtra.obligatory = false
+                yachtExtra.validFrom = externalSeason?.validFrom
+                yachtExtra.validTo = externalSeason?.validTo
+                yachtExtra.type = ExtrasType.EQUIPMENT
+                yachtExtra.validForBases = nausysEquipment.validForBases
+
+                yachtExtraRepository.save(yachtExtra)
+                yacht.yachtExtras.add(yachtExtra)
+                matchedIds.add(yachtExtra.id!!)
+            }
+            season.services?.forEach { nausysService ->
+                val externalEquipmentMatch =
+                    allExternalEquipment.firstOrNull { eq -> eq.externalId == nausysService.serviceId!! && eq.type == ExternalEquipmentType.SERVICE }
+                if (externalEquipmentMatch == null) {
+                    log.warn("Nausys service not found in Nausys external equipment: $nausysService")
+                    return@forEach
+                }
+                val boat4youMatch =
+                    allExtras.firstOrNull { eq ->
+                        Matchers.extrasNameMatch(eq.getMatchKeysList(), externalEquipmentMatch.name)
+                    }
+
+                val equipmentAlreadyOnYacht =
+                    allYachtExtras.find { ex ->
+                        ex.externalId == nausysService.id
+                    }
+
+                if (equipmentAlreadyOnYacht != null) {
+                    equipmentAlreadyOnYacht.extras = boat4youMatch
+                    equipmentAlreadyOnYacht.price =
+                        if (nausysService.amountIsPercentage != true) nausysService.amount?.toBigDecimal() else BigDecimal.ZERO // amount in percentage will be resolved with offer calculation
+                    equipmentAlreadyOnYacht.payableInBase = nausysService.calculationType == "SEPARATE_PAYMENT"
+                    equipmentAlreadyOnYacht.unit = ExtrasUnitType.fromNausysValue(nausysService.priceMeasureId)
+                    equipmentAlreadyOnYacht.externalUnit = nausysService.priceMeasureId.toString()
+                    equipmentAlreadyOnYacht.obligatory = nausysService.obligatory
+                    equipmentAlreadyOnYacht.validFrom = nausysService.validPeriodFrom?.value ?: externalSeason?.validFrom
+                    equipmentAlreadyOnYacht.validTo = nausysService.validPeriodTo?.value ?: externalSeason?.validTo
+                    equipmentAlreadyOnYacht.validForBases = nausysService.validForBases
+                    matchedIds.add(equipmentAlreadyOnYacht.id!!)
+                    return@forEach
+                }
+
+                val yachtExtra = YachtExtra()
+                yachtExtra.extras = boat4youMatch
+                yachtExtra.name = externalEquipmentMatch.name
+                yachtExtra.externalId = nausysService.id
+                yachtExtra.yacht = yacht
+                yachtExtra.price =
+                    if (nausysService.amountIsPercentage != true) nausysService.amount?.toBigDecimal() else BigDecimal.ZERO // amount in percentage will be resolved with offer calculation
+                yachtExtra.payableInBase = nausysService.calculationType == "SEPARATE_PAYMENT"
+                yachtExtra.unit = ExtrasUnitType.fromNausysValue(nausysService.priceMeasureId)
+                yachtExtra.externalUnit = nausysService.priceMeasureId.toString()
+                yachtExtra.obligatory = nausysService.obligatory
+                yachtExtra.validFrom = nausysService.validPeriodFrom?.value ?: externalSeason?.validFrom
+                yachtExtra.validTo = nausysService.validPeriodTo?.value ?: externalSeason?.validTo
+                yachtExtra.type = ExtrasType.EXTRAS
+                yachtExtra.validForBases = nausysService.validForBases
+
+                yachtExtraRepository.save(yachtExtra)
+                yacht.yachtExtras.add(yachtExtra)
+                matchedIds.add(yachtExtra.id!!)
+            }
+        }
+
+        val toRemove = mutableListOf<YachtExtra>()
+        allYachtExtras.forEach { yachtExtras ->
+            if (matchedIds.none { it == yachtExtras.id }) {
+                toRemove.add(yachtExtras)
+            }
+        }
+        if (toRemove.isNotEmpty()) {
+            yacht.yachtExtras.removeAll(toRemove)
+            yachtExtraRepository.deleteAll(toRemove)
+        }
+    }
+
+    private fun getModel(nausysYacht: RestYacht): Model {
+        val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
+        val allModelMappings =
+            externalMappingService.getCachedAllMappingsByType(Model::class.simpleName.toString(), externalSystem)
+
+        val modelMapping = allModelMappings.find { model -> model.externalId == nausysYacht.yachtModelId!! }
+        return modelRepository.findById(modelMapping!!.systemId!!).get()
+    }
+
+    private fun shouldSkip(
+        nausysYacht: RestYacht,
+        model: Model,
+    ): Boolean {
+        val vesselType = VesselType.fromNauSysCategoryId(model.externalCategoryId)
+        if (VesselType.shouldSkipVesselType(vesselType)) {
+            log.info("Skipping NauSYS yacht ${nausysYacht.id} with vessel type $vesselType")
+            return true
+        }
+        return false
+    }
+
+    private fun createTranslations(
+        newYacht: Yacht,
+        text: RestInternationalText,
+        type: TranslationType,
+    ) {
+        val yachtTranslations = newYacht.yachtTranslations
+
+        languageRepository.findAll().forEach { lang ->
+            val existing = yachtTranslations.firstOrNull { existing -> existing.language!!.locale == lang.locale }
+            val yachtTranslation =
+                existing ?: YachtTranslation().apply {
+                    this.yacht = newYacht
+                    this.language = lang
+                    this.type = type
+                }
+
+            val default = text.textEN ?: "No description"
+            val lang = LanguageEnum.fromLocale(lang.locale!!)
+            val value =
+                when (lang) {
+                    LanguageEnum.EN -> default
+                    LanguageEnum.FR -> text.textFR ?: default
+                    LanguageEnum.DE -> text.textDE ?: default
+                    LanguageEnum.PT -> default // nema PT
+                    LanguageEnum.IT -> text.textIT ?: default
+                    LanguageEnum.ES -> text.textES ?: default
+                    LanguageEnum.HR -> text.textHR ?: default
+                    else -> null // Handle other languages if needed
+                }
+            yachtTranslation.value = value
+
+            newYacht.yachtTranslations.add(yachtTranslation)
+            yachtTranslationRepository.save(yachtTranslation)
+        }
+    }
+
+    private fun calcEnginePower(
+        enginePower: Short?,
+        engineNumber: Short?,
+    ): Short? {
+        val enginePower = enginePower ?: 0
+        val engineNumber = engineNumber ?: 1
+        val calculatedPower = (enginePower * engineNumber)
+        return if (calculatedPower != 0) calculatedPower.toShort() else null
+    }
+}

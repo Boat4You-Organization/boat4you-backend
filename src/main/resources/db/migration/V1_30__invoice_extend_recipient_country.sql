@@ -1,0 +1,1 @@
+ALTER TABLE invoice ALTER COLUMN recipient_country TYPE VARCHAR(255);

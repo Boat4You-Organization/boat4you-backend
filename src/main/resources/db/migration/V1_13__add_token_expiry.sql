@@ -1,0 +1,2 @@
+ALTER TABLE tokens
+    ADD COLUMN expires_at TIMESTAMP;

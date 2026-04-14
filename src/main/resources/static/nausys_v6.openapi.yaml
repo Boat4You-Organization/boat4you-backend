@@ -1,0 +1,5191 @@
+openapi: 3.0.0
+info:
+  title: NauSys API
+  version: "6.0"
+paths:
+  /CBMS-external/rest/catalogue/v6/cabins/{charterCompanyId}:
+    post:
+      summary: Provides all available yachts from the requested charter company
+      operationId: allCabins
+      parameters:
+        - name: charterCompanyId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: ID of the charter company
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCabinDefinitionList'
+  /CBMS-external/rest/catalogue/v6/charterBases:
+    post:
+      summary: Provides all available charter bases
+      operationId: allCharterBases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCharterBaseList'
+  /CBMS-external/rest/catalogue/v6/charterCompanies:
+    post:
+      summary: Provides all available charter companies
+      operationId: allCharterCompanies
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCharterCompanyList'
+  /CBMS-external/rest/catalogue/v6/countries:
+    post:
+      summary: Provides all available countries
+      operationId: allCountries
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCountryList'
+  /CBMS-external/rest/catalogue/v6/countrystates:
+    post:
+      summary: Provides all available country states
+      operationId: allCountryStates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCountryStateList'
+  /CBMS-external/rest/catalogue/v6/discountItems:
+    post:
+      summary: Provides all available discount items
+      operationId: allDiscountItems
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestDiscountItemList'
+  /CBMS-external/rest/catalogue/v6/engineBuilders:
+    post:
+      summary: Provides all available yacht engine builders
+      operationId: allEngineBuilders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestEngineBuilderList'
+  /CBMS-external/rest/catalogue/v6/equipment:
+    post:
+      summary: Provides all available equipment
+      operationId: allEquipment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestEquipmentList'
+  /CBMS-external/rest/catalogue/v6/equipmentCategories:
+    post:
+      summary: Provides all available equipment categories
+      operationId: allEquipmentCategories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestEquipmentCategoryList'
+  /CBMS-external/rest/catalogue/v6/locations:
+    post:
+      summary: Provides all available locations
+      operationId: allLocations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestLocationList'
+  /CBMS-external/rest/catalogue/v6/cabinPackage/{charterCompanyId}:
+    post:
+      summary: Provides all available cabin packages for the requested charter company
+      operationId: allPackages
+      parameters:
+        - name: charterCompanyId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: ID of the charter company
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCabinPackageList'
+  /CBMS-external/rest/catalogue/v6/priceLists/{charterCompanyId}:
+    post:
+      summary: Provides all available price lists for the requested charter company
+      operationId: allPriceLists
+      parameters:
+        - name: charterCompanyId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+          description: ID of the charter company
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestPriceListList'
+  /CBMS-external/rest/catalogue/v6/priceMeasures:
+    post:
+      summary: Provides all available price measures
+      operationId: allPriceMeasures
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestPriceMeasureList'
+  /CBMS-external/rest/catalogue/v6/regions:
+    post:
+      summary: Provides all available regions
+      operationId: allRegions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestRegionList'
+  /CBMS-external/rest/catalogue/v6/sailTypes:
+    post:
+      summary: Provides all available sail types
+      operationId: allSailTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestSailTypeList'
+  /CBMS-external/rest/catalogue/v6/seasons:
+    post:
+      summary: Provides all available seasons
+      operationId: allSeasons
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestSeasonList'
+  /CBMS-external/rest/catalogue/v6/services:
+    post:
+      summary: Provides all available services
+      operationId: allServices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestServiceList'
+  /CBMS-external/rest/catalogue/v6/steeringTypes:
+    post:
+      summary: Provides all available steering types
+      operationId: allSteeringTypes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestSteeringTypeList'
+  /CBMS-external/rest/catalogue/v6/users:
+    post:
+      summary: Provides all available users
+      operationId: allUsers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestUserList'
+  /CBMS-external/rest/catalogue/v6/yachtBuilders:
+    post:
+      summary: Provides all available yacht builders
+      operationId: allYachtBuilders
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtBuilderList'
+  /CBMS-external/rest/catalogue/v6/yachtCategories:
+    post:
+      summary: Retrieve all yacht categories
+      operationId: allYachtCategories
+      description: Provides a list of all available yacht categories.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful response with yacht categories
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/YachtCategoriesResponse'
+        '401':
+          description: Unauthorized access
+        '500':
+          description: Server error
+  /CBMS-external/rest/catalogue/v6/yachts/{charterCompanyId}:
+    post:
+      summary: Retrieve all yachts
+      operationId: allYachts
+      description: Provides a list of all yachts for the specified charter company.
+      parameters:
+        - name: charterCompanyId
+          in: path
+          required: true
+          description: ID of the charter company.
+          schema:
+            type: integer
+            format: int64
+            example: 201
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AllYachtsRequest'
+      responses:
+        '200':
+          description: Successful response with yacht details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtList'
+        '401':
+          description: Unauthorized access
+        '500':
+          description: Server error
+  /CBMS-external/rest/catalogue/v6/yachtModels:
+    post:
+      summary: Retrieve all yacht models
+      operationId: allYachtModels
+      description: Provides all available yacht models.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: A list of yacht models.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtModelList'
+        '401':
+          description: Unauthorized access.
+        '500':
+          description: Server error.
+  /CBMS-external/rest/catalogue/v6/yacht/{yachtId}:
+    post:
+      summary: Retrieve details of a specific yacht
+      operationId: singleYacht
+      description: Provides details of a single yacht based on the provided yacht ID.
+      parameters:
+        - name: yachtId
+          in: path
+          required: true
+          description: The ID of the yacht to retrieve details for.
+          schema:
+            type: integer
+            example: 103152
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: A detailed response for the specified yacht.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtList'
+        '401':
+          description: Unauthorized access.
+        '500':
+          description: Server error.
+  /CBMS-external/rest/yachtReservation/v6/reservations:
+    post:
+      summary: Get all reservations
+      description: Provides all reservations in a given period made by this agency (or charter company depending on credentials).
+      operationId: getAllReservations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationsRequest'
+      responses:
+        '200':
+          description: A list of yacht reservations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservationList'
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+  /CBMS-external/rest/yachtReservation/v6/options:
+    post:
+      summary: Get all options
+      description: Provides all options, including waiting options, for a specific period made by this agency (or charter company depending on credentials).
+      operationId: getAllOptions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationsRequest'
+      responses:
+        '200':
+          description: A list of yacht options
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservationList'
+        '400':
+          description: Bad Request
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+  /CBMS-external/rest/yachtReservation/v6/freeYachts:
+    post:
+      summary: Get Free Yachts
+      description: Retrieves all free yachts available based on the specified criteria.
+      operationId: getFreeYachts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestFreeYachtsRequest'
+      responses:
+        '200':
+          description: Successful response with a list of free yachts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestFreeYachtList'
+  /CBMS-external/rest/yachtReservation/v6/freeYachtsSearchCriteria:
+    post:
+      summary: Get Free Yacht Search Criteria
+      description: Returns all search criteria for finding free yachts.
+      operationId: getFreeYachtSearchCriteria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful response with search criteria.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestFreeYachtsSearchCriteria'
+  /CBMS-external/rest/yachtReservation/v6/freeYachtsSearch:
+    post:
+      summary: Get Free Yachts
+      description: Provides all available yachts in given period
+      operationId: freeYachtsSearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestFreeYachtsSearchRequest'
+      responses:
+        '200':
+          description: Successful response with search criteria.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestFreeYachtsSearchResponse'
+  /CBMS-external/rest/yachtReservation/v6/occupancy/{companyId}/{year}:
+    post:
+      summary: Get Occupancy by Year
+      description: Retrieves all reservations for the specified company in the given year.
+      operationId: getOccupancyByYear
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          description: Unique identifier of the company.
+          schema:
+            type: integer
+        - name: year
+          in: path
+          required: true
+          description: Year for which the occupancy data is requested.
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful response with occupancy data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservationOccupancyList'
+  /CBMS-external/rest/yachtReservation/v6/occupancy2/{companyId}/{seasonId}:
+    post:
+      summary: Get Occupancy by Season
+      description: Retrieves all reservations for the specified company in the given season.
+      operationId: getOccupancyBySeason
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          description: Unique identifier of the company.
+          schema:
+            type: integer
+        - name: seasonId
+          in: path
+          required: true
+          description: Identifier of the season for which the occupancy data is requested.
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful response with occupancy data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservationOccupancyList'
+  /CBMS-external/rest/yachtReservation/v6/occupancy3/{companyId}/{yachtId}:
+    post:
+      summary: Get Yacht Reservations
+      description: Provides all reservations for the specified company's single yacht.
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: The ID of the company.
+        - name: yachtId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: The ID of the yacht.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservationOccupancyList'
+  /CBMS-external/rest/yachtReservation/v6/freeCabinPackageSearchCriteria:
+    post:
+      summary: Get Free Cabin Package Search Criteria
+      description: Returns all search criteria for finding free cabin packages.
+      operationId: getFreeCabinPackageSearchCriteria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful response with search criteria.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestFreeCabinPackageSearchCriteria'
+  /CBMS-external/rest/yachtReservation/v6/freeCabinPackageSearch:
+    post:
+      summary: Get Free Cabin Packages
+      description: Retrieves all available cabin packages for a given period and criteria.
+      operationId: getFreeCabinPackages
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestFreeCabinPackageSearchRequest'
+      responses:
+        '200':
+          description: Successful response with available cabin packages.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestFreeCabinPackageList'
+  /CBMS-external/rest/yachtReservation/v6/cabinCharterOccupany/{companyId}/{seasonId}:
+    post:
+      summary: Provides all available yachts in given period
+      description: Provides all available yachts in given period
+      operationId: cabinCharterOccupany
+      parameters:
+        - name: companyId
+          in: path
+          required: true
+          description: Unique identifier of the company.
+          schema:
+            type: integer
+        - name: seasonId
+          in: path
+          required: true
+          description: Identifier of the season for which the occupancy data is requested.
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Successful response with available cabin packages.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestOccupancyList'
+  /CBMS-external/rest/yachtReservation/v6/waitingOptions:
+    post:
+      summary: Get Waiting Options
+      operationId: waitingOptions
+      description: Fetch the number of waiting options for a yacht for a given period.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestWaitingOptionsRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestWaitingOptionsResponse'
+  /CBMS-external/rest/yachtReservation/v6/infos:
+    post:
+      summary: Get All Reservation Infos
+      operationId: infos
+      description: Provides detailed information about all reservations within the specified period.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationsRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservationList'
+  /CBMS-external/rest/yachtReservation/v6/stornos:
+    post:
+      summary: Get All Canceled Reservations (Stornos)
+      operationId: stornos
+      description: Provides detailed information about all canceled reservations within the specified period.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationsRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservationList'
+  /CBMS-external/rest/booking/v6/createBooking:
+    post:
+      summary: Create Booking
+      operationId: createBooking
+      description: Change the status of a reservation from "info" or "option" to a fixed booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationBookingRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservation'
+  /CBMS-external/rest/booking/v6/createCabinCharterBooking:
+    post:
+      summary: Create Cabin Charter Booking
+      operationId: createCabinCharterBooking
+      description: Changes the status of a cabin charter reservation from "info" or "option" to a fixed booking.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationBookingRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCabinReservation'
+  /CBMS-external/rest/booking/v6/createCabinCharterInfo:
+    post:
+      summary: Create Cabin Charter Info Reservation
+      operationId: createCabinCharterInfo
+      description: Creates an info reservation for a cabin charter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestCabinReservationInfoRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCabinReservation'
+  /CBMS-external/rest/booking/v6/createCabinCharterOption:
+    post:
+      summary: Create Cabin Charter Option
+      operationId: createCabinCharterOption
+      description: Create an option reservation for a cabin charter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationOptionRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCabinReservation'
+  /CBMS-external/rest/booking/v6/createInfo:
+    post:
+      summary: Create Info Reservation
+      operationId: createInfo
+      description: Creates an info reservation for a yacht.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationInfoRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservation'
+  /CBMS-external/rest/booking/v6/createOption:
+    post:
+      summary: Create Option
+      operationId: createOption
+      description: Create an option reservation for a yacht.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationOptionRequest'
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservation'
+  /CBMS-external/rest/booking/v6/onlinePayment:
+    post:
+      summary: Online Payment
+      operationId: onlinePayment
+      description: Initiates an online payment for a reservation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationOnlinePaymentRequest'
+      responses:
+        '200':
+          description: Successful payment redirection
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservationOnlinePaymentResponse'
+  /CBMS-external/rest/booking/v6/onlinePaymentPlan:
+    post:
+      summary: Online Payment Plan
+      operationId: onlinePaymentPlan
+      description: Creates a payment plan for a reservation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestOnlinePaymentPlan'
+      responses:
+        '200':
+          description: Payment plan created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestResponse'
+  /CBMS-external/rest/booking/v6/stornoOption:
+    post:
+      summary: Storno Option
+      operationId: stornoOption
+      description: Cancels a reservation or an option waiting for confirmation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestYachtReservationRequest'
+      responses:
+        '200':
+          description: Successful cancellation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtReservation'
+  /CBMS-external/rest/crewlist/countries:
+    get:
+      summary: Get Countries
+      description: Fetches the list of countries for nationality, birth country, and residence country.
+      responses:
+        '200':
+          description: List of countries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CountryList'
+  /CBMS-external/rest/crewlist/documents:
+    get:
+      summary: Get Identification Document Types
+      description: Fetches the list of identification document types.
+      responses:
+        '200':
+          description: List of document types
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentTypeList'
+  /CBMS-external/rest/crewlist/v6/get/{reservationId}/{securityCode}:
+    get:
+      summary: Get Crew List
+      description: Retrieves the crew list for a specified reservation.
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID of the reservation.
+        - name: securityCode
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Security code for the reservation.
+      responses:
+        '200':
+          description: Successful retrieval of crew list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestCrewList'
+  /CBMS-external/rest/crewlist/v6/set/{reservationId}/{securityCode}:
+    post:
+      summary: Set Crew List
+      description: Creates or updates a crew list for a specified reservation.
+      parameters:
+        - name: reservationId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: ID of the reservation.
+        - name: securityCode
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Security code for the reservation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestCrewList'
+      responses:
+        '200':
+          description: Crew list created or updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestResponse'
+  /CBMS-external/rest/sales/v6/invoices:
+    post:
+      summary: Get Invoices
+      description: Fetches invoices within the specified date range.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestInvoicesRequest'
+      responses:
+        '200':
+          description: Successful retrieval of invoices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestInvoicesExport'
+  /CBMS-external/rest/client/v6/contact/create:
+    post:
+      summary: Create Contact
+      description: Creates a new contact in the NauSYS system.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestClient2'
+      responses:
+        '200':
+          description: Contact created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestClient2'
+  /CBMS-external/rest/client/v6/contact/all:
+    post:
+      summary: Get All Contacts
+      description: Retrieves all contacts, optionally filtered by a specific modification date.
+      parameters:
+        - name: date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+            description: >
+              Filter to fetch contacts modified after a specific date. Format: dd-MM-yyyy.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Contacts retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestClientList'
+  /CBMS-external/rest/client/v6/contact/all2:
+    post:
+      summary: Get All Contacts 2
+      description: Retrieves a list of contacts with enhanced filtering options.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestGetContactsRequest'
+      responses:
+        '200':
+          description: Contacts retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestClientList'
+  /CBMS-external/rest/client/v6/contact/get/{id}:
+    post:
+      summary: Get Contact
+      description: Retrieves a contact by its unique ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Unique ID of the contact to retrieve.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Contact retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestClient2'
+  /CBMS-external/rest/client/v6/contact/crewMember/{crewMemberId}:
+    post:
+      summary: Get Crew Member
+      description: Fetches details about a specific crew member by their unique ID.
+      parameters:
+        - name: crewMemberId
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Unique ID of the crew member to retrieve.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestAuthentication'
+      responses:
+        '200':
+          description: Crew member details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestYachtCrewMember'
+  /CBMS-external/rest/client/v6/contact/merge:
+    post:
+      summary: Merge Contact
+      description: Merges two contacts into a single contact.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestMergeClientRequest'
+      responses:
+        '200':
+          description: Contacts merged successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestClient2'
+  /CBMS-external/rest/client/v6/contact/update/{contactID}:
+    post:
+      summary: Update Contact
+      description: Updates details of an existing contact using the provided information.
+      parameters:
+        - name: contactID
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Unique ID of the contact to update.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestClient2'
+      responses:
+        '200':
+          description: Contact updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestClient2'
+#aaaaaaa
+components:
+  schemas:
+    RestAuthentication:
+      type: object
+      properties:
+        username:
+          type: string
+          description: Username for authentication
+        password:
+          type: string
+          description: Password for authentication
+
+    RestCabinDefinitionList:
+      type: object
+      properties:
+        status:
+          type: string
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+        cabinDefinitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestCabinDefinition'
+
+    RestCabinDefinition:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        cabinName:
+          type: string
+        cabinPosition:
+          type: string
+          enum: [ "FRONT", "REAR" ]
+          description: Defined only if there is a distinct visual difference between the two cabins.
+        cabinType:
+          type: string
+          enum: [ "SINGLE", "DOUBLE", "SPLIT", "BUNK", "DOUBLE_PLUS_SINGLE" ]
+        description:
+          type: string
+
+    RestCharterBaseList:
+      type: object
+      properties:
+        status:
+          type: string
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+        bases:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestCharterBase'
+
+    RestCharterBase:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: ID of the charter base
+        locationId:
+          type: integer
+          format: int64
+          description: Location ID of the charter base
+        companyId:
+          type: integer
+          format: int64
+          description: Associated charter company ID
+        checkInTime:
+          type: string
+          description: Check-in time
+        checkOutTime:
+          type: string
+          description: Check-out time
+        lat:
+          type: number
+          format: double
+          description: Latitude of the charter base
+        lon:
+          type: number
+          format: double
+          description: Longitude of the charter base
+        baseManagerId:
+          type: integer
+          format: int64
+          description: ID of the base manager (visible only to fleet operators)
+        domainId:
+          type: integer
+          format: int64
+          description: ID of the domain (visible only to fleet operators)
+        secondaryBase:
+          type: boolean
+          description: Indicates whether this is a secondary base
+        disabled:
+          type: boolean
+          description: Indicates whether the base is disabled
+        returnToBaseNote:
+          description: Notes for returning to the base in various languages
+          type: object
+          additionalProperties:
+            type: string
+        returnToBaseDelayNote:
+          description: Notes for return delays in various languages
+          type: object
+          additionalProperties:
+            type: string
+        disabledDate:
+          type: string
+          description: Date when the base was disabled
+        openBaseDate:
+          type: string
+          description: Date when the base was opened
+        closedBaseDate:
+          type: string
+          description: Date when the base was closed
+    RestCharterCompanyList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only in case of error
+        companies:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestCharterCompany'
+
+    RestCharterCompany:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Company ID
+        name:
+          type: string
+          description: Brand name of the company
+        companyName:
+          type: string
+          description: Official company name
+        address:
+          type: string
+          description: Address of headquarters
+        city:
+          type: string
+          description: City of headquarters
+        zip:
+          type: string
+          description: Postal code of headquarters
+        countryId:
+          type: integer
+          format: int64
+          description: Country ID
+        phone:
+          type: string
+          description: Contact phone number
+        fax:
+          type: string
+          description: Contact fax number
+        mobile:
+          type: string
+          description: Contact mobile number
+        vatcode:
+          type: string
+          description: VAT code of the company
+        web:
+          type: string
+          description: Website of the company
+        email:
+          type: string
+          description: Email address of the company
+        pac:
+          type: boolean
+          description: Private access company flag
+        bankAccounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestBankAccount'
+        isPremium:
+          type: boolean
+          description: Indicates if the company is premium
+
+    RestBankAccount:
+      type: object
+      properties:
+        bankName:
+          type: string
+          description: The name of the bank
+        bankAddress:
+          type: string
+          description: The address of the bank
+        accountNumber:
+          type: string
+          description: The account number
+        swift:
+          type: string
+          description: SWIFT code
+        iban:
+          type: string
+          description: IBAN number
+        sepa:
+          type: string
+          description: SEPA code
+    RestCountryList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        countries:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestCountry'
+
+    RestCountry:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Country ID
+        code:
+          type: string
+          description: Short string representation of country (ISO 3166 Alpha-3)
+        code2:
+          type: string
+          description: Short string representation of country (ISO 3166 Alpha-2)
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+
+    RestInternationalText:
+      type: object
+      properties:
+        textDE:
+          type: string
+          description: Name in German
+        textEN:
+          type: string
+          description: Name in English
+        textHR:
+          type: string
+          description: Name in Croatian
+        textIT:
+          type: string
+          description: Name in Italian
+        textSI:
+          type: string
+          description: Name in Slovenian
+        textRU:
+          type: string
+          description: Name in Russian
+        textCZ:
+          type: string
+          description: Name in Czech
+        textFR:
+          type: string
+          description: Name in French
+        textPL:
+          type: string
+          description: Name in Polish
+        textSK:
+          type: string
+          description: Name in Slovak
+        textNL:
+          type: string
+          description: Name in Dutch
+        textES:
+          type: string
+          description: Name in Spanish
+    RestCountryStateList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the response
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        countries:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestCountryState'
+
+    RestCountryState:
+      type: object
+      properties:
+        countryId:
+          type: integer
+          format: int64
+          description: ID of the country to which the state belongs
+        id:
+          type: integer
+          format: int64
+          description: ID of the state
+        name:
+          type: string
+          description: Name of the state
+
+    RestDiscountItemList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        discounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestDiscountItem'
+
+    RestDiscountItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Discount ID
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+
+    RestEngineBuilderList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        builders:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestEngineBuilder'
+
+    RestEngineBuilder:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Engine builder ID
+        name:
+          type: string
+          description: Name of the engine builder
+
+    RestEquipmentList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        equipment:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestEquipment'
+
+    RestEquipment:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Equipment ID
+        categoryId:
+          type: integer
+          format: int64
+          description: Relates to a specific equipment category
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+
+    RestEquipmentCategoryList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        equipmentCategories:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestEquipmentCategory'
+
+    RestEquipmentCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Equipment category ID
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+    RestLocationList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        locations:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestLocation'
+
+    RestLocation:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Location ID
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+        lon:
+          type: number
+          format: double
+          description: Longitude of the location
+        lat:
+          type: number
+          format: double
+          description: Latitude of the location
+        regionId:
+          type: integer
+          format: int64
+          description: ID of the related region
+    RestCabinPackageList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        cabinPackages:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestCabinPackage'
+
+    RestCabinPackage:
+      type: object
+      properties:
+        packageId:
+          type: integer
+          format: int64
+          description: Package ID
+        packageName:
+          type: string
+          description: Name of the package
+        cabinPackageDescription:
+          $ref: '#/components/schemas/RestCabinPackageDescription'
+
+    RestCabinPackageDescription:
+      type: object
+      properties:
+        baseFromId:
+          type: integer
+          format: int64
+          description: Departure base ID
+        baseToId:
+          type: integer
+          format: int64
+          description: Arrival base ID
+        duration:
+          type: integer
+          format: int64
+          description: Duration of the package in days
+        itinerary:
+          $ref: '#/components/schemas/RestItinerary'
+
+    RestItinerary:
+      type: object
+      properties:
+        description:
+          $ref: '#/components/schemas/RestInternationalText'
+        departure:
+          $ref: '#/components/schemas/RestInternationalText'
+        arrival:
+          $ref: '#/components/schemas/RestInternationalText'
+    RestPriceListList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        priceLists:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestPriceList'
+
+    RestPriceList:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Price list ID
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+        seasonId:
+          type: integer
+          format: int64
+          description: Season ID associated with the price list
+        validFrom:
+          type: string
+          description: Start date of the price list validity
+        validTo:
+          type: string
+          description: End date of the price list validity
+
+    RestPriceMeasureList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        priceMeasures:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestPriceMeasure'
+
+    RestPriceMeasure:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Price measure ID
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+
+    RestRegionList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        regions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestRegion'
+
+    RestRegion:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Region ID
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+        countryId:
+          type: integer
+          format: int64
+          description: ID of the country to which the region belongs
+    RestSailTypeList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        sailTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestSailType'
+
+    RestSailType:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Sail type ID
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+
+    RestSeasonList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        seasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestSeason'
+
+    RestSeason:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Season ID
+        charterCompanyId:
+          type: integer
+          format: int64
+          description: ID of the charter company
+        season:
+          type: string
+          description: Name of the season (e.g., year)
+        from:
+          type: string
+          format: date
+          description: Start date of the season
+        to:
+          type: string
+          format: date
+          description: End date of the season
+        defaultSeason:
+          type: boolean
+          description: Indicates if it is the default season
+        locationsId:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of location IDs where the season applies
+
+    RestServiceList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestService'
+
+    RestService:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Service ID
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+
+    RestSteeringTypeList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        steeringTypes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestSteeringType'
+
+    RestSteeringType:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Steering type ID
+        name:
+          $ref: '#/components/schemas/RestInternationalText'
+
+    RestUserList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestUser'
+
+    RestUser:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: User ID
+        username:
+          type: string
+          description: Username of the user
+        email:
+          type: string
+          description: Email of the user
+        firstName:
+          type: string
+          description: First name of the user
+        lastName:
+          type: string
+          description: Last name of the user
+    RestYachtBuilderList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Response status
+        errorCode:
+          type: integer
+          format: int64
+          nullable: true
+          description: Error code, present only if an error occurred
+        builders:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtBuilder'
+
+    RestYachtBuilder:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Builder ID
+        name:
+          type: string
+          description: Name of the yacht builder
+
+    YachtCategoriesResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "OK"
+        categories:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int64
+                example: 51
+              name:
+                $ref: '#/components/schemas/RestInternationalText'
+    AllYachtsRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          example: "user@example.com"
+        password:
+          type: string
+          example: "password123"
+        yachtIDs:
+          type: array
+          items:
+            type: integer
+            format: int64
+          example: [ 103152, 103151 ]
+        onlyIDs:
+          type: boolean
+          description: If true, only IDs of yachts will be returned.
+          example: false
+      required:
+        - username
+        - password
+    RestYachtList:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "OK"
+        errorCode:
+          type: number
+          description: Displays only if an error occurred.
+          example: 1001
+        yachtIDs:
+          type: array
+          items:
+            type: integer
+            format: int64
+          example: [ 103152, 103151 ]
+        yachts:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYacht'
+    RestYachtEquipment:
+      type: object
+      properties:
+        id:
+          type: integer
+        quantity:
+          type: number
+        equipmentId:
+          type: integer
+          description: Used to fetch equipment name. Relates to Catalogue endpoint All equipment.
+        highlight:
+          type: boolean
+        comment:
+          $ref: '#/components/schemas/RestInternationalText'
+    RestEuminia:
+      type: object
+      properties:
+        cleanliness:
+          type: string
+        equipment:
+          type: string
+        personalService:
+          type: string
+        pricePerformance:
+          type: string
+        recommendation:
+          type: string
+        total:
+          type: string
+        reviews:
+          type: string
+    RestYachtPicture:
+      type: object
+      properties:
+        src:
+          type: string
+          description: Picture URL.
+          example: "https://ws.nausys.com/CBMS-external/rest/yachtModel/12625376/pictures/main.jpg"
+        catalogPhoto:
+          type: boolean
+          description: Indicates whether this is a catalog photo.
+          example: true
+        mainPicture:
+          type: boolean
+          description: Indicates whether this is the main picture.
+          example: true
+        layoutPicture:
+          type: boolean
+          description: Indicates whether this is a layout picture.
+          example: false
+        isGenuine:
+          type: boolean
+          description: Indicates whether this is an Original or Generic boat picture.
+          example: true
+        lastModified:
+          type: string
+          description: The last modification date and time of the picture.
+          example: "2024-01-30 10:13:52"
+        description:
+          $ref: '#/components/schemas/RestInternationalText'
+    RestYachtCheckInPeriod:
+      type: object
+      properties:
+        dateFrom:
+          type: string
+          format: date
+          description: Start date of the check-in period.
+          example: "01.01.1970"
+        dateTo:
+          type: string
+          format: date
+          description: End date of the check-in period.
+          example: "31.12.2099"
+        minimalReservationDuration:
+          type: integer
+          description: Minimum reservation duration in days.
+          example: 3
+        checkInMonday:
+          type: boolean
+          description: Indicates if check-in is allowed on Mondays.
+          example: false
+        checkInTuesday:
+          type: boolean
+          description: Indicates if check-in is allowed on Tuesdays.
+          example: false
+        checkInWednesday:
+          type: boolean
+          description: Indicates if check-in is allowed on Wednesdays.
+          example: true
+        checkInThursday:
+          type: boolean
+          description: Indicates if check-in is allowed on Thursdays.
+          example: false
+        checkInFriday:
+          type: boolean
+          description: Indicates if check-in is allowed on Fridays.
+          example: false
+        checkInSaturday:
+          type: boolean
+          description: Indicates if check-in is allowed on Saturdays.
+          example: true
+        checkInSunday:
+          type: boolean
+          description: Indicates if check-in is allowed on Sundays.
+          example: false
+        checkOutMonday:
+          type: boolean
+          description: Indicates if check-out is allowed on Mondays.
+          example: false
+        checkOutTuesday:
+          type: boolean
+          description: Indicates if check-out is allowed on Tuesdays.
+          example: false
+        checkOutWednesday:
+          type: boolean
+          description: Indicates if check-out is allowed on Wednesdays.
+          example: true
+        checkOutThursday:
+          type: boolean
+          description: Indicates if check-out is allowed on Thursdays.
+          example: false
+        checkOutFriday:
+          type: boolean
+          description: Indicates if check-out is allowed on Fridays.
+          example: false
+        checkOutSaturday:
+          type: boolean
+          description: Indicates if check-out is allowed on Saturdays.
+          example: true
+        checkOutSunday:
+          type: boolean
+          description: Indicates if check-out is allowed on Sundays.
+          example: false
+    RestOneWayPeriod:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the one-way period.
+          example: 1091672
+        periodFrom:
+          type: string
+          format: date
+          description: The start date of the one-way period.
+          example: "01.06.2019"
+        periodTo:
+          type: string
+          format: date
+          description: The end date of the one-way period.
+          example: "30.11.2019"
+        baseId:
+          type: integer
+          description: Relates to the Catalogue endpoint "All charter bases."
+          example: 102751
+        locationId:
+          type: integer
+          description: Relates to the Catalogue endpoint "All locations."
+          example: 57
+
+    RestYachtAdditionalEquipmentPrice:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique identifier for the additional equipment.
+          example: 12345
+        quantity:
+          type: number
+          description: Quantity of the equipment.
+          example: 2
+        price:
+          type: string
+          deprecated: true
+          description: (Deprecated) Price of the equipment.
+          example: "100.00"
+        currency:
+          type: string
+          description: Currency for the price.
+          example: "EUR"
+        equipmentId:
+          type: integer
+          format: int64
+          description: Refers to the equipment name. Relates to Catalogue endpoint "All equipment."
+          example: 2002
+        comment:
+          $ref: '#/components/schemas/RestInternationalText'
+        priceMeasureId:
+          type: integer
+          format: int64
+          description: Relates to the Catalogue endpoint "All price measures."
+          example: 3001
+        calculationType:
+          type: string
+          #          description: Specifies the calculation type. Values: `SEPARATE_PAYMENT`, `ADVANCE_PAYMENT`.
+          example: "SEPARATE_PAYMENT"
+        condition:
+          $ref: '#/components/schemas/RestInternationalText'
+        amount:
+          type: string
+          description: The calculated amount. Currency values use 2 decimal places, percentages use 4 decimal places.
+          example: "150.00"
+        amountIsPercentage:
+          type: boolean
+          description: Indicates if the `amount` is a percentage.
+          example: false
+        percentageCalculationType:
+          type: string
+          #          description: Specifies how percentages are calculated. Values: `PRICELIST_PRICE`, `CLIENT_PRICE`, `AGENCY_PRICE`, `DAILY_PRICE`, `PRICELIST_PRICE_WITHOUT_VAT`.
+          example: "PRICELIST_PRICE"
+        validForBases:
+          type: array
+          description: List of base IDs this equipment applies to. If empty, applies to all bases.
+          items:
+            type: integer
+            format: int64
+          example: [ 102751, 102752 ]
+        minimumPrice:
+          type: string
+          description: Minimum price for this equipment if the calculated amount is less than this value.
+          example: "50.00"
+        minDuration:
+          type: integer
+          description: Minimum reservation duration in days for this equipment to be available.
+          example: 3
+        maxDuration:
+          type: integer
+          description: Maximum reservation duration in days for this equipment to be available.
+          example: 14
+    RestYachtServicePrice:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique identifier for the service price.
+          example: 54321
+        serviceId:
+          type: integer
+          format: int64
+          description: Refers to the service name, relates to the Catalogue endpoint "All services."
+          example: 1002
+        price:
+          type: string
+          deprecated: true
+          description: (Deprecated) Price of the service.
+          example: "100.00"
+        currency:
+          type: string
+          description: Currency for the price.
+          example: "EUR"
+        priceMeasureId:
+          type: integer
+          format: int64
+          description: Relates to the Catalogue endpoint "All price measures."
+          example: 2001
+        calculationType:
+          type: string
+          #          description: Defines the calculation type. Values: `SEPARATE_PAYMENT`, `ADVANCE_PAYMENT`.
+          example: "SEPARATE_PAYMENT"
+        description:
+          $ref: '#/components/schemas/RestInternationalText'
+        obligatory:
+          type: boolean
+          description: Indicates if the service is mandatory.
+          example: true
+        amount:
+          type: string
+          description: The calculated amount. Currency values use 2 decimal places, percentages use 4 decimal places.
+          example: "150.00"
+        amountIsPercentage:
+          type: boolean
+          description: Indicates if the `amount` is a percentage.
+          example: false
+        percentageCalculationType:
+          type: string
+          #          description: Specifies how percentages are calculated. Values: `PRICELIST_PRICE`, `CLIENT_PRICE`, `AGENCY_PRICE`, `DAILY_PRICE`, `PRICELIST_PRICE_WITHOUT_VAT`.
+          example: "CLIENT_PRICE"
+        validPeriodFrom:
+          type: string
+          format: date
+          description: Start date of the period when the service applies.
+          example: "2024-01-01"
+        validPeriodTo:
+          type: string
+          format: date
+          description: End date of the period when the service applies.
+          example: "2024-12-31"
+        validMinPax:
+          type: integer
+          description: Minimum number of persons this service applies to.
+          example: 1
+        validMaxPax:
+          type: integer
+          description: Maximum number of persons this service applies to.
+          example: 8
+        validForBases:
+          type: array
+          description: List of base IDs this service applies to. If empty, applies to all bases.
+          items:
+            type: integer
+            format: int64
+          example: [ 102751, 102752 ]
+        minimumPrice:
+          type: string
+          description: Minimum price for this service if the calculated amount is less than this value.
+          example: "50.00"
+        minDuration:
+          type: integer
+          description: Minimum reservation duration in days for this service to be available.
+          example: 3
+        maxDuration:
+          type: integer
+          description: Maximum reservation duration in days for this service to be available.
+          example: 14
+        onRequestOnly:
+          type: boolean
+          description: Indicates if the service is available only on request.
+          example: true
+    RestYachtPrice:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the pricelist.
+          example: 29292922
+        dateFrom:
+          type: string
+          format: date
+          description: Start date of the pricing period in the format `dd.MM.yyyy`.
+          example: "01.01.2014"
+        dateTo:
+          type: string
+          format: date
+          description: End date of the pricing period in the format `dd.MM.yyyy`.
+          example: "23.05.2014"
+        price:
+          type: number
+          format: float
+          description: Price amount for the specified period.
+          example: 1050.00
+        currency:
+          type: string
+          description: Currency for the price.
+          example: "EUR"
+        type:
+          type: string
+          description: Type of price, either `DAILY` or `WEEKLY`.
+          example: "WEEKLY"
+        locationsId:
+          type: array
+          description: Array of location IDs where this price is applicable.
+          items:
+            type: integer
+          example: [ 68 ]
+    RestDiscount:
+      type: object
+      properties:
+        discountItemId:
+          type: integer
+          description: Refers to `RestDiscountItem`.
+          example: 1001
+        amount:
+          type: number
+          format: float
+          description: Discount amount.
+          example: 150.00
+        type:
+          type: string
+          description: Type of discount.
+          example: "PERCENTAGE"
+    RestYacht:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        companyId:
+          type: integer
+        baseId:
+          type: integer
+        locationId:
+          type: integer
+        yachtModelId:
+          type: integer
+          format: int64
+        internalUse:
+          type: boolean
+        draft:
+          type: number
+        cabins:
+          type: integer
+        cabinsCrew:
+          type: integer
+        berthsCabin:
+          type: integer
+        berthsSalon:
+          type: integer
+        berthsCrew:
+          type: integer
+        berthsTotal:
+          type: integer
+        maxPersons:
+          type: integer
+        wc:
+          type: integer
+        wcCrew:
+          type: integer
+        buildYear:
+          type: integer
+        renewed:
+          type: integer
+        launchedYear:
+          type: integer
+        engines:
+          type: integer
+        enginePower:
+          type: number
+        steeringTypeId:
+          type: integer
+        sailTypeId:
+          type: integer
+        sailRenewed:
+          type: integer
+        genoaTypeId:
+          type: integer
+        genoaRenewed:
+          type: integer
+        standardYachtEquipment:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtEquipment'
+        euminia:
+          $ref: '#/components/schemas/RestEuminia'
+        fourStarCharter:
+          type: boolean
+        mainPictureUrl:
+          type: string
+        picturesURL:
+          type: array
+          items:
+            type: string
+        commission:
+          type: number
+        deposit:
+          type: number
+        depositWhenInsured:
+          type: number
+        depositCurrency:
+          type: string
+        maxDiscount:
+          type: number
+        seasonSpecificData:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtSeason'
+        needsOptionApproval:
+          type: boolean
+        canMakeBookingFixed:
+          type: boolean
+        flagsid:
+          type: array
+          items:
+            type: integer
+        charterType:
+          type: string
+        fuelTank:
+          type: integer
+        waterTank:
+          type: integer
+        mastLength:
+          type: number
+        propulsionType:
+          type: string
+        oneWayPeriods:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestOneWayPeriod'
+        numberOfRudderBlades:
+          type: integer
+        engineBuilderId:
+          type: integer
+        hullColor:
+          type: string
+        thirdPartyInsuranceAmount:
+          type: number
+        thirdPartyInsuranceCurrency:
+          type: string
+        checkInPeriods:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtCheckInPeriod'
+        engineBuildYear:
+          type: integer
+        fuelType:
+          type: string
+        crewedCharterType:
+          type: string
+        highlights:
+          type: string
+        note:
+          type: string
+        highlightsIntText:
+          $ref: '#/components/schemas/RestInternationalText'
+        noteIntText:
+          $ref: '#/components/schemas/RestInternationalText'
+        engineRenewedYear:
+          type: integer
+        fuelConsumption:
+          type: integer
+        maxSpeed:
+          type: integer
+        cruisingSpeed:
+          type: integer
+        isPremium:
+          type: boolean
+        recommendedPersons:
+          type: integer
+        checkInTime:
+          type: string
+        checkOutTime:
+          type: string
+        pictures:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtPicture'
+        showers:
+          type: integer
+        showersCrew:
+          type: integer
+        maxDiscountFromCommission:
+          type: number
+        agencyDiscountType:
+          type: string
+        crewCount:
+          type: integer
+        crewMemberIds:
+          type: array
+          items:
+            type: integer
+        registrationNumber:
+          type: string
+        mySeaCode:
+          type: string
+        onSale:
+          type: boolean
+    RestYachtSeason:
+      type: object
+      properties:
+        seasonId:
+          type: integer
+          format: int64
+          description: Relates to Catalogue endpoint "All seasons."
+          example: 7755128
+        baseId:
+          type: integer
+          description: Relates to Catalogue endpoint "All charter bases."
+          example: 102751
+        locationId:
+          type: integer
+          description: Relates to Catalogue endpoint "All locations."
+          example: 57
+        additionalYachtEquipment:
+          type: array
+          description: List of additional yacht equipment prices.
+          items:
+            $ref: '#/components/schemas/RestYachtAdditionalEquipmentPrice'
+        services:
+          type: array
+          description: List of yacht service prices.
+          items:
+            $ref: '#/components/schemas/RestYachtServicePrice'
+        prices:
+          type: array
+          description: List of yacht prices for this season.
+          items:
+            $ref: '#/components/schemas/RestYachtPrice'
+        regularDiscounts:
+          type: array
+          description: List of regular discounts available in this season.
+          items:
+            $ref: '#/components/schemas/RestDiscount'
+    RestYachtModelList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: The status of the response.
+          example: "OK"
+        errorCode:
+          type: number
+          description: Error code, if any.
+          example: 1001
+        models:
+          type: array
+          description: List of yacht models.
+          items:
+            $ref: '#/components/schemas/RestYachtModel'
+    RestYachtModel:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the yacht model.
+          example: 120254
+        name:
+          type: string
+          description: Name of the yacht model.
+          example: "1 - Custom"
+        yachtCategoryId:
+          type: integer
+          format: int64
+          description: Relates to the Catalogue endpoint "All yacht categories."
+          example: 1
+        yachtBuilderId:
+          type: integer
+          description: Relates to the Catalogue endpoint "All yacht builders."
+          example: 100241
+        loa:
+          type: number
+          format: float
+          description: Length overall of the yacht.
+          example: 12.57
+        beam:
+          type: number
+          format: float
+          description: Width of the yacht at its widest part.
+          example: 3.45
+        draft:
+          type: number
+          format: float
+          description: Draft of the yacht.
+          example: 1.35
+        cabins:
+          type: integer
+          description: Number of cabins.
+          example: 4
+        wc:
+          type: integer
+          description: Number of WC (toilets).
+          example: 2
+        waterTank:
+          type: integer
+          description: Capacity of the water tank in liters.
+          example: 0
+        fuelTank:
+          type: integer
+          description: Capacity of the fuel tank in liters.
+          example: 0
+        displacement:
+          type: integer
+          description: Displacement of the yacht in kilograms.
+          example: 0
+        virtualLength:
+          type: number
+          description: Virtual length of the yacht in feet.
+          example: 41
+    RestYachtReservationsRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        periodFrom:
+          type: string
+          format: date
+          description: Minimum check-in date (ignored if reservation IDs sent).
+        periodTo:
+          type: string
+          format: date
+          description: Maximum check-in date (ignored if reservation IDs sent).
+        endDateFrom:
+          type: string
+          format: date
+          description: Minimum check-out date (ignored if reservation IDs sent).
+        endDateTo:
+          type: string
+          format: date
+          description: Maximum check-out date (ignored if reservation IDs sent).
+        includeWaitingOptions:
+          type: boolean
+          description: Optional parameter. Displays waiting options if true.
+        reservations:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of reservation IDs.
+        modifyTimeFrom:
+          type: string
+          format: date-time
+          description: Minimum modify time (ignored if reservation IDs sent).
+        modifyTimeTo:
+          type: string
+          format: date-time
+          description: Maximum modify time (ignored if reservation IDs sent).
+        displayCurrency:
+          type: string
+          enum:
+            - DEFAULT
+            - CLIENT
+            - COMPANY
+          description: Optional. Currency display preference.
+    RestYachtReservationList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the response.
+        errorCode:
+          type: integer
+          description: Error code, present only if an error occurred.
+        reservations:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtReservation'
+
+    RestYachtReservation:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Reservation ID.
+        status:
+          type: string
+          description: Status of HTTP response.
+        uuid:
+          type: string
+          description: Security code for web service actions. Changes if important data is updated.
+        reservationStatus:
+          type: string
+          description: Status of the reservation (e.g., INFO, OPTION, RESERVATION, STORNO).
+        waitingForOption:
+          type: boolean
+          description: Indicates if the reservation is waiting for an option.
+        yachtId:
+          type: integer
+          format: int64
+          description: ID of the yacht associated with the reservation.
+        yachtName:
+          type: string
+          description: Name of the yacht.
+        baseFromId:
+          type: integer
+          format: int64
+          description: ID of the embarkment base.
+        baseToId:
+          type: integer
+          format: int64
+          description: ID of the arrival base.
+        locationFromId:
+          type: integer
+          format: int64
+          description: ID of the starting location.
+        locationToId:
+          type: integer
+          format: int64
+          description: ID of the ending location.
+        periodFrom:
+          type: string
+          format: date-time
+          description: Start date and time of the reservation.
+        periodTo:
+          type: string
+          format: date-time
+          description: End date and time of the reservation.
+        optionTill:
+          type: string
+          format: date-time
+          description: Expiration date for the option. Present only if the status is OPTION.
+        agency:
+          type: string
+          description: Name of the agency associated with the reservation.
+        agencyVATID:
+          type: string
+          description: VAT ID of the agency.
+        client:
+          $ref: '#/components/schemas/RestClient'
+        discounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestDiscount'
+          description: Array of discounts applied to the price list.
+        additionalEquipment:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtReservationAdditionalEquipment'
+          description: Array of additional equipment selected for the reservation.
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtReservationService'
+          description: Array of selected services, including mandatory ones.
+        priceListPrice:
+          type: string
+          description: Basic price from the price list.
+        agencyPrice:
+          type: string
+          description: Final price the agency is expected to pay.
+        clientPrice:
+          type: string
+          description: Final price the direct client is expected to pay.
+        currency:
+          type: string
+          description: Currency of the reservation.
+        paymentCurrency:
+          type: string
+          description: Currency for online payments (e.g., HRK, EUR).
+        localizedFinalPrice:
+          type: string
+          description: Client's final price in the payment currency for online payments.
+        onlinePaymentAmount:
+          type: string
+          description: Amount of the first installment for online payments.
+        approved:
+          type: boolean
+          description: Indicates if the option requires manual approval.
+        crewlistlink:
+          type: string
+          description: Link to the crew list for the reservation.
+        createdDate:
+          type: string
+          format: date
+          description: Date when the reservation was created.
+        paymentPlans:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtReservationPaymentPlan'
+          description: Payment plans for the reservation.
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtReservationPayment'
+          description: List of payments for the reservation.
+        useDepositPayment:
+          type: boolean
+          description: Indicates if deposit payment is used.
+        numberOfPayments:
+          type: integer
+          description: Number of payments for the reservation.
+        ownerBooking:
+          type: boolean
+          description: Indicates if this is an owner booking. Visible to charter companies only.
+        agencyAdditionalDiscountAmount:
+          type: string
+          description: Additional discount from the agency commission.
+        agencyClientFinalPrice:
+          type: string
+          description: Client's final booking price, including agency discounts.
+        bookingType:
+          type: string
+          description: Type of booking (e.g., BAREBOAT, CREWED, CABIN_MAIN, TRANSFER, BLOCK).
+        lastModifiedAt:
+          type: string
+          format: date-time
+          description: Timestamp of the last modification.
+        salesAgentId:
+          type: integer
+          description: ID of the sales agent associated with the reservation.
+        salesAgentName:
+          type: string
+          description: Name of the sales agent.
+        domainId:
+          type: integer
+          description: Domain ID for the reservation (visible to charter companies).
+        reservationMadeBy:
+          type: integer
+          description: ID of the user who created the reservation (visible to charter companies).
+        reservationMadeAt:
+          type: string
+          format: date-time
+          description: Timestamp when the reservation was created.
+        optionMadeBy:
+          type: integer
+          description: ID of the user who created the option (visible to charter companies).
+        optionMadeAt:
+          type: string
+          format: date-time
+          description: Timestamp when the option was created.
+        canceledBy:
+          type: integer
+          description: ID of the user who canceled the reservation (visible to charter companies).
+        canceledAt:
+          type: string
+          format: date-time
+          description: Timestamp when the reservation was canceled.
+        effectiveAgencyCommissionAmountWithoutVAT:
+          type: string
+          description: Agency commission amount without VAT.
+        realization:
+          type: string
+          description: Total price amount without VAT (applicable for NAT company).
+        restYachtReservationComments:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestComment'
+          description: Array of comments related to the reservation.
+        securityDeposit:
+          type: string
+          description: Deposit amount to be paid before check-in.
+        comments:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestComment'
+          description: Comments related to the reservation, visible to the user.
+        agencyClient:
+          $ref: '#/components/schemas/RestClient'
+        skipperId:
+          type: integer
+          description: ID of the skipper. Visible to charter companies only.
+        hostessId:
+          type: integer
+          description: ID of the hostess. Visible to charter companies only.
+        cookId:
+          type: integer
+          description: ID of the cook. Visible to charter companies only.
+        sailorId:
+          type: integer
+          description: ID of the sailor. Visible to charter companies only.
+        numberOfGuests:
+          type: integer
+          description: Total number of guests for the reservation.
+        onlineBooking:
+          type: boolean
+          description: Indicates if the reservation was made online. Visible to charter companies only.
+
+    RestClient:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: ID of the client.
+        company:
+          type: boolean
+          description: Indicates whether the client is a company. Set to TRUE if it is a company.
+        vatNr:
+          type: string
+          description: VAT number of the client. Mandatory if the client is a company.
+        name:
+          type: string
+          description: First name of the client. Mandatory field.
+        surname:
+          type: string
+          description: Last name of the client. Mandatory field.
+        address:
+          type: string
+          description: Address of the client.
+        zip:
+          type: string
+          description: ZIP code of the client's address.
+        city:
+          type: string
+          description: City of the client's address.
+        countryId:
+          type: integer
+          description: Country ID of the client, mandatory for certain fleet operators.
+        email:
+          type: string
+          description: Email address of the client. Mandatory field.
+        phone:
+          type: string
+          description: Phone number of the client.
+        mobile:
+          type: string
+          description: Mobile phone number of the client.
+        skype:
+          type: string
+          description: Skype ID of the client.
+        language:
+          type: string
+    #          description: Preferred language of the client. Example values: CROATIAN, ENGLISH, GERMAN, etc.
+    RestYachtReservationAdditionalEquipment:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique ID of the additional equipment.
+        quantity:
+          type: string
+          description: Deprecated. Superseded by `quantityExtra` and `quantityPriceMeasure`.
+        listPrice:
+          type: string
+          description: Deprecated. The list price of the equipment.
+        currency:
+          type: string
+          description: Currency used for the equipment price.
+        priceMeasureId:
+          type: integer
+          format: int64
+          description: Relates to the `All price measures` from the Catalogue endpoint.
+        equipmentId:
+          type: integer
+          format: int64
+          description: Relates to the `All equipment` from the Catalogue endpoint.
+        calculationType:
+          type: string
+          enum:
+            - SEPARATE_PAYMENT
+            - ADVANCE_PAYMENT
+          description: Type of payment calculation for the equipment (e.g., SEPARATE_PAYMENT or ADVANCE_PAYMENT).
+        condition:
+          $ref: '#/components/schemas/RestInternationalText'
+        amount:
+          type: string
+          description: The amount of the equipment (e.g., price or discount).
+        amountIsPercentage:
+          type: boolean
+          description: Whether the amount is a percentage.
+        percentageCalculationType:
+          type: string
+          enum:
+            - PRICELIST_PRICE
+            - CLIENT_PRICE
+            - AGENCY_PRICE
+            - DAILY_PRICE
+            - PRICELIST_PRICE_WITHOUT_VAT
+          description: Type of price calculation for the percentage discount or amount.
+        minDuration:
+          type: integer
+          description: Minimum duration in days for which the equipment is available based on the booking.
+        maxDuration:
+          type: integer
+          description: Maximum duration in days for the equipment availability based on the booking.
+        totalPrice:
+          type: string
+          description: Total calculated price for the additional equipment.
+        onPending:
+          type: boolean
+          description: Indicates if the equipment is in pending status (INFO or OPTION stage).
+        createdById:
+          type: integer
+          description: Relates to the ID of the user who created the equipment record.
+        createdTime:
+          type: string
+          format: date-time
+          description: Timestamp when the equipment record was created.
+        modifiedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the equipment record was last modified.
+        quantityExtras:
+          type: integer
+          description: Quantity of the selected equipment item.
+        quantityPriceMeasure:
+          type: integer
+          description: Quantity of the price measure (per booking, per day, etc.) used for price calculation.
+    RestYachtReservationService:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique ID of the yacht reservation service.
+        quantity:
+          type: string
+          deprecated: true
+          description: Deprecated. Superseded by `quantityExtra` and `quantityPriceMeasure`.
+        listPrice:
+          type: string
+          deprecated: true
+          description: Deprecated. The list price of the service.
+        currency:
+          type: string
+          description: Currency used for the service price.
+        priceMeasureId:
+          type: integer
+          format: int64
+          description: Relates to the `All price measures` endpoint.
+        serviceId:
+          type: integer
+          format: int64
+          description: Relates to the `All services` endpoint.
+        calculationType:
+          type: string
+          enum:
+            - SEPARATE_PAYMENT
+            - ADVANCE_PAYMENT
+            - INCLUDED_IN_PRICE
+          description: Type of payment calculation for the service (e.g., SEPARATE_PAYMENT, ADVANCE_PAYMENT, INCLUDED_IN_PRICE).
+        condition:
+          $ref: '#/components/schemas/RestInternationalText'
+        amount:
+          type: string
+          description: The amount for the service (e.g., price or discount).
+        amountIsPercentage:
+          type: boolean
+          description: Whether the amount is a percentage.
+        percentageCalculationType:
+          type: string
+#          enum:
+#            - DEFINED_IN_CUSTOM
+#            - PRICELIST_PRICE
+#            - CLIENT_PRICE
+#            - AGENCY_PRICE
+#            - DAILY_PRICE
+#            - PRICELIST_PRICE_WITHOUT_VAT
+          description: Type of price calculation for the percentage amount (e.g., PRICELIST_PRICE, CLIENT_PRICE).
+        minDuration:
+          type: integer
+          description: Minimum duration in days for which the service is available based on booking duration.
+        maxDuration:
+          type: integer
+          description: Maximum duration in days for the service availability based on booking duration.
+        totalPrice:
+          type: string
+          description: Total calculated price for the service.
+        createdById:
+          type: integer
+          description: Relates to the ID of the user who created the service record.
+        createdTime:
+          type: string
+          format: date-time
+          description: Timestamp when the service record was created.
+        modifiedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the service record was last modified.
+        quantityExtras:
+          type: string
+          description: Quantity of the selected service item.
+        quantityPriceMeasure:
+          type: string
+          description: Quantity of the price measure (per booking, per day, etc.) used for price calculation.
+    RestComment:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the comment.
+        internalNote:
+          type: boolean
+          description: Indicates whether the comment is an internal note (true/false).
+        showInBase:
+          type: boolean
+          description: Specifies whether the comment should be shown in the base (true/false).
+        note:
+          type: string
+          description: The content of the comment.
+        madeById:
+          type: integer
+          description: ID of the person who made the comment.
+        madeTime:
+          type: string
+          format: date-time
+          description: Timestamp when the comment was made, in the format `dd.MM.yyyy HH:mm:ss`.
+    RestYachtReservationPaymentPlan:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the payment plan.
+        date:
+          type: string
+          format: date
+          description: The date of the payment (e.g., dd.MM.yyyy).
+        amount:
+          type: string
+          description: The amount to be paid.
+        amountInPaymentCurrency:
+          type: string
+          description: The amount to be paid in the payment currency.
+        paid:
+          type: boolean
+          description: Indicates whether the payment has been made (true/false).
+        onlinePaymentLink:
+          type: string
+          description: Link for online payment.
+        onlinePaymentLinkValidTill:
+          type: string
+          format: date-time
+          description: Expiration date and time of the online payment link (e.g., dd.MM.yyyy HH:mm:ss).
+    RestYachtReservationPayment:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique identifier for the payment.
+        date:
+          type: string
+          format: date
+          description: The date when the payment was made (e.g., dd.MM.yyyy).
+        amount:
+          type: string
+          description: The amount of the payment.
+        amountInPaymentCurrency:
+          type: string
+          description: The amount of the payment in the payment currency.
+        paymentCurrency:
+          type: string
+          description: The currency used for the payment.
+    RestFreeYachtsRequest:
+      type: object
+      required:
+        - credentials
+        - periodFrom
+        - periodTo
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        periodFrom:
+          type: string
+          format: date
+          description: >-
+            Dates passed in the request need to follow booking constraints for a boat. 
+            Booking constraint rules can be found in `RestYachtCheckInPeriod`, such as
+            SAT-SAT bookings requiring the dates to correspond to two consecutive Saturdays.
+          example: "2023-05-01"
+        periodTo:
+          type: string
+          format: date
+          description: >-
+            Dates passed in the request need to follow booking constraints for a boat. 
+            Booking constraint rules can be found in `RestYachtCheckInPeriod`, such as
+            SAT-SAT bookings requiring the dates to correspond to two consecutive Saturdays.
+          example: "2023-05-07"
+        priceFrom:
+          type: number
+          format: float
+          description: The minimum price for the search.
+          example: 500
+        priceTo:
+          type: number
+          format: float
+          description: The maximum price for the search.
+          example: 5000
+        yachts:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: Contains yacht IDs.
+          example: [ 302, 557323, 101723 ]
+        orderby:
+          type: integer
+          description: >-
+            Sorting options: 
+            1 - base, 
+            2 - price, 
+            3 - yacht length, 
+            4 - yacht cabins, 
+            5 - yacht build year.
+          example: 2
+        desc:
+          type: integer
+          description: >-
+            Sorting direction: 
+            0 - ascending, 
+            1 - descending.
+          example: 1
+        ignoreAvailability:
+          type: boolean
+          description: Whether to ignore availability in the search. Use `true` or `false`.
+          example: false
+        periods:
+          type: array
+          items:
+            $ref: '#/components/schemas/Period'
+          description: >-
+            Allows sending multiple periods in one request. 
+            When used, `periodFrom` and `periodTo` are ignored.
+        extendedDataSet:
+          type: string
+          description: >-
+            Comma-separated list of extended data types. Possible types: 
+            `PAYMENT_PLAN`, `OBLIGATORY_SERVICES`, `ADDITIONAL_EXTRAS`. 
+            Applicable only for a single yacht and period.
+          example: "PAYMENT_PLAN,ADDITIONAL_EXTRAS"
+        ignoreOptions:
+          type: boolean
+          description: >-
+            When true, the result will include periods under options. 
+            Can be used to place waiting options.
+          example: true
+        serviceIDs:
+          type: array
+          items:
+            type: integer
+          description: >-
+            Specifies extra service IDs when `extendedDataSet` contains `ADDITIONAL_EXTRAS`. 
+            Use IDs from `seasonSpecificData` of the boat.
+          example: [ 101, 202 ]
+        equipmentIDs:
+          type: array
+          items:
+            type: integer
+          description: >-
+            Specifies extra equipment IDs when `extendedDataSet` contains `ADDITIONAL_EXTRAS`. 
+            Use IDs from `seasonSpecificData` of the boat.
+          example: [ 303, 404 ]
+        currency:
+          type: string
+          description: Currency code (e.g., `EUR`, `HRK`, `USD`).
+          example: "EUR"
+    Period:
+      type: object
+      required:
+        - periodFrom
+        - periodTo
+      properties:
+        periodFrom:
+          type: string
+          format: date
+          description: The start date of the period.
+          example: "2023-05-01"
+        periodTo:
+          type: string
+          format: date
+          description: The end date of the period.
+          example: "2023-05-07"
+    RestFreeYachtList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the request.
+          example: "OK"
+        errorCode:
+          type: number
+          description: Error code if an error occurred.
+          example: 400
+        periodFrom:
+          type: string
+          format: date
+          description: The start date of the requested period.
+          example: "2023-05-01"
+        periodTo:
+          type: string
+          format: date
+          description: The end date of the requested period.
+          example: "2023-05-07"
+        freeYachts:
+          type: array
+          description: List of free yachts.
+          items:
+            $ref: '#/components/schemas/RestFreeYacht'
+    RestFreeYacht:
+      type: object
+      properties:
+        periodFrom:
+          type: string
+          format: date
+          description: The start date of the yacht's availability period.
+          example: "2023-05-01"
+        periodTo:
+          type: string
+          format: date
+          description: The end date of the yacht's availability period.
+          example: "2023-05-07"
+        yachtId:
+          type: integer
+          format: int64
+          description: Unique identifier of the yacht.
+          example: 123456
+        locationFromId:
+          type: integer
+          format: int64
+          description: Location ID of the starting base, relates to the Catalogue endpoint for all charter bases.
+          example: 1001
+        locationToId:
+          type: integer
+          format: int64
+          description: Location ID of the ending base, relates to the Catalogue endpoint for all charter bases.
+          example: 1002
+        price:
+          $ref: '#/components/schemas/RestYachtReservationPriceInfo'
+        paymentPlans:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestPaymentPlan'
+        obligatoryExtras:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtReservationService'
+        additionalExtras:
+          type: array
+          description: Filled when additional extras are requested.
+          items:
+            $ref: '#/components/schemas/RestYachtReservationExtra'
+        status:
+          type: string
+          description: >-
+            Possible values: "FREE", "UNDER_OPTION". Used for placing a waiting option.
+          example: "FREE"
+        optionValidTill:
+          type: string
+          format: date
+          description: Represents the option expiration date for status "UNDER_OPTION".
+          example: "2023-04-30"
+        totalPriceWithExtras:
+          type: string
+          description: Total price to be paid in advance by the Agency to the Fleet operator, including discounts and all extras marked as advance payment.
+          example: "5000.00"
+        checkIn:
+          type: string
+          description: Nema u dokumentaciji, ali ima u response
+        checkOut:
+          type: string
+          description: Nema u dokumentaciji, ali ima u response
+    RestYachtReservationPriceInfo:
+      type: object
+      properties:
+        priceListPrice:
+          type: string
+          description: Price listed for the yacht.
+          example: "4000.00"
+        clientPrice:
+          type: string
+          description: Price offered to the client.
+          example: "3500.00"
+        currency:
+          type: string
+          description: Currency code (e.g., EUR, USD).
+          example: "EUR"
+        discounts:
+          type: array
+          description: List of discounts applied to the reservation.
+          items:
+            $ref: '#/components/schemas/RestDiscount'
+        depositAmount:
+          type: string
+          description: Deposit amount required for the reservation.
+          example: "1000.00"
+        depositWhenInsuredAmount:
+          type: string
+          description: Deposit amount required when the yacht is insured.
+          example: "500.00"
+        agencyCommission:
+          type: string
+          description: Amount of agency commission defined between the fleet operator and broker.
+          example: "10%"
+    RestPaymentPlan:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          description: Due date of the payment plan.
+          example: "2023-06-15"
+        percentage:
+          type: number
+          format: decimal
+          description: Percentage of the total amount to be paid.
+          example: 50.0
+    RestYachtReservationExtra:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique identifier for the extra.
+        quantity:
+          type: string
+          description: Quantity of the extra.
+        listPrice:
+          type: string
+          description: List price of the extra.
+        currency:
+          type: string
+          description: Currency code (e.g., EUR, USD).
+        priceMeasureId:
+          type: integer
+          format: int64
+          description: Relates to the Catalogue endpoint for all price measures.
+        extraId:
+          type: integer
+          format: int64
+          description: ID of the service or additional equipment.
+        calculationType:
+          type: string
+          enum:
+            - SEPARATE_PAYMENT
+            - ADVANCE_PAYMENT
+          description: Payment calculation type.
+        condition:
+          $ref: '#/components/schemas/RestInternationalText'
+        amount:
+          type: string
+          description: Amount associated with the extra.
+        totalPrice:
+          type: string
+          description: Total calculated price for the additional extras.
+        amountIsPercentage:
+          type: boolean
+          description: Whether the amount is a percentage.
+        percentageCalculationType:
+          type: string
+#          enum:
+#            - PRICELIST_PRICE
+#            - CLIENT_PRICE
+#            - AGENCY_PRICE
+#            - DEFINED_IN_CUSTOM
+          description: Specifies how the percentage is calculated.
+        minDuration:
+          type: integer
+          description: Defines the minimum booking duration in days for extras availability.
+        maxDuration:
+          type: integer
+          description: Defines the maximum booking duration in days for extras availability.
+        extrasType:
+          type: string
+          enum:
+            - SERVICE
+            - EQUIPMENT
+          description: Defines if the extra is a SERVICE or EQUIPMENT.
+    RestFreeYachtsSearchCriteria:
+      type: object
+      properties:
+        countries:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of country IDs.
+        regions:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of region IDs.
+        locations:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of location IDs.
+        yachtBuilders:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of yacht builder IDs.
+        yachtCategories:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of yacht category IDs.
+        equipments:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of equipment IDs.
+        sailTypes:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of sail type IDs.
+    RestYachtReservationOccupancyList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the request.
+        errorCode:
+          type: integer
+          description: Displays only if an error occurred.
+        companyId:
+          type: integer
+          format: int64
+          description: Company Id
+        year:
+          type: integer
+          description: season (year) of shown reservations
+        reservations:
+          type: array
+          description: List of reservations or options.
+          items:
+            $ref: '#/components/schemas/RestYachtReservationOccupancy'
+    RestYachtReservationOccupancy:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: ID of the reservation.
+        yachtId:
+          type: integer
+          format: int64
+          description: ID of the yacht.
+        masterYachtId:
+          type: integer
+          format: int64
+          description: ID of the master yacht.
+        locationFromId:
+          type: integer
+          format: int64
+          description: ID of the starting charter base location. Relates to the Catalogue endpoint for all charter bases.
+        locationToId:
+          type: integer
+          format: int64
+          description: ID of the ending charter base location. Relates to the Catalogue endpoint for all charter bases.
+        reservationType:
+          type: string
+          enum:
+            - OPTION
+            - RESERVATION
+            - SERVICE
+          description: Type of reservation.
+        periodFrom:
+          type: string
+          format: date
+          description: Start date of the reservation period in format `dd.MM.yyyy`.
+        checkInTime:
+          type: string
+          format: time
+          description: Check-in time in format `HH:mm:ss`.
+        periodTo:
+          type: string
+          format: date
+          description: End date of the reservation period in format `dd.MM.yyyy`.
+        checkOutTime:
+          type: string
+          format: time
+          description: Check-out time in format `HH:mm:ss`.
+        optionValidTill:
+          type: string
+          format: date-time
+          description: >-
+            Date and time of option expiration, applicable only if `reservationType` is `OPTION`. Format: `dd.MM.yyyy HH:mm:ss`.
+    RestFreeCabinPackageSearchCriteria:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the request.
+        errorCode:
+          type: integer
+          description: Displays only if an error occurred.
+        countries:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of country IDs.
+        regions:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of region IDs.
+        locations:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of location IDs.
+        packages:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of package IDs.
+    RestFreeCabinPackageSearchRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        periodFrom:
+          type: string
+          format: date
+          description: Start date for the search period in `dd.MM.yyyy` format.
+        periodTo:
+          type: string
+          format: date
+          description: End date for the search period in `dd.MM.yyyy` format.
+        countries:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of country IDs.
+        regions:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of region IDs.
+        locations:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of location IDs.
+        packages:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: List of charter package IDs.
+        ignoreOptions:
+          type: boolean
+          description: When `true`, results will include packages under options, which can be used for placing waiting options.
+        currency:
+          type: string
+          description: Preferred currency for prices, defined as an ISO 4217 currency code (e.g., EUR, GBP).
+    RestFreeCabinPackageList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the response.
+        errorCode:
+          type: number
+          description: Displays only if an error occurred.
+        freeCabinPackages:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestFreeCabinPackage'
+          description: List of free cabin packages.
+    RestFreeCabinPackage:
+      type: object
+      properties:
+        packageId:
+          type: integer
+          format: int64
+          description: Unique identifier of the cabin package.
+        cabinPackagePeriods:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestFreeCabinPackagePeriod'
+          description: List of periods associated with the cabin package.
+    RestFreeCabinPackagePeriod:
+      type: object
+      properties:
+        periodFrom:
+          type: string
+          format: date
+          description: Start date of the cabin package period.
+        periodTo:
+          type: string
+          format: date
+          description: End date of the cabin package period.
+        freeCabins:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestFreeCabin'
+          description: List of free cabins available during the period.
+    RestFreeCabin:
+      type: object
+      properties:
+        cabinDefinitionId:
+          type: integer
+          format: int64
+          description: Unique identifier of the cabin definition.
+        numberOfFreeCabins:
+          type: integer
+          description: Number of free cabins available.
+        prices:
+          $ref: '#/components/schemas/RestCabinReservationPriceInfo'
+    RestCabinReservationPriceInfo:
+      type: object
+      properties:
+        price1:
+          type: string
+          description: Primary price for the cabin.
+        price2:
+          type: string
+          description: >-
+            Secondary price for the cabin, applicable only for cabin types:
+            "DOUBLE", "SPLIT", "BUNK", "DOUBLE_PLUS_SINGLE".
+        price3:
+          type: string
+          description: >-
+            Tertiary price for the cabin, applicable only for the cabin type:
+            "DOUBLE_PLUS_SINGLE".
+        discounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestDiscount'
+          description: List of discounts applied to the cabin.
+        currency:
+          type: string
+          description: Currency code (e.g., EUR, USD).
+    RestOccupancyList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the response.
+        errorCode:
+          type: number
+          description: Displays only if an error occurred.
+        occupancy:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestCabinCharterOccupancy'
+          description: List of cabin charter occupancy details.
+    RestCabinCharterOccupancy:
+      type: object
+      properties:
+        packageId:
+          type: integer
+          format: int64
+          description: Unique identifier for the cabin charter package.
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestCabinCharterOccupancyPeriod'
+          description: List of occupancy periods for the cabin charter.
+    RestCabinCharterOccupancyPeriod:
+      type: object
+      properties:
+        periodFrom:
+          type: string
+          format: date
+          description: Start date of the occupancy period.
+        periodTo:
+          type: string
+          format: date
+          description: End date of the occupancy period.
+        cabinOccupancy:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestCabinOccupancy'
+          description: List of cabin occupancy details for the period.
+    RestCabinOccupancy:
+      type: object
+      properties:
+        cabinDefinitionId:
+          type: integer
+          format: int64
+          description: Unique identifier for the cabin definition.
+        availableNumberOfCabins:
+          type: integer
+          description: Number of cabins available for reservation.
+        maximumNumberOfCabins:
+          type: integer
+          description: Maximum number of cabins available.
+        numberOfOptions:
+          type: integer
+          description: Number of cabins under options.
+    RestWaitingOptionsRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        periodFrom:
+          type: string
+          format: date
+          description: The start date of the period to check.
+        periodTo:
+          type: string
+          format: date
+          description: The end date of the period to check.
+        yacht:
+          type: integer
+          description: The ID of the yacht to check for waiting options.
+    RestWaitingOptionsResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the request (e.g., "OK").
+        waitingOptions:
+          type: string
+          description: The number of waiting options for the yacht and period.
+        id:
+          type: string
+          description: Reservation ID.
+        queuePosition:
+          type: string
+          description: Position in the waiting queue (1 = first, 2 = second, etc.).
+    RestYachtReservationBookingRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        id:
+          type: integer
+          format: int64
+          description: Reservation ID to be updated to a booking.
+        uuid:
+          type: string
+          description: Unique identifier for the reservation.
+        payment:
+          $ref: '#/components/schemas/RestPayment'
+        displayCurrency:
+          type: string
+          description: >
+            Optional parameter (defaults to "DEFAULT"). 
+            Determines the currency format for amounts in the response.
+            For charter company login:
+            - "DEFAULT": Returns amounts in the default reservation currency.
+            - "CLIENT": Returns amounts in the currency the client pays to the charter company.
+            
+            For agency login:
+            - "DEFAULT": Returns amounts in the default reservation currency.
+            - "CLIENT": Returns amounts in the currency the client pays to the agency.
+            - "COMPANY": Returns amounts in the currency the agency pays to the charter company.
+            
+            Important:
+            Selection of displayCurrency affects the returned payment plans and payments:
+            - For "CLIENT" or "DEFAULT", payments and plans between client and agency are returned.
+            - For "COMPANY", payments and plans between agency and charter company are returned.
+            Otherwise, no payment plans or payments will be included.
+    RestPayment:
+      type: object
+      properties:
+        amount:
+          type: string
+          description: Amount in the currency defined in this request.
+        currency:
+          type: string
+          description: The currency of the payment.
+        date:
+          type: string
+          format: date
+          description: Payment date in the format dd.MM.yyyy.
+        paymentMethod:
+          type: string
+          description: Method of payment.
+        approvalCode:
+          type: string
+          description: Approval code for the payment transaction.
+    RestCabinReservation:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Official reservation number.
+        uuid:
+          type: string
+          description: >-
+            Security code for web service actions on this reservation. 
+            NOTE: If the important data is changed on the reservation, the security code is also updated.
+        reservationStatus:
+          type: string
+          description: >-
+            Status of the reservation:
+            - INFO: Just an offer. Doesn't block the yacht for the period.
+            - OPTION: Temporary booking.
+            - RESERVATION: Fixed booking.
+            - STORNO: Canceled option or booking.
+        packageId:
+          type: integer
+          description: ID of the cabin charter package.
+        waitingForOption:
+          type: boolean
+          description: Indicates if the reservation is waiting for an option.
+        baseFromId:
+          type: integer
+          format: int64
+          description: Charter base ID of the embarkment base.
+        baseToId:
+          type: integer
+          format: int64
+          description: Charter base ID of the arrival base.
+        locationFromId:
+          type: integer
+          description: Location ID of the embarkment base.
+        locationToId:
+          type: integer
+          description: Location ID of the arrival base.
+        periodFrom:
+          type: string
+          format: date-time
+          description: >-
+            Check-in date and time (format: dd.MM.yyyy HH:mm).
+        periodTo:
+          type: string
+          format: date-time
+          description: >-
+            Check-out date and time (format: dd.MM.yyyy HH:mm).
+        optionTill:
+          type: string
+          format: date-time
+          description: Option valid until date and time (only applicable if status is OPTION).
+        agency:
+          type: string
+          description: Name of the agency.
+        agencyVATID:
+          type: string
+          description: VAT ID of the agency.
+        client:
+          $ref: '#/components/schemas/RestClient'
+        priceListPrice:
+          type: string
+          description: Base/ground price.
+        agencyPrice:
+          type: string
+          description: Final price expected from the agency to pay.
+        clientPrice:
+          type: string
+          description: Final price expected from the direct client to pay.
+        currency:
+          type: string
+          description: Currency of the reservation.
+        paymentCurrency:
+          type: string
+          description: Currency for online payments (e.g., HRK, EUR).
+        localizedFinalPrice:
+          type: string
+          description: Final client price in the payment currency.
+        onlinePaymentAmount:
+          type: string
+          description: Payment amount in the payment currency for online payment.
+        approved:
+          type: boolean
+          description: Indicates if the reservation is approved.
+        crewlistlink:
+          type: string
+          description: Link to the crew list.
+        createdDate:
+          type: string
+          format: date-time
+          description: Reservation creation date.
+        paymentPlans:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtReservationPaymentPlan'
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtReservationPayment'
+        useDepositPayment:
+          type: boolean
+          description: Indicates if deposit payment is used.
+        numberOfPayments:
+          type: integer
+          description: Number of payments.
+        yachtCabins:
+          type: array
+          items:
+            $ref: '#/components/schemas/RestYachtCabinDefinition'
+    RestYachtCabinDefinition:
+      type: object
+      properties:
+        cabinDefinitionId:
+          type: integer
+          description: Official reservation number for the cabin.
+        numberOfPassengers:
+          type: integer
+          description: Number of passengers accommodated in the cabin.
+        discounts:
+          type: array
+          description: Array of discounts applied to the price list price.
+          items:
+            $ref: '#/components/schemas/RestDiscount'
+        additionalEquipment:
+          type: array
+          description: >
+            Array of selected additional equipment for this reservation.
+            See RestYachtReservationAdditionalEquipment for more details.
+          items:
+            $ref: '#/components/schemas/RestYachtReservationAdditionalEquipment'
+        services:
+          type: array
+          description: >
+            Array of selected services at the base, including obligatory services,
+            for this reservation. See RestYachtReservationService for more details.
+          items:
+            $ref: '#/components/schemas/RestYachtReservationService'
+    RestCabinReservationInfoRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        client:
+          $ref: '#/components/schemas/RestClient'
+        packageId:
+          type: integer
+          description: ID of the cabin charter package.
+        agencyID:
+          type: integer
+          format: int64
+          description: Used only if the request is made by a charter operator; ignored for agencies.
+        periodFrom:
+          type: string
+          format: date
+          description: Start date of the reservation period.
+        periodTo:
+          type: string
+          format: date
+          description: End date of the reservation period.
+        onlinePayment:
+          type: boolean
+          description: >
+            Indicates if online payment is required. 
+            TRUE for online booking payment, otherwise FALSE.
+        promoCode:
+          type: string
+          description: Promotional code applied to the reservation.
+        numberOfPayments:
+          type: integer
+          description: Number of payments for the reservation.
+        paymentCurrency:
+          type: string
+          description: Currency for the payment (e.g., HRK, EUR).
+        restCabins:
+          type: array
+          description: List of cabins included in the reservation.
+          items:
+            $ref: '#/components/schemas/RestCabinRequest'
+        displayCurrency:
+          type: string
+          description: >
+            Optional parameter (defaults to "DEFAULT"). Defines currency format for response amounts.
+            - For charter company login:
+              - "DEFAULT": Default reservation currency.
+              - "CLIENT": Currency in which the client pays to the charter company.
+            - For agency login:
+              - "DEFAULT": Default reservation currency.
+              - "CLIENT": Currency in which the client pays to the agency.
+              - "COMPANY": Currency in which the agency pays to the charter company.
+    RestCabinRequest:
+      type: object
+      properties:
+        cabinDefinitionId:
+          type: integer
+          description: ID of the cabin definition.
+        numberOfPassengers:
+          type: integer
+          description: Number of passengers in the cabin.
+        services:
+          type: array
+          description: List of service IDs associated with the cabin.
+          items:
+            type: integer
+        equipment:
+          type: array
+          description: List of additional equipment IDs for the cabin.
+          items:
+            type: integer
+    RestYachtReservationOptionRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        id:
+          type: integer
+          format: int64
+          description: The ID of the reservation.
+        uuid:
+          type: string
+          description: Unique identifier for the reservation.
+        createWaitingOption:
+          type: string
+          description: >
+            Required parameter (deprecated). Possible values:
+            - "true": Create a waiting option.
+            - "false": Do not create a waiting option.
+        displayCurrency:
+          type: string
+          description: >
+            Optional parameter (defaults to "DEFAULT"). Specifies the currency format for the response amounts.
+            - For charter company login:
+              - "DEFAULT": Returns amounts in the default reservation currency.
+              - "CLIENT": Returns amounts in the currency the client pays to the charter company.
+            - For agency login:
+              - "DEFAULT": Returns amounts in the default reservation currency.
+              - "CLIENT": Returns amounts in the currency the client pays to the agency.
+              - "COMPANY": Returns amounts in the currency the agency pays to the charter company.
+        fallbackToWaitingOption:
+          type: boolean
+          description: >
+            Replaces `createWaitingOption` (deprecated). If a boat is already under option, setting this to `true` 
+            will create a waiting option on the boat.
+    RestYachtReservationInfoRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        client:
+          $ref: '#/components/schemas/RestClient'
+        yachtID:
+          type: integer
+          format: int64
+          description: ID of the yacht for the reservation.
+        agencyID:
+          type: integer
+          format: int64
+          description: Used only for charter operators; ignored for agencies.
+        periodFrom:
+          type: string
+          format: date
+          description: Start date of the reservation period.
+        periodTo:
+          type: string
+          format: date
+          description: End date of the reservation period.
+        services:
+          type: array
+          description: List of service IDs for the reservation.
+          items:
+            type: integer
+        equipment:
+          type: array
+          description: List of additional equipment IDs for the reservation.
+          items:
+            type: integer
+        onlinePayment:
+          type: string
+          description: TRUE if the request is for online booking payment; otherwise FALSE.
+        promoCode:
+          type: string
+          description: Promotional code for the reservation.
+        numberOfPayments:
+          type: integer
+          description: Number of payments for the reservation.
+        paymentCurrency:
+          type: string
+          description: Currency for the payment (e.g., HRK, EUR).
+        useDepositPayment:
+          type: string
+          description: >
+            Defaults to FALSE for agency requests. Not applicable for agency requests. 
+            When omitted, defaults to FALSE.
+        agencyClientDiscountAmount:
+          type: string
+          description: >
+            Used only by agencies. Optional. Must be combined with 
+            `agencyClientDiscountAmountType`. Example values:
+            - "50" (with `agencyClientDiscountAmountType="AMOUNT"`)
+            - "50" (with `agencyClientDiscountAmountType="PERCENTAGE"`)
+        agencyClientDiscountAmountType:
+          type: string
+          description: >
+            Used only by agencies. Optional. Must be combined with 
+            `agencyClientDiscountAmount`. Possible values:
+            - "PERCENTAGE"
+            - "AMOUNT"
+        displayCurrency:
+          type: string
+          description: >
+            Optional parameter (defaults to "DEFAULT"). 
+            - For charter companies:
+              - "DEFAULT": Returns amounts in default reservation currency.
+              - "CLIENT": Returns amounts in the currency the client pays to the charter company.
+            - For agencies:
+              - "DEFAULT": Returns amounts in default reservation currency.
+              - "CLIENT": Returns amounts in the currency the client pays to the agency.
+              - "COMPANY": Returns amounts in the currency the agency pays to the charter company.
+        overrideClientData:
+          type: boolean
+          description: >
+            If the client already exists, allows overriding their personal information.
+        additionalDiscountItem:
+          $ref: '#/components/schemas/RestAdditionalDiscountItem'
+        numberOfGuests:
+          type: integer
+          description: Optional. Number of guests in the reservation.
+    RestAdditionalDiscountItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Discount item ID (to see list of all discounts, call the "All Discount Items" endpoint).
+        amount:
+          type: string
+          description: Discount item amount.
+        type:
+          type: string
+          enum:
+            - PERCENTAGE
+            - AMOUNT
+          description: >
+            Type of discount. Possible values:
+            - "PERCENTAGE": The discount is a percentage of the total.
+            - "AMOUNT": The discount is a fixed amount.
+    RestYachtReservationOnlinePaymentRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        id:
+          type: integer
+          description: The ID of the reservation for the payment.
+        uuid:
+          type: string
+          description: Unique identifier for the reservation.
+        language:
+          type: string
+          description: Language code for the payment page (e.g., ENGLISH, CROATIAN).
+        successUrl:
+          type: string
+          format: uri
+          description: URL to redirect to the company site upon successful payment.
+        rejectedUrl:
+          type: string
+          format: uri
+          description: URL to redirect to the company site upon payment error.
+    RestYachtReservationOnlinePaymentResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the request (e.g., "OK").
+        errorCode:
+          type: number
+          description: Error code displayed only if an error occurred.
+        url:
+          type: string
+          format: uri
+          description: Payment URL to redirect to the payment gateway.
+    RestOnlinePaymentPlan:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        id:
+          type: integer
+          description: The ID of the reservation.
+        uuid:
+          type: string
+          description: Unique identifier for the reservation.
+        paymentPlanId:
+          type: integer
+          description: The ID of the payment plan.
+        amount:
+          type: string
+          description: The payment amount for the plan.
+        currency:
+          type: string
+          description: The currency for the payment (e.g., HRK, EUR).
+        date:
+          type: string
+          format: date
+          description: >-
+            The date of the payment plan (format: dd.MM.yyyy).
+        approvalCode:
+          type: string
+          description: Approval code for the payment plan.
+    RestResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Human-readable status of the request. Possible reference to RestStatus, not clear from documentation examples.
+        errorCode:
+          type: number
+          description: Error code displayed only if an error occurred.
+    RestStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Human-readable status of the request.
+          enum:
+            - OK
+            - AUTHENTICATION_ERROR
+            - OPERATION_NOT_ALLOWED
+            - INSUFFICIENT_DATA
+            - INVALID_DATE_FORMAT
+            - INVALID_NUMBER_FORMAT
+            - INVALID_EMAIL_FORMAT
+            - CREW_LIST_LOCKED
+            - INVALID_COUNTRY_ID
+            - INVALID_YACHT_ID
+            - WRONG_YACHT_OWNERSHIP
+            - NOT_ALLOWED_TO_BOOK_THIS_YACHT
+            - INVALID_PAYMENT_METHOD
+            - INVALID_CURRENCY
+            - UNKNOWN_ERROR
+        errorCode:
+          type: number
+          description: >
+            Numeric error code indicating the specific error or success status. 
+            Possible values:
+            - `0`: OK
+            - `100`: AUTHENTICATION_ERROR
+            - `101`: OPERATION_NOT_ALLOWED
+            - `201`: INSUFFICIENT_DATA
+            - `202`: INVALID_DATE_FORMAT
+            - `203`: INVALID_NUMBER_FORMAT
+            - `204`: INVALID_EMAIL_FORMAT
+            - `301`: CREW_LIST_LOCKED
+            - `401`: INVALID_COUNTRY_ID
+            - `402`: INVALID_YACHT_ID
+            - `403`: WRONG_YACHT_OWNERSHIP
+            - `404`: NOT_ALLOWED_TO_BOOK_THIS_YACHT
+            - `405`: INVALID_PAYMENT_METHOD
+            - `406`: INVALID_CURRENCY
+            - `999`: UNKNOWN_ERROR
+    RestYachtReservationRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        id:
+          type: integer
+          format: int64
+          description: The ID of the reservation to be processed.
+        uuid:
+          type: string
+          description: Unique identifier for the reservation.
+        displayCurrency:
+          type: string
+          description: >
+            Optional parameter (defaults to "DEFAULT") specifying the currency format for response amounts.
+            - For charter company login:
+              - "DEFAULT": Returns amounts in default reservation currency.
+              - "CLIENT": Returns amounts in the currency the client pays to the charter company.
+            - For agency login:
+              - "DEFAULT": Returns amounts in default reservation currency.
+              - "CLIENT": Returns amounts in the currency the client pays to the agency.
+              - "COMPANY": Returns amounts in the currency the agency pays to the charter company.
+            
+            Important for agency login:
+            - Selecting "CLIENT" or "DEFAULT" returns payment plans and payments from the client to the agency.
+            - Selecting "COMPANY" returns payment plans and payments from the agency to the charter company.
+            - No payment plans or payments are returned otherwise.
+    CountryList:
+      type: object
+      properties:
+        countries:
+          type: array
+          description: List of available countries.
+          items:
+            $ref: '#/components/schemas/Country'
+    Country:
+      type: object
+      properties:
+        key:
+          type: string
+          description: ISO country code.
+        value:
+          type: string
+          description: Name of the country.
+    DocumentTypeList:
+      type: object
+      properties:
+        types:
+          type: array
+          description: List of available document types.
+          items:
+            $ref: '#/components/schemas/DocumentType'
+    DocumentType:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Document type.
+        value:
+          type: string
+          description: Document type.
+    RestCrewList:
+      type: object
+      properties:
+        reservationId:
+          type: integer
+          description: The ID of the reservation.
+        yachtName:
+          type: string
+          description: Name of the yacht.
+        companyName:
+          type: string
+          description: Name of the charter company.
+        baseFrom:
+          type: string
+          description: Embarkation base.
+        baseTo:
+          type: string
+          description: Disembarkation base.
+        periodFrom:
+          type: string
+          format: date
+          description: >
+            Start date of the reservation period (format: dd.MM.yyyy).
+        periodTo:
+          type: string
+          format: date
+          description: >
+            End date of the reservation period (format: dd.MM.yyyy).
+        maxPassengers:
+          type: number
+          description: Maximum number of passengers allowed.
+        insertSkipper:
+          type: boolean
+          description: Indicates if a skipper is included (true or false).
+        passengers:
+          type: array
+          description: List of passengers in the crew list.
+          items:
+            $ref: '#/components/schemas/RestPassenger'
+        flightNumber:
+          type: string
+          description: Flight number of passengers (if applicable).
+        airportToBaseTransfer:
+          type: boolean
+          description: Indicates if airport-to-base transfer is included (true or false).
+        arrivalTime:
+          type: string
+          format: time
+          description: >
+            Arrival time (format: HH:mm).
+        crewListNote:
+          type: string
+          description: Additional notes about the crew list.
+    RestPassenger:
+      type: object
+      properties:
+        skipper:
+          type: boolean
+          description: Indicates if the passenger is the skipper (true or false).
+        skipperLicence:
+          type: string
+          description: Skipper's license details.
+        vhfLicence:
+          type: string
+          description: VHF radio license details.
+        skipperEmail:
+          type: string
+          format: email
+          description: Email address of the skipper.
+        skipperMobile:
+          type: string
+          description: Mobile phone number of the skipper.
+        name:
+          type: string
+          description: First name of the passenger.
+        surname:
+          type: string
+          description: Last name of the passenger.
+        birthDate:
+          type: string
+          format: date
+          description: >
+            Birth date of the passenger (format: dd.MM.yyyy).
+        birthPlace:
+          type: string
+          description: >
+            Place of birth. For individuals born in Croatia, the place must match a valid 
+            entry from the list of known places in Croatia (use "Place name" column).
+        birthCountry:
+          type: string
+          description: >
+            ISO code of the country of birth. Must match a valid entry from the list of countries.
+        nationality:
+          type: string
+          description: >
+            ISO code of the nationality. Must match a valid entry from the list of countries.
+        documentType:
+          type: string
+          enum:
+            - PASSPORT
+            - IDCARD
+            - OTHER
+          description: Type of identification document.
+        documentNumber:
+          type: string
+          description: Identification document number.
+        gender:
+          type: string
+          enum:
+            - MALE
+            - FEMALE
+          description: Gender of the passenger.
+        livingPlace:
+          type: string
+          description: >
+            Place of residence. For individuals living in Croatia, the place must match a valid 
+            entry from the list of known places in Croatia (use "Place name" column).
+        livingCountry:
+          type: string
+          description: >
+            ISO code of the living country. Must match a valid entry from the list of countries.
+        disabledPerson:
+          type: boolean
+          description: Indicates if the passenger has a disability (true or false).
+        shoeSize:
+          type: string
+          description: Shoe size of the passenger.
+        embarkmentDate:
+          type: string
+          format: date
+          description: >
+            Date of embarkment (format: dd.MM.yyyy).
+        disembarkmentDate:
+          type: string
+          format: date
+          description: >
+            Date of disembarkment (format: dd.MM.yyyy).
+    RestInvoicesRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        periodFrom:
+          type: string
+          format: date
+          description: >
+            Start date for the invoice retrieval period (format: dd.MM.yyyy). 
+            Required if `modifyFrom` and `modifyTo` are not specified.
+        periodTo:
+          type: string
+          format: date
+          description: >
+            End date for the invoice retrieval period (format: dd.MM.yyyy). 
+            Required if `modifyFrom` and `modifyTo` are not specified.
+        modifyFrom:
+          type: string
+          format: date
+          description: >
+            Start date for the last modified range (format: dd.MM.yyyy). 
+            Required if `periodFrom` and `periodTo` are not specified.
+        modifyTo:
+          type: string
+          format: date
+          description: >
+            End date for the last modified range (format: dd.MM.yyyy). 
+            Required if `periodFrom` and `periodTo` are not specified.
+    #      anyOf:
+    #        - required:
+    #            - periodFrom
+    #            - periodTo
+    #        - required:
+    #            - modifyFrom
+    #            - modifyTo
+    RestInvoicesExport:
+      type: object
+      properties:
+        invoices:
+          type: array
+          description: List of retrieved invoices.
+          items:
+            $ref: '#/components/schemas/RestInvoice'
+        summary:
+          type: array
+          description: Summary of the retrieved invoices.
+          items:
+            $ref: '#/components/schemas/RestInvoiceSummary'
+    RestInvoice:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+            - FINAL
+            - ADVANCED
+          description: >
+            Possible types: FINAL or ADVANCED Payment Invoice.
+        number:
+          type: string
+          description: Invoice number.
+        reservationNumber:
+          type: string
+          description: Associated reservation number.
+        modifyTime:
+          type: string
+          format: date-time
+          description: Last modification time of the invoice.
+        client:
+          type: string
+          description: Client or company name.
+        clientVatCode:
+          type: string
+          description: OIB / VAT ID of the client.
+        clientAddress:
+          type: string
+          description: Address of the client.
+        clientZipCode:
+          type: string
+          description: ZIP code of the client.
+        clientCity:
+          type: string
+          description: City of the client.
+        clientCountry:
+          type: string
+          description: Country of the client.
+        clientId:
+          type: string
+          description: NauSYS ID of the client.
+        partner:
+          type: string
+          description: Agency or company name.
+        partnerVatCode:
+          type: string
+          description: OIB / VAT ID of the partner.
+        partnerAddress:
+          type: string
+          description: Address of the partner.
+        partnerZipCode:
+          type: string
+          description: ZIP code of the partner.
+        partnerCity:
+          type: string
+          description: City of the partner.
+        partnerCountry:
+          type: string
+          description: Partner country name as a string without ID.
+        partnerId:
+          type: string
+          description: NauSYS ID of the partner.
+        guestName:
+          type: string
+          description: Guest name if the invoice is made out to the agency.
+        altCurrency:
+          type: string
+          description: Invoice currency (ISO code).
+        resource:
+          type: string
+          description: Boat name.
+        resourceType:
+          type: string
+          description: Boat model.
+        resourceCode:
+          type: string
+          description: NauSYS ID of the boat.
+        totalAltPrice:
+          type: string
+          description: Total invoice amount with tax in local currency.
+        totalAltPriceWithoutTax:
+          type: string
+          description: Total invoice amount without tax in local currency.
+        totalAltTax:
+          type: string
+          description: Total tax amount in local currency.
+        baseFrom:
+          type: string
+          description: Base of embarkation.
+        baseTo:
+          type: string
+          description: Base of disembarkation.
+        version:
+          type: string
+          description: Document revision.
+        alreadyTransferred:
+          type: boolean
+          description: Currently not in use.
+        issuedTo:
+          type: string
+          enum:
+            - CLIENT
+            - PARTNER
+          description: Indicates whether the invoice is issued to the CLIENT or PARTNER.
+        paymentMethod:
+          type: string
+          enum:
+            - BANK_TRANSFER
+            - CREDIT_CARD
+            - VOUCHER
+            - CASH
+          description: Payment method (e.g., bank transfer, credit card, voucher, cash, etc.).
+        vat:
+          $ref: '#/components/schemas/RestInvoiceVat'
+        items:
+          $ref: '#/components/schemas/RestInvoiceItems'
+        client2:
+          $ref: '#/components/schemas/RestClient'
+        partner2:
+          $ref: '#/components/schemas/RestClient'
+    RestInvoiceVat:
+      type: object
+      properties:
+        items:
+          type: array
+          description: List of VAT items.
+          items:
+            $ref: '#/components/schemas/RestInvoiceVatItem'
+    RestInvoiceVatItem:
+      type: object
+      properties:
+        rate:
+          type: string
+          description: Tax rate in percents.
+        baseAlt:
+          type: string
+          description: Tax base amount in local currency.
+        totalAlt:
+          type: string
+          description: Total tax amount in local currency.
+    RestInvoiceSummary:
+      type: object
+      properties:
+        apiCount:
+          type: integer
+          description: Number of API-specific invoices.
+        sapiCount:
+          type: integer
+          description: Number of secondary API-specific invoices.
+        fiCount:
+          type: integer
+          description: Number of final invoices.
+        sfiCount:
+          type: integer
+          description: Number of secondary final invoices.
+        totalCount:
+          type: integer
+          description: Total number of invoices.
+    RestInvoiceItems:
+      type: object
+      properties:
+        items:
+          type: array
+          description: List of invoice items.
+          items:
+            $ref: '#/components/schemas/RestInvoiceItem'
+    RestInvoiceItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: NauSYS Product ID.
+        ident:
+          type: string
+          description: Ident / Product code.
+        identName:
+          type: string
+          description: Product name.
+        currency:
+          type: string
+          description: Local currency (ISO code).
+        altCurrency:
+          type: string
+          description: Alternate currency (ISO code).
+        currencyRate:
+          type: string
+          description: Exchange rate for the alternate currency.
+        totalPriceWithoutTax:
+          type: string
+          description: Total item amount without tax in local currency.
+        vatRate:
+          type: string
+          description: Tax rate in percentage.
+        totalAltPriceWithoutTax:
+          type: string
+          description: Total item amount without tax in alternate currency.
+        totalAltTax:
+          type: string
+          description: Total tax amount in local currency.
+        totalAltPriceWithTax:
+          type: string
+          description: Total item amount with tax in local currency.
+        totalAltDiscount:
+          type: string
+          description: Total discount amount in local currency.
+        quantity:
+          type: string
+          description: Quantity of the item.
+        singlePriceWithoutTax:
+          type: string
+          description: Price per unit without tax before discount (list price).
+        agencyDiscountRate:
+          type: string
+          description: Agency discount amount from commission.
+        discounts:
+          $ref: '#/components/schemas/RestInvoiceItemDiscounts'
+    RestInvoiceItemDiscounts:
+      type: object
+      properties:
+        discounts:
+          type: array
+          description: List of discounts applied to the item.
+          items:
+            $ref: '#/components/schemas/RestInvoiceItemDiscount'
+    RestInvoiceItemDiscount:
+      type: object
+      properties:
+        level:
+          type: integer
+          description: Discount level.
+        name:
+          type: string
+          description: Name of the discount.
+        type:
+          type: string
+          enum:
+            - PERCENTAGE
+            - AMOUNT
+          description: Discount type (PERCENTAGE or AMOUNT).
+        amount:
+          type: string
+          description: Discount amount in local currency.
+        altAmount:
+          type: string
+          description: Discount amount in alternate currency.
+    RestClient2:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        id:
+          type: integer
+          description: Not used when creating a new contact; received in the response.
+        name:
+          type: string
+          description: First name of the contact.
+        surname:
+          type: string
+          description: Last name of the contact.
+        vatNr:
+          type: string
+          description: VAT number of the contact (if applicable).
+        address:
+          type: string
+          description: Address of the contact.
+        city:
+          type: string
+          description: City of the contact.
+        countryId:
+          type: integer
+          description: ID representing a country from the list of all countries.
+        stateId:
+          type: integer
+          description: ID representing a state from the list of all country states.
+        email:
+          type: string
+          format: email
+          description: Email address of the contact.
+        phone:
+          type: string
+          description: Phone number of the contact.
+        mobile:
+          type: string
+          description: Mobile number of the contact.
+        skype:
+          type: string
+          description: Skype ID of the contact.
+        agencyCodeID:
+          type: string
+          description: Agency code ID associated with the contact.
+        note:
+          type: string
+          description: Additional notes about the contact.
+        passportNumber:
+          type: string
+          description: Passport number of the contact.
+        instagram:
+          type: string
+          description: Instagram handle of the contact.
+        title:
+          type: string
+          description: Title or salutation of the contact.
+        fax:
+          type: string
+          description: Fax number of the contact.
+        zipCode:
+          type: string
+          description: ZIP code of the contact's address.
+        birthday:
+          type: string
+          format: date
+          description: Birthday of the contact.
+        preferredLanguage:
+          type: string
+          enum:
+            - CROATIAN
+            - ENGLISH
+            - GERMAN
+            - SLOVENIAN
+            - ITALIAN
+            - POLISH
+            - RUSSIAN
+            - CZECH
+            - FRENCH
+            - SLOVAK
+            - DUTCH
+            - SPANISH
+            - SWEDISH
+            - NORWEGIAN
+            - GREEK
+          description: Preferred language of the contact.
+        gender:
+          type: string
+          enum:
+            - MALE
+            - FEMALE
+          description: Gender of the contact.
+        bookingChannel:
+          type: string
+          enum:
+            - TEL
+            - MAIL
+            - ONLINE
+            - ATEXPO
+          description: Booking channel associated with the contact.
+        disabled:
+          type: boolean
+          description: Used to disable a contact; deletion is not possible due to possible usage in existing documents.
+        updateFields:
+          type: array
+          items:
+            type: string
+          description: Array of field names to be updated. Used when fields need to be set to "null".
+        company:
+          type: boolean
+          description: Indicates if the contact represents a company. Defaults to `false`.
+        belongsTo:
+          type: integer
+          description: ID of the user to whom the contact belongs.
+        lastModifyTime:
+          type: string
+          description: Last modification timestamp of the contact.
+    RestClientList:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the request (e.g., "OK").
+        errorCode:
+          type: number
+          description: Error code displayed only if an error occurred.
+        clients:
+          type: array
+          description: List of contacts retrieved.
+          items:
+            $ref: '#/components/schemas/RestClient2'
+    RestGetContactsRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        ids:
+          type: array
+          items:
+            type: integer
+          description: Array of user IDs to filter contacts (optional).
+        modifyTimeFrom:
+          type: string
+          format: date-time
+          description: >
+            Retrieve contacts modified after this timestamp (format: dd.MM.yyyy HH:mm).
+        modifyTimeTo:
+          type: string
+          format: date-time
+          description: >
+            Retrieve contacts modified before this timestamp (format: dd.MM.yyyy HH:mm).
+        email:
+          type: string
+          format: email
+          description: Filter by email address (e.g., example@example.com).
+        contactRoleIds:
+          type: array
+          items:
+            type: integer
+          description: Array of contact role IDs to filter contacts (optional).
+    RestYachtCrewMember:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique ID of the crew member.
+        name:
+          type: string
+          description: First name of the crew member.
+        surname:
+          type: string
+          description: Last name of the crew member.
+        crewRole:
+          type: string
+          description: Role of the crew member (e.g., Skipper, Chef, Hostess).
+        livingPlace:
+          type: string
+          description: Place of residence of the crew member.
+        summary:
+          type: string
+          description: Short biography or professional summary of the crew member.
+        photoUrl:
+          type: string
+          format: uri
+          description: URL to the crew member's photo.
+        languages:
+          type: array
+          items:
+            type: string
+          description: List of languages spoken by the crew member.
+    RestMergeClientRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        sourceId:
+          type: integer
+          description: ID of the contact that is being merged from (source contact).
+        targetId:
+          type: integer
+          description: ID of the contact that is being merged to (target contact).
+    RestFreeYachtsSearchRequest:
+      type: object
+      properties:
+        credentials:
+          $ref: '#/components/schemas/RestAuthentication'
+        periodFrom:
+          type: string
+          format: date
+          description: The start date of the period.
+        periodTo:
+          type: string
+          format: date
+          description: The end date of the period.
+        countries:
+          type: array
+          items:
+              type: integer
+              format: int64
+        regions:
+          type: array
+          items:
+            type: integer
+            format: int64
+        locations:
+          type: array
+          items:
+            type: integer
+            format: int64
+        rentType:
+          type: string
+          description: RENT or ACCOMMODATION
+        ignoreOptions:
+          type: boolean
+          description: >
+              When true, result will include yachts under options. Can be used to place waiting options
+        resultsPerPage:
+          type: integer
+          description: Sets the number of results shown on each page in the response. If not set in the request, it defaults to 10.
+        resultsPage:
+          type: integer
+          description: Sets the page number to be displayed.
+        extendedDataSet:
+          type: string
+          description: >-
+            Comma-separated list of extended data types. Possible types: 
+            `PAYMENT_PLAN`, `OBLIGATORY_SERVICES`, `ADDITIONAL_EXTRAS`. 
+            Applicable only for a single yacht and period.
+          example: "PAYMENT_PLAN,ADDITIONAL_EXTRAS"
+    RestFreeYachtsSearchResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Status of the request (e.g., "OK").
+        errorCode:
+          type: number
+          description: Error code displayed only if an error occurred.
+        freeYachtsInPeriod:
+          type: array
+          description: List of yachts available for the specified period.
+          items:
+              $ref: '#/components/schemas/RestFreeYacht'
+        totalCount:
+          type: integer
+          description: total count of results
+        totalPages:
+          type: integer
+          description: total count of pages
+        currentPage:
+          type: integer
+          description: current page number

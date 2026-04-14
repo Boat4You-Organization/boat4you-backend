@@ -1,0 +1,163 @@
+openapi: 3.0.3
+info:
+  title: Boat4You Web Service
+  description: |-
+    API definition for Boat4You Web Service. \
+    Contains common schemas.
+  version: 0.0.1
+
+components:
+  parameters:
+    sortBy:
+      in: query
+      name: sortBy
+      schema:
+        type: string
+      required: false
+      example: id
+      description: Property used for sorting
+    sortDirection:
+      in: query
+      name: sortDirection
+      schema:
+        type: string
+        enum:
+          - ASC
+          - DESC
+      required: false
+      example: ASC
+      description: Ascending or descending
+    pageNumber:
+      in: query
+      name: pageNumber
+      schema:
+        type: integer
+      required: false
+      example: 0
+      description: Page number, starting from 0
+    pageSize:
+      in: query
+      name: pageSize
+      schema:
+        type: integer
+      required: false
+      example: 20
+      description: Number of elements per page, must be greater than zero
+    search:
+      in: query
+      name: search
+      schema:
+        type: string
+      required: false
+      example: John
+      description: Search parameter
+    role:
+      in: query
+      name: role
+      schema:
+        $ref: '#/components/schemas/RoleEnum'
+      required: false
+      description: Role to filter for
+
+  schemas:
+    PageModel:
+      type: object
+      required:
+        - pageNumber
+        - pageSize
+      properties:
+        pageNumber:
+          description: Page number, starting from 0
+          type: integer
+          example: 0
+        pageSize:
+          description: Number of elements per page, must be greater than zero
+          type: integer
+          example: 10
+
+    BasicEntityStatus:
+      type: string
+      description: Entity status. Not sent in a request, just received in a response.
+      enum:
+        - ACTIVE
+        - INACTIVE
+
+    UserRole:
+      type: object
+      required:
+        - roleName
+      properties:
+        roleName:
+          $ref: '#/components/schemas/RoleEnum'
+
+    RoleEnum:
+      type: string
+      description: Role name
+      enum:
+        - SYSTEM_ADMIN
+        - MANAGER
+        - USER
+
+    AddressInfo:
+      type: object
+      required:
+        - countryCode
+      properties:
+        streetName:
+          description: Street name
+          example: Dubrovačka
+          type: string
+        streetNumber:
+          description: Street number
+          example: 20
+          type: string
+        city:
+          description: City
+          example: Split
+          type: string
+        countryCode:
+          description: ISO 3166-1 Alpha 2 code of the asset registration country
+          example: HR
+          type: string
+
+    InternalPageModel:
+      type: object
+      required:
+        - size
+        - number
+        - totalElements
+        - totalPages
+      properties:
+        size:
+          description: Page size
+          example: 20
+          type: integer
+          format: int64
+        number:
+          description: Page number
+          example: 0
+          type: integer
+          format: int64
+        totalElements:
+          description: Total number of entities
+          example: 131
+          type: integer
+          format: int64
+        totalPages:
+          description: Total number of pages
+          example: 7
+          type: integer
+          format: int64
+
+    ErrorSchema:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          description: Error code
+        message:
+          type: string
+          description: Error message

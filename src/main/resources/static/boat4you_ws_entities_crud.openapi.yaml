@@ -1,0 +1,2585 @@
+openapi: 3.0.3
+info:
+  title: Boat4You Web Service
+  description: |-
+    API definition for Boat4You Web Service. \
+    Contains operations related to Users
+  version: 0.0.1
+servers:
+  - url: https://localhost:8443
+    description: Local deployment
+tags:
+  - name: Auth
+    description: Authentication operations
+  - name: Users
+    description: Operations about Users
+  - name: Yachts
+    description: Operations about Yachts
+  - name: Agencies
+    description: Operations about Agencies
+  - name: Locations
+    description: Operations about Locations
+  - name: YachtImages
+    description: Operations about YachtImages
+  - name: Catalogue
+    description: Operations about Manufacturers and Models
+  - name: Reservations
+    description: Operations about reservations
+  - name: ReservationFlows
+    description: Operations about reservation flows
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Logs user into the system
+      description: ''
+      operationId: loginUser
+      requestBody:
+        description: ''
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLoginRequest'
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+  /auth/refreshToken:
+    post:
+      tags:
+        - Auth
+      summary: Issues a refresh token to authenticated user
+      description: ''
+      operationId: refreshToken
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+  /auth/logout:
+    get:
+      tags:
+        - Auth
+      summary: Logs out the currently logged in user
+      description: ''
+      operationId: logoutUser
+      responses:
+        '200':
+          description: successful operation
+  /auth/updatePassword:
+    post:
+      tags:
+        - Auth
+      summary: Update User password
+      description: This can only be done by the logged in user. Users can only change their own password.
+      operationId: updatePassword
+      requestBody:
+        description: Update password of an existing User
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserPasswordBody'
+      responses:
+        '200':
+          description: successful operation
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /auth/requestPasswordReset:
+    post:
+      tags:
+        - Auth
+      summary: Request password reset for a user
+      description: Results in sending a password reset email. This can be done by Manager, System Administrator or an anonymous user.
+      operationId: requestPasswordReset
+      requestBody:
+        description: Request password reset body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequestPasswordResetBody'
+      responses:
+        '200':
+          description: successful operation
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /auth/resetPassword:
+    get:
+      tags:
+        - Auth
+      summary: Check password reset validity
+      description: Called when User clicks on the password reset link, so the FE knows if the password reset link is invalid.
+      operationId: checkPasswordResetValidity
+      parameters:
+        - name: passwordResetCode
+          in: query
+          description: Password reset code of the password reset request
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: successful operation
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+    post:
+      tags:
+        - Auth
+      summary: Set a new password as part of the password reset process
+      description: Set a new password as part of the password reset process. This can be done by an anonymous user.
+      operationId: resetPassword
+      parameters:
+        - name: passwordResetCode
+          in: query
+          description: Password reset code of the password reset request
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Reset password body
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetUserPasswordBody'
+      responses:
+        '200':
+          description: successful operation
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /auth/me:
+    get:
+      tags:
+        - Auth
+      summary: Get info about current user
+      description: This can only be done by the logged in user. Logged users can only get information about themselves.
+      operationId: getAuthenticatedUserInfo
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '404':
+          description: User not found
+        '500':
+          description: Internal server error
+  /auth/register:
+    put:
+      tags:
+        - Auth
+      summary: User registration
+      description: User registration, anyone can register
+      operationId: registerUser
+      requestBody:
+        description: ''
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistrationRequest'
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /auth/register/verifyEmail:
+    post:
+      tags:
+        - Auth
+      summary: Email verification
+      description: Used when registering, when user submits the verification code.
+      operationId: verifyEmail
+      requestBody:
+        description: ''
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserEmailVerificationRequest'
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /auth/register/resendVerificationCode/{userId}:
+    post:
+      tags:
+        - Auth
+      summary: Resend email verification code
+      description: Used when registering, when user wants the email verification code to be resent.
+      operationId: resendEmailVerificationCode
+      parameters:
+        - name: userId
+          in: path
+          description: Id of the user who wants a new verification code
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /users:
+    get:
+      tags:
+        - Users
+      summary: Fetch all users
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" or "MANAGER" role.
+      operationId: getAllUsers
+      parameters:
+        - $ref: 'boat4you_ws_common.openapi.yaml#/components/parameters/sortBy'
+        - $ref: 'boat4you_ws_common.openapi.yaml#/components/parameters/sortDirection'
+        - $ref: 'boat4you_ws_common.openapi.yaml#/components/parameters/pageNumber'
+        - $ref: 'boat4you_ws_common.openapi.yaml#/components/parameters/pageSize'
+        - $ref: 'boat4you_ws_common.openapi.yaml#/components/parameters/search'
+        - $ref: 'boat4you_ws_common.openapi.yaml#/components/parameters/role'
+        - in: query
+          name: userStatus
+          schema:
+            $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/BasicEntityStatus'
+          required: false
+          description: User status to filter for
+        - in: query
+          name: activeOnly
+          schema:
+            type: boolean
+          required: false
+          example: false
+          description: Whether only active users should be retrieved
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all users result
+                required:
+                  - content
+                  - page
+                properties:
+                  content:
+                    description: Users list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  page:
+                    $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/InternalPageModel'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+    put:
+      tags:
+        - Users
+      summary: Create user
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: createUser
+      requestBody:
+        description: ''
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /users/{id}:
+    get:
+      tags:
+        - Users
+      summary: Get user by user id
+      description: |-
+        This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+        Logged users can only get information about themselves.
+      operationId: getUserById
+      parameters:
+        - name: id
+          in: path
+          description: Id of the user to be fetched
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '404':
+          description: User not found
+        '500':
+          description: Internal server error
+    post:
+      tags:
+        - Users
+      summary: Update user
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: updateUser
+      parameters:
+        - name: id
+          in: path
+          description: Id of the user to be updated
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        description: Update an existing user
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/User'
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+    delete:
+      tags:
+        - Users
+      summary: Delete user
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: deleteUser
+      parameters:
+        - name: id
+          in: path
+          description: Id of the user to be deleted
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /users/invite:
+    get:
+      tags:
+        - Users
+      summary: Check User invitation validity
+      description: Called when User clicks on the invite link, so the FE knows if the invite expired or is invalid.
+      operationId: checkUserInvitationValidity
+      parameters:
+        - name: inviteCode
+          in: query
+          description: Invite code for the User invite
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: successful operation
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+    post:
+      tags:
+        - Users
+      summary: Accept User invite and set password
+      description: Invitation is marked as Accepted and User password is set.
+      operationId: acceptInvitation
+      parameters:
+        - name: inviteCode
+          in: query
+          description: Invite code for the User invite
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Set new password for User being invited
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetUserPasswordBody'
+      responses:
+        '200':
+          description: successful operation
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /users/invite/{ids}:
+    put:
+      tags:
+        - Users
+      summary: Invite users to the Application
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" or "MANAGER" role.
+      operationId: inviteUsers
+      parameters:
+        - name: ids
+          in: path
+          description: Ids of the users to be invited
+          required: true
+          schema:
+            type: array
+            items:
+              type: integer
+              format: int64
+      responses:
+        '200':
+          description: successful operation
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+
+  /yachts/{id}:
+    get:
+      tags:
+        - Yachts
+      summary: Get yacht by yacht id
+      description: Get yacht by yacht id
+      operationId: getYacht
+      parameters:
+        - name: id
+          in: path
+          description: Id of the yacht to be fetched
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: dateFrom
+          in: query
+          description: Searches price from this date forward (today is a default value)
+          required: false
+          schema:
+            type: string
+            format: date
+            example: 2025-04-25
+        - name: dateTo
+          in: query
+          description: Searches price up to this date forward
+          required: false
+          schema:
+            type: string
+            format: date
+            example: 2025-04-25
+        - name: currency
+          in: query
+          description: Currency to convert price into
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/YachtDetailsDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '404':
+          description: Yacht not found
+        '500':
+          description: Internal server error
+  /yachts:
+    get:
+      tags:
+        - Yachts
+      summary: Fetch all yachts by search criteria
+      description: Fetch all yachts by search criteria
+      operationId: getYachts
+      parameters:
+        - in: query
+          name: locationId
+          schema:
+            type: string
+          required: false
+          example: l-15
+          description: Id of the wanted locationId. First letter always signals if the location is country (c), region (r) or marina (l)
+        - in: query
+          name: modelId
+          schema:
+            type: integer
+          required: false
+        - in: query
+          name: charterType
+          schema:
+            type: string
+          required: false
+          example: Crewed
+        - in: query
+          name: vesselType
+          schema:
+            $ref: '#/components/schemas/VesselType'
+          required: false
+          example: CATAMARAN
+        - in: query
+          name: manufacturer
+          required: false
+          schema:
+            type: array
+            items:
+              type: integer
+              format: int64
+        - in: query
+          name: model
+          required: false
+          schema:
+            type: array
+            items:
+              type: integer
+              format: int64
+        - in: query
+          name: mainSailType
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/SailTypeEnum'
+          required: false
+          example: CLASSIC_SAIL
+        - in: query
+          name: minBuildYear
+          schema:
+            type: integer
+          required: false
+          example: 2015
+        - in: query
+          name: maxBuildYear
+          schema:
+            type: integer
+          required: false
+          example: 2022
+        - in: query
+          name: minPersons
+          schema:
+            type: integer
+          required: false
+          example: 4
+        - in: query
+          name: maxPersons
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: minCabins
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: maxCabins
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: minBerths
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: maxBerths
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: minLength
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: maxLength
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: minPrice
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: maxPrice
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: startDate
+          schema:
+            type: string
+            format: date
+            example: 2025-04-28
+          required: false
+        - in: query
+          name: endDate
+          schema:
+            type: string
+            format: date
+            example: 2025-04-28
+          required: false
+        - in: query
+          name: minWc
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: maxWc
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: minEnginePower
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: maxEnginePower
+          schema:
+            type: integer
+          required: false
+          example: 6
+        - in: query
+          name: currency
+          schema:
+            type: string
+          required: false
+          example: USD
+        - in: query
+          name: sortBy
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: sortDirection
+          schema:
+            type: string
+          required: false
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 0
+          required: false
+        - in: query
+          name: size
+          schema:
+            type: integer
+            default: 9
+          required: false
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all yachts by search criteria result
+                required:
+                  - content
+                  - page
+                properties:
+                  content:
+                    description: Yachts list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/YachtSearchResponseDto'
+                  page:
+                    $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/InternalPageModel'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /yachts/vesselTypes:
+    get:
+      tags:
+        - Yachts
+      summary: Fetches a list of only used vessel types
+      description: Fetches a list of only used vessel types
+      operationId: getUsedVesselTypes
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch list of used vessel types
+                required:
+                  - content
+                  - totalElements
+                properties:
+                  content:
+                    description: List of used vessel types
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VesselType'
+                  totalElements:
+                    description: Total number of entities
+                    type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+  /yachts/type-count:
+    get:
+      tags:
+        - Yachts
+      summary: Fetch list of objects with each one containing vessel type paired with number of boats under it
+      description: Fetch list of objects with each one containing vessel type paired with number of boats under it
+      operationId: getVesselTypeYachtCount
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all vessel type boat counts result
+                required:
+                  - content
+                  - totalElements
+                properties:
+                  content:
+                    description: List of objects with vessel type and count of boats per each
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VesselTypeYachtCountDto'
+                  totalElements:
+                    description: Total number of entities
+                    type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+  /yachts/charterTypes:
+    get:
+      tags:
+        - Yachts
+      summary: Gets used charter types
+      description: Gets used charter types
+      operationId: getUsedCharterTypes
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Gets used charter types
+                required:
+                  - content
+                  - totalElements
+                properties:
+                  content:
+                    description: List of used charter types
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CharterType'
+                  totalElements:
+                    description: Total number of entities
+                    type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+  /yachts/{id}/availability:
+    get:
+      tags:
+        - Yachts
+      summary: Fetches offers for a specific yacht
+      description: Fetches offers for a specific yacht
+      operationId: getYachtAvailability
+      parameters:
+        - name: id
+          in: path
+          description: Id of the yacht
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: date
+            example: 2025-04-25
+        - name: year
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: date
+            example: 2025-04-25
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetches offers for a specific yacht
+                required:
+                  - content
+                  - totalElements
+                properties:
+                  content:
+                    description: Offer list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OfferDto'
+                  totalElements:
+                    description: Total number of entities
+                    type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '404':
+          description: Yacht not found
+        '500':
+          description: Internal server error
+  /yachts/{yachtId}/offers:
+    get:
+      tags:
+        - Yachts
+      summary: Fetches offers for a specific yacht
+      description: Fetches offers for a specific yacht
+      operationId: getYachtOffers
+      parameters:
+        - name: yachtId
+          in: path
+          description: Id of the yacht
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: dateFrom
+          in: query
+          description: Searches price from this date forward (today is a default value)
+          required: false
+          schema:
+            type: string
+            format: date
+            example: 2025-04-25
+        - name: dateTo
+          in: query
+          description: Searches price up to this date forward
+          required: false
+          schema:
+            type: string
+            format: date
+            example: 2025-04-25
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetches offers for a specific yacht
+                required:
+                  - content
+                  - totalElements
+                properties:
+                  content:
+                    description: Offer list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OfferDto'
+                  totalElements:
+                    description: Total number of entities
+                    type: integer
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '404':
+          description: Yacht not found
+        '500':
+          description: Internal server error
+
+  /admin/yachts:
+    post:
+      tags:
+        - Yachts
+      summary: Create custom yacht
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: createYacht
+      requestBody:
+        description: ''
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/YachtDto'
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/YachtDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+
+  /locations:
+    get:
+      tags:
+        - Locations
+      summary: Fetch all locations or search them by name
+      description: Fetch all locations or search them by name
+      operationId: getAllLocationsViews
+      parameters:
+        - in: query
+          name: name
+          schema:
+            type: string
+          required: false
+          example: Split
+          description: Name or part of name of the wanted location
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all locations result
+                required:
+                  - content
+                  - page
+                properties:
+                  content:
+                    description: Location list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LocationViewDto'
+                  page:
+                    $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/InternalPageModel'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+  /countries:
+    get:
+      tags:
+        - Locations
+      summary: Fetch all countries
+      description: Fetch all countries
+      operationId: getCountries
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all countries result
+                required:
+                  - content
+                properties:
+                  content:
+                    description: Countries list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LocationViewDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+  /countries-count:
+    get:
+      tags:
+        - Locations
+      summary: Fetch list of all countries paired with their number of yachts
+      description: Fetch list of all countries paired with their number of yachts
+      operationId: getCountriesCount
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all countries yacht counts result
+                required:
+                  - content
+                properties:
+                  content:
+                    description: Countries and yachts counts list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CountryCountDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+
+  /catalogue/manufacturers:
+    get:
+      tags:
+        - Catalogue
+      summary: Fetch all manufacturers or search them by name
+      description: Fetch all manufacturers or search them by name
+      operationId: getManufacturers
+      parameters:
+        - in: query
+          name: name
+          schema:
+            type: string
+          required: false
+          description: Name or part of name of the wanted manufacturers
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all manufacturers result
+                required:
+                  - content
+                  - page
+                properties:
+                  content:
+                    description: Manufacturers list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ManufacturerDto'
+                  page:
+                    $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/InternalPageModel'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+  /catalogue/models:
+    get:
+      tags:
+        - Catalogue
+      summary: Fetch all models by manufacturerId
+      description: Fetch all models by manufacturerId
+      operationId: getModels
+      parameters:
+        - in: query
+          name: manufacturerId
+          schema:
+            type: integer
+            default: 0
+            format: int64
+          required: true
+        - in: query
+          name: name
+          schema:
+            type: string
+          required: false
+          description: Name or part of name of the wanted model
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all models result
+                required:
+                  - content
+                  - page
+                properties:
+                  content:
+                    description: Models list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ModelDto'
+                  page:
+                    $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/InternalPageModel'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+
+  /admin/agencies:
+    get:
+      tags:
+        - Agencies
+      summary: Fetch all agencies or search them by name
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: getAllAgencies
+      parameters:
+        - in: query
+          name: name
+          schema:
+            type: string
+          required: false
+          example: SomeAgencyName
+          description: Name or part of name of the wanted agency
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all agencies or search by name result
+                required:
+                  - content
+                  - page
+                properties:
+                  content:
+                    description: Agencies list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgencyDto'
+                  page:
+                    $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/InternalPageModel'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /admin/agencies/{id}:
+    get:
+      tags:
+        - Agencies
+      summary: Get agency by agency id
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: getAgencyById
+      parameters:
+        - name: id
+          in: path
+          description: Id of the agency to be fetched
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgencyDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '404':
+          description: Agency not found
+        '500':
+          description: Internal server error
+    put:
+      tags:
+        - Agencies
+      summary: Update agency found by provided agency id
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: updateAgency
+      parameters:
+        - name: id
+          in: path
+          description: Id of the agency to be updated
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        description: Update an existing agency
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgencyDto'
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgencyDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+  /admin/agencies/{id}/activate:
+    patch:
+      tags:
+        - Agencies
+      summary: Toggles active property of wanted agency to true
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: activate
+      parameters:
+        - name: id
+          in: path
+          description: Id of the agency to toggle
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgencyDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /admin/agencies/{id}/deactivate:
+    patch:
+      tags:
+        - Agencies
+      summary: Toggles active property of wanted agency to false
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: deactivate
+      parameters:
+        - name: id
+          in: path
+          description: Id of the agency to toggle
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgencyDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+
+  /image/{imageId}:
+    get:
+      tags:
+        - YachtImages
+      summary: Get yacht image by id. Also if possible resize it to a wanted width and/or height
+      description: Get yacht image by id. Also if possible resize it to a wanted width and/or height
+      operationId: resizeImage
+      parameters:
+        - name: imageId
+          in: path
+          description: Id of the yacht image to be fetched
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: width
+          in: query
+          description: Wanted width of the image to return
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: height
+          in: query
+          description: Wanted height of the image to return
+          required: false
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '404':
+          description: Yacht image not found
+        '500':
+          description: Internal server error
+
+  /flows:
+    post:
+      tags:
+        - ReservationFlows
+      summary: Create custom reservation flow
+      description: Create custom reservation flow
+      operationId: create
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReservationFlowRequest'
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationFlowDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+
+  /reservations:
+    get:
+      tags:
+        - Reservations
+      summary: Fetch all reservations
+      description: Fetch all reservations
+      operationId: getAllReservations
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Fetch all reservations
+                required:
+                  - content
+                  - page
+                properties:
+                  content:
+                    description: Agencies list
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReservationDto'
+                  page:
+                    $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/InternalPageModel'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+    post:
+      tags:
+        - Reservations
+      summary: Create custom reservation
+      description: Create custom reservation
+      operationId: createReservation
+      requestBody:
+        description: ''
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReservationRequest'
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '403':
+          description: Not authorized
+        '500':
+          description: Internal server error
+  /reservations/{id}:
+    get:
+      tags:
+        - Reservations
+      summary: Get reservation by reservation id
+      description: Get reservation by reservation id
+      operationId: getReservationDetails
+      parameters:
+        - name: id
+          in: path
+          description: Id of the reservation to be fetched
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '404':
+          description: Yacht not found
+        '500':
+          description: Internal server error
+    put:
+      tags:
+        - Reservations
+      summary: Confirm reservation found by provided reservation id
+      description: Confirm reservation found by provided reservation id
+      operationId: confirmReservation
+      parameters:
+        - name: id
+          in: path
+          description: Id of the reservation to be confirmed
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+    delete:
+      tags:
+        - Reservations
+      summary: Cancel reservation found by provided reservation id
+      description: Cancel reservation found by provided reservation id
+      operationId: cancelReservation
+      parameters:
+        - name: id
+          in: path
+          description: Id of the reservation to be cancelled
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+
+  /admin/reservations/{id}/updateReservationNumber:
+    patch:
+      tags:
+        - Reservations
+      summary: Update reservation number of the reservation
+      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
+      operationId: updateReservationNumber
+      parameters:
+        - name: id
+          in: path
+          description: Id of the reservation which reservation number is to be updated
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - in: query
+          name: reservationNumber
+          schema:
+            type: string
+          required: true
+          example: XXXX/YYYY
+          description: New value for the reservation number
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationDto'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
+        '500':
+          description: Internal server error
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    SailTypeEnum:
+      type: integer
+      enum:
+        - UNKNOWN
+        - CLASSIC_SAIL
+        - ROLLING_SAIL
+    CharterType:
+      type: integer
+      enum:
+        - UNKNOWN
+        - BAREBOAT
+        - CREWED
+        - CRUISE
+        - ALL_INCLUSIVE
+    ExternalReservationStatus:
+      type: integer
+      enum:
+        - UNKNOWN
+        - OPTION
+        - RESERVATION
+        - SERVICE
+        - FREE
+    VesselType:
+      type: integer
+      enum:
+        - OTHER
+        - CATAMARAN
+        - GULET
+        - HOUSE_BOAT
+        - LUXURY_CATAMARAN
+        - LUXURY_MOTOR_YACHT
+        - LUXURY_SAILING_YACHT
+        - MINI_CRUISER
+        - MOTORBOAT
+        - MOTOR_YACHT
+        - MOTORSAILER
+        - POWER_CATAMARAN
+        - SAILING_YACHT
+        - TRIMARAN
+    ReservationFlowStatus:
+      type: integer
+      enum:
+        - UNKNOWN
+        - IN_PROGRESS
+        - DONE
+        - ABANDONED
+    EntryType:
+      type: integer
+      enum:
+        - UNKNOWN
+        - EXTERNAL
+        - CUSTOM
+    OfferStatus:
+      type: integer
+      enum:
+        - UNKNOWN
+        - FREE
+        - OPTION
+        - UNAVAILABLE
+    LanguageEnum:
+      type: string
+      enum:
+        - EN
+        - FR
+        - DE
+        - PT
+        - IT
+        - ES
+        - HR
+    CurrencyEnum:
+      type: string
+      enum:
+        - EUR
+        - USD
+        - GBP
+        - CAD
+        - AUD
+        - CHF
+        - ARS
+        - ZAR
+        - BRL
+        - NOK
+        - CZK
+        - DKK
+        - ILS
+        - SGD
+        - NZD
+        - SEK
+    User:
+      type: object
+      required:
+        - email
+        - name
+        - surname
+        - roles
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        password:
+          type: string
+          description: Password in clear text
+        name:
+          type: string
+          example: Blaž
+        surname:
+          type: string
+          example: Slišković
+        email:
+          type: string
+          example: bsliskov@workspace.hr
+        phoneNumber:
+          type: string
+          description: Phone number in international format
+          example: +385911002000
+        language:
+          type: string
+          $ref: '#/components/schemas/LanguageEnum'
+        currency:
+          type: string
+          $ref: '#/components/schemas/CurrencyEnum'
+        userStatus:
+          $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/BasicEntityStatus'
+        inviteStatus:
+          $ref: '#/components/schemas/UserInviteStatus'
+        roles:
+          description: List of roles assigned to the user
+          type: array
+          items:
+            $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/UserRole'
+    UserInviteStatus:
+      description: Status of User invitation. Not sent in a request, just received in a response.
+      type: string
+      readOnly: true
+      enum:
+        - NOT_INVITED
+        - INVITED
+        - ACCEPTED
+    UserRegistrationRequest:
+      type: object
+      description: Used when User is being registered via the public endpoint
+      required:
+        - name
+        - surname
+        - email
+        - password
+      properties:
+        name:
+          type: string
+          example: Blaž
+        surname:
+          type: string
+          example: Slišković
+        email:
+          type: string
+          example: bsliskov@workspace.hr
+        password:
+          type: string
+          description: Password in clear text
+        phoneNumber:
+          type: string
+          description: Phone number in international format
+          example: +385911002000
+    UserEmailVerificationRequest:
+      type: object
+      description: Used when User is verifying their email address during registration
+      required:
+        - userId
+        - verificationCode
+      properties:
+        userId:
+          description: Id of the User whose email is being verified
+          type: integer
+          format: int64
+          example: 10
+        verificationCode:
+          type: string
+          description: Verification code in clear text
+    RequestPasswordResetBody:
+      type: object
+      description: Either userId can be provided (if password reset is requested by Manager or System Administrator) or email address (if the request is made by anonymous user)
+      properties:
+        userId:
+          description: Id of the User whose password needs to be reset
+          type: integer
+          format: int64
+          example: 10
+        email:
+          description: Email address of the User whose password needs to be reset
+          type: string
+    SetUserPasswordBody:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          description: New password in clear text.
+          type: string
+          format: password
+    VesselTypeYachtCountDto:
+      type: object
+      properties:
+        vesselType:
+          type: integer
+          $ref: '#/components/schemas/VesselType'
+        yachtCount:
+          type: integer
+          format: int64
+          example: 10
+    YachtDetailsDto:
+      type: object
+      required:
+        - name
+        - model
+        - agency
+        - location
+        - yachtImages
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        name:
+          type: string
+          example: Big Blue Yacht
+        buildYear:
+          type: integer
+          example: 2011
+        maxPersons:
+          type: integer
+          example: 6
+        cabins:
+          type: integer
+          example: 4
+        wc:
+          type: integer
+          example: 2
+        berths:
+          type: integer
+          example: 4
+        enginePower:
+          type: integer
+          example: 100
+        fuelTank:
+          type: integer
+          example: 80
+        waterTank:
+          type: integer
+          example: 120
+        beam:
+          type: integer
+          example: 120
+        mainSailType:
+          type: integer
+          $ref: '#/components/schemas/SailTypeEnum'
+        length:
+          type: integer
+          example: 15
+        model:
+          type: string
+        clientPriceEur:
+          type: integer
+          example: 100
+        totalPriceEur:
+          type: integer
+          example: 100
+        clientPriceInfo:
+          type: integer
+          example: 100
+        totalPriceCalcInfo:
+          type: integer
+          example: 100
+        agency:
+          $ref: '#/components/schemas/AgencyDto'
+        location:
+          $ref: '#/components/schemas/LocationDto'
+        yachtImages:
+          type: array
+          items:
+            $ref: '#/components/schemas/YachtImageDto'
+        sysDescription:
+          type: string
+          example: very good yacht
+        fixedPrice:
+          type: integer
+          example: 100
+        locations:
+          type: array
+          items:
+            $ref: '#/components/schemas/LocationViewDto'
+    YachtSearchResponseDto:
+      type: object
+      required:
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        name:
+          type: string
+          example: Big Blue Yacht
+        location:
+          $ref: '#/components/schemas/LocationDto'
+        charterType:
+          type: string
+        vesselType:
+          type: integer
+          $ref: '#/components/schemas/VesselType'
+        buildYear:
+          type: integer
+          example: 2011
+        maxPersons:
+          type: integer
+          example: 6
+        cabins:
+          type: integer
+          example: 4
+        length:
+          type: integer
+          example: 15
+        clientPriceEur:
+          type: integer
+          example: 100
+        clientPriceInfo:
+          type: integer
+          example: 100
+    ManufacturerDto:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+    ModelDto:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+    YachtAvailabilityDto:
+      type: object
+      properties:
+        from:
+          type: string
+          format: date
+          example: 2025-04-25
+        to:
+          type: string
+          format: date
+          example: 2025-04-25
+        status:
+          type: integer
+          $ref: '#/components/schemas/ExternalReservationStatus'
+    YachtDto:
+      type: object
+      required:
+        - name
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        name:
+          type: string
+          example: Big Blue Yacht
+        deposit:
+          type: integer
+          example: 100
+        insuredDeposit:
+          type: integer
+          example: 100
+        buildYear:
+          type: integer
+          example: 2011
+        launchYear:
+          type: integer
+          example: 2011
+        enginePower:
+          type: integer
+          example: 100
+        length:
+          type: integer
+          example: 15
+        draught:
+          type: integer
+          example: 15
+        beam:
+          type: integer
+          example: 15
+        waterTank:
+          type: integer
+          example: 120
+        fuelTank:
+          type: integer
+          example: 80
+        cabins:
+          type: integer
+          example: 4
+        crewCabins:
+          type: integer
+          example: 4
+        wc:
+          type: integer
+          example: 2
+        crewWc:
+          type: integer
+          example: 2
+        berths:
+          type: integer
+          example: 4
+        crewBerths:
+          type: integer
+          example: 4
+        maxPersons:
+          type: integer
+          example: 6
+        defaultCheckin:
+          type: string
+        defaultCheckout:
+          type: string
+        mainSailType:
+          type: integer
+          $ref: '#/components/schemas/SailTypeEnum'
+        mainSailArea:
+          type: integer
+          example: 1
+        genoaType:
+          type: integer
+          $ref: '#/components/schemas/SailTypeEnum'
+        genoaArea:
+          type: integer
+          example: 1
+        registrationNumber:
+          type: string
+          example: ST 605 TZ
+        optionApproval:
+          type: boolean
+          example: true
+        optionToReservation:
+          type: boolean
+          example: true
+        commision:
+          type: integer
+          example: 1
+        commisionPerc:
+          type: integer
+          example: 1
+        excludeDiscount:
+          type: boolean
+          example: true
+        pricingTier:
+          type: integer
+          example: 1
+        maxDiscount:
+          type: integer
+          example: 10
+        agencyDiscountType:
+          type: string
+        maxDiscountFromCommision:
+          type: integer
+        charterType:
+          type: string
+        crewedType:
+          type: string
+        vesselType:
+          type: integer
+          $ref: '#/components/schemas/VesselType'
+        entryType:
+          type: integer
+          $ref: '#/components/schemas/EntryType'
+        sysDescription:
+          type: string
+          example: very good yacht
+        fixedPrice:
+          type: integer
+          example: 100
+        locations:
+          type: array
+          items:
+            $ref: '#/components/schemas/LocationViewDto'
+    CreateReservationFlowRequest:
+      type: object
+      required:
+        - yachtId
+        - offerId
+      properties:
+        yachtId:
+          type: integer
+          format: int64
+          example: 10
+        offerId:
+          type: integer
+          format: int64
+          example: 10
+        userEmail:
+          type: string
+          example: bsliskov@workspace.hr
+    ReservationFlowDto:
+      type: object
+      required:
+        - id
+        - yachtId
+        - offerId
+        - status
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        yachtId:
+          type: integer
+          format: int64
+          example: 10
+        offerId:
+          type: integer
+          format: int64
+          example: 10
+        status:
+          type: integer
+          $ref: '#/components/schemas/ReservationFlowStatus'
+    ReservationDto:
+      type: object
+      required:
+        - id
+        - reservationFlowId
+        - yachtId
+        - dateFrom
+        - dateTo
+        - totalPrice
+        - currency
+        - status
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        reservationFlowId:
+          type: integer
+          format: int64
+          example: 10
+        yachtId:
+          type: integer
+          format: int64
+          example: 10
+        dateFrom:
+          type: string
+          format: date-time
+          example: "2025-06-04T15:30:00"
+        dateTo:
+          type: string
+          format: date-time
+          example: "2025-06-04T15:30:00"
+        totalPrice:
+          type: integer
+          example: 100
+        currency:
+          type: string
+        status:
+          $ref: '#/components/schemas/OfferStatus'
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2025-06-04T15:30:00"
+        reservationNumber:
+          type: string
+    CreateReservationRequest:
+      type: object
+      required:
+        - reservationFlowId
+      properties:
+        reservationFlowId:
+          type: integer
+          format: int64
+          example: 10
+    AgencyDto:
+      type: object
+      required:
+        - name
+        - active
+        - skipExternalSystem
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        name:
+          type: string
+          example: Najbolja agencija
+        address:
+          type: string
+          example: Domovinskog rata 5
+        city:
+          type: string
+          example: Split
+        country:
+          type: string
+          example: Croatia
+        zip:
+          type: string
+          example: 21000
+        vatCode:
+          type: string
+          example: B59915249
+        web:
+          type: string
+          example: www.sealand.it
+        email:
+          type: string
+          example: booking@caymangroupcharter.it
+        phone:
+          type: string
+          example: +39 3936101443
+        mobile:
+          type: string
+          example: +39 3936101443
+        iban:
+          type: string
+          example: 12347890
+        active:
+          type: string
+          example: 12347890
+        discount:
+          type: integer
+          example: 10
+        director:
+          type: string
+          example: Konstantina Chachali
+        skipExternalSystem:
+          type: boolean
+          example: true
+    LocationDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        countryCode:
+          type: string
+          example: HR
+        lat:
+          type: integer
+          example: 55
+        lon:
+          type: integer
+          example: 55
+    LocationViewDto:
+      type: object
+      properties:
+        id:
+          type: string
+          example: c-55
+        realId:
+          type: integer
+          format: int64
+          example: 55
+        name:
+          type: string
+          example: Croatia
+        locationType:
+          type: string
+          example: COUNTRY
+        countryCode:
+          type: string
+          example: HR
+    OfferDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        dateFrom:
+          type: string
+          format: date
+          example: 2025-04-25
+        dateTo:
+          type: string
+          format: date
+          example: 2025-04-25
+        clientPriceEur:
+          type: integer
+          example: 55
+        totalPriceEur:
+          type: integer
+          example: 55
+        clientPriceInfo:
+          type: integer
+          example: 55
+        totalPriceInfo:
+          type: integer
+          example: 55
+        status:
+          type: integer
+          $ref: '#/components/schemas/OfferStatus'
+        isFocused:
+          type: boolean
+          example: true
+    YachtImageDto:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        url:
+          type: string
+          example: https://www.booking-manager.com/cbm/documents/6259149640000107392_lagoon-50--3.jpg
+        position:
+          type: integer
+          example: 1
+        mainImage:
+          type: boolean
+          example: true
+    CountryCountDto:
+      type: object
+      properties:
+        countryCode:
+          type: string
+          example: HR
+        yachtCount:
+          type: integer
+          example: 25
+    UserLoginRequest:
+      required:
+        - email
+        - password
+      type: object
+      properties:
+        email:
+          description: Email of the user
+          type: string
+        password:
+          description: The password for login in clear text
+          type: string
+          format: password
+    TokenResponse:
+      required:
+        - token
+        - refreshToken
+        - userId
+      type: object
+      properties:
+        token:
+          description: Authentication token
+          type: string
+        refreshToken:
+          description: Refresh token
+          type: string
+        userId:
+          description: Id of the User the token belongs to
+          type: integer
+          format: int64
+          example: 10
+    UpdateUserPasswordBody:
+      type: object
+      required:
+        - oldPassword
+        - newPassword
+      properties:
+        oldPassword:
+          description: Old password in clear text.
+          type: string
+          format: password
+        newPassword:
+          description: New password in clear text.
+          type: string
+          format: password
+
+security:
+  - bearerAuth: []

@@ -1,0 +1,1 @@
+ALTER TABLE boat4you_db.public.reservation_extras ADD COLUMN yacht_extras_key varchar(255);

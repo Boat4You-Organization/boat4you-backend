@@ -1,0 +1,25 @@
+style:
+  MaxLineLength:
+    active: true
+    maxLineLength: 180
+    excludePackageStatements: true
+    excludeImportStatements: true
+    excludeCommentStatements: true
+  ThrowsCount:
+    active: false
+  MagicNumber:
+    active: false
+
+performance:
+  SpreadOperator:
+    active: false
+
+exceptions:
+  SwallowedException:
+    active: false
+
+complexity:
+  TooManyFunctions:
+    ignorePrivate: true
+  LongParameterList:
+    constructorThreshold: 15 # I'm sorry future me
