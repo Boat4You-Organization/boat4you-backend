@@ -70,6 +70,10 @@ class YachtQueryingService(
     private val yachtExtraRepository: YachtExtraRepository,
     private val externalBaseRepository: ExternalBaseRepository,
 ) {
+    companion object {
+        private const val MAX_PAGE_SIZE = 100
+    }
+
     fun getYachts(
         searchParams: YachtSearchParamObject,
         sortBy: String?,
@@ -149,7 +153,8 @@ class YachtQueryingService(
         }
 
         val query = entityManager.createQuery(cq)
-        val pageable = Pageable.ofSize(size).withPage(page)
+        val cappedSize = size.coerceIn(1, MAX_PAGE_SIZE)
+        val pageable = Pageable.ofSize(cappedSize).withPage(page)
         query.firstResult = pageable.offset.toInt()
         query.maxResults = pageable.pageSize
 

@@ -56,10 +56,17 @@ class AsyncConfig(
 
         executor.rejectedExecutionHandler =
             RejectedExecutionHandler { r, exec ->
-                // BLOCK until queue has space.
-                // For img sync jobs, it should not lead to starvation
-                println("Task rejected, thread pool is full")
-                exec.queue.put(r)
+                log.warn("Image sync task rejected; applying backpressure on submitter thread.")
+                if (exec.isShutdown) return@RejectedExecutionHandler
+                try {
+                    if (!exec.queue.offer(r, 30, TimeUnit.SECONDS)) {
+                        log.warn("Image sync queue still full after 30s; running task in caller thread.")
+                        r.run()
+                    }
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    log.warn("Interrupted while waiting for image sync queue capacity.", e)
+                }
             }
 
         return executor

@@ -19,6 +19,7 @@ import jakarta.persistence.OneToMany
 import jakarta.persistence.Table
 import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
+import org.hibernate.annotations.BatchSize
 import org.hibernate.annotations.ColumnDefault
 import org.hibernate.annotations.OnDelete
 import org.hibernate.annotations.OnDeleteAction
@@ -205,6 +206,7 @@ open class Yacht {
     open var maxDiscountFromCommision: BigDecimal? = null
 
     @OneToMany(mappedBy = "yacht")
+    @BatchSize(size = 50)
     open var yachtImages: MutableSet<YachtImage> = mutableSetOf()
 
     /**
@@ -246,6 +248,7 @@ open class Yacht {
     open var sysActive: Boolean? = false
 
     @OneToMany(mappedBy = "yacht", fetch = FetchType.LAZY)
+    @BatchSize(size = 50)
     open var reservationOptions: MutableSet<ReservationOption> = mutableSetOf()
 
     /**
@@ -260,21 +263,26 @@ open class Yacht {
     open var locations: MutableSet<Location> = mutableSetOf()
 
     @OneToMany(mappedBy = "yacht", cascade = [CascadeType.ALL], orphanRemoval = true)
+    @BatchSize(size = 50)
     open var yachtEquipments: MutableSet<YachtEquipment> = mutableSetOf()
 
     @OneToMany(mappedBy = "yacht", cascade = [CascadeType.ALL], orphanRemoval = true)
+    @BatchSize(size = 50)
     open var yachtExtras: MutableSet<YachtExtra> = mutableSetOf()
 
     @OneToMany(mappedBy = "yacht", cascade = [CascadeType.ALL], orphanRemoval = true)
+    @BatchSize(size = 50)
     open var yachtCharterTypes: MutableSet<YachtCharterType> = mutableSetOf()
 
     @Column(name = "main_image_id", nullable = false)
     open var mainImageId: Long? = null
 
     @OneToMany(mappedBy = "yacht")
+    @BatchSize(size = 50)
     open var yachtTranslations: MutableSet<YachtTranslation> = mutableSetOf()
 
     @OneToMany(mappedBy = "yacht")
+    @BatchSize(size = 50)
     open var customYachtDetails: MutableSet<CustomYachtDetail> = mutableSetOf()
 
     @Size(max = 20)

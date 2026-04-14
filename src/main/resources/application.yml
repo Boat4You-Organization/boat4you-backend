@@ -21,7 +21,16 @@ spring:
     password: ${DB_PASSWORD:postgres}
     driverClassName: org.postgresql.Driver
     generate-unique-name: false
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:25}
+      minimum-idle: ${DB_POOL_MIN_IDLE:5}
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      leak-detection-threshold: 60000
+      pool-name: boat4you-hikari
   jpa:
+    open-in-view: false
     properties:
       org:
         hibernate:
@@ -29,11 +38,14 @@ spring:
             audit_table_suffix: _revisions
             store_data_at_delete: true
       hibernate:
-        #format_sql: true
-      #dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 50
+          fetch_size: 50
+        order_inserts: true
+        order_updates: true
+        batch_versioned_data: true
     hibernate:
       ddl-auto: validate
-    #show-sql: true
   mail:
     host: smtp.gmail.com
     port: 587

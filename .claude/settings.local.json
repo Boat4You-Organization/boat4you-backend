@@ -7,7 +7,17 @@
       "Read(//tmp/**)",
       "Bash(grep:*)",
       "Bash(bash /tmp/fk_check.sh)",
-      "Bash(ls -1 /Users/mariokuzmanic/Downloads/boat4you-delivery/boat4you-backend/boat4you-ws-main/src/main/resources/db/migration/*.sql)"
+      "Bash(ls -1 /Users/mariokuzmanic/Downloads/boat4you-delivery/boat4you-backend/boat4you-ws-main/src/main/resources/db/migration/*.sql)",
+      "Bash(tar -tzf boat4you-ws-perf-update.tar.gz)",
+      "Bash(openssl rand:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\('src/main/resources/application.yml'\\)\\)\")",
+      "Bash(python3 -c \"import ruamel.yaml; ruamel.yaml.YAML\\(typ='safe'\\).load\\(open\\('src/main/resources/application.yml'\\)\\)\")",
+      "Bash(ruby -ryaml -e \"YAML.load_file\\('src/main/resources/application.yml'\\); puts 'YAML OK'\")",
+      "Bash(./gradlew compileKotlin)",
+      "Bash(docker-compose --env-file .env down)",
+      "Bash(docker-compose --env-file .env up --build -d)",
+      "Bash(docker-compose logs:*)"
     ]
   }
 }
