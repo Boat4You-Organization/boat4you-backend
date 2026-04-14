@@ -10,17 +10,21 @@ services:
 #      uncomment the following lines to disable SSL and change the port
       - "8085:8085"
     environment:
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://boat4you_db:5432/boat4you_db
-      - SPRING_DATASOURCE_USERNAME=boat4you_owner
-      - SPRING_DATASOURCE_PASSWORD=boat4you_owner
-      - SPRING_FLYWAY_URL=jdbc:postgresql://boat4you_db:5432/boat4you_db
-      - SPRING_FLYWAY_USER=boat4you_owner
-      - SPRING_FLYWAY_PASSWORD=boat4you_owner
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://boat4you_db:5432/${DB_NAME:-boat4you_db}
+      - SPRING_DATASOURCE_USERNAME=${DB_USER:?DB_USER required}
+      - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:?DB_PASSWORD required}
+      - SPRING_FLYWAY_URL=jdbc:postgresql://boat4you_db:5432/${DB_NAME:-boat4you_db}
+      - SPRING_FLYWAY_USER=${FLYWAY_USER:?FLYWAY_USER required}
+      - SPRING_FLYWAY_PASSWORD=${FLYWAY_PASSWORD:?FLYWAY_PASSWORD required}
       - SPRING_PROFILES_ACTIVE=dev,data-sync
       - APPLICATION_UPLOAD_DIRECTORY=/app/data
-#      uncomment the following lines to disable SSL and change the port
       - SERVER_SSL_ENABLED=false
       - SERVER_PORT=8085
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY required}
+      - SSL_KEYSTORE_PASSWORD=${SSL_KEYSTORE_PASSWORD:-changeme}
+      - NAUSYS_USERNAME=${NAUSYS_USERNAME:-}
+      - NAUSYS_PASSWORD=${NAUSYS_PASSWORD:-}
+      - MMK_TOKEN=${MMK_TOKEN:-}
     depends_on:
       boat4you_db:
         condition: service_healthy
@@ -34,9 +38,9 @@ services:
     ports:
       - "5435:5432"
     environment:
-      - POSTGRES_PASSWORD=boat4you_owner
-      - POSTGRES_USER=boat4you_owner
-      - POSTGRES_DB=boat4you_db
+      - POSTGRES_PASSWORD=${FLYWAY_PASSWORD:?FLYWAY_PASSWORD required}
+      - POSTGRES_USER=${FLYWAY_USER:?FLYWAY_USER required}
+      - POSTGRES_DB=${DB_NAME:-boat4you_db}
     volumes:
       - ./model/init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:

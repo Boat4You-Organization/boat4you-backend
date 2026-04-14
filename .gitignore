@@ -48,3 +48,14 @@ out/
 app-data/**
 
 *.tar.gz
+
+### Secrets / env ###
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Keystores: currently bundled as classpath resource (boat4you_selfsigned.p12).
+# Long-term move them out of classpath and uncomment these:
+#*.p12
+#*.jks

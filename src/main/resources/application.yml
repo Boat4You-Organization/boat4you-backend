@@ -6,7 +6,7 @@ server:
     enabled: true
     key-store-type: PKCS12
     key-store: classpath:boat4you_selfsigned.p12
-    key-store-password: jsbk/34b#bGVaGN
+    key-store-password: ${SSL_KEYSTORE_PASSWORD}
     key-alias: boat4you
   port: 8443
   tomcat:
@@ -78,7 +78,7 @@ springdoc:
 application:
   security:
     jwt:
-      secret-key: F81AD595C669205ADC58DE252C3D86E283A28659D6860CAB007E03E0B4A81F4B
+      secret-key: ${JWT_SECRET_KEY}
       expiration: 86400000 # a day
       refresh-token:
         expiration: 604800000 # 7 days

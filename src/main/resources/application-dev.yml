@@ -12,14 +12,12 @@ application:
         enabled: true
         response-body: false
     nausys:
-      base-url: http://ws.nausys.com
-      username: rest344@TTTTT
-      password: wrpKiCvP
-#      username: rest@EURCU
-#      password: C93r5cMK
+      base-url: ${NAUSYS_URL:http://ws.nausys.com}
+      username: ${NAUSYS_USERNAME}
+      password: ${NAUSYS_PASSWORD}
     mmk:
-      base-url: https://www.booking-manager.com/api/v2
-      bearer: 63d-209555d80590103d19f2b21ab1383c63c218dc31e02d1af3f7016730ee7944c6c34299d4930ad08926db871e290d575465cd9a1bf0858c0b90c1a2552e521e16
+      base-url: ${MMK_URL:https://www.booking-manager.com/api/v2}
+      bearer: ${MMK_TOKEN}
   upload:
     max-file-size: 10MB
     max-request-size: 50MB
@@ -39,8 +37,8 @@ spring:
     password: ${DB_PASSWORD:boat4you_app}
   flyway:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:boat4you_db}
-    user: boat4you_owner
-    password: boat4you_owner
+    user: ${FLYWAY_USER:boat4you_owner}
+    password: ${FLYWAY_PASSWORD:boat4you_owner}
     out-of-order: true
   jpa:
     properties:
