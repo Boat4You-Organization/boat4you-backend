@@ -300,6 +300,30 @@ open class ReservationView protected constructor() {
     open var offerClientPrice: BigDecimal? = null
         protected set
 
+    // External base price from Nausys/MMK — the "list price" shown before the
+    // agency discount. Used on /my-bookings to display the strike-through
+    // original price next to the discounted total.
+    @Column(name = "offer_list_price")
+    open var offerListPrice: BigDecimal? = null
+        protected set
+
+    // What we owe the charter agency (Nausys `agencyPrice`, MMK `finalPrice`).
+    // Admin-only — not exposed on customer endpoints.
+    @Column(name = "reservation_agency_price")
+    open var reservationAgencyPrice: BigDecimal? = null
+        protected set
+
+    // Our commission on this booking (client price minus agency price minus
+    // any additional broker discount we absorbed). Admin-only.
+    @Column(name = "reservation_commission")
+    open var reservationCommission: BigDecimal? = null
+        protected set
+
+    // Free-form admin notes (internal support memos). Admin-only.
+    @Column(name = "reservation_admin_notes", columnDefinition = "TEXT")
+    open var reservationAdminNotes: String? = null
+        protected set
+
     @Enumerated
     @Column(name = "charter_type")
     open var charterType: CharterType? = null
@@ -311,7 +335,22 @@ open class ReservationView protected constructor() {
             .coerceAtLeast(1)
     }
 
+    /**
+     * Effective per-day client price. Uses the offer's price when present,
+     * falls back to the reservation's own price for admin "fictitious"
+     * replacement reservations (no offer row). Returns zero if both are
+     * somehow null — defensive, but shouldn't happen in practice.
+     */
     fun offerClientPricePerDay(): BigDecimal {
-        return offerClientPrice!!.divide(numberOfDays().toBigDecimal(), 2, RoundingMode.HALF_UP)
+        val base = offerClientPrice ?: reservationClientPrice ?: BigDecimal.ZERO
+        return base.divide(numberOfDays().toBigDecimal(), 2, RoundingMode.HALF_UP)
     }
+
+    /**
+     * Effective total client price. Prefers the offer's figure (which the
+     * customer booked against), falls back to the reservation's own price
+     * for fictitious rows where no offer exists.
+     */
+    fun effectiveClientPrice(): BigDecimal =
+        offerClientPrice ?: reservationClientPrice ?: BigDecimal.ZERO
 }

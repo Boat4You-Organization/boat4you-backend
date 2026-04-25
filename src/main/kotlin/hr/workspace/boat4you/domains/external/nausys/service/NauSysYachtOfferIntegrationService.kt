@@ -119,26 +119,38 @@ class NauSysYachtOfferIntegrationService(
                             periodTo = NauSysDateWrapper(interval.end.format(NauSysDateWrapper.DATE_FORMATTER)),
                             yachts = nausysYachtIds,
                             extendedDataSet = "PAYMENT_PLAN,OBLIGATORY_SERVICES,ADDITIONAL_EXTRAS",
+                            // Include yachts currently under option (from any agency). Without this
+                            // flag NauSys silently omits them, and end-users see a yacht that is in
+                            // fact pre-reserved as if it were FREE. The returned `status` on each
+                            // RestFreeYacht (OPTION / UNDER_OPTION / FREE / ...) is mapped by
+                            // OfferStatus.fromNausysValue in NauSysYachtOfferSyncService.updateOffer.
+                            ignoreOptions = true,
                         )
                     val response = nauSysRetryableClient.getFreeYachts(freeYachtRequest)
-                    if (!response.freeYachts.isNullOrEmpty()) {
-                        try {
-                            log.trace(
-                                "3 - Syncing offers for agency: ${agency.id}, interval: $interval, yachts: ${response.freeYachts!!.size}",
-                            )
-                            nauSysYachtOfferSyncService.syncOffers(
-                                agency,
-                                response,
-                                allAgencyYachts,
-                                interval.start,
-                                interval.end,
-                            )
-                        } catch (e: Exception) {
-                            log.error(
-                                "Error syncing offers for agency: ${agency.id}, interval: $interval, error: ${e.message}",
-                                e,
-                            )
-                        }
+                    // syncOffers only performs in-response reconciliation now: for each yacht that
+                    // IS in the response but missing this exact (dateFrom, dateTo), existing FREE
+                    // offers for that week are flipped to OPTION_WAITING + SYNTHETIC_DISAPPEARANCE.
+                    // The previous "absent-from-response" pass was removed — with single-credential
+                    // NauSys, absence is too ambiguous (credential scoping vs. actual option) and
+                    // produced widespread false positives on cross-agency yachts. If the response
+                    // is empty, we still call syncOffers but it becomes effectively a no-op.
+                    try {
+                        log.trace(
+                            "3 - Syncing offers for agency: ${agency.id}, interval: $interval, " +
+                                "returned yachts: ${response.freeYachts?.size ?: 0}, requested: ${nausysYachtIds.size}",
+                        )
+                        nauSysYachtOfferSyncService.syncOffers(
+                            agency,
+                            response,
+                            allAgencyYachts,
+                            interval.start,
+                            interval.end,
+                        )
+                    } catch (e: Exception) {
+                        log.error(
+                            "Error syncing offers for agency: ${agency.id}, interval: $interval, error: ${e.message}",
+                            e,
+                        )
                     }
                 }
             }
@@ -168,6 +180,9 @@ class NauSysYachtOfferIntegrationService(
                 periodTo = NauSysDateWrapper(dateTo.format(NauSysDateWrapper.DATE_FORMATTER)),
                 yachts = listOf(externalYachtId),
                 extendedDataSet = "PAYMENT_PLAN,OBLIGATORY_SERVICES,ADDITIONAL_EXTRAS",
+                // See comment in syncOffersForYachts — include under-option yachts so pre-reserved
+                // periods surface on the web rather than being silently hidden by NauSys.
+                ignoreOptions = true,
             )
 
         val response = nauSysRetryableClient.getFreeYachts(freeYachtRequest)

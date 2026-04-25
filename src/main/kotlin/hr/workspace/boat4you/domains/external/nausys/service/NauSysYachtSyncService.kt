@@ -178,7 +178,10 @@ class NauSysYachtSyncService(
         yacht.launchYear = nausysYacht.launchedYear?.toShort()
         yacht.enginePower = calcEnginePower(nausysYacht.enginePower?.toShort(), nausysYacht.engines?.toShort())
         yacht.draught = nausysYacht.draft
-        yacht.beam = null
+        // RestYacht carries no beam — Nausys stores it on RestYachtModel, copied
+        // into Model.beam by the catalogue sync. Take it from there so Nausys
+        // yachts surface the same beam shown on Nausys's own dashboard.
+        yacht.beam = model.beam
         yacht.waterTank = nausysYacht.waterTank
         yacht.fuelTank = nausysYacht.fuelTank
         yacht.cabins = nausysYacht.cabins?.toShort()
@@ -202,7 +205,8 @@ class NauSysYachtSyncService(
         yacht.maxDiscount = nausysYacht.maxDiscount
         yacht.maxDiscountFromCommision = nausysYacht.maxDiscountFromCommission
         yacht.agencyDiscountType = nausysYacht.agencyDiscountType
-        yacht.length = null
+        // Same reason as beam — length lives on RestYachtModel (loa), not RestYacht.
+        yacht.length = model.length
         yacht.crewNumber = nausysYacht.crewCount?.toShort()
 
         yacht.entryType = EntryType.EXTERNAL
@@ -471,15 +475,23 @@ class NauSysYachtSyncService(
                         ex.externalId == nausysEquipment.id
                     }
 
+                val nausysEqPrice = if (nausysEquipment.amountIsPercentage != true) nausysEquipment.amount?.toBigDecimal() else BigDecimal.ZERO
+                val nausysEqPayable = nausysEquipment.calculationType == "SEPARATE_PAYMENT"
+                val nausysEqPaymentType = hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
+                    calculationType = nausysEquipment.calculationType,
+                    price = nausysEqPrice,
+                )
                 if (equipmentAlreadyOnYacht != null) {
                     equipmentAlreadyOnYacht.extras = boat4youMatch
-                    equipmentAlreadyOnYacht.price = nausysEquipment.amount?.toBigDecimal()
-                    equipmentAlreadyOnYacht.payableInBase = nausysEquipment.calculationType == "SEPARATE_PAYMENT"
+                    equipmentAlreadyOnYacht.price = nausysEqPrice
+                    equipmentAlreadyOnYacht.payableInBase = nausysEqPayable
+                    equipmentAlreadyOnYacht.paymentType = nausysEqPaymentType
                     equipmentAlreadyOnYacht.unit = ExtrasUnitType.fromNausysValue(nausysEquipment.priceMeasureId)
                     equipmentAlreadyOnYacht.externalUnit = nausysEquipment.priceMeasureId.toString()
                     equipmentAlreadyOnYacht.validFrom = externalSeason?.validFrom
                     equipmentAlreadyOnYacht.validTo = externalSeason?.validTo
                     equipmentAlreadyOnYacht.validForBases = nausysEquipment.validForBases
+                    equipmentAlreadyOnYacht.description = nausysEquipment.comment?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }?.takeIf { it.isNotBlank() }
                     matchedIds.add(equipmentAlreadyOnYacht.id!!)
                     return@forEach
                 }
@@ -489,9 +501,9 @@ class NauSysYachtSyncService(
                 yachtExtra.name = externalEquipmentMatch.name
                 yachtExtra.externalId = nausysEquipment.id
                 yachtExtra.yacht = yacht
-                yachtExtra.price =
-                    if (nausysEquipment.amountIsPercentage != true) nausysEquipment.amount?.toBigDecimal() else BigDecimal.ZERO // amount in percentage will be resolved with offer calculation
-                yachtExtra.payableInBase = nausysEquipment.calculationType == "SEPARATE_PAYMENT"
+                yachtExtra.price = nausysEqPrice
+                yachtExtra.payableInBase = nausysEqPayable
+                yachtExtra.paymentType = nausysEqPaymentType
                 yachtExtra.unit = ExtrasUnitType.fromNausysValue(nausysEquipment.priceMeasureId)
                 yachtExtra.externalUnit = nausysEquipment.priceMeasureId.toString()
                 yachtExtra.obligatory = false
@@ -499,6 +511,7 @@ class NauSysYachtSyncService(
                 yachtExtra.validTo = externalSeason?.validTo
                 yachtExtra.type = ExtrasType.EQUIPMENT
                 yachtExtra.validForBases = nausysEquipment.validForBases
+                yachtExtra.description = nausysEquipment.comment?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }?.takeIf { it.isNotBlank() }
 
                 yachtExtraRepository.save(yachtExtra)
                 yacht.yachtExtras.add(yachtExtra)
@@ -521,17 +534,24 @@ class NauSysYachtSyncService(
                         ex.externalId == nausysService.id
                     }
 
+                val nausysSvcPrice = if (nausysService.amountIsPercentage != true) nausysService.amount?.toBigDecimal() else BigDecimal.ZERO
+                val nausysSvcPayable = nausysService.calculationType == "SEPARATE_PAYMENT"
+                val nausysSvcPaymentType = hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
+                    calculationType = nausysService.calculationType,
+                    price = nausysSvcPrice,
+                )
                 if (equipmentAlreadyOnYacht != null) {
                     equipmentAlreadyOnYacht.extras = boat4youMatch
-                    equipmentAlreadyOnYacht.price =
-                        if (nausysService.amountIsPercentage != true) nausysService.amount?.toBigDecimal() else BigDecimal.ZERO // amount in percentage will be resolved with offer calculation
-                    equipmentAlreadyOnYacht.payableInBase = nausysService.calculationType == "SEPARATE_PAYMENT"
+                    equipmentAlreadyOnYacht.price = nausysSvcPrice
+                    equipmentAlreadyOnYacht.payableInBase = nausysSvcPayable
+                    equipmentAlreadyOnYacht.paymentType = nausysSvcPaymentType
                     equipmentAlreadyOnYacht.unit = ExtrasUnitType.fromNausysValue(nausysService.priceMeasureId)
                     equipmentAlreadyOnYacht.externalUnit = nausysService.priceMeasureId.toString()
                     equipmentAlreadyOnYacht.obligatory = nausysService.obligatory
                     equipmentAlreadyOnYacht.validFrom = nausysService.validPeriodFrom?.value ?: externalSeason?.validFrom
                     equipmentAlreadyOnYacht.validTo = nausysService.validPeriodTo?.value ?: externalSeason?.validTo
                     equipmentAlreadyOnYacht.validForBases = nausysService.validForBases
+                    equipmentAlreadyOnYacht.description = nausysService.description?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }?.takeIf { it.isNotBlank() }
                     matchedIds.add(equipmentAlreadyOnYacht.id!!)
                     return@forEach
                 }
@@ -541,9 +561,9 @@ class NauSysYachtSyncService(
                 yachtExtra.name = externalEquipmentMatch.name
                 yachtExtra.externalId = nausysService.id
                 yachtExtra.yacht = yacht
-                yachtExtra.price =
-                    if (nausysService.amountIsPercentage != true) nausysService.amount?.toBigDecimal() else BigDecimal.ZERO // amount in percentage will be resolved with offer calculation
-                yachtExtra.payableInBase = nausysService.calculationType == "SEPARATE_PAYMENT"
+                yachtExtra.price = nausysSvcPrice
+                yachtExtra.payableInBase = nausysSvcPayable
+                yachtExtra.paymentType = nausysSvcPaymentType
                 yachtExtra.unit = ExtrasUnitType.fromNausysValue(nausysService.priceMeasureId)
                 yachtExtra.externalUnit = nausysService.priceMeasureId.toString()
                 yachtExtra.obligatory = nausysService.obligatory
@@ -551,6 +571,7 @@ class NauSysYachtSyncService(
                 yachtExtra.validTo = nausysService.validPeriodTo?.value ?: externalSeason?.validTo
                 yachtExtra.type = ExtrasType.EXTRAS
                 yachtExtra.validForBases = nausysService.validForBases
+                yachtExtra.description = nausysService.description?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }?.takeIf { it.isNotBlank() }
 
                 yachtExtraRepository.save(yachtExtra)
                 yacht.yachtExtras.add(yachtExtra)

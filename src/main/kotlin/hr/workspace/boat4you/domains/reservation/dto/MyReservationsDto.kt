@@ -23,6 +23,10 @@ data class MyReservationsDto(
     val locationToCountryCode: String,
     val totalPrice: BigDecimal,
     val totalPriceInfo: PriceInfoDto?,
+    // List price (pre-discount) from the external system — populated only if
+    // the offer had an ext_base_price greater than the client price.
+    val listPrice: BigDecimal?,
+    val listPriceInfo: PriceInfoDto?,
     val yachtSlug: String,
     val cancellationRequestAt: LocalDateTime?,
     val reservationNumber: String?,

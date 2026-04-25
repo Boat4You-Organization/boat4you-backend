@@ -61,4 +61,5 @@ class AdminInquiryController(
     ): ResponseEntity<Unit> {
         return ResponseEntity.ok(inquiryMutationService.updateInquiry(id, inquiryDto))
     }
+
 }

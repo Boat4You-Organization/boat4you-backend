@@ -3,12 +3,14 @@ package hr.workspace.boat4you.domains.external.nausys.controller
 import hr.workspace.boat4you.domains.external.nausys.job.NausysSyncJob
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysCatalogueIntegrationService
 import org.springframework.context.annotation.Profile
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
 @Profile("data-sync")
+@PreAuthorize("hasRole('SYSTEM_ADMIN')")
 @RequestMapping("/admin/nausys")
 class NausysSyncController(
     private val nausysSyncJob: NausysSyncJob,

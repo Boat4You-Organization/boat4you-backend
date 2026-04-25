@@ -35,6 +35,8 @@ class YachtExtrasMapper(
             extras = extras.extras?.toDto(),
             key = extras.extrasKey(),
             isStartingPrice = null,
+            description = extras.description,
+            paymentType = extras.paymentType,
         )
     }
 
@@ -57,6 +59,8 @@ class YachtExtrasMapper(
             extras = null,
             key = extras.extrasKey(),
             isStartingPrice = null,
+            description = extras.description,
+            paymentType = extras.paymentType,
         )
     }
 
@@ -80,6 +84,8 @@ class YachtExtrasMapper(
             extras = null,
             key = extras.extrasKey(),
             isStartingPrice = isStartingPrice,
+            description = extras.description,
+            paymentType = extras.paymentType,
         )
     }
 
@@ -110,6 +116,15 @@ class YachtExtrasMapper(
             externalId = reservationExtras.externalId,
             extrasId = reservationExtras.extras?.id,
             isStartingPrice = null,
+            // reservation_extras doesn't carry payment_type (V1_57 only added
+            // it to yacht_extras + offer_extras). Classify by name + flag on
+            // the fly — acceptable for post-booking read path; the cheaper
+            // Nausys direct mapping only matters before booking is placed.
+            paymentType = hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.classify(
+                name = reservationExtras.name,
+                price = reservationExtras.price,
+                payableInBase = reservationExtras.payableAtBase ?: false,
+            ),
         )
     }
 
@@ -140,6 +155,16 @@ class YachtExtrasMapper(
             extrasId = calcDto.extrasId,
             externalId = calcDto.externalId,
             isStartingPrice = calcDto.isStartingPrice,
+            // 23.4.2026: prefer the persisted paymentType from the entity
+            // (Nausys sync now writes it directly from calculationType;
+            // MMK rows still run through classify). Falling back to the
+            // classify() regex keeps behavior intact for pre-backfill rows.
+            paymentType = calcDto.paymentType
+                ?: hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.classify(
+                    name = calcDto.name,
+                    price = calcDto.getFinalPrice(),
+                    payableInBase = calcDto.payableInBase,
+                ),
         )
     }
 
@@ -158,6 +183,7 @@ class YachtExtrasMapper(
             extrasId = yachtExtras.extras?.id,
             externalId = yachtExtras.externalId,
             isStartingPrice = null,
+            paymentType = yachtExtras.paymentType,
         )
     }
 
@@ -179,6 +205,7 @@ class YachtExtrasMapper(
             extrasId = offerExtras.extras?.id,
             externalId = offerExtras.externalId,
             isStartingPrice = isStartingPrice,
+            paymentType = offerExtras.paymentType,
         )
     }
 }

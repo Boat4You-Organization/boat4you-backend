@@ -55,7 +55,8 @@ VALUES (1, 'Air conditioning', 'air-conditioning', 'air conditioning, a/c, air c
        (54, 'Wakeboard', 'wakeboard', 'wakeboard', 2, null),
        (55, 'Water skis', 'water-skis', 'water skis', 2, null),
        (56, 'Water toys', 'water-toys', 'water toys', 2, 300),
-       (57, 'Windsurf', 'windsurf', 'windsurf', 2, null)
+       (57, 'Windsurf', 'windsurf', 'windsurf', 2, null),
+       (58, 'WiFi', 'wifi', 'wi-fi, wifi, case-substring:WIFI, case-substring:WI-FI', 0, 209)
 ON CONFLICT (id)
     DO UPDATE SET name         = EXCLUDED.name,
                   label_code   = EXCLUDED.label_code,

@@ -14,18 +14,22 @@ class PaymentPendingNotificationJob(
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
     /**
-     * This job runs every day at 12:00 pm, checks for upcoming booking payments and notifies users 1 day in advance
+     * Runs at 12:02 (shifted from 12:00 to stagger against other top-of-hour
+     * jobs like OptionExpiry :00/:05 and ExchangeRate + Delete jobs that cluster
+     * on the hour). 1-day-ahead payment reminders.
      */
-    @Scheduled(cron = "0 0 12 ? * *")
+    @Scheduled(cron = "0 2 12 ? * *")
     fun run1DayInAdvance() {
         log.info("Running PaymentPendingNotificationJob for one day in advance")
         paymentPendingNotificationService.sendPaymentReminder(1)
     }
 
     /**
-     * This job runs every day at 12:10 pm, checks for upcoming booking payments and notifies users 3 days in advance
+     * Runs at 12:12 (shifted from 12:10 so it doesn't immediately follow the
+     * 12:02 run while the DB is still finishing that batch). 3-day-ahead
+     * reminders. Stays clear of NausysSyncJob 12:20 follow-up.
      */
-    @Scheduled(cron = "0 10 12 ? * *")
+    @Scheduled(cron = "0 12 12 ? * *")
     fun run3DaysInAdvance() {
         log.info("Running PaymentPendingNotificationJob for three days in advance")
         paymentPendingNotificationService.sendPaymentReminder(3)

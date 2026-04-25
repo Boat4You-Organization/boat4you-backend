@@ -55,6 +55,8 @@ data class ExtrasPriceDto(
     @field:JsonIgnore
     val externalId: Long?,
     val isStartingPrice: Boolean?,
+    // V1_57: refined payment classification used by frontend grouping.
+    val paymentType: hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType? = null,
 ) {
     fun shouldDisplay(): Boolean {
         return !labelCode.isNullOrBlank() || priceEur > BigDecimal.ZERO && obligatory
@@ -75,6 +77,11 @@ data class InternalCalcDto(
     val extrasId: Long?,
     val externalId: Long?,
     val isStartingPrice: Boolean?,
+    // V1_57 + Nausys calculationType direct mapping (23.4.2026): prefer the
+    // persisted payment_type on the source entity (yacht_extras / offer_extras)
+    // over the legacy classify() regex. Null keeps legacy fallback alive for
+    // rows that pre-date payment_type backfill.
+    val paymentType: hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType? = null,
 ) {
     fun getFinalPrice(): BigDecimal {
         return calcPriceEur ?: offerPriceEur ?: unitPriceEur

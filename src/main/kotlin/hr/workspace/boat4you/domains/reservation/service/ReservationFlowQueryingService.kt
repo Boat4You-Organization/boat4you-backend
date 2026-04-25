@@ -60,12 +60,13 @@ class ReservationFlowQueryingService(
         dateFrom: LocalDate?,
         dateTo: LocalDate?,
         reservationId: Long?,
+        search: String?,
         pageable: Pageable,
     ): Page<ReservationViewDto> {
         val startAt = dateFrom?.atStartOfDay()
         val endAt = dateTo?.atTime(23, 59, 59)
         return reservationViewRepository
-            .findAllReservationsByParams(status, userId, startAt, endAt, reservationId, pageable)
+            .findAllReservationsByParams(status, userId, startAt, endAt, reservationId, search, pageable)
             .map { reservationMappers.toShortDto(it) }
     }
 
@@ -78,10 +79,27 @@ class ReservationFlowQueryingService(
             reservationViewRepository
                 .findById(id)
                 .orElseThrow { IllegalArgumentException("Reservation with id $id not found") }
+        return buildDetailsDto(reservation, currency, language)
+    }
+
+    fun getReservationByNumberForAdmin(
+        reservationNumber: String,
+        currency: CurrencyEnum,
+        language: LanguageEnum,
+    ): ReservationViewDetailsDto {
+        val reservation =
+            reservationViewRepository.findByReservationNumber(reservationNumber)
+                ?: throw IllegalArgumentException("Reservation with number $reservationNumber not found")
+        return buildDetailsDto(reservation, currency, language)
+    }
+
+    private fun buildDetailsDto(
+        reservation: hr.workspace.boat4you.domains.reservation.jpa.ReservationView,
+        currency: CurrencyEnum,
+        language: LanguageEnum,
+    ): ReservationViewDetailsDto {
         val yacht = yachtRepository.findById(reservation.yachtId!!).get()
-
         val selectedExtras = reservationExtraRepository.findAllByReservationFlowId(reservation.reservationFlowId!!)
-
         return reservationMappers.toDetailsDto(reservation, yacht, selectedExtras, currency, language)
     }
 }

@@ -1,0 +1,412 @@
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
+  xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+  <!--[if gte mso 9]>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:AllowPNG />
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  <![endif]-->
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <!--[if !mso]><!-->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <!--<![endif]-->
+  <title>New charter inquiry | Boat4You</title>
+
+  <style type="text/css">
+    @media only screen and (max-width: 620px) {
+      .b4y-container { width: 100% !important; }
+      .b4y-stack-cell { display: block !important; width: 100% !important; padding-bottom: 12px !important; }
+    }
+
+    body { margin: 0; padding: 0; }
+    table, td, tr { border-collapse: collapse; vertical-align: top; }
+    p { margin: 0; }
+    a[x-apple-data-detectors="true"] { color: inherit !important; text-decoration: none !important; }
+  </style>
+
+  <!--[if !mso]><!-->
+  <link href="https://fonts.googleapis.com/css?family=Raleway:400,500,600,700,800" rel="stylesheet" type="text/css" />
+  <!--<![endif]-->
+</head>
+
+<body style="margin:0;padding:0;background-color:#f1f3f7;color:#111827;font-family:'Raleway',Arial,sans-serif;">
+
+  <!-- Hidden preheader (preview text in inbox list) -->
+  <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
+    New charter inquiry — <span th:text="${clientFullName}">Marko Horvat</span> is interested in
+    <span th:text="${yachtName}">Fortuna</span>.
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="background-color:#f1f3f7;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+
+        <!-- Outer container -->
+        <table role="presentation" class="b4y-container" width="600" cellpadding="0" cellspacing="0" border="0"
+          style="width:600px;max-width:600px;">
+
+          <!-- ============== HEADER ============== -->
+          <tr>
+            <td style="background-color:#f1f3f7;padding:0 4px 12px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <!-- Left: brand mark + label -->
+                  <td valign="middle" align="left" style="padding:8px 0;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td valign="middle" align="center" style="width:40px;height:40px;">
+                          <img th:src="${logoSrc}" alt="Boat4You" width="40" height="40"
+                            style="display:block;width:40px;height:40px;border:0;outline:none;" />
+                        </td>
+                        <td valign="middle" style="padding-left:10px;">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:800;font-size:15px;color:#111827;line-height:1.1;"
+                            th:text="${brandShortName}">Boat4You</div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:500;font-size:11.5px;color:#6b7280;letter-spacing:0.02em;line-height:1.1;padding-top:2px;">
+                            Inquiry notification
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <!-- Right: inquiry id + timestamp -->
+                  <td valign="middle" align="right" style="padding:8px 0;">
+                    <div
+                      style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:12px;color:#111827;letter-spacing:0.02em;">
+                      Inquiry <span th:text="${inquiryNumber}">INQ-26-2041</span>
+                    </div>
+                    <div
+                      style="font-family:'Raleway',Arial,sans-serif;font-weight:500;font-size:11px;color:#6b7280;padding-top:2px;">
+                      Received <span th:text="${receivedAt}">Apr 24, 2026 · 11:12</span>
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ============== HERO CARD (navy w/ amber accents) ============== -->
+          <tr>
+            <td style="padding:8px 4px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="background-color:#101536;border-radius:14px;">
+                <tr>
+                  <td style="padding:22px 22px 24px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <!-- Star badge -->
+                        <td valign="middle" width="56" style="padding-right:16px;">
+                          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <!-- Centring trick: explicit width+height +
+                                   line-height equal to the box height pins
+                                   the glyph to the vertical centre across
+                                   Gmail/Outlook/Apple Mail (vertical-align
+                                   alone leaves the star drifting up). -->
+                              <td valign="middle" align="center"
+                                style="width:44px;height:44px;background-color:#c9a227;border-radius:10px;color:#101536;font-family:Arial,sans-serif;font-weight:700;font-size:22px;line-height:44px;text-align:center;mso-line-height-rule:exactly;">
+                                ★
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                        <!-- Hero text -->
+                        <td valign="middle">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:11px;color:#ffd24a;letter-spacing:0.16em;text-transform:uppercase;line-height:1;padding-bottom:6px;">
+                            New charter inquiry
+                          </div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:18px;color:#ffffff;line-height:1.3;">
+                            <span th:text="${clientFullName}">Marko Horvat</span>
+                            is interested in
+                            <span style="color:#ffd24a;" th:text="${yachtName}">Fortuna</span>
+                          </div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:500;font-size:12.5px;color:#a3a8c2;line-height:1.4;padding-top:6px;">
+                            <span th:text="${setSailDate}">Sat, 20 Jun 2026</span>
+                            &nbsp;→&nbsp;
+                            <span th:text="${returnDate}">Sat, 27 Jun 2026</span>
+                            <span style="color:#6b7290;">&nbsp;·&nbsp;</span>
+                            <span
+                              th:text="${nightsCount} + ' night' + (${nightsCount} == 1 ? '' : 's')">7 nights</span>
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ============== CLIENT SECTION ============== -->
+          <tr>
+            <td style="padding:18px 4px 0;">
+              <!-- Section label + new client pill -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td align="left"
+                    style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:11px;color:#6b7280;letter-spacing:0.16em;text-transform:uppercase;padding:0 0 8px;">
+                    Client
+                  </td>
+                  <td align="right" style="padding:0 0 8px;">
+                    <span th:if="${isNewClient}"
+                      style="display:inline-block;font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10px;color:#1e3a8a;background-color:#e0e7ff;padding:5px 10px;border-radius:999px;letter-spacing:0.08em;text-transform:uppercase;">
+                      New client
+                    </span>
+                    <span th:unless="${isNewClient}"
+                      style="display:inline-block;font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10px;color:#374151;background-color:#e5e7eb;padding:5px 10px;border-radius:999px;letter-spacing:0.08em;text-transform:uppercase;">
+                      Returning
+                    </span>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Card -->
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e7eb;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <!-- Row 1: First / Last / Country -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td class="b4y-stack-cell" valign="top" width="33%" style="padding-right:8px;">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#9ca3af;letter-spacing:0.14em;text-transform:uppercase;padding-bottom:4px;">
+                            First name
+                          </div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:14px;color:#111827;"
+                            th:text="${clientFirstName}">Marko</div>
+                        </td>
+                        <td class="b4y-stack-cell" valign="top" width="33%" style="padding-right:8px;">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#9ca3af;letter-spacing:0.14em;text-transform:uppercase;padding-bottom:4px;">
+                            Last name
+                          </div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:14px;color:#111827;"
+                            th:text="${clientLastName}">Horvat</div>
+                        </td>
+                        <td class="b4y-stack-cell" valign="top" width="34%">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#9ca3af;letter-spacing:0.14em;text-transform:uppercase;padding-bottom:4px;">
+                            Country
+                          </div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:14px;color:#111827;">
+                            <span th:if="${clientCountryFlag}" th:text="${clientCountryFlag}"
+                              style="margin-right:4px;">🇭🇷</span><span th:text="${clientCountry} ?: '—'">Croatia</span>
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+                    <!-- Spacer -->
+                    <div style="height:14px;line-height:14px;font-size:0;">&nbsp;</div>
+                    <!-- Row 2: Email / Phone -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td class="b4y-stack-cell" valign="top" width="50%" style="padding-right:8px;">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#9ca3af;letter-spacing:0.14em;text-transform:uppercase;padding-bottom:4px;">
+                            Email
+                          </div>
+                          <a th:href="'mailto:' + ${clientEmail}" th:text="${clientEmail}"
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:14px;color:#111827;text-decoration:underline;">marko.horvat@gmail.com</a>
+                        </td>
+                        <td class="b4y-stack-cell" valign="top" width="50%">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#9ca3af;letter-spacing:0.14em;text-transform:uppercase;padding-bottom:4px;">
+                            Phone
+                          </div>
+                          <a th:if="${clientPhone}" th:href="'tel:' + ${clientPhone}" th:text="${clientPhone}"
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:14px;color:#111827;text-decoration:underline;">+385
+                            91 446 5564</a>
+                          <span th:unless="${clientPhone}"
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:14px;color:#9ca3af;">—</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ============== REQUESTED YACHT SECTION ============== -->
+          <tr>
+            <td style="padding:14px 4px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e7eb;">
+                <tr>
+                  <td style="padding:14px 18px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <!-- Thumbnail -->
+                        <td valign="middle" width="84" style="padding-right:14px;">
+                          <img th:if="${yachtImageUrl}" th:src="${yachtImageUrl}" th:alt="${yachtName}"
+                            width="76" height="60"
+                            style="display:block;border-radius:8px;width:76px;height:60px;object-fit:cover;border:0;outline:none;" />
+                          <table th:unless="${yachtImageUrl}" role="presentation" cellpadding="0" cellspacing="0"
+                            border="0">
+                            <tr>
+                              <td valign="middle" align="center"
+                                style="width:76px;height:60px;background-color:#e5e7eb;border-radius:8px;font-family:'Raleway',Arial,sans-serif;font-weight:800;font-size:18px;color:#9ca3af;">
+                                ⛵
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                        <!-- Title + location -->
+                        <td valign="middle" align="left">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#9ca3af;letter-spacing:0.14em;text-transform:uppercase;padding-bottom:4px;">
+                            Requested yacht
+                          </div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:15px;color:#111827;line-height:1.25;">
+                            <span th:text="${yachtModel}">Gulet</span>
+                            <span style="color:#9ca3af;font-weight:500;"> | </span>
+                            <span th:text="${yachtName}">Fortuna</span>
+                          </div>
+                          <div style="padding-top:4px;">
+                            <span th:if="${yachtLocationFlag}" th:text="${yachtLocationFlag}"
+                              style="font-size:13px;margin-right:4px;">🇭🇷</span><span
+                              style="font-family:'Raleway',Arial,sans-serif;font-weight:600;font-size:12.5px;color:#6b7280;"
+                              th:text="${yachtLocation} ?: '—'">Port Dubrovnik</span>
+                          </div>
+                        </td>
+                        <!-- Open page link -->
+                        <td valign="middle" align="right">
+                          <a th:if="${yachtPageUrl}" th:href="${yachtPageUrl}"
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:12.5px;color:#2856ff;text-decoration:none;white-space:nowrap;">Open
+                            page →</a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ============== DATES ROW (Set Sail / Return / Duration) ============== -->
+          <tr>
+            <td style="padding:14px 4px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="background-color:#ffffff;border-radius:12px;border:1px solid #e5e7eb;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <!-- Set Sail -->
+                        <td class="b4y-stack-cell" valign="top" width="33%" style="padding-right:10px;">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#9ca3af;letter-spacing:0.14em;text-transform:uppercase;padding-bottom:4px;">
+                            Set sail
+                          </div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:14px;color:#111827;"
+                            th:text="${setSailDate}">Sat, 20 Jun 2026</div>
+                        </td>
+                        <!-- Return -->
+                        <td class="b4y-stack-cell" valign="top" width="33%" style="padding-right:10px;">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#9ca3af;letter-spacing:0.14em;text-transform:uppercase;padding-bottom:4px;">
+                            Return
+                          </div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:14px;color:#111827;"
+                            th:text="${returnDate}">Sat, 27 Jun 2026</div>
+                        </td>
+                        <!-- Duration -->
+                        <td class="b4y-stack-cell" valign="top" width="34%">
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#9ca3af;letter-spacing:0.14em;text-transform:uppercase;padding-bottom:4px;">
+                            Duration
+                          </div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:14px;color:#111827;"
+                            th:text="${nightsCount} + ' night' + (${nightsCount} == 1 ? '' : 's')">7 nights</div>
+                          <div
+                            style="font-family:'Raleway',Arial,sans-serif;font-weight:500;font-size:11.5px;color:#9ca3af;padding-top:2px;"
+                            th:text="${dateRangeShort}">20 Jun – 27 Jun 2026</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ============== CLIENT'S MESSAGE ============== -->
+          <tr th:if="${clientMessage}">
+            <td style="padding:14px 4px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="background-color:#fff8d6;border:1px solid #f4e6a8;border-left:4px solid #d6b73a;border-radius:10px;">
+                <tr>
+                  <td style="padding:16px 20px;">
+                    <div
+                      style="font-family:'Raleway',Arial,sans-serif;font-weight:700;font-size:10.5px;color:#7a6213;letter-spacing:0.16em;text-transform:uppercase;padding-bottom:8px;">
+                      Client's message
+                    </div>
+                    <div
+                      style="font-family:'Raleway',Arial,sans-serif;font-style:italic;font-weight:500;font-size:13px;color:#3b2900;line-height:1.55;"
+                      th:utext="${clientMessageHtml}">
+                      Hi — we're a group of 8 friends looking for a relaxed week around the Elafiti islands. Would
+                      ideally start from Dubrovnik on the 20th. Could you share availability, price for the week, and
+                      whether a skipper is included? Thanks!
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ============== FOOTER ============== -->
+          <tr>
+            <td style="padding:24px 4px 8px;text-align:center;">
+              <div
+                style="font-family:'Raleway',Arial,sans-serif;font-weight:500;font-size:11.5px;color:#9ca3af;line-height:1.5;">
+                Source: <a th:href="${brandWebsiteUrl}" th:text="${sourceLabel}"
+                  style="color:#9ca3af;text-decoration:underline;">boat4you.com / yacht page</a>
+                · Inquiry forwarded automatically.
+              </div>
+              <div
+                style="font-family:'Raleway',Arial,sans-serif;font-weight:600;font-size:11.5px;color:#9ca3af;padding-top:4px;">
+                <span th:text="${brandShortName}">Boat4You</span>
+                ·
+                <a th:href="'mailto:' + ${brandSupportEmail}"
+                  th:text="${brandSupportEmail}"
+                  style="color:#9ca3af;text-decoration:underline;">info@boat4you.com</a>
+                <span th:if="${brandSupportPhone}">
+                  ·
+                  <a th:href="'tel:' + ${brandSupportPhone}"
+                    th:text="${brandSupportPhone}"
+                    style="color:#9ca3af;text-decoration:underline;">+385 91 3000 009</a>
+                </span>
+              </div>
+            </td>
+          </tr>
+
+        </table>
+        <!-- /Outer container -->
+
+      </td>
+    </tr>
+  </table>
+</body>
+
+</html>

@@ -31,12 +31,6 @@ class ReservationPaymentPhase : AbstractEntity<Long>() {
     @Column(name = "stripe_payment_intent_id", columnDefinition = "VARCHAR(511)", nullable = true)
     var stripePaymentIntentId: String? = null
 
-    @Column(name = "viva_order_code", columnDefinition = "VARCHAR(511)", nullable = true)
-    var vivaOrderCode: String? = null
-
-    @Column(name = "viva_transaction_id", columnDefinition = "VARCHAR(511)", nullable = true)
-    var vivaTransactionId: String? = null
-
     @ManyToOne(fetch = FetchType.LAZY)
     @OnDelete(action = OnDeleteAction.SET_NULL)
     @JoinColumn(name = "reservation_flow_id", referencedColumnName = "id", nullable = false)
@@ -53,8 +47,6 @@ class ReservationPaymentPhase : AbstractEntity<Long>() {
         if (paidOn?.equals(other.paidOn) != true) return false
         if (stripeSessionId != other.stripeSessionId) return false
         if (stripePaymentIntentId != other.stripePaymentIntentId) return false
-        if (vivaOrderCode != other.vivaOrderCode) return false
-        if (vivaTransactionId != other.vivaTransactionId) return false
         if (reservationFlow.id != other.reservationFlow.id) return false
 
         return true
@@ -66,8 +58,6 @@ class ReservationPaymentPhase : AbstractEntity<Long>() {
         result = 31 * result + (paidOn?.hashCode() ?: 0)
         result = 31 * result + (stripeSessionId?.hashCode() ?: 0)
         result = 31 * result + (stripePaymentIntentId?.hashCode() ?: 0)
-        result = 31 * result + (vivaOrderCode?.hashCode() ?: 0)
-        result = 31 * result + (vivaTransactionId?.hashCode() ?: 0)
         result = 31 * result + reservationFlow.id.hashCode()
         return result
     }

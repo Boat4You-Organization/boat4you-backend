@@ -42,10 +42,16 @@ open class ReservationFlow {
     @JoinColumn(name = "yacht_id", nullable = false)
     open var yacht: Yacht? = null
 
-    @NotNull
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    /**
+     * Nullable for admin-only "fictitious" replacement reservations — the
+     * agency moved the customer onto a different yacht in Nausys/MMK and
+     * we only record the swap on our side. Customer + guest flows always
+     * set this via the yacht-search result; the nullable relaxation is
+     * specifically for [ReservationFlowMutationService.createFictitiousReservation].
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
     @OnDelete(action = OnDeleteAction.RESTRICT)
-    @JoinColumn(name = "offer_id", nullable = false)
+    @JoinColumn(name = "offer_id")
     open var offer: Offer? = null
 
     @NotNull

@@ -40,29 +40,56 @@ class OptionExpiryService(
             return
         }
 
+        var skipped = 0
         reservations.forEach { reservation ->
-            val yachtImageUrl = reservation.reservationFlow!!.yacht!!.mainImageId?.let { "$serverHost/public/image/$it?width=936" }
-            val variables =
-                mapOf(
-                    "userName" to "Dear ${reservation.reservationFlow!!.getFullName()},",
-                    "expiryHours" to "24h",
-                    "yachtImageUrl" to yachtImageUrl,
-                    "yachtName" to reservation.reservationFlow!!.yacht!!.name,
-                    "yachtModel" to reservation.reservationFlow!!.yacht!!.model?.name,
-                    "locationFrom" to reservation.locationFrom!!.name,
-                    "viewBoatUrl" to serverHostPublic + "/boat/" + reservation.reservationFlow!!.yacht!!.id,
-                    "expiryDate" to reservation.optionExpiresAt!!.format(dateFormatter),
-                    "reservationUrl" to serverHostPublic + "/my-bookings/" + reservation.id,
-                    "reservationId" to reservation.id!!,
-                    "publicUrl" to serverHostPublic,
-                )
+            try {
+                // Defensive: each chained `!!` used to explode the whole batch if
+                // a reservation/yacht/email relation raced against a mutation (yacht
+                // swap, cancellation) mid-query. Safe-nav + skip keeps the rest
+                // of the batch alive.
+                val flow = reservation.reservationFlow
+                val yacht = flow?.yacht
+                val email = flow?.email
+                val locationFrom = reservation.locationFrom
+                val expiresAt = reservation.optionExpiresAt
+                if (flow == null || yacht == null || email.isNullOrBlank() || locationFrom == null || expiresAt == null) {
+                    log.warn(
+                        "Skipping option-expiry email for reservation={} — missing data " +
+                            "(flow={}, yacht={}, email blank={}, loc={}, expiresAt={})",
+                        reservation.id, flow?.id, yacht?.id, email.isNullOrBlank(), locationFrom?.id, expiresAt,
+                    )
+                    skipped++
+                    return@forEach
+                }
+                val yachtImageUrl = yacht.mainImageId?.let { "$serverHost/public/image/$it?width=936" }
+                val variables =
+                    mapOf(
+                        "userName" to "Dear ${flow.getFullName()},",
+                        "expiryHours" to "24h",
+                        "yachtImageUrl" to yachtImageUrl,
+                        "yachtName" to yacht.name,
+                        "yachtModel" to yacht.model?.name,
+                        "locationFrom" to locationFrom.name,
+                        "viewBoatUrl" to serverHostPublic + "/boat/" + yacht.id,
+                        "expiryDate" to expiresAt.format(dateFormatter),
+                        "reservationUrl" to serverHostPublic + "/my-bookings/" + reservation.id,
+                        "reservationId" to (reservation.reservationNumber ?: "${reservation.id!!}"),
+                        "publicUrl" to serverHostPublic,
+                    )
 
-            emailService.sendEmail(
-                recipients = listOf(reservation.reservationFlow!!.email!!),
-                subject = "Reminder: Reservation option about to expire in 24 hours",
-                templateName = "email/optionExpiryReminder",
-                variables = variables,
-            )
+                emailService.sendEmail(
+                    recipients = listOf(email),
+                    subject = "Reminder: Reservation option about to expire in 24 hours",
+                    templateName = "email/optionExpiryReminder",
+                    variables = variables,
+                )
+            } catch (e: Exception) {
+                log.error("Failed option-expiry email for reservation={} — continuing batch", reservation.id, e)
+                skipped++
+            }
+        }
+        if (skipped > 0) {
+            log.info("Option-expiry batch finished: total=${reservations.size}, skipped=$skipped")
         }
     }
 
@@ -91,7 +118,7 @@ class OptionExpiryService(
                     "viewBoatUrl" to serverHostPublic + "/boat/" + reservation.reservationFlow!!.yacht!!.id,
                     "expiryDate" to reservation.optionExpiresAt!!.format(dateFormatter),
                     "reservationUrl" to serverHostPublic + "/my-bookings/" + reservation.id,
-                    "reservationId" to reservation.id!!,
+                    "reservationId" to (reservation.reservationNumber ?: "${reservation.id!!}"),
                     "publicUrl" to serverHostPublic,
                 )
 

@@ -142,6 +142,21 @@ open class Offer {
     @Column(name = "agency_commission", nullable = false)
     open var agencyCommission: BigDecimal? = null
 
+    /**
+     * Broker commission for this single offer, in the offer's currency.
+     * This is "what we (boat4you) keep" per booking — equivalent to
+     * `clientPrice - agencyPrice` once the booking goes through.
+     *
+     * Sourced directly from the partner during offer sync:
+     *  - MMK:    `Offer.commissionValue`
+     *  - Nausys: `RestYachtReservationPriceInfo.agencyCommission`
+     *
+     * Null for pre-V1_51 rows (backfilled via next offer sync) and for
+     * custom yachts (no partner record).
+     */
+    @Column(name = "broker_commission")
+    open var brokerCommission: BigDecimal? = null
+
     @Size(max = 50)
     @Column(name = "ext_status", length = 50)
     open var extStatus: String? = null

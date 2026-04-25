@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.reservation.service
 
 import com.stripe.model.Event
 import com.stripe.model.checkout.Session
+import com.stripe.net.RequestOptions
 import com.stripe.param.checkout.SessionCreateParams
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
@@ -34,6 +35,11 @@ class StripePaymentService(
     private val reservationEmailService: ReservationEmailService,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${application.stripe.enabled}") private val stripeEnabled: Boolean,
+    // 3-letter ISO 4217. Stripe wants lowercase. EUR is the product default;
+    // overridable per-env via APPLICATION_STRIPE_CURRENCY when an operator
+    // prices in USD/GBP. Per-offer override would need a bigger change
+    // (offer + phase currency fields) — that's a separate follow-up.
+    @Value("\${application.stripe.currency:eur}") private val stripeCurrency: String,
 ) {
     private val logger: Logger = LoggerFactory.getLogger(this::class.java.name)
 
@@ -42,6 +48,7 @@ class StripePaymentService(
         reservationId: Long,
         payFullAmount: Boolean?,
         paymentPhaseId: Long?,
+        idempotencyKey: String? = null,
     ): Session {
         checkIfStripeIsEnabled()
         val dbReservation = reservationRepository.findById(reservationId).getOrElse { throw ReservationNotExistException() }
@@ -51,23 +58,55 @@ class StripePaymentService(
             throw ParameterValidationException(mapOf("payFullAmount" to "Provide either payFullAmount or paymentPhaseId parameter"))
         }
 
+        // Phases that are NOT yet paid — the only valid targets for a fresh
+        // Stripe charge. Admin-created replacement reservations may have the
+        // first installment already marked paid (carry-over from a cancelled
+        // booking), and an installment that was paid earlier on this same
+        // reservation obviously must not be re-charged. Filtering here once
+        // keeps the branches below simple.
+        val unpaidPhases = reservationFlow.paymentPhases.filter { it.paidOn == null }
+
         val dbPrice: BigDecimal =
-            // Reservation created for the first time
-            if (payFullAmount != null) {
-                if (payFullAmount) {
-                    reservationFlow.calculatedTotalPrice!!
-                } else {
-                    reservationFlow.paymentPhases.oldest().amount
+            when {
+                // A specific phase was pinned from the UI (next-due or later
+                // installment). Wins over `payFullAmount` if both are present.
+                paymentPhaseId != null -> {
+                    reservationFlow.paymentPhases.find { it.id == paymentPhaseId }?.amount
+                        ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase not found"))
                 }
-            }
-            // Another installment being paid later
-            else {
-                reservationFlow.paymentPhases.find { it.id == paymentPhaseId }?.amount ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase not found"))
+                // "Pay full remaining" — sum of unpaid phases (NOT the full
+                // reservation total, otherwise customers with a partially-paid
+                // reservation would be overcharged).
+                payFullAmount == true -> {
+                    val remaining = unpaidPhases.sumOf { it.amount }
+                    if (remaining > BigDecimal.ZERO) remaining
+                    // Legacy fallback: if we have no phase rows at all yet
+                    // (brand-new reservation, phases generated later), use
+                    // the reservation total. This keeps the pre-installment
+                    // flow intact for initial guest bookings.
+                    else reservationFlow.calculatedTotalPrice!!
+                }
+                // "Pay first installment" — next DUE unpaid phase, not the
+                // historically-oldest one which might already be paid.
+                payFullAmount == false -> {
+                    unpaidPhases.minByOrNull { it.deadline!! }?.amount
+                        ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "No unpaid payment phases remain"))
+                }
+                else -> throw ParameterValidationException(mapOf("payFullAmount" to "Provide either payFullAmount or paymentPhaseId parameter"))
             }
 
         val cardSurchargePercentage = settingsService.getSetting(SettingsKeyEnum.CARD_PAYMENT_SURCHARGE).value?.toBigDecimal() ?: BigDecimal(0.0)
         val cardSurchargeAmount = dbPrice.times(cardSurchargePercentage.div(100.toBigDecimal()))
         val totalPriceInCents = (dbPrice + cardSurchargeAmount).toCentsLong()
+
+        // The customer-facing booking number is the public payment reference
+        // across all channels (bank transfer instructions, emails, Stripe).
+        // Format: "1001{sequence}/{charter_year}", e.g. "100176/2026".
+        // Using it as `client_reference_id` makes it the top-level identifier
+        // in Stripe Dashboard search; `payment_intent_data.description`
+        // pushes it onto the customer's bank card statement. Fallback to
+        // reservation id for the (historical) case where no number was set.
+        val paymentReference = dbReservation.reservationNumber ?: reservationId.toString()
 
         val params =
             SessionCreateParams
@@ -75,6 +114,15 @@ class StripePaymentService(
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setSuccessUrl("$serverHostPublic/payment-success?session_id={CHECKOUT_SESSION_ID}")
                 .setCancelUrl("$serverHostPublic/payment-cancelled")
+                .setClientReferenceId(paymentReference)
+                .setPaymentIntentData(
+                    SessionCreateParams.PaymentIntentData
+                        .builder()
+                        .setDescription("Boat4you reservation #$paymentReference")
+                        .putMetadata("reservationId", reservationId.toString())
+                        .putMetadata("reservationFlowId", reservationFlow.id!!.toString())
+                        .build(),
+                )
                 .putMetadata("reservationId", reservationId.toString())
                 .putMetadata("reservationFlowId", reservationFlow.id!!.toString())
                 .apply {
@@ -87,18 +135,27 @@ class StripePaymentService(
                         .setPriceData(
                             SessionCreateParams.LineItem.PriceData
                                 .builder()
-                                .setCurrency("eur")
+                                .setCurrency(stripeCurrency)
                                 .setUnitAmount(totalPriceInCents)
                                 .setProductData(
                                     SessionCreateParams.LineItem.PriceData.ProductData
                                         .builder()
-                                        .setName("Boat Booking for Reservation id: $reservationId")
+                                        .setName("Boat Booking — Reservation #$paymentReference")
                                         .build(),
                                 ).build(),
                         ).build(),
                 ).build()
 
-        val session = Session.create(params)
+        // Stripe idempotency: when the frontend passes a key (generated once
+        // per /payment page mount), Stripe dedupes retries for 24 h — a double
+        // click returns the same Session instead of charging twice. Missing
+        // key falls back to non-idempotent create so older callers still work.
+        val session =
+            if (idempotencyKey.isNullOrBlank()) {
+                Session.create(params)
+            } else {
+                Session.create(params, RequestOptions.builder().setIdempotencyKey(idempotencyKey).build())
+            }
         setSessionIdOnPaymentPhases(payFullAmount, paymentPhaseId, reservationFlow, session.id)
 
         logger.debug("Created Stripe sessionId ${session.id} for reservationId $reservationId")

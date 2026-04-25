@@ -17,7 +17,9 @@ application:
       base-url: ${MMK_URL:https://www.booking-manager.com/api/v2}
       bearer: ${MMK_TOKEN}
   email:
-    from-address: boat4you <no-reply@boat4you.com>
+    # Customer-visible From. Falls through to the env var first so we can
+    # rotate without a redeploy; default keeps the boat4you mailbox.
+    from-address: ${EMAIL_FROM_ADDRESS:Boat4You | Endless blue. Boats 4 you <info@boat4you.com>}
   invites:
     user:
       allow-uninvited-login: false
@@ -25,7 +27,7 @@ application:
     enabled: false
   security:
     jwt:
-      secret-key: ${JWT_SIGNATURE_KEY}
+      secret-key: ${JWT_SECRET_KEY}
 spring:
   mail:
     host: ${MAIL_SERVER_HOST}

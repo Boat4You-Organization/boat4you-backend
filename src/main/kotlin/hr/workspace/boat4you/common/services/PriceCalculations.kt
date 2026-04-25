@@ -58,7 +58,18 @@ object PriceCalculations {
                 }
             }
 
-            ExtrasUnitType.PER_BOOKING, ExtrasUnitType.PER_BOAT, ExtrasUnitType.AMOUNT -> {
+            ExtrasUnitType.PER_BOOKING, ExtrasUnitType.PER_BOAT, ExtrasUnitType.AMOUNT,
+            // V1_58: per-unit variants (hour / piece / litre / pack / ...)
+            // are treated as one-time amounts in the booking flow. We don't
+            // track quantity here — partner reconciles at the marina. The
+            // label is displayed so the client understands the unit price
+            // basis.
+            ExtrasUnitType.PER_HOUR, ExtrasUnitType.PER_PIECE, ExtrasUnitType.PER_LITRE,
+            ExtrasUnitType.PER_MEAL, ExtrasUnitType.PER_NM, ExtrasUnitType.PER_PACK,
+            ExtrasUnitType.PER_PET, ExtrasUnitType.PER_SET, ExtrasUnitType.PER_BED,
+            ExtrasUnitType.PER_TANK, ExtrasUnitType.PER_TON, ExtrasUnitType.PER_TRIP,
+            ExtrasUnitType.PER_GB, ExtrasUnitType.PER_BOTTLE, ExtrasUnitType.PER_CABIN,
+            ExtrasUnitType.PER_LICENCE -> {
                 Result.success(extrasPrice)
             }
 

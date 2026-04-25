@@ -1,9 +1,12 @@
 server:
-  host-public: https://localhost:8443
-  host-admin-public: https://localhost:8443
-#  ssl:
-#    enabled: false
-#  port: 8443
+  # Frontend URL — used as the base for Stripe success/cancel redirects and
+  # any email link pointing back to the customer-facing site. Must NOT be the
+  # backend port (8443); the browser has to land on the Next.js app.
+  host-public: http://localhost:3000
+  host-admin-public: http://localhost:8443
+  ssl:
+    enabled: false
+  port: 8443
 application:
   external:
     sync:
@@ -21,14 +24,16 @@ application:
   upload:
     max-file-size: 10MB
     max-request-size: 50MB
-    directory: /Users/kresimirhorvat/projects/workspace/boat4you_data
+    directory: /tmp/boat4you_data
   email:
     enabled: false
+    # SMTP off locally — capture rendered templates to disk instead so invite /
+    # password-reset / booking confirmation flows stay testable without SMTP.
+    # Writes HTML to dev-log-dir (one file per send, timestamped). Ignored when
+    # email.enabled is true.
+    dev-log-to-file: true
+    dev-log-dir: /tmp/b4y-emails
   stripe:
-    enabled: false
-  viva:
-    enabled: false
-  test:
     enabled: true
 spring:
   datasource:

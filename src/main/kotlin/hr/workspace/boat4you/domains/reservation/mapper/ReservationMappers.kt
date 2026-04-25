@@ -69,6 +69,17 @@ class ReservationMappers(
                     reservationView.calculatedTotalPrice,
                     currency,
                 ),
+            // List price (pre-discount) — only surface it if the offer had an
+            // ext_base_price higher than the final total; otherwise leave null
+            // so the UI doesn't render a useless strike-through equal to the
+            // paid price.
+            listPrice =
+                reservationView.offerListPrice
+                    ?.takeIf { it > reservationView.calculatedTotalPrice },
+            listPriceInfo =
+                reservationView.offerListPrice
+                    ?.takeIf { it > reservationView.calculatedTotalPrice }
+                    ?.let { exchangeRateCalculationService.calculatePriceInfo(it, currency) },
             yachtSlug =
                 SlugUtils.toSlugWithId(
                     reservationView.manufacturerName,
@@ -156,10 +167,10 @@ class ReservationMappers(
             reservationNumber = reservationView.reservationNumber,
             agencyEmail = reservationView.agencyEmail,
             agencyPhone = reservationView.agencyPhone,
-            clientPriceEur = reservationView.offerClientPrice!!,
+            clientPriceEur = reservationView.effectiveClientPrice(),
             clientPriceInfo =
                 exchangeRateCalculationService.calculatePriceInfo(
-                    reservationView.offerClientPrice!!,
+                    reservationView.effectiveClientPrice(),
                     currency,
                 ),
             clientPricePerDayEur =
@@ -179,6 +190,9 @@ class ReservationMappers(
             manufacturerName = reservationView.manufacturerName,
             amenities = yacht.yachtEquipments.distinctBy { it.equipmentId }.map { it.toDto() },
             specialRequest = reservationView.reservationFlowRequest,
+            // NOTE: adminNotes intentionally NOT exposed here — this is the
+            // customer-facing MyReservationDetailsDto. Only the admin DTO
+            // (toDetailsDto below) carries it.
         )
     }
 
@@ -192,9 +206,10 @@ class ReservationMappers(
             reservationOptionExpiresAt = reservationView.reservationOptionExpiresAt,
             reservationTotalPrice = reservationView.calculatedTotalPrice!!,
             reservationDiscount = reservationView.reservationDiscount,
-            reservationExternalId = reservationView.reservationExternalId!!,
-            reservationExternalReservationCode = reservationView.reservationExternalReservationCode!!,
+            reservationExternalId = reservationView.reservationExternalId,
+            reservationExternalReservationCode = reservationView.reservationExternalReservationCode,
             reservationNumber = reservationView.reservationNumber,
+            reservationUserId = reservationView.reservationUserId,
             endUser = "${reservationView.createdForName} ${reservationView.createdForSurname}",
             createdBy = "${reservationView.createdByName} ${reservationView.createdBySurname}",
             offerCheckin = reservationView.offerCheckin,
@@ -211,15 +226,18 @@ class ReservationMappers(
             yachtName = reservationView.yachtName!!,
             modelName = reservationView.modelName,
             manufacturerName = reservationView.manufacturerName,
-            locationFromName = reservationView.locationFromName!!,
-            locationFromCountry = reservationView.locationFromCountry!!,
-            locationToName = reservationView.locationToName!!,
-            locationToCountry = reservationView.locationToCountry!!,
+            locationFromName = reservationView.locationFromName,
+            locationFromCountry = reservationView.locationFromCountry,
+            locationToName = reservationView.locationToName,
+            locationToCountry = reservationView.locationToCountry,
             reservationDateFrom = reservationView.reservationDateFrom!!,
             reservationDateTo = reservationView.reservationDateTo!!,
             agencyId = reservationView.agencyId!!,
             agencyName = reservationView.agencyName!!,
             cancellationRequestAt = reservationView.reservationCancelationRequestAt,
+            reservationAgencyPrice = reservationView.reservationAgencyPrice,
+            reservationCommission = reservationView.reservationCommission,
+            reservationAdminNotes = reservationView.reservationAdminNotes,
         )
 
     fun toDetailsDto(
@@ -239,8 +257,7 @@ class ReservationMappers(
             reservationExternalStatus = reservationView.reservationExternalStatus,
             reservationCreatedAt =
                 reservationView.reservationCreatedAt!!,
-            reservationOptionExpiresAt =
-                reservationView.reservationOptionExpiresAt!!,
+            reservationOptionExpiresAt = reservationView.reservationOptionExpiresAt,
             reservationTotalPrice = reservationView.calculatedTotalPrice,
             reservationPaymentPhases = paymentPhasesService.getPaymentPhases(reservationView.reservationId!!),
             reservationDiscount = reservationView.reservationDiscount,
@@ -273,10 +290,10 @@ class ReservationMappers(
             modelName = reservationView.modelName,
             yachtMainImage = reservationView.yachtMainImage,
             manufacturerName = reservationView.manufacturerName,
-            locationFromName = reservationView.locationFromName!!,
-            locationFromCountry = reservationView.locationFromCountry!!,
-            locationToName = reservationView.locationToName!!,
-            locationToCountry = reservationView.locationToCountry!!,
+            locationFromName = reservationView.locationFromName,
+            locationFromCountry = reservationView.locationFromCountry,
+            locationToName = reservationView.locationToName,
+            locationToCountry = reservationView.locationToCountry,
             reservationDateFrom =
                 reservationView.reservationDateFrom!!,
             reservationDateTo =
@@ -299,6 +316,7 @@ class ReservationMappers(
             charterType = reservationView.charterType,
             amenities = yacht.yachtEquipments.distinctBy { it.equipmentId }.map { it.toDto() },
             specialRequest = reservationView.reservationFlowRequest,
+            adminNotes = reservationView.reservationAdminNotes,
         )
     }
 }

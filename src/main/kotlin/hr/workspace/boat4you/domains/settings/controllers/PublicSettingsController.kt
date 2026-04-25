@@ -36,7 +36,22 @@ class PublicSettingsController(
         val percentage = setting.value?.toBigDecimalOrNull() ?: BigDecimal.ZERO
         return ResponseEntity.ok(CardSurchargeDto(percentage = percentage.toPlainString()))
     }
+
+    /**
+     * Returns the configured bank-transfer flat fee in EUR (e.g. "32.00").
+     * Covers OUR cost of receiving the wire (Erste "OUR" charge). Falls back to
+     * "0" if unset so the checkout UI never breaks on a missing setting.
+     */
+    @Operation(summary = "Get bank transfer flat fee in EUR (public, safe to expose)")
+    @GetMapping("/bank-transfer-fee")
+    fun getBankTransferFee(): ResponseEntity<BankTransferFeeDto> {
+        val setting = settingsService.getSetting(SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE)
+        val amount = setting.value?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        return ResponseEntity.ok(BankTransferFeeDto(amountEur = amount.toPlainString()))
+    }
 }
 
 /** Small DTO kept local — this value is only read from the public endpoint. */
 data class CardSurchargeDto(val percentage: String)
+
+data class BankTransferFeeDto(val amountEur: String)

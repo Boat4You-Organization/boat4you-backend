@@ -288,6 +288,7 @@ class UserAuthService(
         }
     }
 
+    @Transactional(readOnly = true)
     fun getCurrentUser(): User {
         val user =
             getAuthenticatedUserId()

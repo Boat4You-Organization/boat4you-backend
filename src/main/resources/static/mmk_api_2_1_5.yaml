@@ -2456,6 +2456,16 @@ components:
           type: string
           format: date-time
           example: "2019-04-01 00:00:00"
+        sailingDateFrom:
+          type: string
+          format: date-time
+          example: "2026-05-01 00:00:00"
+          description: Sailing window start — narrower than validDate* and used to scope period-specific extras (e.g. seasonal APA, per-period packs).
+        sailingDateTo:
+          type: string
+          format: date-time
+          example: "2026-10-31 23:59:59"
+          description: Sailing window end — see sailingDateFrom.
         description:
           type: string
           example: "Extras description"

@@ -44,6 +44,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Isolation
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
 
 @Service
 class NauSysCatalogueSyncService(
@@ -73,6 +74,10 @@ class NauSysCatalogueSyncService(
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
         val allMappings =
             externalMappingService.getAllMappingsByType(Agency::class.simpleName.toString(), externalSystem)
+        val allCountryMappings =
+            externalMappingService.getAllMappingsByType(Country::class.simpleName.toString(), externalSystem)
+        val allCountries = countryRepository.findAll()
+
         nausysAgencies.companies?.forEach {
             val mapping = allMappings.find { mapping -> mapping.externalId == it.id }
 
@@ -88,13 +93,39 @@ class NauSysCatalogueSyncService(
                     agency
                 }
 
-            if (agency == null) {
-                log.warn("Unable to find agency by id: ${it.id} name: ${it.name} or vat code ${it.vatcode}")
-                return@forEach
+            val resolvedAgency = if (agency == null) {
+                // create new agency for unmatched NauSYS company
+                val newAgency = Agency()
+                newAgency.name = it.name
+                newAgency.address = it.address
+                newAgency.city = it.city
+                newAgency.zip = it.zip
+                newAgency.vatCode = it.vatcode
+                newAgency.web = it.web
+                newAgency.email = it.email
+                newAgency.phone = it.phone
+                newAgency.mobile = it.mobile
+                newAgency.active = true
+
+                val countryMapping = allCountryMappings.find { cm -> cm.externalId == it.countryId }
+                val country = if (countryMapping != null) allCountries.find { c -> c.id == countryMapping.systemId?.toInt() } else null
+                newAgency.country = country?.name
+
+                agencyRepository.saveAndFlush(newAgency)
+                log.info("Created NEW agency ${newAgency.id} (${newAgency.name}) for NauSYS company ${it.id}")
+                newAgency
+            } else {
+                // activate existing agency so it gets picked up by yacht sync
+                if (agency.active != true) {
+                    agency.active = true
+                    agencyRepository.save(agency)
+                    log.info("Activated agency ${agency.id} (${agency.name}) for NauSYS sync")
+                }
+                agency
             }
 
             val agencySourceId = AgencySourceId()
-            agencySourceId.agencyId = agency.id
+            agencySourceId.agencyId = resolvedAgency.id
             agencySourceId.externalSystemId = ExternalSystemEnum.NAUSYS.value
             val existingAgencySource = agencySourceRepository.findById(agencySourceId)
 
@@ -103,7 +134,7 @@ class NauSysCatalogueSyncService(
                 agencySource.id = agencySourceId
                 agencySource.primary = true
                 agencySource.externalId = it.id
-                agencySource.agency = agency
+                agencySource.agency = resolvedAgency
                 agencySource.externalSystem = externalSystem
                 agencySourceRepository.save(agencySource)
             }
@@ -111,7 +142,7 @@ class NauSysCatalogueSyncService(
             if (mapping == null) {
                 externalMappingService.saveMapping(
                     it.id!!.toLong(),
-                    agency.id!!.toLong(),
+                    resolvedAgency.id!!.toLong(),
                     externalSystem,
                     Agency::class.simpleName.toString(),
                 )
@@ -342,6 +373,11 @@ class NauSysCatalogueSyncService(
             }
             model.manufacturer = manufacturer
             model.externalCategoryId = it.yachtCategoryId
+            // Nausys puts length/beam on the model (RestYachtModel), not the
+            // per-yacht payload. Copy them here so yacht sync can resolve the
+            // spec-card dimensions via the yacht's model.
+            it.loa?.let { loa -> model.length = BigDecimal.valueOf(loa.toDouble()) }
+            it.beam?.let { beam -> model.beam = BigDecimal.valueOf(beam.toDouble()) }
             modelRepository.saveAndFlush(model)
 
             if (mapping == null) {

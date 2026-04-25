@@ -1,24 +1,25 @@
 package hr.workspace.boat4you.domains.reservation.service
 
-import hr.workspace.boat4you.domains.catalouge.enums.ExtrasType
+import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
-import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
-import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.mmk.service.MmkReservationIntegrationService
 import hr.workspace.boat4you.domains.external.model.ReservationData
 import hr.workspace.boat4you.domains.external.nausys.service.NausysReservationIntegrationService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMappingRepository
+import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationFlowNotExists
+import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlow
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlowRepository
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.model.ReservationResponseWrapper
-import org.springframework.beans.factory.annotation.Value
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
 import java.time.LocalDateTime
 import java.time.LocalTime
 
@@ -30,16 +31,8 @@ class ReservationIntegrationService(
     private val nausysReservationIntegrationService: NausysReservationIntegrationService,
     private val reservationRepository: ReservationRepository,
     private val reservationFlowRepository: ReservationFlowRepository,
-    @Value("\${application.test.enabled}")
-    private val testModeEnabled: Boolean,
 ) {
-    private fun checkTestMode(agency: Agency) {
-        if (testModeEnabled) {
-            if (!(agency.id == 9000L || agency.id == 9001L)) {
-                throw IllegalStateException("Operation not allowed in test mode for agency ${agency.name}")
-            }
-        }
-    }
+    private val log = LoggerFactory.getLogger(ReservationIntegrationService::class.java)
 
     fun createExternalReservation(reservationFlowId: Long): ReservationResponseWrapper {
         val reservationFlow =
@@ -47,7 +40,17 @@ class ReservationIntegrationService(
                 .findById(reservationFlowId)
                 .orElseThrow { ReservationFlowNotExists() }
         val yacht = reservationFlow.yacht!!
-        val externalSystem = reservationFlow.yacht!!.agency!!.primarySource!!.externalSystem!!
+        val agency = yacht.agency!!
+
+        if (agency.skipExternalSystem == true) {
+            log.info(
+                "Skipping partner createOption for agency ${agency.id} (skipExternalSystem=true); " +
+                    "synthesizing OPTION wrapper for reservationFlow $reservationFlowId",
+            )
+            return buildSkipOptionResponse(reservationFlow)
+        }
+
+        val externalSystem = agency.primarySource!!.externalSystem!!
         val externalYachtId =
             externalMappingRepository.findBySystemIdAndExternalSystemAndType(
                 yacht.id!!,
@@ -55,9 +58,6 @@ class ReservationIntegrationService(
                 Yacht::class.simpleName.toString(),
             ) ?: throw YachtDoesNotExistException()
         val offer = reservationFlow.offer!!
-
-        // TODO remove
-        checkTestMode(yacht.agency!!)
 
         if (offer.yacht!!.id != yacht.id) {
             throw IllegalArgumentException("Offer does not belong to the selected yacht")
@@ -72,7 +72,7 @@ class ReservationIntegrationService(
                 startDate = startDateTime,
                 endDate = endDateTime,
                 externalYachtId = externalYachtId.externalId!!,
-                externalAgencyId = yacht.agency!!.getExternalId()!!,
+                externalAgencyId = agency.getExternalId()!!,
                 name = reservationFlow.name!!,
                 surname = reservationFlow.surname!!,
                 selectedServices = reservationExtras,
@@ -98,11 +98,17 @@ class ReservationIntegrationService(
 
     fun confirmExternalReservation(reservationId: Long): ReservationResponseWrapper {
         val reservation = reservationRepository.findById(reservationId).orElseThrow()
-        val externalSystem = reservation.reservationFlow!!.yacht!!.agency!!.primarySource!!.externalSystem!!
+        val agency = reservation.reservationFlow!!.yacht!!.agency!!
 
-        // TODO remove
-        checkTestMode(reservation.reservationFlow!!.yacht!!.agency!!)
+        if (agency.skipExternalSystem == true) {
+            log.info(
+                "Skipping partner confirmReservation for reservation $reservationId " +
+                    "(agency ${agency.id} skipExternalSystem=true); synthesizing RESERVED wrapper",
+            )
+            return buildSkipConfirmResponse(reservation)
+        }
 
+        val externalSystem = agency.primarySource!!.externalSystem!!
         return when (externalSystem.id!!) {
             ExternalSystemEnum.MMK.value -> {
                 mmkReservationIntegrationService.confirmReservation(
@@ -125,11 +131,17 @@ class ReservationIntegrationService(
 
     fun deleteExternalReservation(reservationId: Long): ReservationResponseWrapper {
         val reservation = reservationRepository.findById(reservationId).orElseThrow()
-        val externalSystem = reservation.reservationFlow!!.yacht!!.agency!!.primarySource!!.externalSystem!!
+        val agency = reservation.reservationFlow!!.yacht!!.agency!!
 
-        // TODO remove
-        checkTestMode(reservation.reservationFlow!!.yacht!!.agency!!)
+        if (agency.skipExternalSystem == true) {
+            log.info(
+                "Skipping partner cancelOption for reservation $reservationId " +
+                    "(agency ${agency.id} skipExternalSystem=true); synthesizing CANCELLED wrapper",
+            )
+            return buildSkipCancelResponse(reservation)
+        }
 
+        val externalSystem = agency.primarySource!!.externalSystem!!
         return when (externalSystem.id!!) {
             ExternalSystemEnum.MMK.value -> {
                 mmkReservationIntegrationService.cancelOption(
@@ -213,5 +225,153 @@ class ReservationIntegrationService(
                 throw RuntimeException("Unsupported external system: ${externalSystem.id}")
             }
         }
+    }
+
+    /**
+     * Synthesize the response we'd normally get from `createOption` on the
+     * partner. Used when the agency has `skipExternalSystem=true` — the
+     * agency manages bookings outside our integration (e.g. ručno na partner
+     * strani) and we just record the booking in our DB. `external_id` and
+     * `external_code` are intentionally null so sync jobs ignore the row
+     * (yacht swap detection, MMK availability sync, etc. all key off
+     * `external_id IS NOT NULL`).
+     */
+    private fun buildSkipOptionResponse(reservationFlow: ReservationFlow): ReservationResponseWrapper {
+        val yacht = reservationFlow.yacht!!
+        val offer = reservationFlow.offer
+            ?: throw IllegalStateException(
+                "skipExternalSystem flow requires an offer on the reservation flow " +
+                    "(reservationFlowId=${reservationFlow.id}). For purely admin-entered bookings " +
+                    "without an offer, use the fictitious-reservation endpoint instead.",
+            )
+        val now = LocalDateTime.now()
+        val locationFrom = offer.locationFrom ?: yacht.location
+            ?: throw IllegalStateException(
+                "skipExternalSystem flow needs a pickup location: neither the offer nor the yacht has one " +
+                    "(yachtId=${yacht.id}, offerId=${offer.id})",
+            )
+        val locationTo = offer.locationTo ?: locationFrom
+        val totalPrice = offer.totalPrice ?: offer.clientPrice ?: BigDecimal.ZERO
+        val clientPrice = offer.clientPrice ?: totalPrice
+
+        return ReservationResponseWrapper(
+            externalId = null,
+            externalCode = null,
+            dateFrom = offer.dateFrom!!.atStartOfDay(),
+            dateTo = offer.dateTo!!.atStartOfDay(),
+            createdAt = now,
+            // No partner option to expire — admin/customer flow drives
+            // confirm/cancel manually. 48h TTL kept for parity with the
+            // option lifecycle the customer UI assumes.
+            expiresAt = now.plusHours(48),
+            product = offer.product!!,
+            locationFromId = locationFrom.id!!,
+            locationToId = locationTo.id!!,
+            locationFrom = locationFrom,
+            locationTo = locationTo,
+            status = OfferStatus.OPTION,
+            externalStatus = "SKIP-OPTION",
+            basePrice = clientPrice,
+            discount = offer.totalDiscount ?: BigDecimal.ZERO,
+            commission = null,
+            agencyPrice = null,
+            totalPrice = totalPrice,
+            clientPrice = clientPrice,
+            deposit = offer.deposit,
+            currency = "EUR",
+            paymentNote = null,
+            bankDetails = null,
+            note = "Agency manages bookings outside our system — no partner API call was made",
+            extras = null,
+            paymentPlan = null,
+            responseBody = null,
+            crewListUrl = null,
+            yachtId = yacht.id!!,
+            calculatedSysStatus = ReservationStatus.OPTION,
+        )
+    }
+
+    private fun buildSkipConfirmResponse(reservation: Reservation): ReservationResponseWrapper {
+        val flow = reservation.reservationFlow!!
+        val yacht = flow.yacht!!
+        val offer = flow.offer
+        val locationFrom = reservation.locationFrom ?: offer?.locationFrom ?: yacht.location
+            ?: throw IllegalStateException("Cannot synthesize confirm response: no location on reservation/offer/yacht")
+        val locationTo = reservation.locationTo ?: offer?.locationTo ?: locationFrom
+
+        return ReservationResponseWrapper(
+            externalId = null,
+            externalCode = null,
+            dateFrom = reservation.dateFrom!!,
+            dateTo = reservation.dateTo!!,
+            createdAt = reservation.externalCreatedAt ?: LocalDateTime.now(),
+            expiresAt = null,
+            product = reservation.product ?: offer?.product!!,
+            locationFromId = locationFrom.id!!,
+            locationToId = locationTo.id!!,
+            locationFrom = locationFrom,
+            locationTo = locationTo,
+            status = OfferStatus.RESERVED,
+            externalStatus = "SKIP-RESERVATION",
+            basePrice = reservation.basePrice ?: BigDecimal.ZERO,
+            discount = reservation.discount ?: BigDecimal.ZERO,
+            commission = reservation.commission,
+            agencyPrice = reservation.agencyPrice,
+            totalPrice = reservation.totalPrice ?: BigDecimal.ZERO,
+            clientPrice = reservation.clientPrice ?: BigDecimal.ZERO,
+            deposit = reservation.deposit,
+            currency = reservation.currency ?: "EUR",
+            paymentNote = reservation.paymentNote,
+            bankDetails = reservation.bankDetails,
+            note = reservation.note,
+            extras = null,
+            paymentPlan = null,
+            responseBody = null,
+            crewListUrl = null,
+            yachtId = yacht.id!!,
+            calculatedSysStatus = ReservationStatus.RESERVATION,
+        )
+    }
+
+    private fun buildSkipCancelResponse(reservation: Reservation): ReservationResponseWrapper {
+        val flow = reservation.reservationFlow!!
+        val yacht = flow.yacht!!
+        val offer = flow.offer
+        val locationFrom = reservation.locationFrom ?: offer?.locationFrom ?: yacht.location
+            ?: throw IllegalStateException("Cannot synthesize cancel response: no location on reservation/offer/yacht")
+        val locationTo = reservation.locationTo ?: offer?.locationTo ?: locationFrom
+
+        return ReservationResponseWrapper(
+            externalId = null,
+            externalCode = null,
+            dateFrom = reservation.dateFrom!!,
+            dateTo = reservation.dateTo!!,
+            createdAt = reservation.externalCreatedAt ?: LocalDateTime.now(),
+            expiresAt = null,
+            product = reservation.product ?: offer?.product!!,
+            locationFromId = locationFrom.id!!,
+            locationToId = locationTo.id!!,
+            locationFrom = locationFrom,
+            locationTo = locationTo,
+            status = OfferStatus.CANCELLED,
+            externalStatus = "SKIP-CANCELLED",
+            basePrice = reservation.basePrice ?: BigDecimal.ZERO,
+            discount = reservation.discount ?: BigDecimal.ZERO,
+            commission = reservation.commission,
+            agencyPrice = reservation.agencyPrice,
+            totalPrice = reservation.totalPrice ?: BigDecimal.ZERO,
+            clientPrice = reservation.clientPrice ?: BigDecimal.ZERO,
+            deposit = reservation.deposit,
+            currency = reservation.currency ?: "EUR",
+            paymentNote = reservation.paymentNote,
+            bankDetails = reservation.bankDetails,
+            note = reservation.note,
+            extras = null,
+            paymentPlan = null,
+            responseBody = null,
+            crewListUrl = null,
+            yachtId = yacht.id!!,
+            calculatedSysStatus = ReservationStatus.CANCELLED,
+        )
     }
 }

@@ -28,6 +28,14 @@ data class InvoiceDto(
     val priceWithoutVat: BigDecimal,
     val vatAmount: BigDecimal,
     val totalPrice: BigDecimal,
+    /**
+     * Broker commission on the related reservation, surfaced for the
+     * invoice listing's "Amount" column. The invoice itself bills the
+     * broker fee — listing reads this directly so the figure stays in
+     * sync with the booking's commission even when the user hasn't yet
+     * filled `priceWithoutVat` / `totalPrice` on the invoice draft.
+     */
+    val reservationCommission: BigDecimal? = null,
     val clientName: String,
     val clientEmail: String? = null,
     val clientPhoneNumber: String? = null,

@@ -14,6 +14,4 @@ data class PaymentPhaseDto(
     val paidOn: LocalDateTime? = null,
     @Schema(name = "Stripe Payment Intent ID", description = "Non-null if the phase has been paid by Stripe", required = false)
     val stripePaymentIntentId: String? = null,
-    @Schema(name = "Viva Transaction ID", description = "Non-null if the phase has been paid by Viva", required = false)
-    val vivaTransactionId: String? = null,
 )

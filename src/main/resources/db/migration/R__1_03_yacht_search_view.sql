@@ -1,3 +1,4 @@
+DROP VIEW IF EXISTS public.yacht_search_view;
 CREATE OR REPLACE VIEW public.yacht_search_view
 AS
 SELECT y.id                                                             as id
@@ -6,6 +7,11 @@ SELECT y.id                                                             as id
      , lfrom.id || '-' || lfrom.name || '-' || lfrom.country_code       as location_full_name
      , o.location_to                                                    as location_to
      , o.client_price / COALESCE(NULLIF(o.date_to - o.date_from, 0), 1) as client_price
+     , o.ext_base_price / COALESCE(NULLIF(o.date_to - o.date_from, 0), 1) as list_price
+     -- Broker commission stored per-offer by Mmk/Nausys sync services
+     -- (V1_51); exposed per-day here to match client_price treatment.
+     , o.broker_commission / COALESCE(NULLIF(o.date_to - o.date_from, 0), 1) as broker_commission
+     , COALESCE(NULLIF(o.date_to - o.date_from, 0), 7)                 as number_of_days
      , o.date_from                                                      as date_from
      , o.date_to                                                        as date_to
      , y.build_year                                                     as build_year
@@ -38,6 +44,7 @@ SELECT y.id                                                             as id
      , a.id                                                             as agency_id
      , a.name                                                           as agency_name
      , y.entry_type                                                     as entry_type
+     , o.status                                                         as offer_status
 FROM yacht y
          JOIN agency a
               ON y.agency_id = a.id AND a.active = true
@@ -53,7 +60,11 @@ FROM yacht y
                    ON yct.yacht_id = y.id
 WHERE y.entry_type = 1
   AND y.sys_active = true
-  AND o.status IN (1, 2)
+  -- Show yachts in all statuses EXCEPT UNAVAILABLE (4 = owner week, regatta,
+  -- sleep aboard etc.) — those are truly un-bookable so we hide them from the
+  -- listing. All other statuses surface with their own Available/Pre-reserved
+  -- badge (see OfferStatus enum + card mapping).
+  AND o.status != 4
 UNION ALL
 SELECT y.id                                           as id
      , y.name                                         as yacht_name
@@ -61,6 +72,9 @@ SELECT y.id                                           as id
      , l.id || '-' || l.name || '-' || l.country_code as location_full_name
      , yl.location_id                                 as location_to
      , cyd.low_price / 7                              as client_price
+     , null                                           as list_price
+     , null                                           as broker_commission
+     , 7                                              as number_of_days
      , null                                           as date_from
      , null                                           as date_to
      , y.build_year                                   as build_year
@@ -92,6 +106,7 @@ SELECT y.id                                           as id
      , a.id                                           as agency_id
      , a.name                                         as agency_name
      , y.entry_type                                   as entry_type
+     , 1                                              as offer_status   -- custom yachts have no offer row; treat as FREE
 FROM yacht y
          LEFT JOIN agency a
                    ON y.agency_id = a.id AND a.active = true

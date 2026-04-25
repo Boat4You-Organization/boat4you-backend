@@ -35,6 +35,7 @@ class InvoiceMappers(
             priceWithoutVat = invoice.priceWithoutVat,
             vatAmount = invoice.vatAmount,
             totalPrice = invoice.totalPrice,
+            reservationCommission = reservationView.reservationCommission,
             clientName = reservationView.agencyName ?: ("${reservationView.reservationFlowName} ${reservationView.reservationFlowSurname}"),
             clientEmail = reservationView.agencyEmail ?: reservationView.reservationFlowEmail,
             clientPhoneNumber = reservationView.agencyPhone ?: reservationView.reservationFlowPhone,

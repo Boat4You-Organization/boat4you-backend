@@ -132,7 +132,15 @@ class MmkReservationIntegrationService(
             basePrice = reservationResponse.basePrice.toBigDecimal(),
             discount = reservationResponse.discount.toBigDecimal(),
             commission = reservationResponse.commission?.toBigDecimal() ?: BigDecimal.ZERO,
-            totalPrice = reservationResponse.finalPrice.toBigDecimal(),
+            // What we owe the charter agency. MMK swagger (v2.2.1) defines
+            // `finalPrice` as "amount the charter operator receives after
+            // commission deduction" — i.e. the agency-side net.
+            agencyPrice = reservationResponse.finalPrice.toBigDecimal(),
+            // FIX: `totalPrice` (what the client actually owes) was previously
+            // mapped to MMK's `finalPrice` (agency-side), so the booking was
+            // displaying the smaller agency amount to the customer. Correct
+            // source is MMK `clientPrice`.
+            totalPrice = reservationResponse.clientPrice.toBigDecimal(),
             clientPrice = reservationResponse.clientPrice.toBigDecimal(),
             deposit = reservationResponse.securityDeposit?.toBigDecimal(),
             currency = reservationResponse.currency,

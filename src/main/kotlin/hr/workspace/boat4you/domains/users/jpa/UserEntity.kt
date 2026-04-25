@@ -32,6 +32,15 @@ class UserEntity : AbstractEntity<Long>() {
     @Column(name = "phone_number", columnDefinition = "VARCHAR(63)", nullable = true)
     var phoneNumber: String? = null
 
+    @Column(name = "address", columnDefinition = "VARCHAR(255)", nullable = true)
+    var address: String? = null
+
+    @Column(name = "city", columnDefinition = "VARCHAR(100)", nullable = true)
+    var city: String? = null
+
+    @Column(name = "country", columnDefinition = "VARCHAR(100)", nullable = true)
+    var country: String? = null
+
     @Column(name = "language", columnDefinition = "VARCHAR(10)", updatable = true, nullable = true)
     @Enumerated(EnumType.STRING)
     var language: LanguageEnum? = null

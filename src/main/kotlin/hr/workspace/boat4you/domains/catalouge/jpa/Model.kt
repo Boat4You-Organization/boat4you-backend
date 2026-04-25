@@ -13,6 +13,7 @@ import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 import org.hibernate.annotations.OnDelete
 import org.hibernate.annotations.OnDeleteAction
+import java.math.BigDecimal
 
 @Entity
 @Table(
@@ -39,4 +40,17 @@ open class Model {
      */
     @Column(name = "external_category_id")
     open var externalCategoryId: Long? = null
+
+    /**
+     * Length overall in meters. Populated from Nausys RestYachtModel.loa (the
+     * RestYacht per-yacht payload has no length field). Yacht sync falls back
+     * to this when the per-yacht value is null so spec cards always show a
+     * length for Nausys-sourced yachts.
+     */
+    @Column(name = "length")
+    open var length: BigDecimal? = null
+
+    /** Beam in meters — same story as length. */
+    @Column(name = "beam")
+    open var beam: BigDecimal? = null
 }

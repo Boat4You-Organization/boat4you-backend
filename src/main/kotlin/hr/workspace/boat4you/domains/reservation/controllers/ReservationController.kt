@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.reservation.dto.MyReservationDetailsDto
 import hr.workspace.boat4you.domains.reservation.dto.MyReservationsDto
 import hr.workspace.boat4you.domains.reservation.dto.PaymentPhaseDto
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDto
+import hr.workspace.boat4you.domains.reservation.dto.YachtSwapInfoDto
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
@@ -17,6 +18,7 @@ import hr.workspace.boat4you.domains.reservation.service.ReservationFlowQuerying
 import hr.workspace.boat4you.domains.reservation.service.ReservationIntegrationService
 import hr.workspace.boat4you.domains.reservation.service.ReservationMutationService
 import hr.workspace.boat4you.domains.reservation.service.ReservationPaymentPhasesService
+import hr.workspace.boat4you.domains.reservation.service.ReservationSyncService
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import hr.workspace.boat4you.security.ANONYMOUS_USER_ID
 import hr.workspace.boat4you.security.getAuthenticatedUserId
@@ -26,6 +28,7 @@ import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.AccessDeniedException
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -53,6 +56,7 @@ class ReservationController(
     private val paymentPhasesService: ReservationPaymentPhasesService,
     private val userRepository: UserRepository,
     private val reservationRepository: ReservationRepository,
+    private val reservationSyncService: ReservationSyncService,
 ) {
     @Operation(summary = "Get reservations for the authenticated user")
     @GetMapping("/my-reservations")
@@ -121,6 +125,16 @@ class ReservationController(
 
     @Operation(description = "Send cancellation request")
     @PostMapping("/{id}/cancel")
+    // Needs an open Hibernate session for the ownership check — it walks
+    // `reservation.reservationFlow.user.id` (both relations are LAZY), so
+    // without a transaction the proxy resolves against a closed session and
+    // throws `Could not initialize proxy - no session`.
+    //
+    // NOT readOnly — the inner `createCancellationRequest.save()` call runs in
+    // the SAME propagated transaction (Propagation.REQUIRED default) and a
+    // readOnly outer tx makes Hibernate skip the flush → UPDATE never hits
+    // the DB even though the endpoint returns 200.
+    @Transactional
     fun cancelReservationRequest(
         @PathVariable id: Long,
         @RequestBody @Valid cancelReservationDto: CancelReservationDto,
@@ -184,5 +198,49 @@ class ReservationController(
                 )
             },
         )
+    }
+
+    @Operation(summary = "Get latest unacknowledged yacht-swap event for a reservation")
+    @GetMapping("/{id}/yacht-swap")
+    @Transactional(readOnly = true)
+    fun getYachtSwap(
+        @PathVariable id: Long,
+    ): ResponseEntity<YachtSwapInfoDto> {
+        val user =
+            getAuthenticatedUserId()
+                .takeIf { it != ANONYMOUS_USER_ID }
+                ?.let { userRepository.findById(it).getOrNull() }
+                ?: throw AccessDeniedException("User is not authenticated")
+
+        val reservation =
+            reservationRepository.findById(id).getOrElse { throw ReservationNotExistException() }
+        if (reservation.reservationFlow!!.user!!.id != user.id) {
+            throw AccessDeniedException("Reservation does not belong to authenticated user")
+        }
+
+        val info = reservationSyncService.getLatestSwap(id, unacknowledgedOnly = true)
+        return if (info != null) ResponseEntity.ok(info) else ResponseEntity.noContent().build()
+    }
+
+    @Operation(summary = "Acknowledge (dismiss) the latest yacht-swap banner for a reservation")
+    @PostMapping("/{id}/yacht-swap/acknowledge")
+    @Transactional
+    fun acknowledgeYachtSwap(
+        @PathVariable id: Long,
+    ): ResponseEntity<Unit> {
+        val user =
+            getAuthenticatedUserId()
+                .takeIf { it != ANONYMOUS_USER_ID }
+                ?.let { userRepository.findById(it).getOrNull() }
+                ?: throw AccessDeniedException("User is not authenticated")
+
+        val reservation =
+            reservationRepository.findById(id).getOrElse { throw ReservationNotExistException() }
+        if (reservation.reservationFlow!!.user!!.id != user.id) {
+            throw AccessDeniedException("Reservation does not belong to authenticated user")
+        }
+
+        reservationSyncService.acknowledgeLatestSwap(id)
+        return ResponseEntity.ok().build()
     }
 }

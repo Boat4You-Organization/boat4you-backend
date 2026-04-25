@@ -43,4 +43,24 @@
         </logger>
     </springProfile>
 
+    <springProfile name="dev">
+        <appender name="DevFile" class="ch.qos.logback.core.FileAppender">
+            <file>${LOG_DIR}/boat4you-ws-dev.log</file>
+            <append>true</append>
+            <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+                <pattern>%date{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} ${PID} [%thread] %-5level %logger{36}: %msg%n</pattern>
+            </encoder>
+        </appender>
+
+        <root level="info">
+            <appender-ref ref="DevFile"/>
+            <appender-ref ref="Console"/>
+        </root>
+
+        <logger name="hr.workspace.boat4you" level="trace" additivity="false">
+            <appender-ref ref="DevFile"/>
+            <appender-ref ref="Console"/>
+        </logger>
+    </springProfile>
+
 </configuration>

@@ -79,4 +79,7 @@ data class ReservationViewDetailsDto(
     val vesselType: VesselType?,
     val amenities: List<YachtEquipmentDto> = emptyList(),
     val specialRequest: String?,
+    // Free-form admin notes (internal). Admin-only — not exposed in customer
+    // reservation endpoints.
+    val adminNotes: String?,
 ) : Serializable

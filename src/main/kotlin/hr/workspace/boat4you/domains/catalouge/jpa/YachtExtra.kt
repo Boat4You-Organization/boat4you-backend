@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.jpa
 
+import hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import jakarta.persistence.Column
@@ -86,8 +87,34 @@ open class YachtExtra {
     @Column(name = "valid_for_bases")
     open var validForBases: List<Long>? = null
 
+    /**
+     * Free-form partner description (e.g. "FUN PACK A [Jokerboat Coaster
+     * 470 + 70HP; deposit €1000; Croatian waters only]"). Sourced from
+     * MMK `Extras.description` / Nausys yacht-services catalogue. Null
+     * when partner sent no description or pre-V1_52 row hasn't been
+     * re-synced. Frontend renders as small print under the extras name.
+     */
+    @Column(name = "description", columnDefinition = "TEXT")
+    open var description: String? = null
+
+    /**
+     * Refined payment classification — see ExtraPaymentType for semantics.
+     * Backfilled by V1_57 + populated by sync mappers via classify().
+     */
+    @Enumerated
+    @Column(name = "payment_type")
+    open var paymentType: ExtraPaymentType? = null
+
     fun shouldDisplay(): Boolean {
-        return extrasId != null || (obligatory == true && price != null && price != BigDecimal.ZERO)
+        // Show ANY extras the partner sent — old filter required either
+        // (a) match against the b4y canonical catalogue (extrasId != null), or
+        // (b) obligatory + non-zero price.
+        // That hid 90%+ of partner extras (Sea Dreams 3117 has 9 yacht_extras
+        // in DB, all extrasId=null and obligatory=false → 0 visible). Brokers
+        // and customers expect to see exactly what the partner offers, so we
+        // now display everything that has a usable name. Free items (price=0)
+        // still surface — the frontend renders them as "included".
+        return !name.isNullOrBlank()
     }
 
     fun extrasKey(): String {

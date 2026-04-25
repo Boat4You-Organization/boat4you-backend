@@ -57,7 +57,8 @@ open class Inquiry {
     open var email: String? = null
 
     @Size(max = 63)
-    @Column(name = "phone", length = 63)
+    @NotNull
+    @Column(name = "phone", length = 63, nullable = false)
     open var phone: String? = null
 
     @Size(max = 2000)

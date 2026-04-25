@@ -39,6 +39,22 @@ data class YachtSearchParamObject(
     val amenities: List<Long>?,
     val services: List<Long>?,
     val yachtIds: List<Long>?,
+    /**
+     * Admin-only filter — restrict search to yachts operated by specific
+     * agencies (charter companies). Customer-facing search does not use this;
+     * the param flows through unchanged because filtering happens in
+     * YachtQueryingService by `agencyId` column on YachtSearchView.
+     */
+    val agencyIds: List<Long>? = null,
+    /**
+     * Admin-only "replacement flow" flag — when true, the search ignores
+     * offer availability (UNAVAILABLE / RESERVED / OPTION) and returns every
+     * yacht that otherwise matches the filters. Used when the agency has
+     * already re-booked a different yacht for the same customer outside our
+     * system — the yacht is UNAVAILABLE in our sync cache but the admin still
+     * needs to create our-side reservation against it.
+     */
+    val includeUnavailable: Boolean = false,
     val language: LanguageEnum,
 ) {
     fun getMinLengthInMeters(): BigDecimal? {

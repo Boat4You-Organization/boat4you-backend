@@ -143,9 +143,12 @@ class NausysReservationIntegrationService(
             locationTo = locationTo,
             status = OfferStatus.fromNausysValue(reservationResponse.reservationStatus),
             externalStatus = reservationResponse.reservationStatus.toString(),
-            basePrice = reservationResponse.priceListPrice!!.toBigDecimal(), // TODO check if this is correct
+            basePrice = reservationResponse.priceListPrice!!.toBigDecimal(), // Nausys `priceListPrice` = catalog/list price (pre-discount)
             discount = totalDiscount,
             commission = agencyCommission,
+            // What we owe the charter agency. Nausys docs (v6 §1.10.141) define
+            // `agencyPrice` as "Final price expected from agency to pay".
+            agencyPrice = reservationResponse.agencyPrice?.toBigDecimal(),
             totalPrice = reservationResponse.agencyClientFinalPrice!!.toBigDecimal(),
             clientPrice = reservationResponse.clientPrice!!.toBigDecimal(),
             deposit = reservationResponse.securityDeposit?.toBigDecimal(),

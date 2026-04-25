@@ -67,7 +67,13 @@ class ExternalSyncService(
                     mmkGroup.locations,
                 )
 
-            CompletableFuture.allOf(nausysFuture, mmkFuture).join()
+            // 5-minute hard cap. If either partner API hangs (no socket
+            // timeout fired), we stop waiting and let the caller move on.
+            // Cache marker is only written on clean completion so a half-
+            // synced range will be retried by the next user search.
+            CompletableFuture.allOf(nausysFuture, mmkFuture)
+                .orTimeout(5, java.util.concurrent.TimeUnit.MINUTES)
+                .join()
             serviceCallCacheService.saveYachtSearch(startDate, endDate, locations)
         } catch (e: Exception) {
             log.error("Failed to sync yacht offers for locations {}: {}", locations, e.message, e)

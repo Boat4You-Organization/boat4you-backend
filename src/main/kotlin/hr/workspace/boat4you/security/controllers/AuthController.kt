@@ -87,9 +87,4 @@ internal class AuthController(
     override fun verifyEmail(userEmailVerificationRequest: UserEmailVerificationRequest): ResponseEntity<TokenResponse> {
         return ResponseEntity(userRegistrationService.verifyEmail(userEmailVerificationRequest, httpRequest), HttpStatus.OK)
     }
-
-    @GetMapping("/test")
-    fun test(): ResponseEntity<String> {
-        return ResponseEntity("OK", HttpStatus.OK)
-    }
 }

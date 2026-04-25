@@ -323,7 +323,7 @@
                                     line-height: 140%;
                                     word-wrap: break-word;
                                   ">
-                                                                <p><span>Booking reference</span></p>
+                                                                <p><span>Confirmation number</span></p>
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -660,6 +660,63 @@
                         </div>
                     </div>
 
+                    <!-- BANK TRANSFER FEE SECTION — shown only when the configured
+                         BANK_TRANSFER_FIXED_FEE is > 0 and this confirmation was
+                         triggered by the bank-transfer path. The fee applies per
+                         inbound wire (Erste OUR charge) so customers reconcile the
+                         amount they sent against what's listed here. -->
+                    <div th:if="${showBankTransferFee}" class="u-row-container"
+                        style="padding: 0px;background-color: transparent">
+                        <div class="u-row"
+                            style="margin: 0 auto;min-width: 320px;max-width: 500px;overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;background-color: transparent;">
+                            <div
+                                style="border-collapse: collapse;display: table;width: 100%;height: 100%;background-color: transparent;">
+                                <div class="u-col u-col-50"
+                                    style="max-width: 320px;min-width: 250px;display: table-cell;vertical-align: top;">
+                                    <div style="height: 100%;width: 100% !important;">
+                                        <div style="box-sizing: border-box;height: 100%;padding: 0px 0px 8px;">
+                                            <table style="font-family:arial,helvetica,sans-serif;" role="presentation"
+                                                cellpadding="0" cellspacing="0" width="100%" border="0">
+                                                <tbody>
+                                                    <tr>
+                                                        <td style="padding:0px;"
+                                                            align="left">
+                                                            <div
+                                                                style="font-family: 'Raleway',sans-serif;font-size: 16px;color: #7c7c7c;line-height: 140%;">
+                                                                <p>Bank transfer fee (per wire)</p>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="u-col u-col-50"
+                                    style="max-width: 320px;min-width: 250px;display: table-cell;vertical-align: top;">
+                                    <div style="height: 100%;width: 100% !important;">
+                                        <div style="box-sizing: border-box;height: 100%;padding: 0px 0px 8px;">
+                                            <table style="font-family:arial,helvetica,sans-serif;" role="presentation"
+                                                cellpadding="0" cellspacing="0" width="100%" border="0">
+                                                <tbody>
+                                                    <tr>
+                                                        <td style="padding:0px;"
+                                                            align="right">
+                                                            <div
+                                                                style="font-family: 'Raleway',sans-serif;font-size: 16px;font-weight: 700;color: #292929;line-height: 140%;">
+                                                                <p><span th:text="'+' + ${bankTransferFee}">+32€</span></p>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- RESERVATION DETAILS DESCRIPTION SECTION -->
                     <div class="u-row-container" style="padding: 0px;background-color: transparent">
                         <div class="u-row"
@@ -798,7 +855,7 @@
 
                                                             <div
                                                                 style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                                                <p dir="ltr"><span>Please use your booking reference as
+                                                                <p dir="ltr"><span>Please use your confirmation number as
                                                                         the payment reference:</span></p>
                                                             </div>
 

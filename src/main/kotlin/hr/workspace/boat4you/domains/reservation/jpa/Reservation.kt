@@ -48,11 +48,17 @@ open class Reservation {
     @Column(name = "date_to", nullable = false)
     open var dateTo: LocalDateTime? = null
 
-    @Column(name = "reservation_number", length = 9, unique = true)
+    @Column(name = "reservation_number", length = 32, unique = true)
     open var reservationNumber: String? = null
 
-    @NotNull
-    @Column(name = "external_id", nullable = false)
+    /**
+     * Partner-side reservation id. Nullable for admin "fictitious"
+     * replacement reservations which never hit the partner API — see
+     * [ReservationFlowMutationService.createFictitiousReservation].
+     * Customer + guest flows always populate this from the MMK/Nausys
+     * `createOption` response.
+     */
+    @Column(name = "external_id")
     open var externalId: Long? = null
 
     @JdbcTypeCode(SqlTypes.JSON)
@@ -83,15 +89,18 @@ open class Reservation {
     open var optionExpiresAt: LocalDateTime? = null
 
     /**
-     * reservation code mmk, uuid nausys
+     * Partner reservation code (MMK reservationCode / Nausys UUID). Null
+     * for admin "fictitious" replacement reservations — no partner call.
      */
     @Size(max = 100)
-    @NotNull
-    @Column(name = "external_reservation_code", nullable = false, length = 100)
+    @Column(name = "external_reservation_code", length = 100)
     open var externalReservationCode: String? = null
 
-    @NotNull
-    @Column(name = "external_created_at", nullable = false)
+    /**
+     * When the partner created the reservation on their side. Null for
+     * fictitious reservations (we never call the partner).
+     */
+    @Column(name = "external_created_at")
     open var externalCreatedAt: LocalDateTime? = null
 
     @NotNull
@@ -125,6 +134,23 @@ open class Reservation {
 
     @Column(name = "commission")
     open var commission: BigDecimal? = null
+
+    /**
+     * What we actually owe the charter agency for this reservation.
+     * Nausys: RestYachtReservation.agencyPrice  ("Final price expected from agency to pay")
+     * MMK:    ReservationResponse.finalPrice    ("amount charter operator receives after commission deduction")
+     * Nullable for legacy rows created before V1_46.
+     */
+    @Column(name = "agency_price")
+    open var agencyPrice: BigDecimal? = null
+
+    /**
+     * Free-form internal notes admins attach to a booking (transfer info,
+     * call-backs, cash payments, anything useful for the support team).
+     * Never surfaced to the customer — admin panel only.
+     */
+    @Column(name = "admin_notes", columnDefinition = "TEXT")
+    open var adminNotes: String? = null
 
     @Column(name = "deposit")
     open var deposit: BigDecimal? = null

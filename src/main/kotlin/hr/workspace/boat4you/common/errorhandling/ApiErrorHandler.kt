@@ -397,7 +397,7 @@ internal class ApiErrorHandler {
         return ResponseEntity(
             ErrorSchema(
                 ApiErrorCodes.GENERAL_ERROR.code,
-                ApiErrorCodes.GENERAL_ERROR.message,
+                ApiErrorCodes.GENERAL_ERROR.message + ": ${e.message}",
             ),
             HttpStatus.INTERNAL_SERVER_ERROR,
         )

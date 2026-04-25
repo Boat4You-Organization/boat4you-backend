@@ -1756,44 +1756,6 @@ paths:
         '500':
           description: Internal server error
 
-  /admin/reservations/{id}/updateReservationNumber:
-    patch:
-      tags:
-        - Reservations
-      summary: Update reservation number of the reservation
-      description: This can only be done by the logged in user. Requires "SYSTEM_ADMIN" role.
-      operationId: updateReservationNumber
-      parameters:
-        - name: id
-          in: path
-          description: Id of the reservation which reservation number is to be updated
-          required: true
-          schema:
-            type: integer
-            format: int64
-        - in: query
-          name: reservationNumber
-          schema:
-            type: string
-          required: true
-          example: XXXX/YYYY
-          description: New value for the reservation number
-      responses:
-        '200':
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ReservationDto'
-        '400':
-          description: Bad request
-          content:
-            application/json:
-              schema:
-                $ref: 'boat4you_ws_common.openapi.yaml#/components/schemas/ErrorSchema'
-        '500':
-          description: Internal server error
-
 components:
   securitySchemes:
     bearerAuth:
@@ -1917,6 +1879,18 @@ components:
           type: string
           description: Phone number in international format
           example: +385911002000
+        address:
+          type: string
+          description: Optional street address. Some charter agencies require it on the reservation.
+          example: Ilica 1
+        city:
+          type: string
+          description: Optional city. Some charter agencies require it on the reservation.
+          example: Zagreb
+        country:
+          type: string
+          description: Optional country. Some charter agencies require it on the reservation.
+          example: Croatia
         language:
           type: string
           $ref: '#/components/schemas/LanguageEnum'

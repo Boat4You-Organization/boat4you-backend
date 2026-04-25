@@ -59,7 +59,13 @@ SELECT r.id                        AS reservation_id,
        rf.calculated_total_price   AS calculated_total_price,
        o.client_price              AS offer_client_price,
        a.vat_code                  AS agency_vat_code,
-       o.product                   AS charter_type
+       o.product                   AS charter_type,
+       -- Appended at the end because `CREATE OR REPLACE VIEW` on Postgres
+       -- forbids inserting a new column between existing ones.
+       o.ext_base_price            AS offer_list_price,
+       r.agency_price              AS reservation_agency_price,
+       r.commission                AS reservation_commission,
+       r.admin_notes               AS reservation_admin_notes
 FROM reservation_flow rf
          JOIN users cu ON rf.created_by = cu.id
          JOIN users cf ON rf.user_id = cf.id

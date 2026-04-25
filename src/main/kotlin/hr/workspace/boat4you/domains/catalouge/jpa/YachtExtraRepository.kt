@@ -15,21 +15,26 @@ interface YachtExtraRepository : JpaRepository<YachtExtra, Long> {
         """
         WITH prices AS (
             SELECT id, price,
-                   CASE 
-                       WHEN extras_id IS NOT NULL THEN extras_id::varchar 
-                       ELSE name 
+                   CASE
+                       WHEN extras_id IS NOT NULL THEN extras_id::varchar
+                       ELSE name
                    END as group_key,
                    MIN(price) OVER (
-                       PARTITION BY CASE 
-                           WHEN extras_id IS NOT NULL THEN extras_id::varchar 
-                           ELSE name 
+                       PARTITION BY CASE
+                           WHEN extras_id IS NOT NULL THEN extras_id::varchar
+                           ELSE name
                        END
                    ) as calc_price
-            FROM yacht_extras 
+            FROM yacht_extras
             WHERE yacht_id = :yachtId
-                AND valid_from <= COALESCE(CAST(:dateFrom AS date), valid_from)
-                AND valid_to >= COALESCE(CAST(:dateTo AS date), valid_to)
-                AND CASE 
+                -- Period overlap (not strict containment): show extras whose
+                -- sailing window intersects the user-selected range. Strict
+                -- containment used to surface period-specific APA / comfort
+                -- packs for every booking window, since MMK splits seasonal
+                -- pricing into multiple rows with disjoint sailing dates.
+                AND (CAST(:dateFrom AS date) IS NULL OR valid_from <= CAST(:dateTo AS date))
+                AND (CAST(:dateTo AS date) IS NULL OR valid_to >= CAST(:dateFrom AS date))
+                AND CASE
                     WHEN :validForExtBaseIds IS NULL THEN true
                     WHEN array_length(:validForExtBaseIds, 1) IS NULL THEN true
                     WHEN valid_for_bases IS NULL THEN true
@@ -62,4 +67,41 @@ interface YachtExtraRepository : JpaRepository<YachtExtra, Long> {
         yacht: Yacht,
         yachtExtraIds: List<Long>,
     ): List<YachtExtra>
+
+    // Period-aware fallback when the yacht has no location (OSH/MMK legacy —
+    // Fortuna 5533, Sea Dreams 3117, DESSUS 3116...). Same sailing-window
+    // overlap filter as the grouped query, minus the base-scoping — so
+    // period-specific APA / packs don't leak into bookings outside their
+    // sailing range. Groups by extras_id / name to dedupe identical entries.
+    @Query(
+        """
+        WITH prices AS (
+            SELECT id, price,
+                   CASE
+                       WHEN extras_id IS NOT NULL THEN extras_id::varchar
+                       ELSE name
+                   END as group_key,
+                   MIN(price) OVER (
+                       PARTITION BY CASE
+                           WHEN extras_id IS NOT NULL THEN extras_id::varchar
+                           ELSE name
+                       END
+                   ) as calc_price
+            FROM yacht_extras
+            WHERE yacht_id = :yachtId
+                AND (CAST(:dateFrom AS date) IS NULL OR valid_from <= CAST(:dateTo AS date))
+                AND (CAST(:dateTo AS date) IS NULL OR valid_to >= CAST(:dateFrom AS date))
+        )
+        SELECT MIN(id)
+        FROM prices
+        WHERE price = calc_price
+        GROUP BY group_key
+    """,
+        nativeQuery = true,
+    )
+    fun findYachtExtraIdsByYachtAndPeriod(
+        yachtId: Long,
+        dateFrom: LocalDate?,
+        dateTo: LocalDate?,
+    ): List<Long>
 }

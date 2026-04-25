@@ -76,6 +76,20 @@ class YachtController(
         @RequestParam(name = "services", required = false) services: List<Long>?,
         @RequestParam(name = "sortBy", required = false) sortBy: String?,
         @RequestParam(name = "yid", required = false) yachtIds: List<Long>?,
+        /**
+         * Admin-only — filter by specific agency (charter company) ids. The
+         * customer-facing search UI does not expose this param; it's used by
+         * the admin "Create Reservation" wizard so the operator can narrow to
+         * a known partner (e.g. Adriatic Sailing, Croatia Yachting).
+         */
+        @RequestParam(name = "agencyId", required = false) agencyIds: List<Long>?,
+        /**
+         * Admin-only "replacement flow" flag. When true, UNAVAILABLE /
+         * RESERVED offers are included so the admin can pick a yacht the
+         * agency already assigned to the same customer in the partner
+         * system. See YachtSearchParamObject.includeUnavailable.
+         */
+        @RequestParam(name = "includeUnavailable", defaultValue = "false") includeUnavailable: Boolean,
         @RequestParam(name = "page", defaultValue = "0") page: Int,
         @RequestParam(name = "size", defaultValue = "10") size: Int,
         @RequestHeader(name = "Accept-Language", required = false) lang: String? = null,
@@ -116,6 +130,8 @@ class YachtController(
                 amenities = amenities,
                 services = services,
                 yachtIds = yachtIds,
+                agencyIds = agencyIds,
+                includeUnavailable = includeUnavailable,
                 language = language,
             )
 
@@ -131,6 +147,25 @@ class YachtController(
             if (locations != null) {
                 externalSyncService.syncYachtOffers(startDate, endDate, locations)
             }
+        }
+
+        // Replacement flow — admin toggled "Include unavailable yachts" in
+        // the Create-Reservation wizard. Go through a native-SQL path that
+        // UNIONs `offer` and `external_reservations` so yachts the partner
+        // already sold (and therefore have NO offer row in our DB) still
+        // surface. See YachtQueryingService.getYachtsForReplacement for the
+        // rationale. Regular customer/admin search stays on the main view.
+        if (includeUnavailable) {
+            return ResponseEntity.ok(
+                PagedModel(
+                    yachtQueryingService.getYachtsForReplacement(
+                        searchParams,
+                        language,
+                        page,
+                        size,
+                    ),
+                ),
+            )
         }
 
         return ResponseEntity.ok(

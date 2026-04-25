@@ -1,8 +1,5 @@
 package hr.workspace.boat4you.domains.users.services
 
-import com.google.i18n.phonenumbers.NumberParseException
-import com.google.i18n.phonenumbers.PhoneNumberUtil
-import com.google.i18n.phonenumbers.Phonenumber.PhoneNumber.CountryCodeSource
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.common.exceptions.UnmodifiableFieldsException
 import hr.workspace.boat4you.domains.roles.jpa.RoleAssignmentEntity
@@ -103,6 +100,54 @@ class UserMutationService(
             }
     }
 
+    /**
+     * Self-service profile update for the logged-in user. Only allows editing
+     * basic contact fields (name, surname, email, phoneNumber) — roles,
+     * status, and preferences are intentionally skipped so end users can't
+     * escalate their own privileges through this endpoint.
+     */
+    @Transactional(readOnly = false)
+    fun updateOwnProfile(
+        id: Long,
+        name: String,
+        surname: String,
+        email: String,
+        phoneNumber: String?,
+        address: String?,
+        city: String?,
+        country: String?,
+    ): User {
+        val dbUser = userRepository.findById(id).getOrElse { throw UserDoesNotExistException() }
+
+        // Re-run the validator used by admin updates so phone format / email
+        // format rules stay consistent between endpoints. `validateUserInput`
+        // only reads email + phoneNumber, so we can pass a minimal User shell.
+        validateUserInput(
+            User(
+                id = id,
+                name = name,
+                surname = surname,
+                email = email,
+                phoneNumber = phoneNumber,
+                roles = emptyList(),
+            ),
+        )
+
+        if (!email.equals(dbUser.email, ignoreCase = true) && existsByIdNotAndEmail(id, email)) {
+            throw UserAlreadyExistsException(listOf("email"))
+        }
+
+        dbUser.name = name
+        dbUser.surname = surname
+        dbUser.email = email
+        dbUser.phoneNumber = phoneNumber
+        dbUser.address = address?.takeIf { it.isNotBlank() }
+        dbUser.city = city?.takeIf { it.isNotBlank() }
+        dbUser.country = country?.takeIf { it.isNotBlank() }
+
+        return userRepository.save(dbUser).toUserModel()
+    }
+
     @Transactional(readOnly = false)
     fun updateUserPreferences(
         id: Long,
@@ -184,19 +229,12 @@ class UserMutationService(
             badOrMissingParameters["email"] = "Email not valid"
         }
 
-        if (!user.phoneNumber.isNullOrBlank()) {
-            val phoneValidator = PhoneNumberUtil.getInstance()
-            val phoneNumber =
-                try {
-                    phoneValidator.parse(user.phoneNumber, CountryCodeSource.UNSPECIFIED.name)
-                } catch (e: NumberParseException) {
-                    badOrMissingParameters["phoneNumber"] = "Phone number not valid"
-                    null
-                }
-            if (phoneNumber != null && !phoneValidator.isValidNumber(phoneNumber)) {
-                badOrMissingParameters["phoneNumber"] = "Phone number not valid"
-            }
-        }
+        // Phone validation intentionally relaxed. Admins create accounts on
+        // behalf of clients from partial info (phone often unknown or in a
+        // local format). libphonenumber with `UNSPECIFIED` region was
+        // rejecting anything without a `+country_code` prefix — too strict
+        // for the admin flow. We now accept any non-blank string; clients
+        // can self-correct via their profile later.
 
         if (badOrMissingParameters.isNotEmpty()) {
             throw ParameterValidationException(badOrMissingParameters)

@@ -3,8 +3,10 @@ package hr.workspace.boat4you.domains.reservation.jpa
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 
 interface ReservationRepository : JpaRepository<Reservation, Long> {
@@ -41,4 +43,39 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
     ): List<Reservation>
 
     fun findByReservationFlowIdIn(reservationFlowIds: Collection<Long>): List<Reservation>
+
+    /**
+     * Rezervacije koje periodic sync job provjera za yacht-swap detection:
+     * aktivne (OPTION + RESERVATION), imaju externalId iz partner sustava,
+     * charter dateFrom nije davno prošao (skipamo historijsku DB bloat).
+     * Sort po dateFrom ASC — near-term rezervacije (veći rizik swap-a)
+     * processed first.
+     */
+    @Query(
+        """
+        SELECT r FROM Reservation r
+        JOIN FETCH r.reservationFlow rf
+        JOIN FETCH rf.yacht y
+        JOIN FETCH y.agency a
+        WHERE r.sysStatus IN (:statuses)
+        AND r.externalId IS NOT NULL
+        AND r.dateFrom >= :cutoff
+        ORDER BY r.dateFrom ASC
+    """,
+    )
+    fun findActiveForPartnerSync(
+        @Param("statuses") statuses: List<ReservationStatus>,
+        @Param("cutoff") cutoff: LocalDateTime,
+    ): List<Reservation>
+
+    @Modifying
+    @Transactional
+    @Query(
+        value = "UPDATE reservation_flow SET yacht_id = :newYachtId WHERE id = :reservationFlowId",
+        nativeQuery = true,
+    )
+    fun updateYachtOnSwap(
+        @Param("reservationFlowId") reservationFlowId: Long,
+        @Param("newYachtId") newYachtId: Long,
+    ): Int
 }

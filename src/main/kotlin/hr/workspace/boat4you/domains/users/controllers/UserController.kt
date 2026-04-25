@@ -20,6 +20,7 @@ import org.springframework.stereotype.Controller
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
 
 @Controller
@@ -98,6 +99,30 @@ internal class UserController(
         return ResponseEntity.ok(userMutationService.updateUserPreferences(userId, currency, language))
     }
 
+    // Self-service profile edit. Allows the authenticated user (or an admin
+    // editing anyone) to change basic contact fields. Roles / status are
+    // intentionally NOT accepted here — those still require the admin-only
+    // PUT /users/{id} endpoint.
+    @PatchMapping("/users/{userId}/profile")
+    fun updateMyProfile(
+        @PathVariable userId: Long,
+        @RequestBody body: UpdateProfileRequest,
+    ): ResponseEntity<User> {
+        checkAccessForAdminOrSelf(userId)
+        return ResponseEntity.ok(
+            userMutationService.updateOwnProfile(
+                id = userId,
+                name = body.name,
+                surname = body.surname,
+                email = body.email,
+                phoneNumber = body.phoneNumber,
+                address = body.address,
+                city = body.city,
+                country = body.country,
+            ),
+        )
+    }
+
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN')")
     override fun inviteUsers(ids: List<Long>): ResponseEntity<Unit> {
         return ResponseEntity(userInviteService.inviteUsers(ids), HttpStatus.OK)
@@ -115,3 +140,13 @@ internal class UserController(
         return ResponseEntity(userInviteService.acceptInvitation(inviteCode, setUserPasswordBody), HttpStatus.OK)
     }
 }
+
+data class UpdateProfileRequest(
+    val name: String,
+    val surname: String,
+    val email: String,
+    val phoneNumber: String?,
+    val address: String?,
+    val city: String?,
+    val country: String?,
+)

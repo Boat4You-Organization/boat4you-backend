@@ -6,7 +6,7 @@ server:
     enabled: true
     key-store-type: PKCS12
     key-store: classpath:boat4you_selfsigned.p12
-    key-store-password: ${SSL_KEYSTORE_PASSWORD}
+    key-store-password: ${SSL_KEYSTORE_PASSWORD:}
     key-alias: boat4you
   port: 8443
   tomcat:
@@ -47,8 +47,12 @@ spring:
     hibernate:
       ddl-auto: validate
   mail:
-    host: smtp.gmail.com
-    port: 587
+    # Host / port / SSL knobs are env-overridable so dev runs against the
+    # boat4you SMTP (`mail.boat4you.com:465`, SMTPS) can flip via env vars
+    # without touching the prod profile. Defaults still target Gmail SMTP
+    # for any setup that hasn't been migrated yet.
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
     username: ${MAIL_USERNAME:your@gmail.com}
     password: ${MAIL_PASSWORD:your-app-password}
     properties:
@@ -56,7 +60,11 @@ spring:
         smtp:
           auth: true
           starttls:
-            enable: true
+            enable: ${MAIL_STARTTLS_ENABLE:true}
+          ssl:
+            # SMTPS port (465) needs ssl.enable=true; STARTTLS (587)
+            # leaves this off and uses the upgrade dance above.
+            enable: ${MAIL_SSL_ENABLE:false}
   flyway:
     enabled: true
     baseline-version: 1
@@ -88,12 +96,18 @@ springdoc:
     path: /swagger
 
 application:
+  cors:
+    # Comma-separated list of frontends allowed to make credentialed CORS
+    # requests. Override per-env via APPLICATION_CORS_ALLOWED_ORIGINS.
+    # Wildcard "*" is intentionally NOT supported with allowCredentials=true
+    # — Spring will throw at startup. Prod MUST list hosts explicitly.
+    allowed-origins: ${APPLICATION_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   security:
     jwt:
       secret-key: ${JWT_SECRET_KEY}
       expiration: 86400000 # a day
       refresh-token:
-        expiration: 604800000 # 7 days
+        expiration: 259200000 # 3 days (reduced from 7 on 23.4.2026 per security audit)
   external:
     sync:
       offer-max-years: 2
@@ -105,7 +119,14 @@ application:
         response-body: true
   email:
     enabled: ${EMAIL_ENABLED:false}
-    from-address: no-reply@workspace.hr
+    # From-address shown in the recipient inbox. SMTP auth happens with
+    # `MAIL_USERNAME` (no-reply@boat4you.com on prod), but the visible
+    # From line is `info@boat4you.com` so customers / leads see the
+    # mailbox they should reach. Reply-To headers (set per email) still
+    # win for the Reply button — see InquiryEmailService for the
+    # inquiry-specific override that points back at the lead. Fully
+    # env-overridable (`EMAIL_FROM_ADDRESS`).
+    from-address: ${EMAIL_FROM_ADDRESS:Boat4You | Endless blue. Boats 4 you <info@boat4you.com>}
   invites:
     user:
       expiration: 7d
@@ -118,16 +139,3 @@ application:
     # Keys MUST come from the environment (.env / boat4you_vars.env).
     secret-key: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY required}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET required}
-  viva:
-    enabled: true
-    oauth-url: ${VIVA_OAUTH_URL:https://demo-accounts.vivapayments.com/connect/token}
-    api-url: ${VIVA_API_URL:https://demo-api.vivapayments.com}
-    checkout-url: ${VIVA_CHECKOUT_URL:https://demo.vivapayments.com/web/checkout}
-    source-code: ${VIVA_SOURCE_CODE:1234}
-    merchant-id: ${VIVA_MERCHANT_ID:mchid}
-    webhook-verification-api-key: ${VIVA_WEBHOOK_VERIFICATION_API_KEY:wvak}
-    webhook-verification-base-url: ${VIVA_WEBHOOK_VERIFICATION_BASE_URL:https://demo.vivapayments.com}
-    client-id: ${VIVA_CLIENT_ID:vcid_test}
-    client-secret: ${VIVA_CLIENT_SECRET:vcs_test}
-  test:
-    enabled: true

@@ -21,6 +21,9 @@ fun UserEntity.toUserModel(): User =
         surname = surname,
         email = email,
         phoneNumber = phoneNumber,
+        address = address,
+        city = city,
+        country = country,
         language = language,
         currency = currency,
         userStatus = entityStatus.toStatusModel(),
@@ -39,6 +42,9 @@ fun User.toJpaUserEntity(): UserEntity {
         password = if (model.password.isNullOrBlank()) getRandomPassword() else model.password!!
         email = model.email
         phoneNumber = model.phoneNumber
+        address = model.address
+        city = model.city
+        country = model.country
         model.userStatus?.let {
             entityStatus = it.toJpaEntityStatus()
         }
@@ -51,6 +57,9 @@ fun UserEntity.updateBlockWithModel(model: User) {
     surname = model.surname
     email = model.email
     phoneNumber = model.phoneNumber
+    address = model.address
+    city = model.city
+    country = model.country
     model.userStatus?.let {
         entityStatus = it.toJpaEntityStatus()
     }

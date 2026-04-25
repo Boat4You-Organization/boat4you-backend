@@ -43,6 +43,26 @@ open class YachtSearchView protected constructor() {
     open var clientPrice: BigDecimal? = null
         protected set
 
+    @Column(name = "list_price")
+    open var listPrice: BigDecimal? = null
+        protected set
+
+    /**
+     * Broker commission for this offer, stored per-day (same treatment as
+     * client_price) so the admin card can multiply by nights for the
+     * period total. Sourced from `offer.broker_commission` (V1_51), which
+     * holds the partner's per-offer commission figure — what we keep
+     * from each booking. Null for custom yachts and for offers where the
+     * partner didn't include a commission value.
+     */
+    @Column(name = "broker_commission")
+    open var brokerCommission: BigDecimal? = null
+        protected set
+
+    @Column(name = "number_of_days")
+    open var numberOfDays: Int? = null
+        protected set
+
     @Column(name = "date_from")
     open var dateFrom: LocalDate? = null
         protected set
@@ -139,5 +159,14 @@ open class YachtSearchView protected constructor() {
     @Size(max = 255)
     @Column(name = "manufacturer_name")
     open var manufacturerName: String? = null
+        protected set
+
+    /**
+     * Raw per-offer status (OfferStatus.value). UI groups these into
+     * Available / Pre-reserved / Unavailable badges. See [OfferStatus].
+     * Custom yachts (entry_type=2) are forced to 1 (FREE) by the view.
+     */
+    @Column(name = "offer_status")
+    open var offerStatus: Int? = null
         protected set
 }

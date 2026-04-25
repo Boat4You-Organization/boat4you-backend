@@ -10,8 +10,14 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 
 data class ReservationResponseWrapper(
-    val externalId: Long,
-    val externalCode: String,
+    /** Partner-system reservation ID. Null when [skipExternalSystem]
+     *  is set on the agency — no partner call is made and the reservation
+     *  is recorded with `external_id = null` (post V1_62 nullable). */
+    val externalId: Long?,
+    /** Partner-system human-readable reservation code (e.g. "RX-12345").
+     *  Null on the skip-external-system path for the same reason as
+     *  [externalId]. */
+    val externalCode: String?,
     val dateFrom: LocalDateTime,
     val dateTo: LocalDateTime,
     val createdAt: LocalDateTime,
@@ -26,6 +32,9 @@ data class ReservationResponseWrapper(
     val basePrice: BigDecimal,
     val discount: BigDecimal,
     val commission: BigDecimal?,
+    // What we owe the agency — Nausys `agencyPrice`, MMK `finalPrice`. Nullable
+    // for DEV mock path that doesn't know the real partner-side figure.
+    val agencyPrice: BigDecimal?,
     val totalPrice: BigDecimal,
     val clientPrice: BigDecimal,
     val deposit: BigDecimal?,

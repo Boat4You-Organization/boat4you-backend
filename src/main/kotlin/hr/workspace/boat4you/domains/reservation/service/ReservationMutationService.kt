@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.Year
 import kotlin.jvm.optionals.getOrElse
 
 @Service
@@ -26,6 +25,7 @@ class ReservationMutationService(
     private val reservationFlowRepository: ReservationFlowRepository,
     private val reservationMappers: ReservationMappers,
     private val offerMutationService: OfferMutationService,
+    private val bookingNumberService: BookingNumberService,
 ) {
     @Transactional
     fun refreshReservation(
@@ -45,16 +45,31 @@ class ReservationMutationService(
     fun createReservation(
         reservationFlowId: Long,
         externalReservation: ReservationResponseWrapper,
+        /**
+         * Admin override — when the admin manually creates a reservation with a
+         * bespoke price (replacement after a cancel), the offer's catalogue
+         * price is NOT the source of truth. We apply the override to every
+         * price field on the Reservation so downstream (customer view, Stripe,
+         * email templates) reads the admin price. When null, behaviour is
+         * unchanged (external partner's price wins).
+         */
+        adminOverridePrice: java.math.BigDecimal? = null,
+        /**
+         * Copied onto the Reservation for admin-only reference (not shown to
+         * customer). See `MyReservationDetailsDto` which deliberately omits it.
+         */
+        adminNotes: String? = null,
     ): ReservationDto {
         val reservationFlow = reservationFlowRepository.findById(reservationFlowId).get()
 
-        // when joining to external reservation, reservation number is generated only if status is confirmed reservation
-        val reservationNumber =
-            if (externalReservation.calculatedSysStatus == ReservationStatus.RESERVATION) {
-                generateReservationNumber()
-            } else {
-                null
-            }
+        // Assign the customer-facing booking number at reservation creation,
+        // regardless of status (OPTION or RESERVATION). The number needs to be
+        // visible during the payment flow (bank transfer reference, Stripe
+        // description, option emails), not only after payment confirmation.
+        // Charter year = year the charter actually starts (not booking year),
+        // so a reservation booked in Dec 2025 for a May 2026 charter gets
+        // "…/2026".
+        val reservationNumber = bookingNumberService.next(externalReservation.dateFrom.year)
 
         val reservation =
             Reservation().apply {
@@ -70,11 +85,19 @@ class ReservationMutationService(
                 this.externalStatus = externalReservation.externalStatus
                 this.sysStatus = externalReservation.calculatedSysStatus // option ili option_waiting
                 this.response = externalReservation.responseBody
-                this.basePrice = externalReservation.basePrice
-                this.discount = externalReservation.discount
+                // Price fields: admin override beats partner response. We apply
+                // it to basePrice/totalPrice/clientPrice uniformly so any view
+                // reading ANY of those three sees the admin-set value.
+                // agencyPrice + commission are left as partner-provided — the
+                // admin doesn't override the broker margin, just the customer
+                // price. Discount is zeroed on override (no "discount off" a
+                // price the admin fully dictated).
+                this.basePrice = adminOverridePrice ?: externalReservation.basePrice
+                this.discount = if (adminOverridePrice != null) null else externalReservation.discount
                 this.commission = externalReservation.commission
-                this.totalPrice = externalReservation.totalPrice
-                this.clientPrice = externalReservation.clientPrice
+                this.totalPrice = adminOverridePrice ?: externalReservation.totalPrice
+                this.clientPrice = adminOverridePrice ?: externalReservation.clientPrice
+                this.agencyPrice = externalReservation.agencyPrice
                 this.deposit = externalReservation.deposit
                 this.currency = externalReservation.currency
                 this.paymentNote = externalReservation.paymentNote
@@ -84,14 +107,44 @@ class ReservationMutationService(
                 this.locationTo = externalReservation.locationTo
                 this.product = externalReservation.product
                 this.reservationNumber = reservationNumber
+                this.adminNotes = adminNotes?.takeIf { it.isNotBlank() }
             }
 
-        createPaymentPlans(reservation, externalReservation)
+        // External payment plan only applies to partner-managed bookings. In
+        // the admin-override path, the payment plan lives in
+        // `reservation_flow.paymentPhases` (admin-laid-out phases), not in the
+        // partner's `externalReservation.paymentPlan`. Skip the copy when the
+        // admin is dictating price.
+        if (adminOverridePrice == null) {
+            createPaymentPlans(reservation, externalReservation)
+        }
         createReservationExtras(reservation, externalReservation)
+
+        // Admin-created bookings are never "options awaiting customer payment"
+        // — the admin is the authority here, the customer has verbally or
+        // otherwise committed, and the admin creates the booking on their
+        // behalf. Flip straight to RESERVATION regardless of the paid state
+        // of individual installments. The partner returns an OPTION envelope
+        // but our internal status is RESERVATION from the start; the
+        // externalStatus label is rewritten to match (e.g.
+        // "DEV-MOCK-OPTION" → "DEV-MOCK-RESERVATION") so the admin list chip
+        // agrees with the detail view.
+        //
+        // Customer-flow (non-override) bookings keep the OPTION / OPTION_WAITING
+        // lifecycle they already had — they get promoted to RESERVATION via
+        // `confirmReservation` once the first payment arrives.
+        val finalOfferStatus = if (adminOverridePrice != null) {
+            reservation.sysStatus = ReservationStatus.RESERVATION
+            reservation.externalStatus = reservation.externalStatus?.replace("OPTION", "RESERVATION")
+                ?: reservation.externalStatus
+            OfferStatus.RESERVED
+        } else {
+            OfferStatus.OPTION
+        }
 
         reservationRepository.save(reservation)
 
-        offerMutationService.updateOfferStatus(reservationFlow.offer!!.id!!, OfferStatus.OPTION)
+        offerMutationService.updateOfferStatus(reservationFlow.offer!!.id!!, finalOfferStatus)
 
         return reservationMappers.toReservationDto(reservation)
     }
@@ -137,8 +190,57 @@ class ReservationMutationService(
         reservation.status = externalReservation.status
         reservation.externalStatus = externalReservation.externalStatus
         reservation.sysStatus = ReservationStatus.RESERVATION
-        reservation.reservationNumber = generateReservationNumber()
+        // Booking number was already assigned at createReservation; only fill
+        // in here for the rare case a reservation entered directly in the
+        // RESERVATION state somehow missed it (defensive, shouldn't trigger).
+        if (reservation.reservationNumber == null) {
+            reservation.reservationNumber = bookingNumberService.next(reservation.dateFrom!!.year)
+        }
         reservation.crewListUrl = externalReservation.crewListUrl
+
+        val reservationFlow = reservation.reservationFlow!!
+        offerMutationService.updateOfferStatus(reservationFlow.offer!!.id!!, OfferStatus.RESERVED)
+
+        if (paymentPhaseIds != null) {
+            reservationFlow.paymentPhases.forEach {
+                if (it.id!! in paymentPhaseIds) {
+                    it.paidOn = Instant.now()
+                }
+            }
+        }
+
+        return reservationMappers.toReservationDto(reservation)
+    }
+
+    /**
+     * Admin-only manual confirm. Agent calls the agency by phone / email,
+     * the agency confirms externally, and the admin records that confirmation
+     * here. We DO NOT call the partner (Nausys/MMK) `createBooking` —
+     * sandbox credentials refuse it and per business policy the broker drives
+     * the confirmation conversation out-of-band.
+     *
+     * Kept separate from [confirmReservation] so the partner-driven path is
+     * still available (e.g. if we later re-enable it for agencies that opted
+     * in). This path only mutates our DB:
+     *   - sysStatus → RESERVATION
+     *   - externalStatus tag → "RESERVATION" (for consistency in list queries)
+     *   - offer → RESERVED
+     *   - marked payment phases → paidOn = now
+     *   - reservation.externalId stays intact, so sync jobs (yacht swap, etc.)
+     *     continue to pull partner-side changes for this booking.
+     */
+    @Transactional
+    fun confirmReservationManually(
+        reservationId: Long,
+        paymentPhaseIds: List<Long>? = null,
+    ): ReservationDto {
+        val reservation = reservationRepository.findById(reservationId).orElseThrow()
+
+        reservation.sysStatus = ReservationStatus.RESERVATION
+        reservation.externalStatus = "RESERVATION"
+        if (reservation.reservationNumber == null) {
+            reservation.reservationNumber = bookingNumberService.next(reservation.dateFrom!!.year)
+        }
 
         val reservationFlow = reservation.reservationFlow!!
         offerMutationService.updateOfferStatus(reservationFlow.offer!!.id!!, OfferStatus.RESERVED)
@@ -158,6 +260,7 @@ class ReservationMutationService(
     fun cancelReservation(
         reservationId: Long,
         externalReservation: ReservationResponseWrapper,
+        adminReason: String? = null,
     ): ReservationDto {
         val reservation = reservationRepository.findById(reservationId).orElseThrow()
         reservation.status = externalReservation.status
@@ -168,35 +271,46 @@ class ReservationMutationService(
         val reservationFlow = reservation.reservationFlow!!
         offerMutationService.updateOfferStatus(reservationFlow.offer!!.id!!, OfferStatus.FREE)
 
+        // Tag every admin-triggered cancellation with "[AGENT]" so the
+        // customer's /my-bookings page can render a distinct "Cancelled by
+        // agent" label regardless of whether the customer had first
+        // requested it. Three scenarios we cover:
+        //   1. Customer requested cancel, admin approves → we keep the
+        //      customer's reason but prefix with [AGENT] so the FINAL
+        //      status reflects "closed by agent".
+        //   2. Admin cancels directly (overbooking, charter pulled) with
+        //      an explicit reason → [AGENT] + admin reason.
+        //   3. Admin cancels with no reason → just [AGENT].
+        // The prefix is stripped from the rendered reason before it is
+        // shown to the customer (see ReservationHeroSection).
+        // No DB migration needed — reuses the existing cancelation_request column.
+        val existingReason = reservationFlow.cancelationRequest?.trim().orEmpty()
+        val resolvedReason = adminReason?.trim().orEmpty().ifBlank { existingReason }
+        reservationFlow.cancelationRequest = if (resolvedReason.isNotBlank()) {
+            "[AGENT] $resolvedReason"
+        } else {
+            "[AGENT]"
+        }
+        if (reservationFlow.cancelationRequestAt == null) {
+            reservationFlow.cancelationRequestAt = LocalDateTime.now()
+        }
+
         return reservationMappers.toReservationDto(reservation)
     }
 
     @Transactional
-    fun updateReservationNumber(
+    fun updateAdminNotes(
         id: Long,
-        reservationNumber: String,
+        notes: String?,
     ): ReservationDto {
         val reservation = reservationRepository.findById(id).getOrElse { throw ReservationNotExistException() }
-
-        reservation.reservationNumber = reservationNumber
-
+        reservation.adminNotes = notes?.takeIf { it.isNotBlank() }
         return reservationMappers.toReservationDto(reservationRepository.save(reservation))
     }
 
-    private fun generateReservationNumber(): String {
-        val currentYear = Year.now().value.toString()
-        val latestReservationNumber = reservationRepository.findMaxReservationNumberForYear(currentYear)
-
-        val nextNumber =
-            if (latestReservationNumber != null) {
-                val prefix = latestReservationNumber.substringBefore("/")
-                prefix.toInt() + 1
-            } else {
-                1001
-            }
-
-        return "$nextNumber/$currentYear"
-    }
+    // Legacy generator replaced by BookingNumberService (per-charter-year
+    // counter, format "1001{sequence}/{charter_year}"). Old format was
+    // "{sequential prefix starting at 1001}/{current calendar year}".
 
     @Transactional
     fun createCancellationRequest(

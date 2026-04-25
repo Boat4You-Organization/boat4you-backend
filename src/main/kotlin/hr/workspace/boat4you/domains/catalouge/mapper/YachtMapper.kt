@@ -43,8 +43,16 @@ class YachtMapper(
         currency: CurrencyEnum?,
         language: LanguageEnum,
         isOption: Boolean,
+        amenityKeys: List<String>? = null,
+        optionExpiresAt: java.time.LocalDateTime? = null,
     ): YachtSearchResponseDto {
         val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName)
+
+        // Resolve the raw Int offer_status (from the view) into the enum for UI.
+        val status =
+            result.offerStatus?.let { raw ->
+                hr.workspace.boat4you.domains.catalouge.enums.OfferStatus.entries.firstOrNull { it.value == raw }
+            }
 
         return YachtSearchResponseDto(
             id = result.id,
@@ -65,10 +73,26 @@ class YachtMapper(
                     result.clientPrice,
                     currency,
                 ),
+            listPriceEur = result.listPrice,
+            listPriceInfo =
+                exchangeRateCalculationService.calculatePriceInfo(
+                    result.listPrice,
+                    currency,
+                ),
+            numberOfDays = result.numberOfDays,
             modelName = result.modelName,
             mainImageId = result.mainImage,
             isOption = isOption,
+            offerStatus = status,
             agencyName = if (isAdminUser()) result.agencyName else null,
+            // Commission is broker-only data — never leak to customer UI.
+            // Sourced from offer.broker_commission (partner's per-offer
+            // figure), NOT offer.agency_commission (our client discount).
+            agencyCommissionEur = if (isAdminUser()) result.brokerCommission else null,
+            amenityKeys = amenityKeys?.takeIf { it.isNotEmpty() },
+            offerDateFrom = result.offerDateFrom,
+            offerDateTo = result.offerDateTo,
+            optionExpiresAt = optionExpiresAt,
         )
     }
 
@@ -100,7 +124,10 @@ class YachtMapper(
                 val country = customDetails?.country!!
                 LocationDto(id = "C-${country.id}", name = country.name, countryCode = country.code2)
             } else {
-                result.location?.toDto()
+                // Fallback: if yacht has no location_id (OSH/MMK legacy — DESSUS, ADRIATIC PEARL,
+                // CATWALK, MADAME EL GRANDE...), pull the pick-up location from the first offer so
+                // the detail page matches the listing (which filters by offer.location_from anyway).
+                result.location?.toDto() ?: offerDtos?.firstOrNull()?.locationFrom
             }
 
         val extras =

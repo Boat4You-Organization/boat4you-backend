@@ -10,8 +10,6 @@ import java.time.LocalDate
 interface ReservationPaymentPhaseRepository : JpaRepository<ReservationPaymentPhase, Long> {
     fun findByStripeSessionIdOrderByDeadlineAsc(stripeSessionId: String): List<ReservationPaymentPhase>
 
-    fun findByVivaOrderCodeOrderByDeadlineAsc(vivaOrderCode: String): List<ReservationPaymentPhase>
-
     @Query(
         """
         SELECT pp FROM ReservationPaymentPhase pp

@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.external.mmk.service
 
 import hr.workspace.boat4you.common.services.PriceCalculations
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
+import hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.OfferType
@@ -20,6 +21,8 @@ import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.YACHT_AGENCY_EXTERNAL_MAPPING_KEY
 import hr.workspace.boat4you.domains.external.utils.Matchers
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -35,6 +38,8 @@ class MmkYachtOfferSyncService(
     private val extraRepository: ExtraRepository,
     private val offerExtraRepository: OfferExtraRepository,
 ) {
+    private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun syncOffersForAgency(
         agencyId: Long,
@@ -49,10 +54,25 @@ class MmkYachtOfferSyncService(
                 YACHT_AGENCY_EXTERNAL_MAPPING_KEY + agencyId,
             )
         val syncedOffers = mutableSetOf<Long>()
+        var skippedCount = 0
+        var skippedYachtCount = 0
 
         mmkOffers.groupBy { it.yachtId }.forEach { (yachtId, mmkOffers) ->
-            val mapping = allMappings.find { it.externalId == yachtId!!.toLong() }
-            val yacht = allAgencyYachts.find { it.id == mapping!!.systemId!! }!!
+            // Defensive: MMK can send a yachtId we haven't mapped yet (e.g. partner
+            // added a brand-new yacht between two yacht-sync runs, or yacht was removed
+            // from agency before our External Mapping was reconciled). The old `mapping!!.systemId!!.find()!!`
+            // chain NPE'd here and aborted the whole agency batch — we'd lose all
+            // offers for the rest of this transaction.
+            val mapping = allMappings.find { it.externalId == yachtId?.toLong() }
+            val yacht = mapping?.systemId?.let { sysId -> allAgencyYachts.find { it.id == sysId } }
+            if (yacht == null) {
+                log.warn(
+                    "Skipping ${mmkOffers.size} MMK offers for agency=$agencyId yachtId=$yachtId " +
+                        "— no Yacht mapping or yacht not loaded (mapping.systemId=${mapping?.systemId})",
+                )
+                skippedYachtCount++
+                return@forEach
+            }
 
             val minDateFrom = mmkOffers.minOfOrNull { it.dateFrom.value!!.toLocalDate() }
             val maxDateTo = mmkOffers.maxOfOrNull { it.dateTo.value!!.toLocalDate() }
@@ -71,12 +91,20 @@ class MmkYachtOfferSyncService(
                             it.dateTo == mmkOffer.dateTo.value?.toLocalDate() &&
                             it.product == CharterType.fromMmkValue(mmkOffer.product)
                     }
-                if (existingOffer == null) {
-                    updateOffer(Offer(), yacht, mmkOffer)
-                } else {
-                    updateOffer(existingOffer, yacht, mmkOffer)
+                // Mark existing offer as "still alive" BEFORE updateOffer so a missing-location skip
+                // (early return inside updateOffer) doesn't deactivate a perfectly valid DB row in
+                // the deactivate-loop below. See V1_51-era log: a single broken Location mapping
+                // would otherwise wipe an entire agency's offers.
+                if (existingOffer != null) {
                     syncedOffers.add(existingOffer.id!!)
                 }
+                val updated =
+                    if (existingOffer == null) {
+                        updateOffer(Offer(), yacht, mmkOffer)
+                    } else {
+                        updateOffer(existingOffer, yacht, mmkOffer)
+                    }
+                if (!updated) skippedCount++
             }
 
             // deactivate all offers that are not returned by MMK
@@ -88,22 +116,48 @@ class MmkYachtOfferSyncService(
                     offerRepository.save(offer)
                 }
         }
+
+        if (skippedCount > 0) {
+            log.warn("MMK offer sync for agency $agencyId: skipped $skippedCount offers due to missing Location mappings")
+        }
+        if (skippedYachtCount > 0) {
+            log.warn("MMK offer sync for agency $agencyId: skipped $skippedYachtCount yachts due to missing Yacht mappings")
+        }
     }
 
+    /**
+     * @return true if the offer was updated and saved; false if it was skipped because a required
+     * Location mapping or Location row was missing. A skipped offer must not be deactivated by the
+     * caller — the row in DB (if any) keeps its current state.
+     */
     private fun updateOffer(
         offer: Offer,
         yacht: Yacht,
         mmkOffer: org.openapitools.client.mmk.model.Offer,
-    ) {
+    ): Boolean {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
         val allLocationMappings =
             externalMappingService.getCachedAllMappingsByType(Location::class.simpleName.toString(), externalSystem)
         val locationFromMapping =
             allLocationMappings.find { location -> location.externalId == mmkOffer.startBaseId }
-        val locationFrom = locationQueryingService.getCachedLocationById(locationFromMapping!!.systemId!!)
+        val locationFrom =
+            locationFromMapping?.systemId?.let { locationQueryingService.getCachedLocationById(it) }
         val locationToMapping =
             allLocationMappings.find { location -> location.externalId == mmkOffer.endBaseId }
-        val locationTo = locationQueryingService.getCachedLocationById(locationToMapping!!.systemId!!)
+        val locationTo =
+            locationToMapping?.systemId?.let { locationQueryingService.getCachedLocationById(it) }
+
+        // Without both Locations the offer fails @NotNull pre-update validation on the next
+        // session auto-flush, which aborts the entire transaction and wipes the agency's batch.
+        // Skip silently (with a warn) so one broken upstream mapping doesn't mask a healthy sync.
+        if (locationFrom == null || locationTo == null) {
+            log.warn(
+                "Skipping MMK offer for yacht=${yacht.id}: missing Location " +
+                    "(startBaseId=${mmkOffer.startBaseId} → mapping=${locationFromMapping?.systemId}, " +
+                    "endBaseId=${mmkOffer.endBaseId} → mapping=${locationToMapping?.systemId})",
+            )
+            return false
+        }
 
         offer.yacht = yacht
         offer.status = OfferStatus.fromMmkValue(mmkOffer.status)
@@ -138,6 +192,11 @@ class MmkYachtOfferSyncService(
 
         offer.clientPrice = clientPrice
         offer.agencyCommission = mmkOffer.price.toBigDecimal().minus(clientPrice)
+        // Broker commission comes straight from the partner — MMK's
+        // `commissionValue` is what we keep per offer (admin view / offer
+        // workspace). Distinct from our own client-facing discount stored
+        // above in `agencyCommission`.
+        offer.brokerCommission = mmkOffer.commissionValue?.toBigDecimal()
 
         val obligatoryExtrasPrice =
             mmkOffer.obligatoryExtras
@@ -164,6 +223,7 @@ class MmkYachtOfferSyncService(
 //            offer.offerPaymentPlans.clear()
 //            offerRepository.save(offer)
 //        }
+        return true
     }
 
     private fun handleObligatoryExtras(
@@ -185,10 +245,21 @@ class MmkYachtOfferSyncService(
                     ex.id == mmkExtra.id
                 }
 
+            val mmkPrice = mmkExtra.price?.toBigDecimal()
+            // See MmkYachtSyncService for rationale — MMK `payableInBase=false`
+            // means "outside base", not "included". fromMmkPayableInBase
+            // defaults non-crew extras to ON_SITE.
+            val mmkPaymentType = ExtraPaymentType.fromMmkPayableInBase(
+                name = mmkExtra.name,
+                price = mmkPrice,
+                payableInBase = mmkExtra.payableInBase ?: false,
+            )
             if (extraAlreadyOnOffer != null) {
                 extraAlreadyOnOffer.extras = boat4youExtrasMatch
-                extraAlreadyOnOffer.price = mmkExtra.price?.toBigDecimal()
+                extraAlreadyOnOffer.price = mmkPrice
                 extraAlreadyOnOffer.payableInBase = mmkExtra.payableInBase
+                extraAlreadyOnOffer.paymentType = mmkPaymentType
+                extraAlreadyOnOffer.description = mmkExtra.description?.takeIf { it.isNotBlank() }
                 matchedIds.add(extraAlreadyOnOffer.id!!)
                 return@forEach
             }
@@ -197,12 +268,14 @@ class MmkYachtOfferSyncService(
             offerExtra.offer = offer
             offerExtra.extras = boat4youExtrasMatch
             offerExtra.name = mmkExtra.name
-            offerExtra.price = mmkExtra.price?.toBigDecimal()
+            offerExtra.price = mmkPrice
             offerExtra.payableInBase = mmkExtra.payableInBase
+            offerExtra.paymentType = mmkPaymentType
             offerExtra.obligatory = true
             offerExtra.unit = ExtrasUnitType.PER_BOOKING
             offerExtra.externalUnit = null
             offerExtra.externalId = mmkExtra.id // its extrasId, so duplicates are possible across different yachts
+            offerExtra.description = mmkExtra.description?.takeIf { it.isNotBlank() }
             offer.offerExtras.add(offerExtra)
             offerExtraRepository.save(offerExtra)
             matchedIds.add(offerExtra.id!!)

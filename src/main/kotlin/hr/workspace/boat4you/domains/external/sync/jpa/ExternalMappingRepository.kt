@@ -47,4 +47,10 @@ interface ExternalMappingRepository : JpaRepository<ExternalMapping, Long> {
         systemId: Long,
         type: String,
     ): ExternalMapping?
+
+    fun findByExternalIdAndExternalSystemAndType(
+        externalId: Long,
+        externalSystem: ExternalSystem,
+        type: String,
+    ): ExternalMapping?
 }

@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.catalouge.services
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtResponse
+import hr.workspace.boat4you.domains.catalouge.dto.LocationDto
 import hr.workspace.boat4you.domains.catalouge.dto.VesselTypeYachtCountDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtAvailabilityDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtDetailsDto
@@ -13,8 +14,11 @@ import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
+import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.catalouge.jpa.ReplacementSearchRow
+import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
@@ -40,6 +44,7 @@ import hr.workspace.boat4you.domains.catalouge.mapper.YachtMapper
 import jakarta.persistence.EntityManager
 import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.CriteriaQuery
+import jakarta.persistence.criteria.Expression
 import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root
 import org.springframework.cache.annotation.Cacheable
@@ -72,6 +77,42 @@ class YachtQueryingService(
 ) {
     companion object {
         private const val MAX_PAGE_SIZE = 100
+
+        /**
+         * Tolerance on each side of the user's requested period when filtering
+         * yacht offers. A search for 04.07.–11.07. (Sat–Sat) also returns
+         * Mon–Mon or Thu–Thu offers that sit within 3 days of those bounds
+         * — mirrors what larger brokers (MMK, Boataround) show as "closest
+         * day" suggestions instead of silently dropping them.
+         */
+        private const val DATE_FLEX_DAYS = 3L
+
+        /**
+         * Customer-facing amenity priority used for the search-result card's
+         * top-3 icon row. Items earlier in this list rank higher. This order
+         * is deliberately different from [Equipment.filterOrder] — that column
+         * is tuned for the filter panel (grouped by category), whereas here
+         * we lead with the items that drive booking decisions
+         * (AC, dinghy, bimini, water toys…).
+         */
+        private val CARD_AMENITY_PRIORITY: List<String> =
+            listOf(
+                "air-conditioning",
+                "wifi",
+                "dinghy",
+                "generator",
+                "outside-GPS-plotter",
+                "solar-panels",
+                "water-toys",
+                "snorkel-sets",
+                "outside-shower",
+                "fridge",
+                "bimini",
+                "autopilot",
+                "bow-thruster",
+                "radar",
+                "heating",
+            )
     }
 
     fun getYachts(
@@ -84,6 +125,20 @@ class YachtQueryingService(
         val cb = entityManager.criteriaBuilder
         val cq = cb.createQuery(YachtSearchSelectResult::class.java)
         val root = cq.from(YachtSearchView::class.java)
+
+        val offerStatusRaw = root.get<Int>("offerStatus")
+
+        // Pre-reserved states (OPTION=2, OPTION_WAITING=3, RESERVED=5, SERVICE=7) stay
+        // as-is; everything else (FREE, OPTION_EXPIRED, CANCELLED, INFO, UNKNOWN —
+        // all rendered "Available" on the card) collapses to FREE=1. UNAVAILABLE=4
+        // is already filtered out at the view level. MAX over matching offers then
+        // surfaces the most-restrictive state: if ANY matching offer is under
+        // option, the yacht shows the "Pre-reserved" badge / SPECIAL PROMOTION
+        // ribbon instead of being masked by a FREE offer for another week.
+        val prioritizedStatus: Expression<Int> =
+            cb.selectCase<Int>()
+                .`when`(offerStatusRaw.`in`(listOf(2, 3, 5, 7)), offerStatusRaw)
+                .otherwise(cb.literal(1))
 
         cq.multiselect(
             root.get<Long>("id"),
@@ -102,6 +157,19 @@ class YachtQueryingService(
             cb.least(root.get<CharterType>("charterType")),
             cb.least(root.get<String>("locationFullName")),
             cb.min(root.get<BigDecimal>("clientPrice")),
+            cb.min(root.get<BigDecimal>("listPrice")),
+            // Pair the commission with the MIN clientPrice — same offer row —
+            // so the UI shows consistent commission next to the listed price.
+            cb.min(root.get<BigDecimal>("brokerCommission")),
+            cb.min(root.get<Int>("numberOfDays")),
+            cb.max(prioritizedStatus),
+            // Prefer offer dates that exactly match the user's requested range,
+            // so yachts with both a spot-on Sat-Sat offer AND a neighbouring
+            // Thu-Thu one render as "Available" instead of "Closest day". If no
+            // exact match exists we fall back to the earliest overlapping offer,
+            // which is enough for the badge to show a sensible alternative.
+            exactOrEarliest(cb, root.get<LocalDate>("dateFrom"), searchParams.startDate),
+            exactOrEarliest(cb, root.get<LocalDate>("dateTo"), searchParams.endDate),
         )
 
         val predicates =
@@ -129,18 +197,45 @@ class YachtQueryingService(
             root.get<EntryType>("entryType"),
         )
 
-        // its easier for FE to send just asc/desc for clientPrice
+        // FE sends a simple sortBy string; each branch below maps to the column
+        // actually used for ORDER BY. Anything unrecognized falls back to
+        // recommendedScore (the default "Recommended" tab).
+        //
+        // Price-based sorts use TOTAL (per-day × duration), not the per-day value
+        // the view exposes. Otherwise a 10-day Sunreef 60 at €4,800/day (€48,000
+        // total) sits below a 7-day Lagoon 60 at €5,350/day (€37,460 total) —
+        // which is wrong because the card displays totals, not day rates.
+        val totalPriceExpr =
+            cb.prod(
+                root.get<BigDecimal>("clientPrice"),
+                cb.toBigDecimal(root.get<Int>("numberOfDays")),
+            )
         when (sortBy) {
             "asc" -> {
-                cq.orderBy(cb.asc(cb.min(root.get<BigDecimal>("clientPrice"))))
+                cq.orderBy(cb.asc(cb.min(totalPriceExpr)))
             }
 
             "desc" -> {
-                cq.orderBy(cb.desc(cb.min(root.get<BigDecimal>("clientPrice"))))
+                cq.orderBy(cb.desc(cb.min(totalPriceExpr)))
             }
 
             "lowestPrepayment" -> {
                 cq.orderBy(cb.asc(cb.min(root.get<BigDecimal>("lowestPrepayment"))))
+            }
+
+            "lengthAsc" -> {
+                // Yachts without length land at the end — COALESCE maps NULL to a
+                // large value so ascending order pushes them to the bottom. Postgres'
+                // default ASC already does this; the COALESCE makes it explicit and
+                // dialect-independent.
+                cq.orderBy(cb.asc(cb.coalesce(root.get<BigDecimal>("length"), cb.literal(BigDecimal.valueOf(9999)))))
+            }
+
+            "lengthDesc" -> {
+                // Default Postgres DESC puts NULLs first, which surfaces yachts
+                // with no length as the "longest" — wrong. Map NULL to -1 so they
+                // fall to the bottom while real lengths still sort largest-first.
+                cq.orderBy(cb.desc(cb.coalesce(root.get<BigDecimal>("length"), cb.literal(BigDecimal.valueOf(-1)))))
             }
 
             "recommendedScore" -> {
@@ -160,17 +255,61 @@ class YachtQueryingService(
 
         val results = query.resultList
 
-        val yachtOptionIds = findOptionYachts(searchParams.startDate, searchParams.endDate)
+        // Bulk-fetch top-N amenity label_codes for yachts on THIS page only so
+        // the card can render real icons instead of the previous hardcoded FE
+        // fallback. Single extra query per page; scales with page size, not
+        // with total yacht count.
+        val amenityKeysByYachtId = fetchTopAmenities(results.map { it.id }, 3)
+
+        // Bulk-fetch option expiry timestamps for the optioned yachts on
+        // this page — one extra query regardless of page size. Options
+        // come from `external_reservations`, populated by MMK + Nausys
+        // availability sync. A yacht can have more than one overlapping
+        // option row in theory (yacht swap mid-option, partner quirk); we
+        // pick the SOONEST expiry so the broker sees the most-urgent
+        // deadline. Skipped entirely when no yachts on the page are
+        // optioned — keeps the query cheap for the common case.
+        val optionedIds = results
+            .filter { it.offerStatus == 2 || it.offerStatus == 3 }
+            .map { it.id }
+        val searchStart = searchParams.startDate
+        val searchEnd = searchParams.endDate
+        val optionExpiryByYachtId: Map<Long, java.time.LocalDateTime> =
+            if (optionedIds.isNotEmpty() && searchStart != null && searchEnd != null) {
+                externalReservationRepository
+                    .findOptionsByYachtIdsAndPeriod(
+                        optionedIds,
+                        hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus.OPTION,
+                        searchStart,
+                        searchEnd,
+                    )
+                    .asSequence()
+                    .mapNotNull { r ->
+                        val yachtId = r.yacht?.id ?: return@mapNotNull null
+                        val expiry = r.optionExpiration ?: return@mapNotNull null
+                        yachtId to expiry
+                    }
+                    .groupBy({ it.first }, { it.second })
+                    .mapValues { (_, expiries) -> expiries.min() }
+            } else {
+                emptyMap()
+            }
+
         val searchResponseDtos =
             results.map { view ->
-                val isOption =
-                    if (searchParams.startDate == null || searchParams.endDate == null) {
-                        false
-                    } else {
-                        yachtOptionIds.contains(view.id)
-                    }
+                // isOption is derived from the aggregated offerStatus so the two
+                // fields in the DTO can never disagree — OPTION(2) or
+                // OPTION_WAITING(3) on any matching offer row flips this true.
+                val isOption = view.offerStatus == 2 || view.offerStatus == 3
 
-                yachtMapper.toDto(view, searchParams.currency, language, isOption)
+                yachtMapper.toDto(
+                    view,
+                    searchParams.currency,
+                    language,
+                    isOption,
+                    amenityKeysByYachtId[view.id],
+                    optionExpiryByYachtId[view.id],
+                )
             }
 
         val total = getYachtSearchTotalCount(searchParams)
@@ -178,28 +317,184 @@ class YachtQueryingService(
         return PageImpl(searchResponseDtos, pageable, total)
     }
 
-    private fun findOptionYachts(
-        startDate: LocalDate?,
-        endDate: LocalDate?,
-    ): Set<Long> {
-        if (startDate == null || endDate == null) return emptySet()
+    /**
+     * Returns up to [limit] Equipment.labelCode strings per yacht. Results are
+     * ranked by [CARD_AMENITY_PRIORITY] (customer-facing "what drives bookings"
+     * order) first, then by Equipment.filterOrder for amenities not in the
+     * priority list — so every yacht gets a consistent top-3 even when it
+     * lacks several priority items.
+     *
+     * Equipment rows with no labelCode are skipped (can't be rendered).
+     */
+    private fun fetchTopAmenities(
+        yachtIds: List<Long>,
+        limit: Int,
+    ): Map<Long, List<String>> {
+        if (yachtIds.isEmpty()) return emptyMap()
 
-        val externalReservationQuery =
-            StringBuilder(
-                """
-                SELECT er.yacht.id FROM ExternalReservation er
-                LEFT JOIN Yacht y ON er.yacht.id = y.id WHERE
-                er.dateFrom = :startDate
-                AND er.dateTo = :endDate
-                """.trimIndent(),
+        @Suppress("UNCHECKED_CAST")
+        val rows =
+            entityManager
+                .createQuery(
+                    """
+                    SELECT ye.yachtId, e.labelCode, e.filterOrder
+                    FROM YachtEquipment ye
+                    JOIN ye.equipment e
+                    WHERE ye.yachtId IN :yachtIds
+                      AND e.labelCode IS NOT NULL
+                    """.trimIndent(),
+                ).setParameter("yachtIds", yachtIds)
+                .resultList as List<Array<Any?>>
+
+        // Pre-compute lookup so the comparator is O(1) per element.
+        val priorityRank: Map<String, Int> =
+            CARD_AMENITY_PRIORITY
+                .withIndex()
+                .associate { (idx, label) -> label to idx }
+
+        return rows
+            .groupBy { it[0] as Long }
+            .mapValues { (_, list) ->
+                list
+                    .mapNotNull { row ->
+                        val label = row[1] as? String ?: return@mapNotNull null
+                        val filterOrder = (row[2] as? Short)?.toInt() ?: Int.MAX_VALUE
+                        Triple(label, priorityRank[label] ?: Int.MAX_VALUE, filterOrder)
+                    }.distinctBy { it.first }
+                    // Priority items first (rank 0..N), then fall back to
+                    // filter_order for anything else. Using MAX_VALUE as the
+                    // default rank keeps non-priority items after priority ones.
+                    .sortedWith(compareBy({ it.second }, { it.third }))
+                    .take(limit)
+                    .map { it.first }
+            }
+    }
+
+    /**
+     * Aggregation helper: returns the offer date that exactly matches [exact]
+     * if any matching row has it, otherwise the earliest date across matches.
+     * When [exact] is null (user didn't search with dates) we just return
+     * `MIN(datePath)` like before.
+     */
+    private fun exactOrEarliest(
+        cb: CriteriaBuilder,
+        datePath: jakarta.persistence.criteria.Path<LocalDate>,
+        exact: LocalDate?,
+    ): Expression<LocalDate> {
+        if (exact == null) return cb.least(datePath)
+        val exactOnly =
+            cb.selectCase<LocalDate>()
+                .`when`(cb.equal(datePath, exact), datePath)
+                .otherwise(cb.nullLiteral(LocalDate::class.java))
+        // LEAST(CASE ...) returns `exact` if any row matches, else null (cb.min
+        // is numeric-only; cb.least is the aggregate equivalent for Comparable).
+        // Coalesce with LEAST(datePath) so we always get a date.
+        return cb.coalesce(cb.least(exactOnly), cb.least(datePath))
+    }
+
+    /**
+     * Admin replacement-flow search — used when a yacht broke down / was
+     * overbooked and the agency has already rebooked the same customer onto
+     * a different boat in the partner system. Our availability sync has
+     * marked that yacht UNAVAILABLE for the target week (or generated no
+     * offer row at all because the full period is sold), so the regular
+     * `getYachts` path doesn't return it.
+     *
+     * Goes through a native SQL path on the raw `yacht` + `offer` +
+     * `external_reservations` tables instead of `yacht_search_view` so a
+     * yacht that's fully-sold for the week still surfaces as long as the
+     * partner has an overlapping `external_reservation` row for it.
+     *
+     * Price is the average per-day across the yacht's active offers in the
+     * destination; null when the yacht has no offer at all (admin overrides
+     * total price manually in the Create-Reservation wizard Step 2).
+     */
+    fun getYachtsForReplacement(
+        searchParams: YachtSearchParamObject,
+        language: LanguageEnum,
+        page: Int,
+        size: Int,
+    ): PageImpl<YachtSearchResponseDto> {
+        val locationIds =
+            searchParams.locationIds
+                ?.flatMap { getMarinas(it).mapNotNull { m -> m.id } }
+                ?.distinct()
+                .orEmpty()
+        val agencyIds = searchParams.agencyIds.orEmpty()
+        val vesselTypeValues = searchParams.vesselTypes?.map { it.value }.orEmpty()
+        val startDate = searchParams.startDate ?: LocalDate.now()
+        val endDate = searchParams.endDate ?: startDate.plusDays(7)
+        val pageSize = size.coerceAtMost(MAX_PAGE_SIZE)
+        val pageOffset = page * pageSize
+
+        val rows =
+            yachtRepository.findForReplacementSearch(
+                locationIds = locationIds,
+                locationIdsEmpty = locationIds.isEmpty(),
+                agencyIds = agencyIds,
+                agencyIdsEmpty = agencyIds.isEmpty(),
+                vesselTypes = vesselTypeValues,
+                vesselTypesEmpty = vesselTypeValues.isEmpty(),
+                startDate = startDate,
+                endDate = endDate,
+                pageSize = pageSize,
+                pageOffset = pageOffset,
+            )
+        val total =
+            yachtRepository.countForReplacementSearch(
+                locationIds = locationIds,
+                locationIdsEmpty = locationIds.isEmpty(),
+                agencyIds = agencyIds,
+                agencyIdsEmpty = agencyIds.isEmpty(),
+                vesselTypes = vesselTypeValues,
+                vesselTypesEmpty = vesselTypeValues.isEmpty(),
+                startDate = startDate,
+                endDate = endDate,
             )
 
-        val externalQuery = entityManager.createQuery(externalReservationQuery.toString(), Long::class.java)
-        externalQuery.setParameter("startDate", startDate)
-        externalQuery.setParameter("endDate", endDate)
-        val externalYachtIds = externalQuery.resultList.toSet()
+        val dtos = rows.map { toReplacementDto(it, searchParams.currency) }
+        return PageImpl(dtos, org.springframework.data.domain.PageRequest.of(page, pageSize), total)
+    }
 
-        return externalYachtIds
+    private fun toReplacementDto(
+        row: ReplacementSearchRow,
+        currency: CurrencyEnum,
+    ): YachtSearchResponseDto {
+        val vesselType = row.vesselType?.let { v -> VesselType.entries.firstOrNull { it.value == v } }
+        val offerStatus =
+            if (row.onlyExternalReservation) OfferStatus.UNAVAILABLE else OfferStatus.FREE
+        val priceInfo = row.avgClientPrice?.let { exchangeRateCalculationService.calculatePriceInfo(it, currency) }
+        return YachtSearchResponseDto(
+            id = row.id,
+            slug =
+                SlugUtils.toSlugWithId(
+                    row.manufacturerName,
+                    row.modelName,
+                    row.yachtName,
+                    row.id,
+                ),
+            name = row.yachtName,
+            location =
+                row.locationId?.let {
+                    LocationDto(
+                        id = "l-$it",
+                        name = row.locationName ?: "",
+                        countryCode = row.locationCountry,
+                    )
+                },
+            vesselType = vesselType,
+            buildYear = row.buildYear,
+            maxPersons = row.maxPersons,
+            cabins = row.cabins,
+            length = row.length,
+            offerStatus = offerStatus,
+            isOption = false,
+            clientPriceEur = row.avgClientPrice,
+            clientPriceInfo = priceInfo,
+            modelName = row.modelName,
+            mainImageId = row.mainImageId,
+            agencyName = row.agencyName,
+        )
     }
 
     fun getYachtSearchTotalCount(searchParams: YachtSearchParamObject): Long {
@@ -249,12 +544,28 @@ class YachtQueryingService(
             )
         }
 
+        // Offer-availability filter — hide `UNAVAILABLE=4` rows (owner weeks,
+        // regattas, bookings that the agency already took outside our system)
+        // from every caller UNLESS the admin "replacement flow" explicitly
+        // asks for them. The view used to hard-code this filter; it's moved
+        // here so the admin wizard can bypass it.
+        if (!searchParams.includeUnavailable) {
+            predicates.add(cb.notEqual(root.get<Int>("offerStatus"), 4))
+        }
+
         if (!searchParams.charterTypes.isNullOrEmpty()) {
             predicates.add(root.get<CharterType>("charterType").`in`(searchParams.charterTypes))
         }
 
         if (!searchParams.vesselTypes.isNullOrEmpty()) {
             predicates.add(root.get<VesselType>("vesselType").`in`(searchParams.vesselTypes))
+        }
+
+        if (!searchParams.agencyIds.isNullOrEmpty()) {
+            // Admin filter — "show me only yachts operated by these agencies".
+            // YachtSearchView carries `agency_id` as a direct column, no join
+            // needed.
+            predicates.add(root.get<Long>("agencyId").`in`(searchParams.agencyIds))
         }
 
         if (!searchParams.manufacturers.isNullOrEmpty()) {
@@ -339,16 +650,23 @@ class YachtQueryingService(
             )
         }
 
+        // Flex by start day: offer passes only if its start sits within ±DATE_FLEX_DAYS
+        // of the user's requested start. Durations past the user's end are fine
+        // (e.g. 10-day Tue→Fri that starts 07.07. still matches a 04.07.→11.07.
+        // search), but offers starting a full week later (11.07.→18.07.) are
+        // already the NEXT week and would just clutter the results.
         if (searchParams.startDate != null && searchParams.endDate != null) {
             if (!searchParams.startDate.isBefore(searchParams.endDate)) {
                 throw IllegalArgumentException("Starting date must be before end date")
             }
-            predicates.add(cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate))
-            predicates.add(cb.lessThanOrEqualTo(root.get("dateTo"), searchParams.endDate))
+            predicates.add(cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.minusDays(DATE_FLEX_DAYS)))
+            predicates.add(cb.lessThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.plusDays(DATE_FLEX_DAYS)))
         } else if (searchParams.startDate != null) {
-            predicates.add(cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate))
+            predicates.add(cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.minusDays(DATE_FLEX_DAYS)))
+            predicates.add(cb.lessThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.plusDays(DATE_FLEX_DAYS)))
         } else if (searchParams.endDate != null) {
-            predicates.add(cb.lessThanOrEqualTo(root.get("dateTo"), searchParams.endDate))
+            predicates.add(cb.greaterThanOrEqualTo(root.get("dateTo"), searchParams.endDate.minusDays(DATE_FLEX_DAYS)))
+            predicates.add(cb.lessThanOrEqualTo(root.get("dateTo"), searchParams.endDate.plusDays(DATE_FLEX_DAYS)))
         }
 
         if (searchParams.minWc != null && searchParams.maxWc != null) {
@@ -447,11 +765,13 @@ class YachtQueryingService(
                 null
             }
 
+        val agencyId = yacht.agency?.id
+        val locationId = yacht.location?.id
         val yachtExtras =
-            if (yacht.entryType == EntryType.EXTERNAL) {
+            if (yacht.entryType == EntryType.EXTERNAL && agencyId != null && locationId != null) {
                 val externalBasesExternalIds =
                     externalBaseRepository
-                        .findByAgencyIdAndLocationId(yacht.agency!!.id!!, yacht.location!!.id!!)
+                        .findByAgencyIdAndLocationId(agencyId, locationId)
                         .map { it.externalId!! }
                 val yachtExtraIds =
                     yachtExtraRepository.findYachtExtraIdsGroupedByYacht(
@@ -462,7 +782,23 @@ class YachtQueryingService(
                     )
                 yachtExtraRepository.findGroupedByYacht(yacht, yachtExtraIds)
             } else {
-                emptyList()
+                // Legacy data: some external yachts lack a location (Sea Dreams
+                // id=3117, DESSUS id=3116, Fortuna 5533, ...). Without a
+                // location we can't run the agency-base scoped grouping query,
+                // but we STILL need the sailing-window filter (otherwise
+                // period-specific APA / packs — MMK splits seasonal pricing
+                // into rows with disjoint sailing dates — all render for
+                // every booking window, flagged by Mario 23.4.2026 on
+                // Fortuna 5533).
+                val yachtExtraIds = yachtExtraRepository.findYachtExtraIdsByYachtAndPeriod(
+                    yacht.id!!,
+                    dateFrom,
+                    dateTo,
+                )
+                // Hibernate on empty list for `IN :ids` is unpredictable
+                // across versions; short-circuit to avoid that edge case.
+                if (yachtExtraIds.isEmpty()) emptyList()
+                else yachtExtraRepository.findGroupedByYacht(yacht, yachtExtraIds)
             }
 
         val result =

@@ -27,9 +27,21 @@ class NauSysAvailabilityIntegrationService(
             val agencyExternalId = it.getExternalId()?.toInt()
             if (agencyExternalId != null) {
                 syncYears.forEach { year ->
-                    val nausysResponse = nauSysAuditedClient.getOccupancyByYear(agencyExternalId, year)
-
-                    nauSysAvailabilitySyncService.syncYachtAvailability(it.id!!, nausysResponse)
+                    try {
+                        val nausysResponse = nauSysAuditedClient.getOccupancyByYear(agencyExternalId, year)
+                        val reservationCount = nausysResponse.reservations?.size ?: 0
+                        log.info(
+                            "NauSYS availability: agency=${it.id} (${it.name}) extId=$agencyExternalId " +
+                                "year=$year reservations=$reservationCount",
+                        )
+                        nauSysAvailabilitySyncService.syncYachtAvailability(it.id!!, nausysResponse)
+                    } catch (ex: Exception) {
+                        log.error(
+                            "NauSYS availability FAILED for agency=${it.id} (${it.name}) " +
+                                "extId=$agencyExternalId year=$year — rolled back; continuing with next",
+                            ex,
+                        )
+                    }
                 }
             } else {
                 log.error("Agency external id is null for agency: ${it.id} ${it.name}")

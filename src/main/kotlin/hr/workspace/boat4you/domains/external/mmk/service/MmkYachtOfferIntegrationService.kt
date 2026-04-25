@@ -36,7 +36,25 @@ class MmkYachtOfferIntegrationService(
                         agency.getExternalId()!!,
                     )
                 }
-            CompletableFuture.allOf(*futures.toTypedArray()).join()
+            // 15-minute per-batch timeout: a single hung agency call (partner
+            // API stalls, no socket timeout fired, etc.) used to block the
+            // entire 811-agency sync indefinitely. With the timeout the batch
+            // logs the failure, the next batch starts, and we continue making
+            // progress instead of holding a thread forever until the next cron
+            // window. Each agency future already wraps its own try/catch (see
+            // MmkYachtOfferIntegrationServiceAsync), so timing-out here just
+            // means "give up on the slow ones and move on".
+            try {
+                CompletableFuture.allOf(*futures.toTypedArray())
+                    .orTimeout(15, java.util.concurrent.TimeUnit.MINUTES)
+                    .join()
+            } catch (e: Exception) {
+                log.error(
+                    "MMK offer sync batch $index timed out or failed — agencies in batch: " +
+                        agencyBatch.joinToString(", ") { "${it.id}/${it.name}" },
+                    e,
+                )
+            }
             log.info("Finished processing batch $index of ${agencies.size} agencies")
         }
     }

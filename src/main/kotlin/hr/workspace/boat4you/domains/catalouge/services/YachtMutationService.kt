@@ -91,7 +91,6 @@ class YachtMutationService(
         newYacht.entryType = EntryType.CUSTOM
         newYacht.yachtCharterTypes.add(YachtCharterType(yacht = newYacht, type = CharterType.ALL_INCLUSIVE))
         newYacht.sysActive = true
-        newYacht.locations = getLocations(customYachtRequest.countryId!!)
         newYacht.deposit = null
         newYacht.insuredDeposit = null
         newYacht.depositCurrency = null
@@ -129,10 +128,6 @@ class YachtMutationService(
                 ?: throw IllegalArgumentException("Custom yacht details not found for yacht with id ${yacht.id}")
 
         mergeYacht(yacht, customYachtRequest)
-        if (customYachtDetails.countryKey != customYachtRequest.countryId) {
-            yacht.locations.clear()
-            yacht.locations = getLocations(customYachtRequest.countryId!!)
-        }
         if (customYachtRequest.equipmentIds != null) {
             val matched = mutableSetOf<Long>()
             customYachtRequest.equipmentIds.forEach { equipmentId ->
@@ -295,16 +290,6 @@ class YachtMutationService(
         return yachtImageRepository.saveAndFlush(newYachtImage)
     }
 
-    private fun getLocations(countryId: String): MutableSet<Location> {
-        val locations = mutableSetOf<Location>()
-
-        val id = countryId.substring(2).toIntOrNull() ?: return mutableSetOf()
-        val foundLocations = locationRepository.findMarinasByCountryId(id)
-        locations.addAll(foundLocations)
-
-        return locations
-    }
-
     private fun getEquipment(
         equipmentIds: Set<Long>?,
         yacht: Yacht,
@@ -419,7 +404,6 @@ class YachtMutationService(
         yachtImageRepository.deleteAll(yacht.yachtImages)
         customYachtDetailRepository.deleteByYachtId(id)
         yachtTranslationRepository.deleteByYachtId(id)
-        yacht.locations.clear()
         yachtRepository.delete(yacht)
     }
 }

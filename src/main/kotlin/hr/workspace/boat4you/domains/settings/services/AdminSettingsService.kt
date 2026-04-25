@@ -47,6 +47,7 @@ class AdminSettingsService(
     private fun validateSetting(setting: SettingsDto) {
         when (setting.name) {
             SettingsKeyEnum.CARD_PAYMENT_SURCHARGE -> validateCardPaymentSurchargeValue(setting.value)
+            SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE -> validateBankTransferFixedFeeValue(setting.value)
         }
     }
 
@@ -57,6 +58,15 @@ class AdminSettingsService(
         val doubleValue = value.toDouble()
         if (doubleValue !in 0.0..100.0) {
             throw ParameterValidationException(mapOf("value" to "Value must be between 0 and 100"))
+        }
+    }
+
+    private fun validateBankTransferFixedFeeValue(value: String?) {
+        if (value == null || value.toDoubleOrNull() == null) {
+            throw ParameterValidationException(mapOf("value" to "Value must be a valid decimal number"))
+        }
+        if (value.toDouble() < 0.0) {
+            throw ParameterValidationException(mapOf("value" to "Value must be non-negative"))
         }
     }
 }

@@ -19,6 +19,14 @@ import org.springframework.web.bind.annotation.RequestParam
 import java.time.LocalDateTime
 
 @Service
+// Read-only transaction at the service level so the Hibernate session
+// stays open through the mapper. `InquiryTranslators.toDto`/`toDetailsDto`
+// reach into `inquiry.yacht.name`, `yacht.location.name`, `yacht.model.name`
+// — all lazy @ManyToOne. Without @Transactional the session closes right
+// after the repository call and the mapper hits a LazyInitializationException
+// as soon as it touches the first proxied yacht. Surfaced 23.4.2026 when the
+// first real customer-site inquiry landed and /admin/inquiries returned 500.
+@Transactional(readOnly = true)
 class InquiryQueryingService(
     private val inquiryRepository: InquiryRepository,
 ) {

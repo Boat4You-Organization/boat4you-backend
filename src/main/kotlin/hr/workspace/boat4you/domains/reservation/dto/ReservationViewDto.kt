@@ -23,9 +23,12 @@ data class ReservationViewDto(
     val reservationOptionExpiresAt: LocalDateTime?,
     val reservationTotalPrice: BigDecimal,
     val reservationDiscount: BigDecimal?,
-    val reservationExternalId: Long,
-    val reservationExternalReservationCode: String,
+    /** Nullable — admin "fictitious" replacement reservations have no partner link. */
+    val reservationExternalId: Long?,
+    /** Nullable — admin "fictitious" replacement reservations have no partner link. */
+    val reservationExternalReservationCode: String?,
     val reservationNumber: String?,
+    val reservationUserId: Long?,
     val endUser: String,
     val createdBy: String,
     val offerCheckin: String?,
@@ -36,13 +39,22 @@ data class ReservationViewDto(
     val yachtName: String,
     val modelName: String?,
     val manufacturerName: String?,
-    val locationFromName: String,
-    val locationFromCountry: String,
-    val locationToName: String,
-    val locationToCountry: String,
+    // Nullable for fictitious admin-only replacement reservations whose
+    // location may fall back to the yacht home or be missing entirely.
+    val locationFromName: String?,
+    val locationFromCountry: String?,
+    val locationToName: String?,
+    val locationToCountry: String?,
     val reservationDateFrom: LocalDateTime?,
     val reservationDateTo: LocalDateTime?,
     val agencyId: Long,
     val agencyName: String,
     val cancellationRequestAt: LocalDateTime?,
+    // Admin-only: what we owe the charter agency. Nullable for DEV mock and
+    // legacy pre-V1_46 rows.
+    val reservationAgencyPrice: BigDecimal?,
+    // Admin-only: our commission on this booking.
+    val reservationCommission: BigDecimal?,
+    // Admin-only: internal notes (transfer info, callbacks, etc.).
+    val reservationAdminNotes: String?,
 ) : Serializable

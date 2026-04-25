@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.jpa
 
+import hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -68,8 +69,28 @@ open class OfferExtra {
     @Column(name = "external_id")
     open var externalId: Long? = null
 
+    /**
+     * Free-form partner description (e.g. MMK ObligatoryExtra "Croatian
+     * Tourist Tax (1.33 € per person/night)" or a payment-condition note).
+     * Frontend renders as small print under the extras name.
+     */
+    @Column(name = "description", columnDefinition = "TEXT")
+    open var description: String? = null
+
+    /**
+     * Refined payment classification — replaces the overloaded `payableInBase`
+     * boolean for customer-facing display. Backfilled by V1_57 + populated by
+     * sync mappers via `ExtraPaymentType.classify(...)`.
+     */
+    @Enumerated
+    @Column(name = "payment_type")
+    open var paymentType: ExtraPaymentType? = null
+
     fun shouldDisplay(): Boolean {
-        return extrasId != null || (obligatory == true && price != null && price != BigDecimal.ZERO)
+        // Mirror YachtExtra.shouldDisplay relaxation — show whatever the
+        // partner sent so brokers/customers see exactly the partner's offer
+        // contents. Free items still surface (frontend → "included" badge).
+        return !name.isNullOrBlank()
     }
 
     fun extrasKey(): String {

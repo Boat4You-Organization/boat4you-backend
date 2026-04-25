@@ -251,17 +251,6 @@ open class Yacht {
     @BatchSize(size = 50)
     open var reservationOptions: MutableSet<ReservationOption> = mutableSetOf()
 
-    /**
-     * Locations for custom boats
-     */
-    @ManyToMany(cascade = [CascadeType.ALL])
-    @JoinTable(
-        name = "yacht_locations",
-        joinColumns = [JoinColumn(name = "yacht_id")],
-        inverseJoinColumns = [JoinColumn(name = "location_id")],
-    )
-    open var locations: MutableSet<Location> = mutableSetOf()
-
     @OneToMany(mappedBy = "yacht", cascade = [CascadeType.ALL], orphanRemoval = true)
     @BatchSize(size = 50)
     open var yachtEquipments: MutableSet<YachtEquipment> = mutableSetOf()

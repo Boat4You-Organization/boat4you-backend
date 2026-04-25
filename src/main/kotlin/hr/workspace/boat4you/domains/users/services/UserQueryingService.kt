@@ -19,9 +19,11 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import java.util.Locale
 
 @Service
+@Transactional(readOnly = true)
 class UserQueryingService(
     private val userRepository: UserRepository,
 ) {
@@ -50,13 +52,24 @@ class UserQueryingService(
 
     private fun searchCriteria(searchString: String?): Specification<UserEntity>? =
         searchString.nonBlankOrNull()?.let {
+            val trimmed = it.trim()
+            val upper = trimmed.uppercase(Locale.getDefault())
+            val asId = trimmed.toLongOrNull()
             Specification { root, _, cb ->
-                cb.and(
-                    cb.or(
-                        cb.like(cb.upper(root.get(UserEntity::fullNameByFormula.name)), "%${it.uppercase(Locale.getDefault())}%"),
-                        cb.like(cb.upper(root.get(UserEntity::email.name)), "%${it.uppercase(Locale.getDefault())}%"),
-                    ),
-                )
+                val predicates =
+                    mutableListOf(
+                        cb.like(cb.upper(root.get(UserEntity::fullNameByFormula.name)), "%$upper%"),
+                        cb.like(cb.upper(root.get(UserEntity::email.name)), "%$upper%"),
+                    )
+                // Treat a purely numeric search term as a possible client ID,
+                // so admins can paste the "#17" shown in bookings and land on
+                // the user. Still OR'd with the string-match branch so
+                // e.g. "17" also matches someone named "Doe #17" or a
+                // phone-number-looking email.
+                if (asId != null) {
+                    predicates.add(cb.equal(root.get<Long>(UserEntity::id.name), asId))
+                }
+                cb.and(cb.or(*predicates.toTypedArray()))
             }
         }
 

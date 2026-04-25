@@ -87,13 +87,19 @@ interface AgencyRepository : JpaRepository<Agency, Long> {
 
     @Query(
         """
-        SELECT a FROM Agency a 
-        LEFT JOIN FETCH AgencySource ar ON a.id = ar.id.agencyId AND ar.primary = true
-        WHERE 1 = 1 
+        SELECT a FROM Agency a
+        WHERE 1 = 1
         AND (:active IS NULL OR a.active = :active)
         AND (:name IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%', STR(:name), '%')))
         AND (:countryCode IS NULL OR a.country = :countryCode)
-        AND (:primarySource IS NULL OR ar.externalSystem.id = :primarySource)
+        AND (
+            :primarySource IS NULL OR EXISTS (
+                SELECT 1 FROM AgencySource s
+                WHERE s.id.agencyId = a.id
+                AND s.externalSystem.id = :primarySource
+                AND s.primary = true
+            )
+        )
         """,
     )
     fun findAllByParamsForAdmin(

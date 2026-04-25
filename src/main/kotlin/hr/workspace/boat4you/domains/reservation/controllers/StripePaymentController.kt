@@ -31,8 +31,11 @@ class StripePaymentController(
             description = "Used if user wants to pay the full amount for the booking instead of just the required first part. Used when creating a reservation",
         ) @RequestParam(value = "payFullAmount", required = false) payFullAmount: Boolean? = null,
         @Parameter(description = "Used when paying later installments") @RequestParam(value = "paymentPhaseId", required = false) paymentPhaseId: Long? = null,
+        @Parameter(
+            description = "Stripe idempotency key (generated once per /payment page mount) — dedupes double-click Session.create calls for 24 h.",
+        ) @RequestParam(value = "idempotencyKey", required = false) idempotencyKey: String? = null,
     ): ResponseEntity<CheckoutSessionDto> {
-        val session = paymentService.initiatePayment(reservationId, payFullAmount, paymentPhaseId)
+        val session = paymentService.initiatePayment(reservationId, payFullAmount, paymentPhaseId, idempotencyKey)
         return ResponseEntity.ok(
             CheckoutSessionDto(
                 sessionIdOrOrderCode = session.id,

@@ -109,6 +109,21 @@ class InvoiceService(
     ): InvoiceDto? {
         val invoice = invoiceRepository.findById(id).getOrElse { throw InvoiceNotExistException() }
 
+        // Auto-translate the item description when the admin switches the
+        // invoice language (HR ↔ EN). Otherwise we'd freeze a HR sentence on
+        // an English-language PDF. We regenerate from booking data only on
+        // the language flip — manual edits the admin made under the same
+        // language are preserved.
+        val resolvedInvoiceItem =
+            if (model.invoiceLanguage != invoice.invoiceLanguage) {
+                reservationViewRepository
+                    .findByReservationFlowId(invoice.reservationFlow.id!!)
+                    ?.let { buildInvoiceItem(it, model.invoiceLanguage) }
+                    ?: model.invoiceItem
+            } else {
+                model.invoiceItem
+            }
+
         val entity =
             invoice.apply {
                 recipientType = model.recipientType
@@ -120,7 +135,7 @@ class InvoiceService(
                 recipientVatCode = model.recipientVatCode
                 invoiceLanguage = model.invoiceLanguage
                 invoiceStatus = model.invoiceStatus ?: this.invoiceStatus
-                invoiceItem = model.invoiceItem
+                invoiceItem = resolvedInvoiceItem
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage
                 priceWithoutVat = model.priceWithoutVat
@@ -129,6 +144,47 @@ class InvoiceService(
             }
 
         return invoiceRepository.save(entity).let { invoiceMappers.toInvoiceDto(it) }
+    }
+
+    private fun buildInvoiceItem(
+        view: ReservationView,
+        language: InvoiceLanguageEnum,
+    ): String {
+        // Long-form date in English month-name style ("25 Apr 2026"). Used
+        // INSIDE the item-description sentence so the line reads naturally
+        // in either language. The verbose `DATE_FORMATTER` ("25.04.2026.")
+        // is kept for `invoiceDate` rendering in the PDF header — that
+        // stays HR-style there because it's a date stamp, not prose.
+        val itemDateFormat = DateTimeFormatter.ofPattern("dd MMM yyyy", Locale.ENGLISH)
+        val dateFrom = view.reservationDateFrom?.format(itemDateFormat).orEmpty()
+        val dateTo = view.reservationDateTo?.format(itemDateFormat).orEmpty()
+        // Use the booking's actual client (reservation.created_for, which is
+        // also what the Bookings table renders in its CLIENT column) — NOT
+        // `reservation_flow_name/surname`. The flow record carries whoever
+        // *placed* the booking (often the agent themselves), while
+        // created_for is the end customer the booking is FOR. Falls back to
+        // flow name/surname when created_for is empty (rare; e.g. manual
+        // bookings entered before the createdFor field was wired up).
+        val clientName = listOfNotNull(
+            view.createdForName?.takeIf { it.isNotBlank() } ?: view.reservationFlowName,
+            view.createdForSurname?.takeIf { it.isNotBlank() } ?: view.reservationFlowSurname,
+        ).joinToString(" ")
+        val yachtLine = listOfNotNull(view.modelName, view.yachtName)
+            .joinToString(" - ")
+        val locationFrom = view.locationFromName.orEmpty()
+        val reservationNumber = view.reservationNumber.orEmpty()
+
+        return when (language) {
+            InvoiceLanguageEnum.HR ->
+                "Agencijska provizija po ugovoru $reservationNumber za klijenta $clientName " +
+                    "najam plovila $yachtLine iz $locationFrom " +
+                    "u periodu od $dateFrom do $dateTo"
+
+            InvoiceLanguageEnum.EN ->
+                "Agency commission for booking $reservationNumber for client $clientName, " +
+                    "charter of $yachtLine from $locationFrom " +
+                    "for the period $dateFrom to $dateTo"
+        }
     }
 
     @Transactional(readOnly = false)
@@ -168,16 +224,38 @@ class InvoiceService(
         val view = this
         val reservationFlow = reservationFlowsMap[view.reservationFlowId!!]!!
         val isAgencyInCroatia = view.agencyCountry?.lowercase() in listOf("croatia", "hr", "hrv", "hrvatska")
-        val invoiceItem =
-            if (isAgencyInCroatia) {
-                "Najam plovila ${view.yachtName} za datum ${view.reservationDateFrom?.format(DATE_FORMATTER)} - ${view.reservationDateTo?.format(DATE_FORMATTER)}"
-            } else {
-                "${view.yachtName} charter for period ${view.reservationDateFrom?.format(DATE_FORMATTER)} - ${view.reservationDateTo?.format(DATE_FORMATTER)}"
-            }
+        val language = if (isAgencyInCroatia) InvoiceLanguageEnum.HR else InvoiceLanguageEnum.EN
+        val invoiceItem = buildInvoiceItem(view, language)
 
-        val agencyCommission = reservationFlow.agencyCommission!!.roundDecimals()
-        val vatPercentage = if (isAgencyInCroatia) 25.0f else 0.0f
-        val vatAmountIfApplicable = ((vatPercentage) / (vatPercentage + 100) * (agencyCommission.toFloat())).roundDecimals()
+        // Source of truth = `reservation.commission` (mirrored in
+        // `reservation_view.reservation_commission`, which is also what the
+        // Bookings listing's COMMISSION column shows). `reservation_flow.
+        // agency_commission` is a separate, often-zero field tracking what
+        // we owe the agency — using it produced invoices with €0.00.
+        // Fall back to `reservationFlow.agencyCommission` for backwards
+        // safety when the view hasn't materialized the figure (extremely
+        // rare; would mean the reservation row exists with no commission
+        // populated).
+        val agencyCommission =
+            (view.reservationCommission ?: reservationFlow.agencyCommission ?: BigDecimal.ZERO)
+                .roundDecimals()
+        // Use BigDecimal throughout — Float mixing (vatPercentage / (vat+100))
+        // loses precision on totals like 1234.56 × 0.2 and Stripe charges a
+        // fraction-of-a-cent mismatch vs what the invoice printed. Keep the
+        // decimal field as Float (it's what the entity stores) but compute
+        // the amount with exact arithmetic.
+        val vatPercentage: Float = if (isAgencyInCroatia) 25.0f else 0.0f
+        val vatRate = BigDecimal(vatPercentage.toString())
+        val hundredPlusRate = BigDecimal("100").add(vatRate)
+        val vatAmountIfApplicable =
+            if (hundredPlusRate.signum() == 0) {
+                BigDecimal.ZERO
+            } else {
+                vatRate
+                    .divide(hundredPlusRate, 10, java.math.RoundingMode.HALF_UP)
+                    .multiply(agencyCommission)
+                    .roundDecimals()
+            }
         val priceWithoutVat = (agencyCommission - vatAmountIfApplicable).roundDecimals()
 
         return Invoice().apply {
@@ -192,7 +270,7 @@ class InvoiceService(
             recipientVatCode = view.agencyVatCode ?: ""
             this.invoiceItem = invoiceItem
             invoiceDate = view.reservationDateFrom!!.toLocalDate()
-            invoiceLanguage = if (isAgencyInCroatia) InvoiceLanguageEnum.HR else InvoiceLanguageEnum.EN
+            invoiceLanguage = language
             includeVat = isAgencyInCroatia
             this.vatPercentage = vatPercentage
             this.priceWithoutVat = priceWithoutVat

@@ -20,7 +20,6 @@ data class OfferDto(
     val clientPriceInfo: PriceInfoDto? = null,
     val totalPriceCalcInfo: PriceInfoDto? = null,
     val status: SimpleOfferStatus? = null,
-    val obligatoryExtrasIds: Set<Long> = emptySet(), // TODO remove if not needed on client side
     val obligatoryExtrasKeys: Set<String> = emptySet(),
     val extras: Set<YachtExtrasDto> = emptySet(),
     val locationFrom: LocationDto?,

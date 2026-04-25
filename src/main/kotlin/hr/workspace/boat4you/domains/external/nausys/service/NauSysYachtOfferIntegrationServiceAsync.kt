@@ -40,6 +40,10 @@ class NauSysYachtOfferIntegrationServiceAsync(
                     countries = countries,
                     regions = regions,
                     locations = marinas,
+                    // Include yachts currently under option so they appear as pre-reserved on the
+                    // web instead of being silently filtered out by NauSys. Status (OPTION /
+                    // UNDER_OPTION / FREE / ...) is mapped downstream by OfferStatus.fromNausysValue.
+                    ignoreOptions = true,
                     // extendedDataSet will be fetch on yacht details opening or offers call
                     // extendedDataSet = "PAYMENT_PLAN,OBLIGATORY_SERVICES,ADDITIONAL_EXTRAS",
                 )

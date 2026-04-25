@@ -27,7 +27,12 @@ internal class AdminSettingsController(
     }
 
     @PatchMapping
-    @Operation(summary = "Update setting", description = "When updating CARD_PAYMENT_SURCHARGE, percentage is sent, e.g. '2.5'")
+    @Operation(
+        summary = "Update setting",
+        description =
+            "When updating CARD_PAYMENT_SURCHARGE, percentage is sent, e.g. '2.5'. " +
+                "When updating BANK_TRANSFER_FIXED_FEE, a non-negative flat EUR amount is sent, e.g. '32.00'.",
+    )
     fun updateSetting(
         @RequestBody setting: SettingsDto,
     ): ResponseEntity<SettingsDto> {

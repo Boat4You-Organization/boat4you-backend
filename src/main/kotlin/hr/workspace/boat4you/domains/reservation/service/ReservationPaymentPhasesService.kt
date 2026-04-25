@@ -27,62 +27,64 @@ class ReservationPaymentPhasesService(
 ) {
     private val logger: Logger = LoggerFactory.getLogger(this::class.java.name)
 
+    /**
+     * Payment schedule rules (business logic owned by the charter team):
+     *
+     *   A) Charter within 2 months → 100% now (no time for instalments).
+     *   B) Charter later the SAME year (≥ 2 months out) → 50% now + 50% one
+     *      month before charter.
+     *   C) Charter in NEXT year (or later) → 25% now + 25% on January 15th of
+     *      the charter year + 50% one month before charter.
+     *
+     *   If the Jan 15 instalment falls AFTER the "one month before charter"
+     *   date (happens when the charter is early January/February of next year),
+     *   we fall back to rule B (50% now + 50% one month before charter).
+     */
     fun calculatePaymentPhases(
         now: LocalDate = LocalDate.now(),
         reservationStartDate: LocalDate,
         totalPrice: Double,
     ): List<Pair<LocalDate, Double>> {
-        // If reservation is made one month or less in advance
-        if (betweenInclusive(reservationStartDate, now, now.plusMonths(1))) {
+        val monthBeforeCharter = reservationStartDate.minusMonths(1)
+
+        // Rule A — charter within 2 months
+        if (betweenInclusive(reservationStartDate, now, now.plusMonths(2))) {
             return listOf(Pair(now, totalPrice).roundDecimals())
         }
 
-        // If reservation is made from (month + 1) days up to a year in advance
-        if (betweenInclusive(reservationStartDate, now.plusMonths(1).plusDays(1), now.plusYears(1))) {
-            val halfPrice = (0.5 * totalPrice).roundDecimals()
-            return listOf(
-                Pair(now, halfPrice).roundDecimals(),
-                Pair(reservationStartDate.minusMonths(1), totalPrice.roundDecimals() - halfPrice).roundDecimals(),
-            )
-        }
+        val isNextYearOrLater = reservationStartDate.year > now.year
 
-        // If reservation is made (year + 1) days or more in advance, until 15.2. next year
-        if (betweenInclusive(reservationStartDate, now.plusYears(1).plusDays(1), LocalDate.of(now.year + 1, Month.FEBRUARY, 15))) {
-            val halfPrice = (0.5 * totalPrice).roundDecimals()
-            return listOf(
-                Pair(now, halfPrice).roundDecimals(),
-                Pair(reservationStartDate.minusMonths(1), totalPrice.roundDecimals() - halfPrice).roundDecimals(),
-            )
-        }
-
-        // If reservation is made (year + 1) days or more in advance, and reservationStartDate is between 16.2. and 31.12.
-        if (afterInclusive(reservationStartDate, now.plusYears(1).plusDays(1)) &&
-            betweenInclusive(reservationStartDate, LocalDate.of(reservationStartDate.year, Month.FEBRUARY, 16), LocalDate.of(reservationStartDate.year, Month.DECEMBER, 31))
-        ) {
+        // Rule C — charter in next year (or later)
+        if (isNextYearOrLater) {
+            val januaryDeadline = LocalDate.of(reservationStartDate.year, Month.JANUARY, 15)
+            // The Jan-15 instalment must strictly precede the "month before" one.
+            if (januaryDeadline.isAfter(monthBeforeCharter) || januaryDeadline.isBefore(now)) {
+                // Fall back to 50/50 if the 3-phase schedule would collapse.
+                return fiftyFiftySplit(now, monthBeforeCharter, totalPrice)
+            }
             val quarterPrice = (0.25 * totalPrice).roundDecimals()
             val halfPrice = (totalPrice.roundDecimals() - 2 * quarterPrice).roundDecimals()
             return listOf(
                 Pair(now, quarterPrice).roundDecimals(),
-                Pair(LocalDate.of(reservationStartDate.year, Month.JANUARY, 15), quarterPrice).roundDecimals(),
-                Pair(reservationStartDate.minusMonths(1), halfPrice).roundDecimals(),
+                Pair(januaryDeadline, quarterPrice).roundDecimals(),
+                Pair(monthBeforeCharter, halfPrice).roundDecimals(),
             )
         }
 
-        // If reservation is made (year + 1) days or more in advance, and reservationStartDate is between 1.1. and 15.2.
-        if (afterInclusive(reservationStartDate, now.plusYears(1)) &&
-            betweenInclusive(reservationStartDate, LocalDate.of(reservationStartDate.year, Month.JANUARY, 1), LocalDate.of(reservationStartDate.year, Month.FEBRUARY, 15))
-        ) {
-            val quarterPrice = (0.25 * totalPrice).roundDecimals()
-            val halfPrice = (totalPrice.roundDecimals() - 2 * quarterPrice).roundDecimals()
-            return listOf(
-                Pair(now, quarterPrice).roundDecimals(),
-                Pair(LocalDate.of(reservationStartDate.year - 1, Month.JANUARY, 15), quarterPrice).roundDecimals(),
-                Pair(reservationStartDate.minusMonths(1), halfPrice).roundDecimals(),
-            )
-        }
+        // Rule B — charter later this year
+        return fiftyFiftySplit(now, monthBeforeCharter, totalPrice)
+    }
 
-        logger.error("Error calculating price phases for reservationStartDate $reservationStartDate and totalPrice $totalPrice")
-        throw IllegalStateException()
+    private fun fiftyFiftySplit(
+        now: LocalDate,
+        monthBeforeCharter: LocalDate,
+        totalPrice: Double,
+    ): List<Pair<LocalDate, Double>> {
+        val halfPrice = (0.5 * totalPrice).roundDecimals()
+        return listOf(
+            Pair(now, halfPrice).roundDecimals(),
+            Pair(monthBeforeCharter, totalPrice.roundDecimals() - halfPrice).roundDecimals(),
+        )
     }
 
     fun calculatePaymentPhases(
@@ -159,6 +161,5 @@ class ReservationPaymentPhasesService(
             amount = this.amount,
             paidOn = this.paidOn?.let { LocalDateTime.ofInstant(it, ZoneId.of("UTC")) },
             stripePaymentIntentId = this.stripePaymentIntentId,
-            vivaTransactionId = this.vivaTransactionId,
         )
 }

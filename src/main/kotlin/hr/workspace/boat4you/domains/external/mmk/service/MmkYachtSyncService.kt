@@ -113,9 +113,24 @@ class MmkYachtSyncService(
 
             val mapping = allMappings.find { mapping -> mapping.externalId == mmkYacht.id!! }
             var isNewEntity = false
+            // Defensive: mapping.systemId may point to a yacht row that no longer
+            // exists (manual cleanup, restore-from-backup mid-sync, FK cascade gone wrong).
+            // Old `findById(...).get()` would throw NoSuchElementException and abort the
+            // entire MMK yacht sync run. Fall back to new-entity creation + warn so the
+            // mapping gets relinked on save instead of derailing 14k yacht updates.
             val yacht =
                 if (mapping != null) {
-                    yachtRepository.findById(mapping.systemId!!).get()
+                    val existing = yachtRepository.findById(mapping.systemId!!).orElse(null)
+                    if (existing != null) {
+                        existing
+                    } else {
+                        log.warn(
+                            "MMK yacht sync: mapping.systemId=${mapping.systemId} (mmkId=${mmkYacht.id}) " +
+                                "points to non-existent yacht row — re-creating entity",
+                        )
+                        isNewEntity = true
+                        Yacht()
+                    }
                 } else {
                     isNewEntity = true
                     Yacht()
@@ -505,15 +520,39 @@ class MmkYachtSyncService(
                         ex.externalId == mmkExtra.id
                     }
 
+                val mmkPrice = mmkExtra.price?.toBigDecimal()
+                // 23.4.2026: MMK `payableInBase` semantics are the inverse of
+                // our prior reading — `payableInBase=false` means "settled
+                // OUTSIDE the base price" (marina/advance), not "included
+                // in base". The new helper flips the default so SUP / Kayak
+                // / equipment (payableInBase=false) surface as ON_SITE, and
+                // crew / APA / Comfort pack names get bumped to ADVANCE.
+                val mmkPaymentType = hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromMmkPayableInBase(
+                    name = mmkExtra.name,
+                    price = mmkPrice,
+                    payableInBase = mmkExtra.payableInBase ?: false,
+                )
                 if (extraAlreadyOnYacht != null) {
                     extraAlreadyOnYacht.extras = boat4youExtrasMatch
-                    extraAlreadyOnYacht.price = mmkExtra.price?.toBigDecimal()
+                    extraAlreadyOnYacht.price = mmkPrice
                     extraAlreadyOnYacht.payableInBase = mmkExtra.payableInBase
+                    extraAlreadyOnYacht.paymentType = mmkPaymentType
                     extraAlreadyOnYacht.unit = ExtrasUnitType.fromMmkValue(mmkExtra.unit)
                     extraAlreadyOnYacht.obligatory = mmkExtra.obligatory
                     extraAlreadyOnYacht.externalUnit = mmkExtra.unit
-                    extraAlreadyOnYacht.validFrom = mmkExtra.validDateFrom?.value?.toLocalDate()
-                    extraAlreadyOnYacht.validTo = mmkExtra.validDateTo?.value?.toLocalDate()
+                    // 23.4.2026 bugfix: MMK `validDateFrom/To` is when the
+                    // partner admin made the entry valid (often 1970-2131 —
+                    // "forever"). The actual sailing window lives in
+                    // `sailingDateFrom/To`. Using validDate* here collapsed
+                    // period-specific APA / pack duplicates into a single
+                    // always-visible blob. Yacht 5533 Fortuna had "APA Rara
+                    // Avis low season" (May-Jun) and "… low season 1"
+                    // (Aug-Oct) both rendering for every booking window.
+                    extraAlreadyOnYacht.validFrom = mmkExtra.sailingDateFrom?.value?.toLocalDate()
+                        ?: mmkExtra.validDateFrom?.value?.toLocalDate()
+                    extraAlreadyOnYacht.validTo = mmkExtra.sailingDateTo?.value?.toLocalDate()
+                        ?: mmkExtra.validDateTo?.value?.toLocalDate()
+                    extraAlreadyOnYacht.description = mmkExtra.description?.takeIf { it.isNotBlank() }
                     matchedIds.add(extraAlreadyOnYacht.id!!)
                     return@forEach
                 }
@@ -521,16 +560,20 @@ class MmkYachtSyncService(
                 val yachtExtra = YachtExtra()
                 yachtExtra.extras = boat4youExtrasMatch
                 yachtExtra.name = mmkExtra.name
-                yachtExtra.price = mmkExtra.price?.toBigDecimal()
+                yachtExtra.price = mmkPrice
                 yachtExtra.payableInBase = mmkExtra.payableInBase
+                yachtExtra.paymentType = mmkPaymentType
                 yachtExtra.unit = ExtrasUnitType.fromMmkValue(mmkExtra.unit)
                 yachtExtra.obligatory = mmkExtra.obligatory
                 yachtExtra.externalId = mmkExtra.id
                 yachtExtra.yacht = yacht
                 yachtExtra.externalUnit = mmkExtra.unit
-                yachtExtra.validFrom = mmkExtra.validDateFrom?.value?.toLocalDate()
-                yachtExtra.validTo = mmkExtra.validDateTo?.value?.toLocalDate()
+                yachtExtra.validFrom = mmkExtra.sailingDateFrom?.value?.toLocalDate()
+                    ?: mmkExtra.validDateFrom?.value?.toLocalDate()
+                yachtExtra.validTo = mmkExtra.sailingDateTo?.value?.toLocalDate()
+                    ?: mmkExtra.validDateTo?.value?.toLocalDate()
                 yachtExtra.type = ExtrasType.EXTRAS
+                yachtExtra.description = mmkExtra.description?.takeIf { it.isNotBlank() }
                 yachtExtraRepository.save(yachtExtra)
                 yacht.yachtExtras.add(yachtExtra)
                 matchedIds.add(yachtExtra.id!!)

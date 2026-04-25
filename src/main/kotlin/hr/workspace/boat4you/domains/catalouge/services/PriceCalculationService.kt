@@ -32,11 +32,20 @@ class PriceCalculationService(
         currency: CurrencyEnum?,
         selectedExtras: Set<String>,
     ): PriceCalcDto {
-        // MMK has only obligatory extras on offer, so we need to calculate price for others
+        // MMK has only obligatory extras on offer, so we need to calculate price for others.
+        // Null-guard: some legacy yachts lack a location (e.g. DESSUS 3116, ADRIATIC PEARL
+        // 5959) — without a location we can't resolve the agency-base mapping, so fall
+        // back to an empty list which disables the base-scoped extras filter downstream.
+        val agencyId = yacht.agency?.id
+        val locationId = yacht.location?.id
         val externalBasesExternalIds =
-            externalBaseRepository
-                .findByAgencyIdAndLocationId(yacht.agency!!.id!!, yacht.location!!.id!!)
-                .map { it.externalId!! }
+            if (agencyId != null && locationId != null) {
+                externalBaseRepository
+                    .findByAgencyIdAndLocationId(agencyId, locationId)
+                    .map { it.externalId!! }
+            } else {
+                emptyList()
+            }
         val yachtExtras = yachtExtraRepository.findAllByYacht(yacht)
         val offerExtras = offer.filterDuplicateExtras()
 
