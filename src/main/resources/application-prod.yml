@@ -50,12 +50,13 @@ spring:
             enable: false
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:boat4you_db}
-    username: ${DB_USER:boat4you_app}
-    password: ${DB_PASSWORD:boat4you_app}
+    # Production must supply DB credentials via env. No literal default.
+    username: ${DB_USER:?DB_USER required}
+    password: ${DB_PASSWORD:?DB_PASSWORD required}
   flyway:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:boat4you_db}
-    user: ${FLYWAY_USER:boat4you_owner}
-    password: ${FLYWAY_PASSWORD:boat4you_owner}
+    user: ${FLYWAY_USER:?FLYWAY_USER required}
+    password: ${FLYWAY_PASSWORD:?FLYWAY_PASSWORD required}
     out-of-order: ${FLYWAY_OUT_OF_ORDER:false}
   jpa:
     properties:

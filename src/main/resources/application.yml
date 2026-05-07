@@ -26,8 +26,12 @@ spring:
     fallback-to-system-locale: false
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:boat4you_db}
-    username: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:postgres}
+    # Fail fast at startup if DB credentials are missing (instead of falling
+    # back to literal "postgres"/"postgres" placeholders that mask config
+    # mistakes). Profile-specific yml (application-dev / application-prod)
+    # may still supply its own defaults for the local dev workflow.
+    username: ${DB_USER:?DB_USER required}
+    password: ${DB_PASSWORD:?DB_PASSWORD required}
     driverClassName: org.postgresql.Driver
     generate-unique-name: false
     hikari:
