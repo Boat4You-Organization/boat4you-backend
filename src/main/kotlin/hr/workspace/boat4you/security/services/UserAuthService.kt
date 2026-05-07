@@ -82,7 +82,7 @@ class UserAuthService(
         }
 
         if (dbUser.loginAttempts >= MAX_LOGIN_ATTEMPTS_COUNT &&
-            dbUser.lastUnsuccessfulLogin!!.plusSeconds(MAX_LOGIN_ATTEMPTS_LOCK_PERIOD).isAfter(Instant.now())
+            dbUser.lastUnsuccessfulLogin?.plusSeconds(MAX_LOGIN_ATTEMPTS_LOCK_PERIOD)?.isAfter(Instant.now()) == true
         ) {
             dbUser.loginAttempts++
             dbUser.lastUnsuccessfulLogin = Instant.now()
