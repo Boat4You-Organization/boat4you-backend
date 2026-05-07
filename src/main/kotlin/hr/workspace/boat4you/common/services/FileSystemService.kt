@@ -173,10 +173,13 @@ class FileSystemService {
             throw IllegalArgumentException("Image byte array is empty")
         }
 
-        // Optional: Check file size (example: max 15MB)
-        if (imageBytes.size > 15 * 1024 * 1024) {
+        // Match the same configurable size cap that validateFile() applies to
+        // MultipartFile uploads so internal byte-array uploads don't quietly
+        // accept larger images than HTTP-bound ones.
+        val maxBytes = maxFileSizeMb * 1024 * 1024
+        if (imageBytes.size > maxBytes) {
             val sizeInMb = (imageBytes.size / 1024) / 1024
-            throw IllegalArgumentException("Image size $sizeInMb MB exceeds maximum allowed size")
+            throw IllegalArgumentException("Image size $sizeInMb MB exceeds maximum allowed size of $maxFileSizeMb MB")
         }
 
         // Optional: Basic image format validation by checking magic bytes
