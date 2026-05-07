@@ -6,7 +6,10 @@ server:
     enabled: true
     key-store-type: PKCS12
     key-store: classpath:boat4you_selfsigned.p12
-    key-store-password: ${SSL_KEYSTORE_PASSWORD:}
+    # PKCS12 keystore password must come from env. PKCS12 with an empty
+    # password is openable by anyone, so silently defaulting to "" hides
+    # what should be a hard config requirement.
+    key-store-password: ${SSL_KEYSTORE_PASSWORD:?SSL_KEYSTORE_PASSWORD required}
     key-alias: boat4you
   port: 8443
   tomcat:
