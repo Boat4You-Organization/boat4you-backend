@@ -321,9 +321,8 @@ internal class AdminReservationController(
         val flowId = reservationFlowMutationService.createAdminReservationFlow(body)
 
         // Step 2: go through the same external-reservation path the customer
-        // flow uses — this respects DEV BYPASS (test.enabled=true => synthetic
-        // mock response) and in prod it actually hits MMK/NauSys to hold the
-        // option on the partner side.
+        // flow uses — actually hits MMK/NauSys to hold the option on the
+        // partner side.
         val externalReservation = reservationIntegrationService.createExternalReservation(flowId)
 
         // Step 3: persist the Reservation entity with admin's price override

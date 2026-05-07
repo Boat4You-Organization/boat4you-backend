@@ -16,8 +16,6 @@ application:
     mmk:
       base-url: ${MMK_URL:https://www.booking-manager.com/api/v2}
       bearer: ${MMK_TOKEN}
-  test:
-    enabled: true
 spring:
   mail:
     host: mail.smtp2go.com

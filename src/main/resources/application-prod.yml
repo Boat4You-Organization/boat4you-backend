@@ -28,8 +28,6 @@ application:
   invites:
     user:
       allow-uninvited-login: false
-  test:
-    enabled: false
   security:
     jwt:
       secret-key: ${JWT_SECRET_KEY}
