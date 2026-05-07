@@ -2,6 +2,11 @@ server:
   ssl:
     enabled: false
   port: 8080
+  # Bind to loopback only — nginx (running on the same VM) reaches us via
+  # 127.0.0.1:8080. Without this, the JVM listens on 0.0.0.0:8080 and the
+  # public IP exposes plaintext HTTP on 8080, allowing anyone to bypass the
+  # nginx TLS terminator and rate limiter (F1-049, prod review 2026-05-07).
+  address: 127.0.0.1
 application:
   external:
     sync:
