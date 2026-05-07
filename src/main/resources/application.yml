@@ -129,7 +129,10 @@ application:
       image-sync-batch: 10
       audit:
         enabled: true
-        response-body: true
+        # Default to false so PII (NauSys/MMK responses contain customer
+        # names, emails, phones) doesn't end up in audit storage by accident.
+        # Profile-specific yml (e.g. dev) can flip this on for debugging.
+        response-body: false
   email:
     enabled: ${EMAIL_ENABLED:false}
     # From-address shown in the recipient inbox. SMTP auth happens with
