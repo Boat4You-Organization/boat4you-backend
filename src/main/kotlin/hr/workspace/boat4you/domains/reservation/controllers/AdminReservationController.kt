@@ -12,6 +12,7 @@ import hr.workspace.boat4you.domains.reservation.dto.ReservationViewDetailsDto
 import hr.workspace.boat4you.domains.reservation.dto.ReservationViewDto
 import hr.workspace.boat4you.domains.reservation.enums.PaymentType
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
+import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.dto.AdminCreateReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.CreateFictitiousReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.YachtSwapInfoDto
@@ -224,7 +225,7 @@ internal class AdminReservationController(
     fun downloadCharterAgreement(
         @PathVariable id: Long,
     ): ResponseEntity<ByteArray> {
-        val reservation = reservationRepository.findById(id).orElseThrow()
+        val reservation = reservationRepository.findById(id).orElseThrow { ReservationNotExistException() }
         // PDF rendering walks lazy associations (reservationFlow → user / yacht
         // / model / paymentPhases / extras / location → country). Without
         // `@Transactional` the Hibernate session closes after `findById` and
