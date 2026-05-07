@@ -1,6 +1,9 @@
 server:
   host: ${SERVER_HOST:https://localhost:8443}
-  host-public: ${SERVER_HOST_PUBLIC:http://localhost:5173}
+  # host-public is interpolated into password-reset / invite / booking
+  # confirmation links. A localhost default would silently ship into
+  # production mail if the env var were forgotten. Require it.
+  host-public: ${SERVER_HOST_PUBLIC:?SERVER_HOST_PUBLIC required}
   host-admin-public: ${SERVER_HOST_ADMIN_PUBLIC:http://localhost:5173}
   ssl:
     enabled: true
