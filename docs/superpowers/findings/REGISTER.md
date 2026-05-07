@@ -110,11 +110,25 @@ Legend statusa:
 | F1-* | INFO | `ReservationController` ima ekselentne ownership guards — koristiti kao template |
 | F1-* | INFO | GDPR endpointi imaju audit logging (mature dizajn) |
 
-### FIXED (1)
+### FIXED (14)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
 | F1-049 | CRIT | Java app slušao na `*:8080`, izložen na public IP — **bind na 127.0.0.1** | `02532a9` |
+| F1-009 | MED | Login/password exceptioni s context message-om | `7cc3b09` |
+| F1-011 | MED | NPE risk na lastUnsuccessfulLogin u login lockout-u | `b43ae10` |
+| F1-012 | LOW | Obrisan dead `findActiveByValue` | `2b631f1` |
+| F1-029 | LOW | Sanitize paymentReference prije slanja na Stripe | `f17cc99` |
+| F1-031 | LOW | Stripe webhook: distinguish signature vs general failure | `a7dbe8d` |
+| F1-032 | LOW | validateImageBytes koristi maxFileSizeMb config | `82cc4da` |
+| F1-036 | HIGH | DB credentials required (no literal default) | `ab5a210` |
+| F1-045 | MED | Audit response-body default false u root yml | `f7df7f9` |
+| F1-046 | MED | SSL_KEYSTORE_PASSWORD required (no empty default) | `10c3c9b` |
+| F1-047 | LOW | SERVER_HOST_PUBLIC required (no localhost default) | `0bc8025` |
+| F1-059 | MED | runCatching onFailure logira email failure | `5d17a55` |
+| F1-060 | LOW | ReservationNotExistException umjesto orElseThrow() | `51dda3f` |
+| F1-061 | LOW | Obrisan dead application.test.enabled config + komentar | `9b32c94` |
+| F1-073 | LOW | YachtDoesNotExistException umjesto IllegalArgumentException | `b169ff1` |
 
 ---
 
@@ -127,5 +141,7 @@ Legend statusa:
 | MED | 25 | — | — | — | — | — | — | **25** |
 | LOW | 18 | — | — | — | — | — | — | **18** |
 | INFO | 4 | — | — | — | — | — | — | **4** |
-| FIXED | 1 | — | — | — | — | — | — | **1** |
-| **OPEN** | **65** | — | — | — | — | — | — | **65** |
+| FIXED | 14 | — | — | — | — | — | — | **14** |
+| **OPEN** | **52** | — | — | — | — | — | — | **52** |
+
+Faza 1 STATUS: read pass + 14 trivial fixes commit-ed, build verified (compileKotlin success).
