@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.controllers
 
+import com.stripe.exception.SignatureVerificationException
 import com.stripe.net.Webhook
 import hr.workspace.boat4you.domains.reservation.service.StripePaymentService
 import io.swagger.v3.oas.annotations.Operation
@@ -35,9 +36,15 @@ class StripeWebhookController(
         val event =
             try {
                 Webhook.constructEvent(payload, sigHeader, webhookSecret)
-            } catch (e: Exception) {
+            } catch (e: SignatureVerificationException) {
                 logger.error("Invalid Stripe webhook signature: ${e.message}")
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid signature")
+            } catch (e: Exception) {
+                // JsonSyntaxException, IllegalArgumentException (malformed
+                // payload) etc. — surface the type so support can debug,
+                // but still return generic 400 so we don't leak details.
+                logger.error("Stripe webhook processing error: ${e.javaClass.simpleName}: ${e.message}", e)
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Webhook processing error")
             }
 
         paymentService.handleWebhookEvent(event)
