@@ -2,7 +2,7 @@ package hr.workspace.boat4you.security.exceptions
 
 class PasswordException(
     val type: PasswordExceptionType,
-) : Exception() {
+) : Exception("type=$type") {
     enum class PasswordExceptionType {
         PASSWORD_RESET_INVALID,
         PASSWORD_INVALID_LENGTH,
