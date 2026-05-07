@@ -156,6 +156,13 @@ class YachtQueryingService(
             cb.countDistinct(root.get<Long>("totalLocations")).alias("sumLocations"),
             cb.least(root.get<CharterType>("charterType")),
             cb.least(root.get<String>("locationFullName")),
+            // Pickup and drop-off can differ for one-way charters. We
+            // aggregate independently — for multi-offer yachts the pair
+            // may come from different rows, but the mapper still hides
+            // `locationTo` whenever it equals `locationFullName` (most
+            // common case), so the only visible cost is rare mismatched
+            // labels for multi-offer one-way yachts.
+            cb.least(root.get<String>("locationToFullName")),
             cb.min(root.get<BigDecimal>("clientPrice")),
             cb.min(root.get<BigDecimal>("listPrice")),
             // Pair the commission with the MIN clientPrice — same offer row —
@@ -198,8 +205,9 @@ class YachtQueryingService(
         )
 
         // FE sends a simple sortBy string; each branch below maps to the column
-        // actually used for ORDER BY. Anything unrecognized falls back to
-        // recommendedScore (the default "Recommended" tab).
+        // actually used for ORDER BY. Anything unrecognized falls back to the
+        // "Recommended" sort (default for the empty-string sortBy on the
+        // Recommended tab).
         //
         // Price-based sorts use TOTAL (per-day × duration), not the per-day value
         // the view exposes. Otherwise a 10-day Sunreef 60 at €4,800/day (€48,000
@@ -210,6 +218,15 @@ class YachtQueryingService(
                 root.get<BigDecimal>("clientPrice"),
                 cb.toBigDecimal(root.get<Int>("numberOfDays")),
             )
+
+        // Recommended-agency boost: only the "Recommended" tab promotes
+        // curated partners' yachts to the top. The other tabs (price asc/desc,
+        // length asc/desc, lowestPrepayment) honour the user's chosen sort
+        // verbatim and do NOT mix the boost in — keeping each tab predictable.
+        // agencyRecommended is exposed by yacht_search_view as 0/1 INT (V1_67)
+        // so MAX() over the per-offer group keeps the value intact (every row
+        // in a yacht's group shares the same agency).
+        val recommendedBoost = cb.max(root.get<Int>("agencyRecommended"))
         when (sortBy) {
             "asc" -> {
                 cq.orderBy(cb.asc(cb.min(totalPriceExpr)))
@@ -238,12 +255,17 @@ class YachtQueryingService(
                 cq.orderBy(cb.desc(cb.coalesce(root.get<BigDecimal>("length"), cb.literal(BigDecimal.valueOf(-1)))))
             }
 
-            "recommendedScore" -> {
-                cq.orderBy(cb.desc(cb.max(root.get<BigDecimal>("recommendedScore"))))
+            "recommendedScore", "recommended" -> {
+                // Curated partners first (DESC on the 0/1 boost ⇒ 1s before 0s),
+                // then cheapest within each bucket. The legacy
+                // `recommended_score` column is left in the view but no longer
+                // drives this sort.
+                cq.orderBy(cb.desc(recommendedBoost), cb.asc(cb.min(totalPriceExpr)))
             }
 
             else -> {
-                cq.orderBy(cb.desc(cb.max(root.get<BigDecimal>("recommendedScore"))))
+                // Empty / unknown sortBy ⇒ same behaviour as the Recommended tab.
+                cq.orderBy(cb.desc(recommendedBoost), cb.asc(cb.min(totalPriceExpr)))
             }
         }
 
@@ -524,6 +546,17 @@ class YachtQueryingService(
     ): List<Predicate> {
         val predicates = mutableListOf<Predicate>()
 
+        // Resolve `did` (country / region / marina) into the matching marina
+        // ids. Branch 1 yachts carry offer.location_from at marina granularity,
+        // and branch 2 (custom) now also points to a marina via the admin
+        // marina selector — so a single allMarinas IN-clause covers both.
+        //
+        // Earlier we tried adding the parent country/region realId alongside,
+        // to surface custom yachts pinned at country level, but Country.id and
+        // Location.id share the same BIGSERIAL space — adding `8` for `r-8`
+        // accidentally matched Location.id=8 (ACI Marina Trogir) and pulled
+        // unrelated Croatian yachts into Greek region searches. The marina
+        // selector closes that gap at the data layer instead.
         val allMarinas =
             searchParams.locationIds
                 ?.flatMap { locationId ->
@@ -566,6 +599,20 @@ class YachtQueryingService(
             // YachtSearchView carries `agency_id` as a direct column, no join
             // needed.
             predicates.add(root.get<Long>("agencyId").`in`(searchParams.agencyIds))
+        }
+
+        if (!searchParams.countryCodes.isNullOrEmpty()) {
+            // Sitemap whitelist — keep only yachts whose home location ends
+            // in one of the listed 2-letter codes. RIGHT() over the
+            // location_full_name string sidesteps the JOIN + Pageable bug.
+            val codeUpper = searchParams.countryCodes.map { it.uppercase() }
+            val countryCodeExpr = cb.function(
+                "right",
+                String::class.java,
+                root.get<String>("locationFullName"),
+                cb.literal(2),
+            )
+            predicates.add(countryCodeExpr.`in`(codeUpper))
         }
 
         if (!searchParams.manufacturers.isNullOrEmpty()) {
@@ -655,18 +702,49 @@ class YachtQueryingService(
         // (e.g. 10-day Tue→Fri that starts 07.07. still matches a 04.07.→11.07.
         // search), but offers starting a full week later (11.07.→18.07.) are
         // already the NEXT week and would just clutter the results.
+        // Custom yachts (entry_type=2 in yacht_search_view) carry NULL
+        // dateFrom/dateTo because they have no offer rows — they're inquiry-
+        // only listings that the admin maintains by hand. Without an OR
+        // dateFrom IS NULL escape hatch, the date predicate would silently
+        // exclude every custom yacht the moment a user picks a date, even
+        // though the listing should always show ("contact us for this date").
+        // Sort still works naturally — branch 2 emits client_price = lowPrice/7
+        // and length = y.length, so cheapest/longest sorts pick custom yachts
+        // up alongside external offers.
+        val isCustomYacht = cb.isNull(root.get<LocalDate>("dateFrom"))
         if (searchParams.startDate != null && searchParams.endDate != null) {
             if (!searchParams.startDate.isBefore(searchParams.endDate)) {
                 throw IllegalArgumentException("Starting date must be before end date")
             }
-            predicates.add(cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.minusDays(DATE_FLEX_DAYS)))
-            predicates.add(cb.lessThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.plusDays(DATE_FLEX_DAYS)))
+            predicates.add(
+                cb.or(
+                    isCustomYacht,
+                    cb.and(
+                        cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.minusDays(DATE_FLEX_DAYS)),
+                        cb.lessThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.plusDays(DATE_FLEX_DAYS)),
+                    ),
+                ),
+            )
         } else if (searchParams.startDate != null) {
-            predicates.add(cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.minusDays(DATE_FLEX_DAYS)))
-            predicates.add(cb.lessThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.plusDays(DATE_FLEX_DAYS)))
+            predicates.add(
+                cb.or(
+                    isCustomYacht,
+                    cb.and(
+                        cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.minusDays(DATE_FLEX_DAYS)),
+                        cb.lessThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.plusDays(DATE_FLEX_DAYS)),
+                    ),
+                ),
+            )
         } else if (searchParams.endDate != null) {
-            predicates.add(cb.greaterThanOrEqualTo(root.get("dateTo"), searchParams.endDate.minusDays(DATE_FLEX_DAYS)))
-            predicates.add(cb.lessThanOrEqualTo(root.get("dateTo"), searchParams.endDate.plusDays(DATE_FLEX_DAYS)))
+            predicates.add(
+                cb.or(
+                    isCustomYacht,
+                    cb.and(
+                        cb.greaterThanOrEqualTo(root.get("dateTo"), searchParams.endDate.minusDays(DATE_FLEX_DAYS)),
+                        cb.lessThanOrEqualTo(root.get("dateTo"), searchParams.endDate.plusDays(DATE_FLEX_DAYS)),
+                    ),
+                ),
+            )
         }
 
         if (searchParams.minWc != null && searchParams.maxWc != null) {

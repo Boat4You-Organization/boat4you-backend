@@ -70,7 +70,12 @@ open class Agency {
     @Column(name = "active", nullable = false)
     open var active: Boolean? = false
 
-    @OneToMany(mappedBy = "agency")
+    // EAGER fetch — admin AgencyDto serialises every source into a `sources`
+    // array. Default LAZY would only load the collection inside the
+    // @Transactional service method; some call sites (Page.map serialisation,
+    // detached entity reads) hit it after the TX closes and silently get
+    // an empty proxy. EAGER guarantees the array always renders.
+    @OneToMany(mappedBy = "agency", fetch = jakarta.persistence.FetchType.EAGER)
     open var agencySources: MutableSet<AgencySource> = mutableSetOf()
 
     /**
@@ -90,6 +95,17 @@ open class Agency {
     @ColumnDefault("false")
     @Column(name = "skip_external_system", nullable = false)
     open var skipExternalSystem: Boolean? = false
+
+    /**
+     * Admin-curated boost. When true, this agency's yachts rank ahead of
+     * everyone else on the public "Recommended" search tab (ordered by
+     * client price ASC within the boosted bucket and within the rest).
+     * Toggled from the admin /agencies update modal.
+     */
+    @NotNull
+    @ColumnDefault("false")
+    @Column(name = "recommended", nullable = false)
+    open var recommended: Boolean? = false
 
     @Transient
     open var primarySource: AgencySource? = null

@@ -42,7 +42,7 @@ class MmkSyncJob(
         serviceCallCacheService.saveScheduledSync(MethodCacheEnum.SCHEDULED_MMK_CATALOGUE_SYNC)
     }
 
-    //    @Scheduled(cron = "0 0 7,11,16 * * ?")
+    @Scheduled(cron = "0 0 7,11,16 * * ?")
     fun runCatalogueBackupSync() {
         if (!serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_MMK_CATALOGUE_SYNC)) {
             return
@@ -77,7 +77,7 @@ class MmkSyncJob(
         log.info("Syncing MMK yacht offers took ${System.currentTimeMillis() - startTimeOffer} ms")
     }
 
-    //    @Scheduled(cron = "0 10 7,11,16 * * ?")
+    @Scheduled(cron = "0 10 7,11,16 * * ?")
     fun runYachtBackupSync() {
         if (serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_MMK_YACHT_SYNC)) {
             log.info("Syncing MMK yachts")
@@ -106,7 +106,7 @@ class MmkSyncJob(
         log.info("Syncing MMK yachts multilingual data took ${System.currentTimeMillis() - startTime} ms")
     }
 
-    //    @Scheduled(cron = "0 0 8,12,17 * * ?")
+    @Scheduled(cron = "0 0 8,12,17 * * ?")
     fun runYachtLangBackupSync() {
         if (!serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_MMK_YACHT_LANG_SYNC)) {
             return

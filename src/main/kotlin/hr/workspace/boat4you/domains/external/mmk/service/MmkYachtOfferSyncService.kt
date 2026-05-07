@@ -216,13 +216,16 @@ class MmkYachtOfferSyncService(
             offerRepository.save(offer)
         }
 
-        // TODO For now just skipped as we don't need external payment plans
-//        if (!mmkOffer.paymentPlan.isNullOrEmpty()) {
-//            handlePaymentPlans(offer, mmkOffer)
-//        } else {
-//            offer.offerPaymentPlans.clear()
-//            offerRepository.save(offer)
-//        }
+        // Partner payment plan = source of truth for installment timing.
+        // Re-enabled 1.5.2026 — `ReservationPaymentPhasesService` now prefers
+        // partner-side dates and applies B4Y discount proportionally to those
+        // ratios. Empty/null plan → service falls back to internal A/B/C rules.
+        if (!mmkOffer.paymentPlan.isNullOrEmpty()) {
+            handlePaymentPlans(offer, mmkOffer)
+        } else {
+            offer.offerPaymentPlans.clear()
+            offerRepository.save(offer)
+        }
         return true
     }
 

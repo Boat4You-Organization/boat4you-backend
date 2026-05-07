@@ -1,0 +1,1 @@
+ALTER TABLE reservation ALTER COLUMN bank_details TYPE VARCHAR(2000);

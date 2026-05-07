@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.mmk.client.MmkAuditedClient
+import org.openapitools.client.mmk.api.BookingApi
 import org.openapitools.client.mmk.model.SupportedLanguagesEnum
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -55,7 +56,17 @@ class MmkYachtIntegrationService(
         agenciesWithoutYachts: Set<Long>,
     ) {
         try {
-            val mmkResponse = mmkAuditedClient.getYachts(companyId = agencyExternalId)
+            // inventory=raw triggers MMK to populate Yacht.equipmentRaw with
+            // the full per-yacht equipment list (id, parentId, name, value,
+            // categoryName) instead of the slim Yacht.equipment list. The
+            // slim list returns only ~8-10 entries per yacht; raw returns
+            // ~25-30 (Boataround-class coverage). Sync was missing this
+            // parameter — every existing yacht_equipment row was capped at
+            // whatever the slim list emitted.
+            val mmkResponse = mmkAuditedClient.getYachts(
+                companyId = agencyExternalId,
+                inventory = BookingApi.InventoryGetYachts.RAW,
+            )
             if (mmkResponse.isEmpty() && agenciesWithoutYachts.contains(agency.id)) {
                 log.trace("No Yachts found for ${agency.id}")
                 return

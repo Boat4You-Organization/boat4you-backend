@@ -1,1474 +1,613 @@
-<!DOCTYPE html
-  PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
-  xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:th="http://www.thymeleaf.org">
+  xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:th="http://www.thymeleaf.org" lang="en">
 
 <head>
-  <!--[if gte mso 9]>
-      <xml>
-        <o:OfficeDocumentSettings>
-          <o:AllowPNG />
-          <o:PixelsPerInch>96</o:PixelsPerInch>
-        </o:OfficeDocumentSettings>
-      </xml>
-    <![endif]-->
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="supported-color-schemes" content="light" />
   <!--[if !mso]><!-->
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <!--<![endif]-->
-  <title>Reservation Payment Pending | Boat4You</title>
+  <title th:text="#{paymentPending.subject(${daysInAdvance}, ${reservationId})}">Reminder: next installment due in 3 days &#8212; booking #100194/2026</title>
+
+  <!--[if gte mso 9]>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:AllowPNG />
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  <![endif]-->
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"
+    rel="stylesheet" type="text/css" />
 
   <style type="text/css">
-    @media only screen and (min-width: 520px) {
-      .u-row {
-        width: 500px !important;
-      }
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; background-color: #f4f6fb; }
+    a { color: #2856ff; text-decoration: none; }
+    a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; }
 
-      .u-row .u-col {
-        vertical-align: top;
-      }
-
-      .u-row .u-col-50 {
-        width: 250px !important;
-      }
-
-      .u-row .u-col-100 {
-        width: 500px !important;
-      }
-    }
-
-    @media only screen and (max-width: 520px) {
-      .u-row-container {
-        max-width: 100% !important;
-        padding-left: 0px !important;
-        padding-right: 0px !important;
-        height: auto;
-      }
-
-      .u-row {
-        width: 100% !important;
-      }
-
-      .u-row .u-col {
-        display: block !important;
-        width: 100% !important;
-        min-width: 320px !important;
-        max-width: 100% !important;
-      }
-
-      .u-row .u-col>div {
-        margin: 0 auto;
-      }
-
-      .u-row .u-col img {
-        max-width: 100% !important;
-      }
-    }
-
-    body {
-      margin: 0;
-      padding: 0;
-    }
-
-    table,
-    td,
-    tr {
-      border-collapse: collapse;
-      vertical-align: top;
-    }
-
-    p {
-      margin: 0;
-    }
-
-    .ie-container table,
-    .mso-container table {
-      table-layout: fixed;
-    }
-
-    * {
-      line-height: inherit;
-    }
-
-    a[x-apple-data-detectors="true"] {
-      color: inherit !important;
-      text-decoration: none !important;
-    }
-
-    table,
-    td {
-      color: #000000;
-    }
-
-    #u_body a {
-      color: #0000ee;
-      text-decoration: underline;
+    @media only screen and (max-width: 620px) {
+      .container { width: 100% !important; max-width: 100% !important; }
+      .sheet { padding: 24px 20px !important; }
+      .gutter { padding-left: 12px !important; padding-right: 12px !important; }
+      .hero { padding: 18px !important; }
+      .footer { padding: 24px 20px !important; }
+      .footer-line { font-size: 11px !important; }
+      .stack-cell { display: block !important; width: 100% !important; padding: 0 0 12px 0 !important; }
     }
   </style>
-
-  <!--[if !mso]><!-->
-  <link href="https://fonts.googleapis.com/css?family=Raleway:400,700" rel="stylesheet" type="text/css" />
-  <!--<![endif]-->
 </head>
 
-<body class="clean-body u_body" style="
-      margin: 0;
-      padding: 0;
-      -webkit-text-size-adjust: 100%;
-      background-color: #f9f9f9;
-      color: #000000;
-    ">
+<body style="margin:0; padding:0; background-color:#f4f6fb; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; color:#0f172a;">
 
-  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
-    We are still waiting for your payment to clear for reservation.
+  <!-- Preheader (hidden inbox preview text) -->
+  <div th:text="#{paymentPending.preheader}"
+    style="display:none; font-size:0; line-height:0; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+    Friendly reminder &#8212; your next installment is coming up. Settle the wire transfer to keep your charter on track.
   </div>
-  <!--[if IE]><div class="ie-container"><![endif]-->
-  <!--[if mso]><div class="mso-container"><![endif]-->
 
-  <table role="presentation" id="u_body" style="
-        border-collapse: collapse;
-        table-layout: fixed;
-        border-spacing: 0;
-        mso-table-lspace: 0pt;
-        mso-table-rspace: 0pt;
-        vertical-align: top;
-        min-width: 320px;
-        margin: 0 auto;
-        background-color: #f9f9f9;
-        width: 100%;
-      " cellpadding="0" cellspacing="0">
-    <tbody>
-      <tr style="vertical-align: top">
-        <td style="
-              word-break: break-word;
-              border-collapse: collapse !important;
-              vertical-align: top;
-            ">
-          <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="background-color: #F9F9F9;"><![endif]-->
+  <!-- Outer wrapper -->
+  <table role="presentation" align="center" border="0" cellpadding="0" cellspacing="0" width="100%"
+    style="background-color:#f4f6fb;">
+    <tr>
+      <td align="center" style="padding:0 0 28px 0;">
 
-          <!-- HEADER SECTION -->
-          <div class="u-row-container" style="padding: 0px; background-color: transparent">
-            <div class="u-row" style="
-                  margin: 0 auto;
-                  min-width: 320px;
-                  max-width: 500px;
-                  overflow-wrap: break-word;
-                  word-wrap: break-word;
-                  word-break: break-word;
-                  background-color: transparent;
-                ">
-              <div style="
-                    border-collapse: collapse;
-                    display: table;
-                    width: 100%;
-                    height: 100%;
-                    background-color: transparent;
-                  ">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
+        <!-- Container 600px -->
+        <table role="presentation" class="container" border="0" cellpadding="0" cellspacing="0" width="600"
+          style="width:600px; max-width:600px;">
 
-                <div class="u-col u-col-100" style="
-                      max-width: 320px;
-                      min-width: 500px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="height: 100%; width: 100% !important">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                        ">
-                      <!--<![endif]-->
-
-                      <!-- Logo -->
-                      <table style="
-                            font-family: arial, helvetica, sans-serif;
-                            background-color: #141857;
-                          " role="presentation" cellpadding="0" cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 34px 24px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                                <tr>
-                                  <td style="
-                                        padding-right: 0px;
-                                        padding-left: 0px;
-                                      " align="left">
-                                    <a th:href="${publicUrl}" target="_blank">
-                                      <img align="left" border="0" src="cid:boat4youLogoFull" alt=""
-                                        title="Boat4You Logo" style="
-                                            outline: none;
-                                            text-decoration: none;
-                                            -ms-interpolation-mode: bicubic;
-                                            clear: both;
-                                            display: inline-block !important;
-                                            border: none;
-                                            height: auto;
-                                            float: none;
-                                            width: 40%;
-                                            max-width: 200px;
-                                          " width="200" />
-                                    </a>
-                                  </td>
-                                </tr>
-                              </table>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+          <!-- HEADER BAND (navy) - official Boat4You SVG logo + sent timestamp -->
+          <tr>
+            <td bgcolor="#141857" style="background-color:#141857; padding:18px 28px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td valign="middle" align="left">
+                    <img src="cid:boat4youLogoFull" alt="Boat4You" width="138" height="35" style="display:block; border:0; outline:none; text-decoration:none;" />
+                    </td>
+                  <!-- Right: sent timestamp (when this reminder fired) -->
+                  <td valign="middle" align="right">
+                    <div th:text="#{paymentPending.headerSent(${receivedAt})}"
+                      style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:11px; color:#a3a8c2; line-height:1.3;">
+                      Sent May 2, 2026 &#183; 12:02 (GMT+2)
                     </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td></tr></table></td></tr></table><![endif]-->
-              </div>
-            </div>
-          </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-          <!-- DETAILS SECTION -->
-          <div class="u-row-container" style="padding: 0px; background-color: transparent">
-            <div class="u-row" style="
-                  margin: 0 auto;
-                  min-width: 320px;
-                  max-width: 500px;
-                  overflow-wrap: break-word;
-                  word-wrap: break-word;
-                  word-break: break-word;
-                  background-color: transparent;
-                ">
-              <div style="
-                    border-collapse: collapse;
-                    display: table;
-                    width: 100%;
-                    height: 100%;
-                    background-color: transparent;
-                  ">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
+          <!-- Spacer -->
+          <tr><td style="height:16px; line-height:16px; font-size:0;">&#160;</td></tr>
 
-                <div class="u-col u-col-100" style="
-                      max-width: 320px;
-                      min-width: 500px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="height: 100%; width: 100% !important">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                        ">
-                      <!-- Main Title -->
-                      <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 31px 0 0;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <!--[if mso]><table role="presentation" width="100%"><tr><td><![endif]-->
-                              <h1 style="
-                                    margin: 0px;
-                                    color: #2856ff;
-                                    line-height: 130%;
-                                    text-align: left;
-                                    word-wrap: break-word;
-                                    font-family: 'Raleway', sans-serif;
-                                    font-size: 28px;
-                                    font-weight: 700;
-                                  ">
-                                <em>Reservation Payment Pending</em>
-                              </h1>
-                              <!--[if mso]></td></tr></table><![endif]-->
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+          <!-- WHITE SHEET -->
+          <tr>
+            <td class="gutter" style="padding:0 16px 0 16px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                style="background-color:#ffffff; border-radius:12px;">
+                <tr>
+                  <td class="sheet" style="padding:28px 32px;">
 
-                      <!-- Description -->
-                      <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 8px 0 24px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <div style="
-                                    font-family: 'Raleway', sans-serif;
-                                    font-size: 16px;
-                                    color: #7c7c7c;
-                                    line-height: 140%;
-                                    word-wrap: break-word;
-                                  ">
-                                <p th:utext="${message}">
-                                  Dear {{customerName}}, another payment for
-                                  your booking is required. It will be <b>cancelled</b> if you do not pay the next
-                                  installment
-                                  <b>by {{dueDate}}!</b>
-                                </p>
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+                    <!-- HERO (dark navy) - blue accent (NOT amber). The booking is
+                         already confirmed; this is a polite installment reminder, not
+                         an option-expiry threat. The blue eyebrow + matching pill keep
+                         the urgency dialed back compared to the option-flow reminder. -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="background-color:#141857; border-radius:12px;">
+                      <tr>
+                        <td class="hero" style="padding:22px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td align="left" valign="middle" th:text="#{paymentPending.heroLabel}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:1.4px; color:#7aa2ff; text-transform:uppercase;">
+                                Payment reminder
+                              </td>
+                              <td align="right" valign="middle">
+                                <span
+                                  style="display:inline-block; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:11px; color:#7aa2ff; background-color:rgba(122,162,255,0.14); padding:5px 10px; border-radius:999px; letter-spacing:0.04em;">
+                                  #<span th:text="${reservationId}">100194/2026</span>
+                                </span>
+                              </td>
+                            </tr>
+                          </table>
+                          <div th:text="#{paymentPending.heroTitle(${fullName})}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:22px; font-weight:700; color:#ffffff; line-height:1.3; letter-spacing:-0.3px; margin:12px 0 0 0;">
+                            Hi Mario Kuzmanic, your next payment is due
+                          </div>
+                          <div th:text="#{paymentPending.heroSub(${dueIn})}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:14px; color:#ffffff; opacity:0.75; line-height:1.5; margin:8px 0 0 0;">
+                            Your booking is confirmed. The next installment is due in 3 days &#8212; settle it before the deadline to keep everything on track.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
 
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td></tr></table></td></tr></table><![endif]-->
-              </div>
-            </div>
-          </div>
+                    <!-- DEADLINE BANNER - blue accent (calmer than option-flow amber).
+                         This isn't an option threat: the boat is already locked in,
+                         we're just letting the customer know an installment is coming
+                         up so the dates stay on track. -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#eef3ff; border:1px solid #d9e4ff; border-left:5px solid #2856ff; border-radius:10px; margin:18px 0 0 0;">
+                      <tr>
+                        <td style="padding:16px 20px;">
+                          <div
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:14px; color:#1e3a8a; line-height:1.5;">
+                            &#128197;
+                            <span th:text="#{paymentPending.deadlineNotice(${dueNowLabel}, ${dueNowDeadlineLabel})}">
+                              Next installment (1,050 &#8364;) is due on 8 May 2026.
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
 
-          <!-- IMAGE SECTION -->
-          <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0" cellspacing="0"
-            width="100%" border="0">
-            <tbody>
-              <tr>
-                <td style="
-                      overflow-wrap: break-word;
-                      word-break: break-word;
-                      padding: 16px 0;
-                      font-family: arial, helvetica, sans-serif;
-                    " align="left">
-                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                    <tr>
-                      <td style="padding-right: 0px; padding-left: 0px" align="center">
-                        <img align="center" border="0" src="cid:bookingVector" alt="Booking vector"
-                          title="Booking vector" style="
-                              outline: none;
-                              text-decoration: none;
-                              -ms-interpolation-mode: bicubic;
-                              clear: both;
-                              display: inline-block !important;
-                              border: none;
-                              height: auto;
-                              float: none;
-                              width: 100%;
-                              max-width: 365px;
-                            " width="138" />
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:22px; font-size:0; line-height:22px;">&#160;</td></tr></table>
 
-          <!-- BOATS SECTION -->
-          <div class="u-row-container" style="padding: 24px 0 0; background-color: transparent">
-            <div class="u-row" style="
-      margin: 0 auto;
-      min-width: 320px;
-      max-width: 500px;
-      overflow-wrap: break-word;
-      word-wrap: break-word;
-      word-break: break-word;
-      background-color: transparent;
-    ">
-              <div style="
-        border-collapse: collapse;
-        display: table;
-        width: 100%;
-        height: 100%;
-        background-color: transparent;
-      ">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <div class="u-col u-col-100" style="
-          max-width: 320px;
-          min-width: 500px;
-          display: table-cell;
-          vertical-align: top;
-        ">
-                  <div style="height: 100%; width: 100% !important">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-              box-sizing: border-box;
-              height: 100%;
-              padding: 0px;
-              border-top: 0px solid transparent;
-              border-left: 0px solid transparent;
-              border-right: 0px solid transparent;
-              border-bottom: 0px solid transparent;
-            ">
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:16px 0px 24px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <!--[if mso]><table role="presentation" width="100%"><tr><td><![endif]-->
-                              <h2
-                                style="margin: 0px; color: #2856ff; line-height: 140%; text-align: left; word-wrap: break-word; font-family: 'Raleway',sans-serif; font-size: 28px; font-weight: 700;">
-                                <span></span><span></span><em>Boat Details</em>
-                              </h2>
-                              <!--[if mso]></td></tr></table><![endif]-->
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      <!-- Boat Details -->
-                      <table align="center" cellpadding="0" cellspacing="0" border="0" width="100%"
-                        style="border-collapse: collapse;">
-                        <tr>
-                          <td align="center">
-                            <!--[if mso]>
-                              <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml"
-                                          xmlns:w="urn:schemas-microsoft-com:office:word"
-                                          arcsize="10%"
-                                          strokeweight="1px"
-                                          strokecolor="#CCCCCC"
-                                          fillcolor="#FFFFFF"
-                                          style="width:600px;height:auto;v-text-anchor:middle;">
-                                <v:stroke dashstyle="solid"/>
-                                <w:anchorlock/>
-                                <center style="color:#000000;">
-                              <![endif]-->
-
-                            <div style="
-                                border: 1px solid #CCCCCC;
-                                border-radius: 10px;
-                                overflow: hidden;
-                                background-color: transparent;
-                                display: inline-block;
-                                width: 100%;
-                                max-width: 600px;
-                              ">
-                              <table style="font-family: arial, helvetica, sans-serif; background-color: transparent;"
-                                cellpadding="0" cellspacing="0" width="100%" border="0">
-
-                                <!-- SLIKA U SVOJEM REDU -->
-                                <!-- RED SA SLIKOM -->
-                                <tr>
-                                  <td align="center" style="padding: 16px 16px 0 16px;">
-                                    <img th:src="${yachtImageUrl}" alt="Boat Image" width="100%" style="
-                                        display: block;
-                                        width: 100% !important;
-                                        height: 260px !important;
-                                        border-radius: 7.5px;
-                                        object-fit: cover;
-                                        object-position: center;
-                                      " />
-
-                                  </td>
-                                </tr>
-
-                                <!-- DETALJI ISPOD SLIKE -->
-                                <tr>
-                                  <td style="
-                                      padding: 16px 16px 0 16px;
-                                      vertical-align: top;
-                                      color: #292929;
-                                    ">
-                                    <strong
-                                      style="font-size: 22px; line-height: 1.3; display: block; margin-bottom: 8px;">
-                                      <span th:text="${yachtModel}">{{yachtModel}}</span>
-                                      | <span th:text="${yachtName}">{{yachtName}}</span>
-                                    </strong>
-
-                                    <div style="font-size: 16px; margin-bottom: 12px;">
-                                      <span th:text="${locationFrom}">{{locationFrom}}</span>
-                                    </div>
-                                  </td>
-                                </tr>
-
-                                <!-- BUTTON ISPOD SVEGA -->
-                                <tr>
-                                  <td style="padding: 16px">
-                                    <div align="center">
-                                      <!--[if mso]>
-                                        <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml"
-                                          xmlns:w="urn:schemas-microsoft-com:office:word"
-                                          th:href="${publicUrl}"
-                                          style="height:51px; v-text-anchor:middle; width:452px;"
-                                          arcsize="10%" stroke="f" fillcolor="#2856ff">
-                                          <w:anchorlock/>
-                                          <center style="color:#f6f6f6;font-family: 'Raleway',sans-serif;">
-                                        <![endif]-->
-                                      <a th:href="${viewBoatUrl}" target="_blank" class="v-button" style="
-                                          box-sizing: border-box;
-                                          display: inline-block;
-                                          text-decoration: none;
-                                          -webkit-text-size-adjust: none;
-                                          text-align: center;
-                                          color: #2856ff;
-                                          background-color: #EEF3FF;
-                                          border-radius: 5px;
-                                          -webkit-border-radius: 5px;
-                                          -moz-border-radius: 5px;
-                                          width: 100%;
-                                          max-width: 100%;
-                                          overflow-wrap: break-word;
-                                          word-break: break-word;
-                                          word-wrap: break-word;
-                                          font-family: 'Raleway', sans-serif;
-                                          font-size: 16px;
-                                          font-weight: 700;
-                                        ">
-                                        <span style="
-                                            display: block;
-                                            padding: 16px;
-                                            line-height: 120%;
-                                          ">View boat</span>
-                                      </a>
-                                      <!--[if mso]></center></v:roundrect><![endif]-->
-                                    </div>
-                                  </td>
-                                </tr>
-                              </table>
-                            </div>
-
-                            <!--[if mso]>
-                                </center>
-                              </v:roundrect>
-                              <![endif]-->
-                          </td>
-                        </tr>
-                      </table>
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td></tr></table></td></tr></table><![endif]-->
-              </div>
-            </div>
-          </div>
-
-          <!-- BANK TRANSFER SECTION -->
-          <div class="u-row-container" style="padding: 0px;background-color: transparent">
-            <div class="u-row"
-              style="margin: 0 auto;min-width: 320px;max-width: 500px;overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;background-color: transparent;">
-              <div
-                style="border-collapse: collapse;display: table;width: 100%;height: 100%;background-color: transparent;">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <!--[if (mso)|(IE)]><td align="center" width="500" style="width: 500px;padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;" valign="top"><![endif]-->
-                <div class="u-col u-col-100"
-                  style="max-width: 320px;min-width: 500px;display: table-cell;vertical-align: top;">
-                  <div
-                    style="height: 100%;width: 100% !important;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div
-                      style="box-sizing: border-box; height: 100%; padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                      <!--<![endif]-->
-
-                      <!-- CTA Button -->
-                      <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-        overflow-wrap: break-word;
-        word-break: break-word;
-        padding: 48px 0 16px;
-        font-family: arial, helvetica, sans-serif;
-      " align="left">
-                              <!--[if mso
-                          ]><style>
-                            .v-button {
-                              background: transparent !important;
-                            }
-                          </style><!
-                        [endif]-->
-                              <div align="center">
-                                <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" th:href="${reservationUrl}" style="height:51px; v-text-anchor:middle; width:452px;" arcsize="10%" stroke="f" fillcolor="#2856ff"><w:anchorlock/><center style="color:#f6f6f6;font-family: 'Raleway',sans-serif;"><![endif]-->
-                                <a th:href="${reservationUrl}" target="_blank" class="v-button" style="
-            box-sizing: border-box;
-            display: inline-block;
-            text-decoration: none;
-            -webkit-text-size-adjust: none;
-            text-align: center;
-            color: #f6f6f6;
-            background-color: #2856ff;
-            border-radius: 5px;
-            -webkit-border-radius: 5px;
-            -moz-border-radius: 5px;
-            width: 100%;
-            max-width: 100%;
-            overflow-wrap: break-word;
-            word-break: break-word;
-            word-wrap: break-word;
-            mso-border-alt: none;
-            font-family: 'Raleway', sans-serif;
-            font-size: 16px;
-            font-weight: 700;
-          ">
-                                  <span style="
-              display: block;
-              padding: 16px;
-              line-height: 120%;
-            ">Pay Now</span>
+                    <!-- YACHT CARD -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:14px 16px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td valign="middle" width="92" style="padding-right:14px;">
+                                <a th:if="${yachtImageUrl}" th:href="${viewBoatUrl}" target="_blank">
+                                  <img th:src="${yachtImageUrl}" th:alt="${yachtFullLabel}" width="84" height="64"
+                                    style="display:block; border-radius:8px; width:84px; height:64px; object-fit:cover; border:0; outline:none;" />
                                 </a>
-                                <!--[if mso]></center></v:roundrect><![endif]-->
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:24px 0px 24px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <!--[if mso]><table role="presentation" width="100%"><tr><td><![endif]-->
-                              <h2
-                                style="margin: 0px; color: #2856ff; line-height: 140%; text-align: left; word-wrap: break-word; font-family: 'Raleway',sans-serif; font-size: 28px; font-weight: 700;">
-                                <span></span><span></span><em>Bank Transfer</em>
-                              </h2>
-                              <!--[if mso]></td></tr></table><![endif]-->
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 8px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span>You can also pay via bank
-                                    transfer.</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span>Please use your confirmation number as
-                                    the payment reference:</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:8px 0px 32px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 22px; font-weight: 700; color: #292929; line-height: 140%; word-wrap: break-word;">
-                                <p><span th:text="${reservationId}"
-                                    style=" font-weight: bold; font-style: italic;">{{reservationID}}</span>
-                                </p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="padding:0px 0px 32px;font-family:arial,helvetica,sans-serif;" align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                <p><span>Bank account details (EUR)</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div><!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td><![endif]-->
-                <!--[if (mso)|(IE)]></tr></table></td></tr></table><![endif]-->
-              </div>
-            </div>
-          </div>
-
-          <!-- BANK TRANSFERS FIRST LINE SECTION -->
-          <div class="u-row-container" style="padding: 0px;background-color: transparent">
-            <div class="u-row"
-              style="margin: 0 auto;min-width: 320px;max-width: 500px;overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;background-color: transparent;">
-              <div
-                style="border-collapse: collapse;display: table;width: 100%;height: 100%;background-color: transparent;">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <!--[if (mso)|(IE)]><td align="center" width="250" style="width: 250px;padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;" valign="top"><![endif]-->
-                <div class="u-col u-col-50"
-                  style="max-width: 320px;min-width: 250px;display: table-cell;vertical-align: top;">
-                  <div
-                    style="height: 100%;width: 100% !important;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div
-                      style="box-sizing: border-box; height: 100%; padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                      <!--<![endif]-->
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 8px 8px 0px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="white-space: pre-wrap;">Account Holder</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 24px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; font-weight: 700; color: #292929; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="font-style: italic; color: #292929;">Cusmanich d.o.o.</span>
-                                </p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div><!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td><![endif]-->
-                <!--[if (mso)|(IE)]><td align="center" width="250" style="width: 250px;padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;" valign="top"><![endif]-->
-                <div class="u-col u-col-50"
-                  style="max-width: 320px;min-width: 250px;display: table-cell;vertical-align: top;">
-                  <div
-                    style="height: 100%;width: 100% !important;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div
-                      style="box-sizing: border-box; height: 100%; padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                      <!--<![endif]-->
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 8px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="white-space: pre-wrap;">Payment Type</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 24px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #292929; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="font-weight: bold; font-style: italic;">OUR</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div><!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td><![endif]-->
-                <!--[if (mso)|(IE)]></tr></table></td></tr></table><![endif]-->
-              </div>
-            </div>
-          </div>
-
-          <!-- BANK TRANSFERS SECOND LINE SECTION -->
-          <div class="u-row-container" style="padding: 0px;background-color: transparent">
-            <div class="u-row"
-              style="margin: 0 auto;min-width: 320px;max-width: 500px;overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;background-color: transparent;">
-              <div
-                style="border-collapse: collapse;display: table;width: 100%;height: 100%;background-color: transparent;">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <!--[if (mso)|(IE)]><td align="center" width="250" style="width: 250px;padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;" valign="top"><![endif]-->
-                <div class="u-col u-col-50"
-                  style="max-width: 320px;min-width: 250px;display: table-cell;vertical-align: top;">
-                  <div
-                    style="height: 100%;width: 100% !important;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div
-                      style="box-sizing: border-box; height: 100%; padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                      <!--<![endif]-->
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 8px 8px 0px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="white-space: pre-wrap;">Bank</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 24px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 17px; font-weight: 700; color: #292929; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="font-style: italic; color: #292929;">Erste&Steiermarkische
-                                    Bank d.d.</span>
-                                </p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div><!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td><![endif]-->
-                <!--[if (mso)|(IE)]><td align="center" width="250" style="width: 250px;padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;" valign="top"><![endif]-->
-                <div class="u-col u-col-50"
-                  style="max-width: 320px;min-width: 250px;display: table-cell;vertical-align: top;">
-                  <div
-                    style="height: 100%;width: 100% !important;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div
-                      style="box-sizing: border-box; height: 100%; padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                      <!--<![endif]-->
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 8px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="white-space: pre-wrap;">Bank address</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 24px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 17px; color: #292929; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="font-weight: bold; font-style: italic;">Jadranski trg 3a,
-                                    51000 Rijeka, Croatia</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div><!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td><![endif]-->
-                <!--[if (mso)|(IE)]></tr></table></td></tr></table><![endif]-->
-              </div>
-            </div>
-          </div>
-
-          <!-- BANK TRANSFERS THIRD LINE SECTION -->
-          <div class="u-row-container" style="padding: 0px;background-color: transparent">
-            <div class="u-row"
-              style="margin: 0 auto;min-width: 320px;max-width: 500px;overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;background-color: transparent;">
-              <div
-                style="border-collapse: collapse;display: table;width: 100%;height: 100%;background-color: transparent;">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <!--[if (mso)|(IE)]><td align="center" width="250" style="width: 250px;padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;" valign="top"><![endif]-->
-                <div class="u-col u-col-50"
-                  style="max-width: 320px;min-width: 250px;display: table-cell;vertical-align: top;">
-                  <div
-                    style="height: 100%;width: 100% !important;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div
-                      style="box-sizing: border-box; height: 100%; padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                      <!--<![endif]-->
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 8px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="white-space: pre-wrap;">SwiftCode</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 24px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #292929; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style=" font-weight: bold; font-style: italic;">ESBCHR22</span>
-                                </p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div><!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td><![endif]-->
-                <!--[if (mso)|(IE)]><td align="center" width="250" style="width: 250px;padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;" valign="top"><![endif]-->
-                <div class="u-col u-col-50"
-                  style="max-width: 320px;min-width: 250px;display: table-cell;vertical-align: top;">
-                  <div
-                    style="height: 100%;width: 100% !important;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div
-                      style="box-sizing: border-box; height: 100%; padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                      <!--<![endif]-->
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 8px 8px 0px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; color: #7c7c7c; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style="white-space: pre-wrap;">IBAN</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 24px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; font-weight: 700; color: #292929; line-height: 140%; word-wrap: break-word;">
-                                <p dir="ltr"><span style=" font-style: italic;">HR3924020061101202108</span></p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div><!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td><![endif]-->
-                <!--[if (mso)|(IE)]></tr></table></td></tr></table><![endif]-->
-              </div>
-            </div>
-          </div>
-
-          <!-- CANCELLATION POLICY SECTION -->
-          <div class="u-row-container" style="padding: 24px 0 0;background-color: transparent">
-            <div class="u-row"
-              style="margin: 0 auto;min-width: 320px;max-width: 500px;overflow-wrap: break-word;word-wrap: break-word;word-break: break-word;background-color: transparent;">
-              <div
-                style="border-collapse: collapse;display: table;width: 100%;height: 100%;background-color: transparent;">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <!--[if (mso)|(IE)]><td align="center" width="500" style="width: 500px;padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;" valign="top"><![endif]-->
-                <div class="u-col u-col-100"
-                  style="max-width: 320px;min-width: 500px;display: table-cell;vertical-align: top;">
-                  <div
-                    style="height: 100%;width: 100% !important;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div
-                      style="box-sizing: border-box; height: 100%; padding: 0px;border-top: 0px solid transparent;border-left: 0px solid transparent;border-right: 0px solid transparent;border-bottom: 0px solid transparent;border-radius: 0px;-webkit-border-radius: 0px; -moz-border-radius: 0px;">
-                      <!--<![endif]-->
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td
-                              style="overflow-wrap:break-word;word-break:break-word;padding:0px 0px 24px;font-family:arial,helvetica,sans-serif;"
-                              align="left">
-
-                              <!--[if mso]><table role="presentation" width="100%"><tr><td><![endif]-->
-                              <h2
-                                style="margin: 0px; color: #2856ff; line-height: 140%; text-align: left; word-wrap: break-word; font-family: 'Raleway',sans-serif; font-size: 28px; font-weight: 700;">
-                                <span></span><span></span><span></span><em>Cancellation Policy</em>
-                              </h2>
-                              <!--[if mso]></td></tr></table><![endif]-->
-
-                            </td>
-                          </tr>
-                          <tr style="padding: 0; font-size: 16px">
-                            <td style="font-family: 'Raleway',sans-serif;">
-                              <ul style="padding: 0 0 0 16px; color: #292929">
-                                <li style="margin-bottom: 10px">
-                                  <span style="font-weight: 500;color: #7c7c7c;">A booking can be canceled free of
-                                    charge within 5 days of payment, and the client will receive a full refund.</span>
-                                </li>
-                                <li style="margin-bottom: 10px">
-
-                                  <span style="font-weight: 500;color: #7c7c7c;">A cancellation fee of 50% applies if
-                                    the cancellation occurs 45 or more days before the charter.</span>
-                                </li>
-                                <li style="margin-bottom: 10px">
-
-                                  <span style="font-weight: 500;color: #7c7c7c;">Clients will lose 100% of the amount
-                                    paid if the cancellation occurs within 44 days of the charter start date.</span>
-                                </li>
-                              </ul>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <table style="font-family:arial,helvetica,sans-serif;" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="padding:32px 0px 48px;font-family:arial,helvetica,sans-serif;" align="left">
-
-                              <div
-                                style="font-family: 'Raleway',sans-serif; font-size: 18px; line-height: 140%; word-wrap: break-word;">
-                                <p><span style="color: rgb(124, 124, 124);">By making a
-                                    reservation, you agree to boat4you terms and condition, which are always listed
-                                    on</span><span style="white-space: pre-wrap;"> </span><a target="_blank"
-                                    th:href="${publicUrl}"><span
-                                      style="color: rgb(40, 86, 255);">www.boat4you.com</span></a>
-                                </p>
-                              </div>
-
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div><!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td><![endif]-->
-                <!--[if (mso)|(IE)]></tr></table></td></tr></table><![endif]-->
-              </div>
-            </div>
-          </div>
-
-          <!-- CONTACT SECTION -->
-          <div class="u-row-container" style="padding: 0px; background-color: transparent">
-            <div class="u-row" style="
-                  margin: 0 auto;
-                  min-width: 320px;
-                  max-width: 500px;
-                  overflow-wrap: break-word;
-                  word-wrap: break-word;
-                  word-break: break-word;
-                  background-color: transparent;
-                ">
-              <div style="
-                    border-collapse: collapse;
-                    display: table;
-                    width: 100%;
-                    height: 100%;
-                    background-color: transparent;
-                  ">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <!-- Phone -->
-                <div class="u-col u-col-50" style="
-                      max-width: 320px;
-                      min-width: 250px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="
-                        height: 100%;
-                        width: 100% !important;
-                        border-radius: 0px;
-                        -webkit-border-radius: 0px;
-                        -moz-border-radius: 0px;
-                      ">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px 0px 24px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                          border-radius: 0px;
-                          -webkit-border-radius: 0px;
-                          -moz-border-radius: 0px;
-                        ">
-                      <!--<![endif]-->
-
-                      <table style="font-family: 'Raleway', sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 10px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <div style="text-align: center">
-                                <a href="tel:+385913000009" style="
-                                      text-decoration: none;
-                                      color: #292929;
-                                      font-family: 'Raleway', sans-serif;
-                                      font-size: 14px;
-                                    ">
-                                  <table role="presentation" style="
-                                        display: inline-table;
-                                        vertical-align: middle;
-                                      " cellpadding="0" cellspacing="0" border="0">
-                                    <tr>
-                                      <td style="
-                                            vertical-align: middle;
-                                            padding-right: 8px;
-                                          ">
-                                        <img src="cid:phoneIcon" alt="Phone" width="20" height="20"
-                                          style="display: block; border: 0" />
-                                      </td>
-                                      <td style="
-                                            vertical-align: middle;
-                                            color: #292929;
-                                            font-family: 'Raleway', sans-serif;
-                                            font-size: 14px;
-                                          ">
-                                        +385 91 3000 009
-                                      </td>
-                                    </tr>
-                                  </table>
-                                </a>
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
+                                <table th:unless="${yachtImageUrl}" role="presentation">
+                                  <tr>
+                                    <td valign="middle" align="center"
+                                      style="width:84px; height:64px; background-color:#eef3ff; border-radius:8px; font-size:20px; color:#94a3b8;">
+                                      &#9973;
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                              <td valign="middle" align="left">
+                                <div th:text="#{fewMoreDetails.yourYacht}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:4px;">
+                                  Your yacht
+                                </div>
+                                <div th:text="${yachtFullLabel}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:15px; color:#0f172a; line-height:1.25;">
+                                  Beneteau Oceanis 46.1 Tria
+                                </div>
+                                <div style="padding-top:4px;">
+                                  <a th:href="${locationUrl}" target="_blank"
+                                    style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#2856ff; text-decoration:none;">
+                                    &#128205; <span th:text="${pickupLocation}">Port Dubrovnik</span>
+                                  </a>
+                                </div>
+                              </td>
+                              <td valign="middle" align="right">
+                                <a th:href="${viewBoatUrl}" th:text="#{fewMoreDetails.openPage}" target="_blank"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:13px; color:#2856ff; text-decoration:none; white-space:nowrap;">Open page &#8594;</a>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:14px; font-size:0; line-height:14px;">&#160;</td></tr></table>
+
+                    <!-- DATES + TOTAL row -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td class="stack-cell" valign="top" width="38%" style="padding-right:10px;">
+                                <div th:text="#{fewMoreDetails.fieldPickup}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:4px;">
+                                  Pickup
+                                </div>
+                                <div th:utext="${pickupDateHour}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:14px; color:#0f172a; line-height:1.4;">
+                                  20 June 2026<br/>17:00
+                                </div>
+                                <div th:text="${pickupLocation}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#64748b; line-height:1.4; padding-top:2px;">
+                                  ACI Marina Split
+                                </div>
+                              </td>
+                              <td class="stack-cell" valign="top" width="38%" style="padding-right:10px;">
+                                <div th:text="#{fewMoreDetails.fieldDropOff}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:4px;">
+                                  Drop-off
+                                </div>
+                                <div th:utext="${dropOffDateHourPeriod}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:14px; color:#0f172a; line-height:1.4;">
+                                  27 June 2026<br/>08:00-09:00
+                                </div>
+                                <div th:text="${pickupLocation}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#64748b; line-height:1.4; padding-top:2px;">
+                                  ACI Marina Split
+                                </div>
+                              </td>
+                              <td class="stack-cell" valign="top" width="24%" align="right">
+                                <div th:text="#{fewMoreDetails.fieldTotal}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:4px;">
+                                  Total
+                                </div>
+                                <div th:text="${totalPrice}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:16px; color:#2856ff; line-height:1.25;">
+                                  3,500&#8364;
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:18px; font-size:0; line-height:18px;">&#160;</td></tr></table>
+
+                    <!-- BANK TRANSFER INFO CARD - this specific installment's amount.
+                         Reuses fewMoreDetails.bank* keys so we don't duplicate the
+                         account / SWIFT / IBAN translations across templates. -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#eef3ff; border:1px solid #d9e4ff; border-radius:10px;">
+                      <tr>
+                        <td style="padding:18px 20px;">
+                          <div th:text="#{fewMoreDetails.bankSectionLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#1e3a8a; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:4px;">
+                            Bank transfer details
+                          </div>
+                          <div
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:15px; color:#0f172a; line-height:1.3; margin-bottom:4px;"
+                            th:text="#{fewMoreDetails.bankAmount(${dueNowLabel})}">
+                            Transfer amount: 1,050 &#8364;
+                          </div>
+                          <div th:if="${dueNowDeadlineLabel != null and !dueNowDeadlineLabel.empty}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#64748b; line-height:1.4; margin-bottom:12px;"
+                            th:text="#{fewMoreDetails.bankAmountDueBy(${dueNowDeadlineLabel})}">
+                            Due by 8 May 2026
+                          </div>
+
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b; width:130px;"
+                                th:text="#{fewMoreDetails.bankAccountName}">Account name</td>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13px; color:#0f172a; font-weight:600;">
+                                Cusmanich d.o.o.
+                              </td>
+                            </tr>
+                            <tr>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b;"
+                                th:text="#{fewMoreDetails.bankPaymentType}">Payment type</td>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13px; color:#0f172a; font-weight:600;">
+                                OUR
+                              </td>
+                            </tr>
+                            <tr>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b;"
+                                th:text="#{fewMoreDetails.bankBank}">Bank</td>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13px; color:#0f172a; font-weight:600;">
+                                Erste&amp;Steiermarkische Bank d.d.
+                              </td>
+                            </tr>
+                            <tr>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b;"
+                                th:text="#{fewMoreDetails.bankAddress}">Bank address</td>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13px; color:#0f172a; font-weight:600;">
+                                Jadranski trg 3a, 51000 Rijeka, Croatia
+                              </td>
+                            </tr>
+                            <tr>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b;"
+                                th:text="#{fewMoreDetails.bankSwift}">SWIFT</td>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13px; color:#0f172a; font-weight:600;">
+                                ESBCHR22
+                              </td>
+                            </tr>
+                            <tr>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b;"
+                                th:text="#{fewMoreDetails.bankIban}">IBAN</td>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13px; color:#0f172a; font-weight:600;">
+                                HR3924020061101202108
+                              </td>
+                            </tr>
+                            <tr>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b;"
+                                th:text="#{fewMoreDetails.bankReference}">Payment reference</td>
+                              <td valign="top"
+                                style="padding:6px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13px; color:#2856ff; font-weight:700;">
+                                #<span th:text="${reservationId}">100194/2026</span>
+                              </td>
+                            </tr>
+                          </table>
+
+                          <div
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b; line-height:1.5; margin-top:12px; padding-top:12px; border-top:1px solid #d9e4ff;"
+                            th:text="#{fewMoreDetails.bankReferenceNotice(${reservationId})}">
+                            Please use #100194/2026 as the payment reference so we can match the wire to your booking
+                            quickly.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:18px; font-size:0; line-height:18px;">&#160;</td></tr></table>
+
+                    <!-- TERMS OF PAYMENT - phase list. Earlier phases on a confirmed
+                         booking are already paid (green strike-through + Paid pill);
+                         the upcoming phase shows in brand blue. Mirrors fewMoreDetails
+                         + reservationConfirmed styling exactly. -->
+                    <table th:if="${paymentPhases != null and !paymentPhases.empty and paymentPhases.size > 1}"
+                      role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <div th:text="#{fewMoreDetails.paymentScheduleLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:10px;">
+                            Terms of payment
+                          </div>
+                          <div th:each="phase, it : ${paymentPhases}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13px; color:#0f172a; line-height:1.65; padding:4px 0;">
+                            <span style="font-weight:700; color:#475569;" th:text="${it.count} + '.'">1.</span>
+                            <span style="font-weight:600;" th:text="${phase.label}">Deposit payment</span>
+                            <span th:style="${phase.isPaid ? 'font-weight:700; color:#10b981; text-decoration:line-through;' : 'font-weight:700; color:#2856ff;'}"
+                              th:text="' ' + ${phase.amountLabel}"> 2,340.40 &#8364;</span>
+                            <span style="color:#64748b;"
+                              th:text="' ' + #{fewMoreDetails.dueByLabel(${phase.deadlineLabel})}"> due by 8 May 2026</span>
+                            <span th:if="${phase.isPaid}"
+                              style="display:inline-block; margin-left:6px; padding:1px 7px; border-radius:999px; background-color:#dcfce7; color:#15803d; font-size:10px; font-weight:700; letter-spacing:0.04em;"
+                              th:text="#{fewMoreDetails.paidLabel}">Paid</span>
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer (only if payment schedule rendered) -->
+                    <table th:if="${paymentPhases != null and !paymentPhases.empty and paymentPhases.size > 1}"
+                      role="presentation" width="100%"><tr><td style="height:18px; font-size:0; line-height:18px;">&#160;</td></tr></table>
+
+                    <!-- EXTRAS - bundled in base price -->
+                    <table th:if="${extrasInBase != null and !extrasInBase.empty}" role="presentation" width="100%"
+                      cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <div th:text="#{fewMoreDetails.extrasInBaseLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:10px;">
+                            Included in your booking
+                          </div>
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr th:each="ex, it : ${extrasInBase}">
+                              <td style="padding:6px 0;">
+                                <div
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:13px; color:#0f172a;">
+                                  <span th:text="${ex.name}">Transit log</span>
+                                  <span th:if="${ex.obligatory}"
+                                    style="display:inline-block; margin-left:6px; padding:2px 7px; border-radius:999px; background-color:#eef3ff; color:#1e3a8a; font-size:10px; font-weight:700; letter-spacing:0.04em;"
+                                    th:text="#{fewMoreDetails.tagMandatory}">Required</span>
+                                </div>
+                              </td>
+                              <td align="right" style="padding:6px 0;">
+                                <span
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:13px; color:#0f172a;"
+                                  th:text="${ex.priceLabel}">500 &#8364;</span>
+                                <span th:if="${ex.unitLabel != null and !ex.unitLabel.empty}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:11px; color:#94a3b8;"
+                                  th:text="' &#183; ' + ${ex.unitLabel}"> &#183; Per booking</span>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table th:if="${extrasInBase != null and !extrasInBase.empty}" role="presentation" width="100%"><tr><td style="height:14px; font-size:0; line-height:14px;">&#160;</td></tr></table>
+
+                    <!-- EXTRAS - pay at the marina (already on the reservation but settled on-site) -->
+                    <table th:if="${extrasOnSite != null and !extrasOnSite.empty}" role="presentation" width="100%"
+                      cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <div th:text="#{fewMoreDetails.extrasOnSiteLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:10px;">
+                            Pay at the marina
+                          </div>
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr th:each="ex, it : ${extrasOnSite}">
+                              <td style="padding:6px 0;">
+                                <div
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:13px; color:#0f172a;">
+                                  <span th:text="${ex.name}">Tourist tax</span>
+                                  <span th:if="${ex.obligatory}"
+                                    style="display:inline-block; margin-left:6px; padding:2px 7px; border-radius:999px; background-color:#eef3ff; color:#1e3a8a; font-size:10px; font-weight:700; letter-spacing:0.04em;"
+                                    th:text="#{fewMoreDetails.tagMandatory}">Required</span>
+                                </div>
+                              </td>
+                              <td align="right" style="padding:6px 0;">
+                                <span
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:13px; color:#0f172a;"
+                                  th:text="${ex.priceLabel}">1.50 &#8364;</span>
+                                <span th:if="${ex.unitLabel != null and !ex.unitLabel.empty}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:11px; color:#94a3b8;"
+                                  th:text="' &#183; ' + ${ex.unitLabel}"> &#183; Per night</span>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table th:if="${extrasOnSite != null and !extrasOnSite.empty}" role="presentation" width="100%"><tr><td style="height:14px; font-size:0; line-height:14px;">&#160;</td></tr></table>
+
+                    <!-- AVAILABLE AT MARINA - yacht-level catalog of optional add-ons
+                         the customer hasn't picked yet. -->
+                    <table th:if="${availableAtMarina != null and !availableAtMarina.empty}" role="presentation"
+                      width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#fafbff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <div th:text="#{fewMoreDetails.availableAtMarinaLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:6px;">
+                            Also available at the marina
+                          </div>
+                          <div th:text="#{fewMoreDetails.availableAtMarinaSub}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#64748b; line-height:1.5; padding-bottom:10px;">
+                            Add-ons you can request at pickup.
+                          </div>
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr th:each="ex, it : ${availableAtMarina}">
+                              <td style="padding:5px 0;">
+                                <span
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#0f172a;"
+                                  th:text="${ex.name}">Stand-up paddle</span>
+                              </td>
+                              <td align="right" style="padding:5px 0;">
+                                <span
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:13px; color:#475569;"
+                                  th:text="${ex.priceLabel}">150 &#8364;</span>
+                                <span th:if="${ex.unitLabel != null and !ex.unitLabel.empty}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:11px; color:#94a3b8;"
+                                  th:text="' &#183; ' + ${ex.unitLabel}"> &#183; Per week</span>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table th:if="${availableAtMarina != null and !availableAtMarina.empty}" role="presentation" width="100%"><tr><td style="height:14px; font-size:0; line-height:14px;">&#160;</td></tr></table>
+
+                    <!-- CANCELLATION POLICY - shared keys with fewMoreDetails. -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <div th:text="#{fewMoreDetails.cancellationLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:6px;">
+                            Cancellation policy
+                          </div>
+                          <div
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#334155; line-height:1.6;">
+                            <span th:text="#{fewMoreDetails.cancellationBody}">
+                              Cancellation terms are set by the charter operator and detailed in the contract you'll receive at check-in.
+                            </span>
+                            <a th:href="${tncUrl}" target="_blank" th:text="#{fewMoreDetails.cancellationLink}"
+                              style="color:#2856ff; font-weight:600; text-decoration:none;">View Terms &amp; Conditions &#8594;</a>
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:18px; font-size:0; line-height:18px;">&#160;</td></tr></table>
+
+                    <!-- CTA -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td align="center" style="padding:0 0 8px 0;">
+                          <!--[if mso]>
+                            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                              th:href="${reservationUrl}" style="height:46px; v-text-anchor:middle; width:240px;"
+                              arcsize="22%" stroke="f" fillcolor="#2856ff">
+                              <w:anchorlock/>
+                              <center style="color:#ffffff; font-family:Arial,sans-serif; font-size:15px; font-weight:bold;">
+                                Pay now
+                              </center>
+                            </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a th:href="${reservationUrl}" th:text="#{paymentPending.cta}" target="_blank"
+                            style="display:inline-block; padding:13px 26px; border-radius:10px; background-color:#2856ff; color:#ffffff; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; font-weight:600; line-height:1; text-decoration:none; box-shadow:0 1px 0 rgba(20,24,87,0.2);">
+                            Pay now
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- First-time access hint -->
+                    <div th:text="#{paymentPending.ctaHint}"
+                      style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b; text-align:center; line-height:1.5; margin-top:6px;">
+                      First time? Set your password using the welcome email we sent so you can sign in.
                     </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
 
-                <!-- Email -->
-                <div class="u-col u-col-50" style="
-                      max-width: 320px;
-                      min-width: 250px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="
-                        height: 100%;
-                        width: 100% !important;
-                        border-radius: 0px;
-                        -webkit-border-radius: 0px;
-                        -moz-border-radius: 0px;
-                      ">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                          border-radius: 0px;
-                          -webkit-border-radius: 0px;
-                          -moz-border-radius: 0px;
-                        ">
-                      <!--<![endif]-->
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
 
-                      <table style="font-family: 'Raleway', sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 10px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <div style="text-align: center">
-                                <a href="mailto:info@boat4you.com" style="
-                                      text-decoration: none;
-                                      color: #292929;
-                                      font-family: 'Raleway', sans-serif;
-                                      font-size: 14px;
-                                    ">
-                                  <table role="presentation" style="
-                                        display: inline-table;
-                                        vertical-align: middle;
-                                      " cellpadding="0" cellspacing="0" border="0">
-                                    <tr>
-                                      <td style="
-                                            vertical-align: middle;
-                                            padding-right: 8px;
-                                          ">
-                                        <img src="cid:emailIcon" alt="Email" width="20" height="20"
-                                          style="display: block; border: 0" />
-                                      </td>
-                                      <td style="
-                                            vertical-align: middle;
-                                            color: #292929;
-                                            font-family: 'Raleway', sans-serif;
-                                            font-size: 14px;
-                                          ">
-                                        info@boat4you.com
-                                      </td>
-                                    </tr>
-                                  </table>
-                                </a>
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+          <!-- FOOTER (outside white sheet) -->
+          <tr>
+            <td class="footer" align="center" style="padding:28px 32px 0 32px;">
 
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td></tr></table></td></tr></table><![endif]-->
+              
+
+              <!-- Footer logo — navy badge wrapping the cid:logo PNG used in the header. -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center"
+                style="margin:0 auto 12px auto;">
+                <tr>
+                  <td bgcolor="#141857" style="background-color:#141857; padding:8px 14px; border-radius:8px;">
+                    <img src="cid:boat4youLogoFull" alt="Boat4You" width="100" height="25"
+                      style="display:block; border:0; outline:none; text-decoration:none;" />
+                  </td>
+                </tr>
+              </table>
+
+              <div class="footer-line"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#64748b; margin:0 0 8px 0;">
+                <a href="https://www.boat4you.com" target="_blank"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">www.boat4you.com</a>
+                <span style="color:#94a3b8;">&#160;&#183;&#160;</span>
+                <a href="mailto:info@boat4you.com"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">info@boat4you.com</a>
+                <span style="color:#94a3b8;">&#160;&#183;&#160;</span>
+                <a href="tel:+385913000009" style="color:#2856ff; font-weight:700; text-decoration:none;; white-space: nowrap;">+385&nbsp;91&nbsp;3000&nbsp;009</a>
               </div>
-            </div>
-          </div>
 
-          <!-- FOOTER SECTION -->
-          <div class="u-row-container" style="padding: 0px; background-color: transparent">
-            <div class="u-row" style="
-                  margin: 0 auto;
-                  min-width: 320px;
-                  max-width: 500px;
-                  overflow-wrap: break-word;
-                  word-wrap: break-word;
-                  word-break: break-word;
-                  background-color: transparent;
-                ">
-              <div style="
-                    border-collapse: collapse;
-                    display: table;
-                    width: 100%;
-                    height: 100%;
-                    background-color: transparent;
-                  ">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <div class="u-col u-col-100" style="
-                      max-width: 320px;
-                      min-width: 500px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="
-                        background-color: #141857;
-                        height: 100%;
-                        width: 100% !important;
-                        border-radius: 0px;
-                        -webkit-border-radius: 0px;
-                        -moz-border-radius: 0px;
-                      ">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                          border-radius: 0px;
-                          -webkit-border-radius: 0px;
-                          -moz-border-radius: 0px;
-                        ">
-                      <!--<![endif]-->
-
-                      <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 24px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                                <tr>
-                                  <td style="
-                                        padding-right: 0px;
-                                        padding-left: 0px;
-                                      " align="center">
-                                    <a th:href="${publicUrl}" target="_blank">
-                                      <img align="center" border="0" src="cid:boat4youLogoFull" alt=""
-                                        title="Boat4You Logo" style="
-                                            outline: none;
-                                            text-decoration: none;
-                                            -ms-interpolation-mode: bicubic;
-                                            clear: both;
-                                            display: inline-block !important;
-                                            border: none;
-                                            height: auto;
-                                            float: none;
-                                            width: 30%;
-                                            max-width: 135.6px;
-                                          " width="135.6" />
-                                    </a>
-                                  </td>
-                                </tr>
-                              </table>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td></tr></table></td></tr></table><![endif]-->
+              <div class="footer-line" th:text="#{email.footer.legal(${currentYear})}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                &#169; 2026 Boat4You &#183; Cusmanich d.o.o., Split, Croatia
               </div>
-            </div>
-          </div>
+              <div class="footer-line" th:text="#{email.footer.notice}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:11px; line-height:1.7; color:#94a3b8;">
+                You're receiving this because of activity on your Boat4You account.
+              </div>
 
-          <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
-        </td>
-      </tr>
-    </tbody>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
   </table>
-  <!--[if mso]></div><![endif]-->
-  <!--[if IE]></div><![endif]-->
+
 </body>
 
 </html>

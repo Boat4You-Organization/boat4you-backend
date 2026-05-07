@@ -1,8 +1,10 @@
 package hr.workspace.boat4you.domains.catalouge.controllers
 
+import hr.workspace.boat4you.domains.branding.BrandResolver
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryDto
 import hr.workspace.boat4you.domains.catalouge.services.InquiryEmailService
 import hr.workspace.boat4you.domains.catalouge.services.InquiryMutationService
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.validation.Valid
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -12,6 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 
 @Validated
@@ -20,12 +23,18 @@ import org.springframework.web.bind.annotation.RestController
 class InquiryController(
     private val inquiryMutationService: InquiryMutationService,
     private val inquiryEmailService: InquiryEmailService,
+    private val brandResolver: BrandResolver,
 ) {
     @PostMapping()
     fun createInquiry(
         @RequestBody @Valid inquiryDto: InquiryDto,
+        request: HttpServletRequest,
     ): ResponseEntity<Unit> {
-        return ResponseEntity.ok(inquiryMutationService.createNewInquiry(inquiryDto))
+        // Pass request through so the mutation layer can resolve the
+        // active brand from `X-Boat4You-Brand` (or Origin/Referer
+        // fallback) and dispatch the broker notification email to that
+        // brand's recipient mailbox.
+        return ResponseEntity.ok(inquiryMutationService.createNewInquiry(inquiryDto, request))
     }
 
     /** Render the new-inquiry notification email as raw HTML for browser
@@ -37,8 +46,14 @@ class InquiryController(
     @GetMapping("/{id}/email-preview", produces = [MediaType.TEXT_HTML_VALUE])
     fun previewInquiryEmail(
         @PathVariable id: Long,
+        @RequestParam(name = "brand", required = false) brandId: String?,
     ): ResponseEntity<String> {
-        return ResponseEntity.ok(inquiryEmailService.renderPreview(id))
+        // Optional `?brand=` query param lets Mario eyeball each brand's
+        // render without sending real email — picks up the per-brand logo,
+        // From line, recipient mailbox, support contacts, accent colour
+        // out of BrandRegistry. Defaults to Boat4You when unspecified.
+        val brand = brandId?.let { brandResolver.resolveById(it) }
+        return ResponseEntity.ok(inquiryEmailService.renderPreview(id, brand))
     }
 
     /** Force-send the new-inquiry notification email for an existing

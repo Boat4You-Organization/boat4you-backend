@@ -23,6 +23,16 @@ interface OfferRepository : JpaRepository<Offer, Long> {
 
     fun findAllByYacht(yacht: Yacht): List<Offer>
 
+    @Query(
+        """
+        SELECT o FROM Offer o
+        WHERE o.yacht.agency.id = :agencyId
+    """,
+    )
+    fun findAllByYachtAgencyId(
+        @Param("agencyId") agencyId: Long,
+    ): List<Offer>
+
     /**
      * This can be cached because sequential requests should change on data for different time periods, ie no update of the same data
      */
@@ -77,6 +87,22 @@ interface OfferRepository : JpaRepository<Offer, Long> {
         @Param("dateFrom") dateFrom: LocalDate,
         @Param("dateTo") dateTo: LocalDate,
         @Param("offerType") offerType: OfferType,
+    ): List<Offer>
+
+    @Query(
+        """
+        SELECT o FROM Offer o
+        LEFT JOIN FETCH o.offerPaymentPlans
+        WHERE o.yacht.id = :yachtId
+        AND o.dateFrom = :dateFrom
+        AND o.dateTo = :dateTo
+        ORDER BY o.id ASC
+    """,
+    )
+    fun findByYachtIdAndDatesWithPaymentPlans(
+        @Param("yachtId") yachtId: Long,
+        @Param("dateFrom") dateFrom: LocalDate,
+        @Param("dateTo") dateTo: LocalDate,
     ): List<Offer>
 
     @Modifying

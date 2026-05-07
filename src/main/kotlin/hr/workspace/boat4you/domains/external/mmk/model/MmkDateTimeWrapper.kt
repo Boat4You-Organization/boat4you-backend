@@ -15,7 +15,13 @@ class MmkDateTimeWrapper(
 
     @JsonValue
     fun getFormattedDate(): String? {
-        return value?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+        // MMK swagger DateTime example is `"2019-01-01T00:00:00"` — no
+        // fractional seconds. ISO_LOCAL_DATE_TIME produces nanos when the
+        // backing LocalDateTime carries them (createOption sets endDate
+        // via LocalTime.MAX = 23:59:59.999999999), and MMK silently
+        // rejects those with a generic "Yacht not available in period."
+        // instead of a parse error. Drop nanos before formatting.
+        return value?.withNano(0)?.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
     }
 
     init {

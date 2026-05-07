@@ -192,6 +192,19 @@ class YachtMutationService(
         yacht.vesselType = customYachtRequest.vesselType
         yacht.crewNumber = customYachtRequest.crewNumber
 
+        // Bind the yacht to the marina-tier Location the admin picked. Both
+        // branches of yacht_search_view read `location_from` (= yacht.location_id
+        // for custom yachts), and the search predicate adds the parent country/
+        // region id alongside the expanded marina list — so a yacht pinned to
+        // marina id 1234 shows up under that marina, its region, and its
+        // country search pages without further work. Earlier this used the
+        // countryId, but Country.id and Location.id are independent BIGSERIAL
+        // spaces — picking 86 as a country routinely landed the yacht on a
+        // random unrelated marina (e.g. Asker Marina in Norway).
+        yacht.location = locationRepository.getReferenceById(
+            customYachtRequest.locationId.replace("l-", "", true).toLong(),
+        )
+
         return yacht
     }
 
@@ -229,6 +242,9 @@ class YachtMutationService(
         customYachtDetails.country =
             countryRepository.getReferenceById(customYachtRequest.countryId.replace("c-", "", true).toLong())
         customYachtDetails.priceDescription = customYachtRequest.priceDescription
+        customYachtDetails.amenitiesText = customYachtRequest.amenitiesText
+        customYachtDetails.toysText = customYachtRequest.toysText
+        customYachtDetails.engineText = customYachtRequest.engineText
 
         return customYachtDetails
     }

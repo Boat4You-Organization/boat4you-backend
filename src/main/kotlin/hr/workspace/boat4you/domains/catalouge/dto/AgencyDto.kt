@@ -40,6 +40,15 @@ data class AgencyDto(
     val director: String? = null,
     @get:JsonProperty("skipExternalSystem")
     val skipExternalSystem: Boolean? = null,
+    @get:JsonProperty("recommended")
+    val recommended: Boolean? = null,
     @get:JsonProperty("primarySource")
     val primarySource: ExternalSystemEnum?,
+    /** All sources the agency is synced from (MMK, NauSys, ...). The single
+     *  `primarySource` above is kept for backwards-compatibility and for
+     *  reservation flow (which always targets one canonical source); this
+     *  array surfaces every external system row in `agency_source` so the
+     *  admin UI can render and let Mario block specific sources. */
+    @get:JsonProperty("sources")
+    val sources: List<ExternalSystemEnum> = emptyList(),
 )

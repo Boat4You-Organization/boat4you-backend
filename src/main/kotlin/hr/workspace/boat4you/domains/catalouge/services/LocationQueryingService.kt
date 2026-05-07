@@ -123,6 +123,11 @@ class LocationQueryingService(
         return locationViewRepository.getRegions(countryCode).map { it.toLocationViewDto() }
     }
 
+    @Cacheable("marinasByCountryCache")
+    fun getMarinas(countryCode: String): List<LocationViewDto> {
+        return locationViewRepository.getMarinas(countryCode).map { it.toLocationViewDto() }
+    }
+
     @Cacheable("countriesCountCache")
     fun getCountriesCount(): List<LocationCountDto> {
         return yachtLocationsViewRepository.getCountriesCount().map { row ->
@@ -139,6 +144,29 @@ class LocationQueryingService(
     @Cacheable("locationsCountCache")
     fun getLocationsCount(): List<LocationCountDto> {
         return yachtLocationsViewRepository.getLocationsCount().map { row ->
+            LocationCountDto(
+                id = "l-" + (row[0] as Long).toString(),
+                countryCode = row[1] as String,
+                yachtCount = (row[2] as Number).toInt(),
+                name = row[3] as String,
+                continent = row[4] as String,
+            )
+        }
+    }
+
+    /**
+     * Locations (with yacht counts) restricted to a single region.
+     * Powers the "Most popular destinations in {region}" internal-link
+     * block — without this filter the block would have to dump all of
+     * Croatia's marinas instead of just the ones in Split region.
+     *
+     * Cached per region — the underlying view is rebuilt on yacht sync
+     * (~daily) so a 5-min cache is safe and saves a DB round-trip on
+     * every search-page render.
+     */
+    @Cacheable(value = ["locationsCountByRegionCache"])
+    fun getLocationsCountByRegion(regionId: Long): List<LocationCountDto> {
+        return yachtLocationsViewRepository.getLocationsCountByRegion(regionId).map { row ->
             LocationCountDto(
                 id = "l-" + (row[0] as Long).toString(),
                 countryCode = row[1] as String,

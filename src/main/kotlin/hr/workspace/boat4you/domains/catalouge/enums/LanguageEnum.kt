@@ -15,6 +15,8 @@ enum class LanguageEnum(
     IT("ITALIAN", "it"),
     ES("SPANISH", "es"),
     HR("CROATIAN", "hr"),
+    PL("POLISH", "pl"),
+    NL("DUTCH", "nl"),
     ;
 
     companion object {

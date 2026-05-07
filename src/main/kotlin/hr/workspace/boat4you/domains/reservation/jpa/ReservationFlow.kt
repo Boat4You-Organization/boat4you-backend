@@ -118,6 +118,18 @@ open class ReservationFlow {
     @Column(name = "cancelation_request_at")
     open var cancelationRequestAt: LocalDateTime? = null
 
+    /** Set by the admin when a cancellation request is refused — typically because
+     *  the charter agency's policy doesn't allow cancellation, or the partner
+     *  reservation status doesn't support it. Stamping these fields does NOT
+     *  flip the reservation to CANCELLED — the booking stays in BOOKING/CONFIRMED.
+     *  Original `cancelationRequest` + `cancelationRequestAt` are preserved as
+     *  history. */
+    @Column(name = "cancelation_rejected_at")
+    open var cancelationRejectedAt: LocalDateTime? = null
+
+    @Column(name = "cancelation_rejected_reason", columnDefinition = "TEXT")
+    open var cancelationRejectedReason: String? = null
+
     @ManyToOne(fetch = FetchType.LAZY)
     @OnDelete(action = OnDeleteAction.RESTRICT)
     @JoinColumn(name = "previous_flow_id")

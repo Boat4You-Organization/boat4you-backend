@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.external.nausys.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
+import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.model.ReservationData
@@ -49,7 +50,11 @@ class NausysReservationIntegrationService(
         return toResponseWrapper(reservationResponse)
     }
 
-    fun createOption(reservationData: ReservationData): ReservationResponseWrapper {
+    fun createOption(
+        reservationData: ReservationData,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
+    ): ReservationResponseWrapper {
         log.info("Creating Nausys reservation for yachtId: ${reservationData.externalYachtId}")
         val nausysInfoRequest =
             RestYachtReservationInfoRequest(
@@ -81,12 +86,14 @@ class NausysReservationIntegrationService(
             )
         val reservationResponse = nauSysRetryableClient.createOption(optionRequest)
 
-        return toResponseWrapper(reservationResponse)
+        return toResponseWrapper(reservationResponse, fallbackLocationFrom, fallbackLocationTo)
     }
 
     fun confirmReservation(
         nausysReservationId: Long,
         nausysReservationUUID: String,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
     ): ReservationResponseWrapper {
         val bookingRequest =
             RestYachtReservationBookingRequest(
@@ -95,12 +102,14 @@ class NausysReservationIntegrationService(
                 uuid = nausysReservationUUID,
             )
         val reservationResponse = nauSysRetryableClient.confirmReservation(bookingRequest)
-        return toResponseWrapper(reservationResponse)
+        return toResponseWrapper(reservationResponse, fallbackLocationFrom, fallbackLocationTo)
     }
 
     fun cancelOption(
         nausysReservationId: Long,
         nausysReservationUUID: String,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
     ): ReservationResponseWrapper {
         val stornoRequest =
             RestYachtReservationRequest(
@@ -109,20 +118,30 @@ class NausysReservationIntegrationService(
                 uuid = nausysReservationUUID,
             )
         val reservationResponse = nauSysRetryableClient.stornoOption(stornoRequest)
-        return toResponseWrapper(reservationResponse)
+        return toResponseWrapper(reservationResponse, fallbackLocationFrom, fallbackLocationTo)
     }
 
-    private fun toResponseWrapper(reservationResponse: RestYachtReservation): ReservationResponseWrapper {
+    private fun toResponseWrapper(
+        reservationResponse: RestYachtReservation,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
+    ): ReservationResponseWrapper {
+        // Orphan external_mapping rows (e.g. after a Location dedup) leave the
+        // partner→our-location lookup returning null even though a live Location
+        // exists for the yacht. Fall back to the offer's persisted location so
+        // booking flow doesn't NPE on the response wrapper.
         val locationFrom =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.locationFromId!!,
                 ExternalSystemEnum.NAUSYS.value.toLong(),
-            )!!
+            ) ?: fallbackLocationFrom
+                ?: error("No Location for NauSys locationFromId=${reservationResponse.locationFromId} and no fallback supplied")
         val locationTo =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.locationToId!!,
                 ExternalSystemEnum.NAUSYS.value.toLong(),
-            )!!
+            ) ?: fallbackLocationTo
+                ?: error("No Location for NauSys locationToId=${reservationResponse.locationToId} and no fallback supplied")
 
         val totalDiscount = reservationResponse.discounts?.sumOf { it.amount!!.toBigDecimal() } ?: BigDecimal.ZERO
         val agencyCommission =

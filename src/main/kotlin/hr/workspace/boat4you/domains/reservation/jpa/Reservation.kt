@@ -159,20 +159,20 @@ open class Reservation {
     @Column(name = "total_price", nullable = false)
     open var totalPrice: BigDecimal? = null
 
-    @Size(max = 500)
-    @Column(name = "payment_note", length = 500)
+    @Size(max = 2000)
+    @Column(name = "payment_note", length = 2000)
     open var paymentNote: String? = null
 
     @Size(max = 3)
     @Column(name = "currency", length = 3)
     open var currency: String? = null
 
-    @Size(max = 200)
-    @Column(name = "bank_details", length = 200)
+    @Size(max = 2000)
+    @Column(name = "bank_details", length = 2000)
     open var bankDetails: String? = null
 
-    @Size(max = 500)
-    @Column(name = "note", length = 500)
+    @Size(max = 2000)
+    @Column(name = "note", length = 2000)
     open var note: String? = null
 
     @Column(name = "discount")

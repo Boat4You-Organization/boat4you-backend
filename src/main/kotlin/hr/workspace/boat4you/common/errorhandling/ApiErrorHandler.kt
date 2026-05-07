@@ -417,7 +417,10 @@ internal class ApiErrorHandler {
 
     @ExceptionHandler(ExternalOptionException::class)
     fun handleExternalOptionException(e: ExternalOptionException): ResponseEntity<ErrorSchema> {
-        logger.error("Handling ExternalOptionException\n${e.stackTraceToString()}")
+        // Always log the partner-supplied reason (yacht not available, illegal
+        // access, etc.) for backend debugging. The customer toast intentionally
+        // shows only the generic apology defined on the enum — Mario's call.
+        logger.error("Handling ExternalOptionException (cause: ${e.message})\n${e.stackTraceToString()}")
         return ResponseEntity(
             ErrorSchema(
                 ApiErrorCodes.EXTERNAL_OPTION_ERROR.code,

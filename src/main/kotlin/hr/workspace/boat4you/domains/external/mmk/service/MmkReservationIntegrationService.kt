@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.external.mmk.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
+import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.exceptions.ExternalCancellationException
@@ -24,6 +25,7 @@ import org.openapitools.client.mmk.model.ReservationResponse
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpStatusCodeException
 import java.math.BigDecimal
 
 @Service
@@ -47,7 +49,11 @@ class MmkReservationIntegrationService(
         }
     }
 
-    fun createOption(reservationData: ReservationData): ReservationResponseWrapper {
+    fun createOption(
+        reservationData: ReservationData,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
+    ): ReservationResponseWrapper {
         val reservationRequest =
             Reservation(
                 dateFrom =
@@ -61,18 +67,31 @@ class MmkReservationIntegrationService(
                 clientName = reservationData.getFullName(),
                 yachtId = reservationData.externalYachtId,
             )
-        log.info("Creating MMK reservation for yachtId: $reservationData.externalYachtId with request: $reservationRequest")
+        log.info("Creating MMK reservation for yachtId: ${reservationData.externalYachtId} with request: $reservationRequest")
 
         return try {
             val reservationResponse = mmkRetryableClient.createOption(reservationRequest)
-            toResponseWrapper(reservationResponse, null)
+            toResponseWrapper(reservationResponse, null, fallbackLocationFrom, fallbackLocationTo)
+        } catch (e: HttpStatusCodeException) {
+            // Surface partner's exact reason in the log so we can debug it
+            // (e.g. `"Yacht not available in period."`). The exception message
+            // also carries the partner reason — ApiErrorHandler logs it as
+            // `cause: ...` for backend audit, but the customer-facing toast
+            // is overridden to a generic apology (see ApiErrorCodes).
+            val partnerMsg = e.responseBodyAsString.trim().removeSurrounding("\"")
+            log.error("Error creating MMK option (yachtId={}, partner response: {})", reservationData.externalYachtId, partnerMsg, e)
+            throw ExternalOptionException("MMK: ${partnerMsg.ifBlank { "rejected option" }}")
         } catch (e: Exception) {
-            log.error("Error creating MMK option", e)
+            log.error("Error creating MMK option (yachtId={})", reservationData.externalYachtId, e)
             throw ExternalOptionException("Failed to create MMK option for yachtId: ${reservationData.externalYachtId}")
         }
     }
 
-    fun confirmReservation(mmkReservationId: Long): ReservationResponseWrapper {
+    fun confirmReservation(
+        mmkReservationId: Long,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
+    ): ReservationResponseWrapper {
         return try {
             val reservationResponse = mmkRetryableClient.confirmReservation(mmkReservationId)
             val crewListLinkResponse =
@@ -83,17 +102,21 @@ class MmkReservationIntegrationService(
                     log.error("Error fetching crew list link for MMK reservation ID: $mmkReservationId", e)
                     null
                 }
-            toResponseWrapper(reservationResponse, crewListLinkResponse)
+            toResponseWrapper(reservationResponse, crewListLinkResponse, fallbackLocationFrom, fallbackLocationTo)
         } catch (e: Exception) {
             log.error("Error confirming MMK reservation", e)
             throw ExternalReservationException("Failed to confirm MMK reservation with ID: $mmkReservationId")
         }
     }
 
-    fun cancelOption(mmkReservationId: Long): ReservationResponseWrapper {
+    fun cancelOption(
+        mmkReservationId: Long,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
+    ): ReservationResponseWrapper {
         return try {
             val reservationResponse = mmkRetryableClient.cancelOption(mmkReservationId)
-            toResponseWrapper(reservationResponse, null)
+            toResponseWrapper(reservationResponse, null, fallbackLocationFrom, fallbackLocationTo)
         } catch (e: Exception) {
             log.error("Error cancelling MMK reservation", e)
             throw ExternalCancellationException("Failed to cancel MMK reservation with ID: $mmkReservationId")
@@ -103,17 +126,25 @@ class MmkReservationIntegrationService(
     private fun toResponseWrapper(
         reservationResponse: ReservationResponse,
         crewListLink: String?,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
     ): ReservationResponseWrapper {
+        // Orphan external_mapping rows (e.g. after a Location dedup) leave the
+        // partner→our-location lookup returning null even though a live Location
+        // exists for the yacht. Fall back to the offer's persisted location so
+        // booking flow doesn't NPE on the response wrapper.
         val locationFrom =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.baseFromId,
                 ExternalSystemEnum.MMK.value.toLong(),
-            )!!
+            ) ?: fallbackLocationFrom
+                ?: error("No Location for MMK baseFromId=${reservationResponse.baseFromId} and no fallback supplied")
         val locationTo =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.baseToId,
                 ExternalSystemEnum.MMK.value.toLong(),
-            )!!
+            ) ?: fallbackLocationTo
+                ?: error("No Location for MMK baseToId=${reservationResponse.baseToId} and no fallback supplied")
 
         return ReservationResponseWrapper(
             externalId = reservationResponse.id,

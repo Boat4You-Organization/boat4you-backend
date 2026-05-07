@@ -28,4 +28,7 @@ fun YachtEquipment.toDto(): YachtEquipmentDto =
         id = id!!,
         name = name,
         equipment = equipment?.toDto(),
+        highlight = highlight,
+        quantity = quantity,
+        comment = comment,
     )

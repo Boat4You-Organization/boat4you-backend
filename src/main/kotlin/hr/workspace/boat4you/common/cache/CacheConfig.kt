@@ -78,6 +78,19 @@ class CacheConfig {
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
                     .build()
 
+            // Per-region locations cache — keyed by `Region.id` (Long, not
+            // SimpleKey, because the @Cacheable method takes a single
+            // primitive arg). Pool sized for ~100 distinct regions across
+            // all countries we sync; in practice we have ~30 today.
+            val locationsCountByRegionCache =
+                CacheConfigurationBuilder
+                    .newCacheConfigurationBuilder(
+                        java.lang.Long::class.java,
+                        List::class.java,
+                        hundredEntryResourcePool,
+                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
+                    .build()
+
             val usedVesselTypesCache =
                 CacheConfigurationBuilder
                     .newCacheConfigurationBuilder(
@@ -245,6 +258,18 @@ class CacheConfig {
                         hundredEntryResourcePool,
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
                     .build()
+            // Same shape as regionsCache — keyed by 2-letter countryCode, holds
+            // the LocationViewDto list of marinas. 10h TTL is plenty since
+            // marinas are added to the catalogue rarely; if a new one shows up
+            // mid-day the admin form sees it after the cache rolls over.
+            val marinasByCountryCache =
+                CacheConfigurationBuilder
+                    .newCacheConfigurationBuilder(
+                        String::class.java,
+                        List::class.java,
+                        hundredEntryResourcePool,
+                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
+                    .build()
             val seasonsCache =
                 CacheConfigurationBuilder
                     .newCacheConfigurationBuilder(
@@ -266,6 +291,10 @@ class CacheConfig {
             cacheManager.createCache(
                 "locationsCountCache",
                 Eh107Configuration.fromEhcacheCacheConfiguration(locationsCountCache),
+            )
+            cacheManager.createCache(
+                "locationsCountByRegionCache",
+                Eh107Configuration.fromEhcacheCacheConfiguration(locationsCountByRegionCache),
             )
             cacheManager.createCache(
                 "usedVesselTypesCache",
@@ -321,6 +350,10 @@ class CacheConfig {
             )
             cacheManager.createCache("extrasFilter", Eh107Configuration.fromEhcacheCacheConfiguration(extrasFilter))
             cacheManager.createCache("regionsCache", Eh107Configuration.fromEhcacheCacheConfiguration(regionsCache))
+            cacheManager.createCache(
+                "marinasByCountryCache",
+                Eh107Configuration.fromEhcacheCacheConfiguration(marinasByCountryCache),
+            )
             cacheManager.createCache("seasonsCache", Eh107Configuration.fromEhcacheCacheConfiguration(seasonsCache))
         }
     }

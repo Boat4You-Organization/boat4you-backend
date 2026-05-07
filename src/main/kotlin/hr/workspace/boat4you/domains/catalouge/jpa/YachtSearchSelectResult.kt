@@ -22,6 +22,10 @@ data class YachtSearchSelectResult(
     val sumLocations: Long?,
     val charterType: CharterType,
     val locationFullName: String,
+    /** Drop-off location encoded same as `locationFullName`. Same as
+     *  `locationFullName` for non-one-way offers; differs for one-way
+     *  charters where pickup and drop-off marinas are not the same. */
+    val locationToFullName: String?,
     val clientPrice: BigDecimal?,
     val listPrice: BigDecimal?,
     /** Broker commission per day, min over matching offers (same shape as client/list). */

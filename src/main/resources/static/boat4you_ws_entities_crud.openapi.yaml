@@ -1832,6 +1832,8 @@ components:
         - IT
         - ES
         - HR
+        - PL
+        - NL
     CurrencyEnum:
       type: string
       enum:
@@ -1891,6 +1893,11 @@ components:
           type: string
           description: Optional country. Some charter agencies require it on the reservation.
           example: Croatia
+        birthday:
+          type: string
+          format: date
+          description: Optional date of birth. Used by the annual birthday-greeting cron — month + day are matched, the year is informational.
+          example: 1990-03-15
         language:
           type: string
           $ref: '#/components/schemas/LanguageEnum'

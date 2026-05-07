@@ -105,6 +105,20 @@ open class YachtExtra {
     @Column(name = "payment_type")
     open var paymentType: ExtraPaymentType? = null
 
+    /**
+     * True when this extras row's `validFrom..validTo` window overlaps the
+     * `[bookingFrom, bookingTo]` charter dates. Treats either bound being
+     * null as "always valid on that side". Used by reservation mappers to
+     * hide partner price rows that belong to a different season/year so
+     * customers don't see a mix of 2026/2027/2028 prices on a single
+     * booking. Mario rule (3.5.2026): partner mijenja cijene po periodu.
+     */
+    fun appliesToPeriod(bookingFrom: java.time.LocalDate, bookingTo: java.time.LocalDate): Boolean {
+        val fromOk = validFrom?.let { !it.isAfter(bookingTo) } ?: true
+        val toOk = validTo?.let { !it.isBefore(bookingFrom) } ?: true
+        return fromOk && toOk
+    }
+
     fun shouldDisplay(): Boolean {
         // Show ANY extras the partner sent — old filter required either
         // (a) match against the b4y canonical catalogue (extrasId != null), or

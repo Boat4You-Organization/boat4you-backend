@@ -62,6 +62,18 @@ class LocationController(
         return ResponseEntity.ok(locationQueryingService.getRegions(countryCode))
     }
 
+    @Operation(
+        description = "Get every marina inside a given country (no yacht-count filter). " +
+            "Powers the admin custom-yacht form's marina autocomplete — admin must be able " +
+            "to pin a custom yacht to a marina that doesn't yet have any yacht in our catalogue.",
+    )
+    @GetMapping("/marinas")
+    fun getMarinas(
+        @RequestParam(value = "countryCode", required = true) countryCode: String,
+    ): ResponseEntity<List<LocationViewDto>> {
+        return ResponseEntity.ok(locationQueryingService.getMarinas(countryCode))
+    }
+
     @Operation(description = "Get countries with their yacht counts. Returns only countries with yachts")
     @GetMapping("/countries-count")
     fun getCountriesCount(): List<LocationCountDto> {
@@ -70,7 +82,17 @@ class LocationController(
 
     @Operation(description = "Get locations with their yacht counts. Returns only locations with yachts")
     @GetMapping("/locations-count")
-    fun getLocationsCount(): List<LocationCountDto> {
-        return locationQueryingService.getLocationsCount()
+    fun getLocationsCount(
+        @RequestParam(value = "regionId", required = false) regionId: Long?,
+    ): List<LocationCountDto> {
+        // Optional regionId filter — used by the "Most popular destinations"
+        // block on region-level search pages (`?did=r-<regionId>`). Without
+        // the filter we keep the existing behaviour (all locations with
+        // yachts across the whole catalogue).
+        return if (regionId != null) {
+            locationQueryingService.getLocationsCountByRegion(regionId)
+        } else {
+            locationQueryingService.getLocationsCount()
+        }
     }
 }

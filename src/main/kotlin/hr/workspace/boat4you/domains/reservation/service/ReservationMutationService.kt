@@ -308,6 +308,16 @@ class ReservationMutationService(
         return reservationMappers.toReservationDto(reservationRepository.save(reservation))
     }
 
+    @Transactional
+    fun updateCrewListUrl(
+        id: Long,
+        crewListUrl: String?,
+    ): ReservationDto {
+        val reservation = reservationRepository.findById(id).getOrElse { throw ReservationNotExistException() }
+        reservation.crewListUrl = crewListUrl?.takeIf { it.isNotBlank() }
+        return reservationMappers.toReservationDto(reservationRepository.save(reservation))
+    }
+
     // Legacy generator replaced by BookingNumberService (per-charter-year
     // counter, format "1001{sequence}/{charter_year}"). Old format was
     // "{sequential prefix starting at 1001}/{current calendar year}".
@@ -324,5 +334,36 @@ class ReservationMutationService(
         reservationFlow.cancelationRequestAt = LocalDateTime.now()
 
         reservationFlowRepository.save(reservationFlow)
+    }
+
+    /**
+     * Admin-only path for "we couldn't approve this cancellation" — the
+     * customer asked to cancel via /my-bookings but the partner agency
+     * refused (their policy doesn't allow it, or partner status doesn't
+     * support cancellation any more). Stamps the rejection metadata onto
+     * the flow without touching `Reservation.sysStatus` — the booking
+     * stays active. The original `cancelationRequest` + `cancelationRequestAt`
+     * are preserved as immutable history.
+     */
+    @Transactional
+    fun rejectCancellationRequest(reservationId: Long, reason: String): Reservation {
+        val reservation = reservationRepository.findById(reservationId).orElseThrow {
+            IllegalArgumentException("Reservation $reservationId not found")
+        }
+        val flow = reservation.reservationFlow
+            ?: throw IllegalStateException("Reservation $reservationId has no flow")
+
+        require(!flow.cancelationRequest.isNullOrBlank()) {
+            "Reservation $reservationId has no pending cancellation request to reject"
+        }
+        require(flow.cancelationRejectedAt == null) {
+            "Reservation $reservationId already has a rejected cancellation request"
+        }
+        require(reason.isNotBlank()) { "Rejection reason is required" }
+
+        flow.cancelationRejectedAt = LocalDateTime.now()
+        flow.cancelationRejectedReason = reason.trim().take(2000)
+        // Reservation status stays as-is — booking remains active.
+        return reservation
     }
 }

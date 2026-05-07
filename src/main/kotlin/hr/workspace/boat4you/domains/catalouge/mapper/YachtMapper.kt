@@ -47,6 +47,13 @@ class YachtMapper(
         optionExpiresAt: java.time.LocalDateTime? = null,
     ): YachtSearchResponseDto {
         val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName)
+        // One-way charter: surface drop-off as separate DTO only when
+        // it differs from the pickup. View encodes both as `id-name-cc`
+        // strings so straight equality is enough to detect "same marina".
+        val yachtLocationTo =
+            result.locationToFullName
+                ?.takeIf { it != result.locationFullName }
+                ?.let { parseYachtSearchViewLocationName(it) }
 
         // Resolve the raw Int offer_status (from the view) into the enum for UI.
         val status =
@@ -59,6 +66,7 @@ class YachtMapper(
             slug = SlugUtils.toSlugWithId(result.manufacturerName, result.modelName, result.yachtName, result.id),
             name = result.yachtName,
             location = yachtLocation,
+            locationTo = yachtLocationTo,
             totalLocations = result.sumLocations?.toInt(),
             charterType = result.charterType,
             vesselType = result.vesselType,
@@ -93,6 +101,7 @@ class YachtMapper(
             offerDateFrom = result.offerDateFrom,
             offerDateTo = result.offerDateTo,
             optionExpiresAt = optionExpiresAt,
+            custom = result.entryType == hr.workspace.boat4you.domains.catalouge.enums.EntryType.CUSTOM,
         )
     }
 
@@ -163,9 +172,16 @@ class YachtMapper(
                     it.mainImage
                     it.position
                 },
+            // Emit every yacht_equipment row, not just rows that matched a
+            // predefined Equipment record. Partner sync (MMK / NauSys) ships
+            // ~25-30 equipment items per yacht but our Equipment table only
+            // covers a subset — historically the filter dropped everything
+            // unmatched, leaving the public Amenities tab with 6-8 items vs
+            // a competitor's 25+. Keep distinctBy keyed on equipmentId for
+            // matched rows and on name for unmatched rows so Hibernate's
+            // duplicate yacht_equipment writes still collapse cleanly.
             amenities = result.yachtEquipments
-                .filter { it.equipmentId != null }
-                .distinctBy { it.equipmentId }
+                .distinctBy { it.equipmentId ?: ("name:" + (it.name ?: "")) }
                 .map { it.toDto() },
             services = extras,
             description = description,
@@ -204,6 +220,9 @@ class YachtMapper(
                     customYachtDetail.lowPrice,
                     currency,
                 ),
+            amenitiesText = customYachtDetail.amenitiesText,
+            toysText = customYachtDetail.toysText,
+            engineText = customYachtDetail.engineText,
         )
     }
 
@@ -254,6 +273,11 @@ class YachtMapper(
             defaultCheckout = yacht.defaultCheckout,
             vesselType = yacht.vesselType,
             countryId = customYachtDetail.countryKey!!,
+            // Re-emit yacht.location.id with the `l-` marina prefix so the
+            // admin form can re-select the same marina on edit. Falls
+            // through as null for yachts created before the marina selector
+            // existed — the form treats null as "force the user to pick".
+            locationId = yacht.location?.id?.let { "l-$it" },
             lowPrice = customYachtDetail.lowPrice!!,
             videoUrl = customYachtDetail.videoUrl,
             descriptions = descriptions.associateBy({ it.language!!.locale!! }, { it.value!! }),
@@ -265,6 +289,9 @@ class YachtMapper(
                 },
             hasBrochure = if (customYachtDetail.pdfUrl.isNullOrBlank()) false else true,
             priceDescription = customYachtDetail.priceDescription,
+            amenitiesText = customYachtDetail.amenitiesText,
+            toysText = customYachtDetail.toysText,
+            engineText = customYachtDetail.engineText,
             slug = SlugUtils.toSlugWithId(yacht.model?.manufacturer?.name, yacht.model?.name, yacht.name, yacht.id!!),
         )
     }

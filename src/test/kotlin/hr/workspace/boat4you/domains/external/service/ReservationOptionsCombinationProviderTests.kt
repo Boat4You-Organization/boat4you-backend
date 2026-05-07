@@ -55,7 +55,7 @@ class ReservationOptionsCombinationProviderTests {
         val reservationOption =
             ReservationOptionsGroup(
                 start = LocalDate.of(1970, 1, 1),
-                end = LocalDate.of(2025, 9, 26),
+                end = LocalDate.of(2026, 9, 26),
                 checkinMon = false,
                 checkinTue = false,
                 checkinWed = false,

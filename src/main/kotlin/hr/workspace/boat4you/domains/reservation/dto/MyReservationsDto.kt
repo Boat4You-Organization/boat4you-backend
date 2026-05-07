@@ -29,6 +29,7 @@ data class MyReservationsDto(
     val listPriceInfo: PriceInfoDto?,
     val yachtSlug: String,
     val cancellationRequestAt: LocalDateTime?,
+    val cancellationRejectedAt: LocalDateTime? = null,
     val reservationNumber: String?,
     val agencyEmail: String?,
     val agencyPhone: String?,

@@ -1,727 +1,216 @@
-<!DOCTYPE html
-  PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
-  xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:th="http://www.thymeleaf.org">
+  xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:th="http://www.thymeleaf.org" lang="en">
 
 <head>
-  <!--[if gte mso 9]>
-      <xml>
-        <o:OfficeDocumentSettings>
-          <o:AllowPNG />
-          <o:PixelsPerInch>96</o:PixelsPerInch>
-        </o:OfficeDocumentSettings>
-      </xml>
-    <![endif]-->
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="supported-color-schemes" content="light" />
   <!--[if !mso]><!-->
   <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <!--<![endif]-->
-  <title>User invite | Boat4You</title>
+  <title>Your Boat4You account is ready</title>
+
+  <!--[if gte mso 9]>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:AllowPNG />
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  <![endif]-->
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@600;700&display=swap"
+    rel="stylesheet" type="text/css" />
 
   <style type="text/css">
-    @media only screen and (min-width: 520px) {
-      .u-row {
-        width: 500px !important;
-      }
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; background-color: #f4f6fb; }
+    a { color: #2856ff; text-decoration: none; }
+    a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; }
 
-      .u-row .u-col {
-        vertical-align: top;
-      }
-
-      .u-row .u-col-50 {
-        width: 250px !important;
-      }
-
-      .u-row .u-col-100 {
-        width: 500px !important;
-      }
-    }
-
-    @media only screen and (max-width: 520px) {
-      .u-row-container {
-        max-width: 100% !important;
-        padding-left: 0px !important;
-        padding-right: 0px !important;
-        height: auto;
-      }
-
-      .u-row {
-        width: 100% !important;
-      }
-
-      .u-row .u-col {
-        display: block !important;
-        width: 100% !important;
-        min-width: 320px !important;
-        max-width: 100% !important;
-      }
-
-      .u-row .u-col>div {
-        margin: 0 auto;
-      }
-
-      .u-row .u-col img {
-        max-width: 100% !important;
-      }
-    }
-
-    body {
-      margin: 0;
-      padding: 0;
-    }
-
-    table,
-    td,
-    tr {
-      border-collapse: collapse;
-      vertical-align: top;
-    }
-
-    p {
-      margin: 0;
-    }
-
-    .ie-container table,
-    .mso-container table {
-      table-layout: fixed;
-    }
-
-    * {
-      line-height: inherit;
-    }
-
-    a[x-apple-data-detectors="true"] {
-      color: inherit !important;
-      text-decoration: none !important;
-    }
-
-    table,
-    td {
-      color: #000000;
-    }
-
-    #u_body a {
-      color: #0000ee;
-      text-decoration: underline;
+    @media only screen and (max-width: 620px) {
+      .container { width: 100% !important; max-width: 100% !important; }
+      .sheet { padding: 24px 20px !important; }
+      .gutter { padding-left: 12px !important; padding-right: 12px !important; }
+      .hero { padding: 18px !important; }
+      .footer { padding: 24px 20px !important; }
+      .footer-line { font-size: 11px !important; }
     }
   </style>
-
-  <!--[if !mso]><!-->
-  <link href="https://fonts.googleapis.com/css?family=Raleway:400,700" rel="stylesheet" type="text/css" />
-  <!--<![endif]-->
 </head>
 
-<body class="clean-body u_body" style="
-      margin: 0;
-      padding: 0;
-      -webkit-text-size-adjust: 100%;
-      background-color: #f9f9f9;
-      color: #000000;
-    ">
+<body style="margin:0; padding:0; background-color:#f4f6fb; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; color:#0f172a;">
 
-  <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all;">
-    Welcome aboard! Accept your exclusive invitation to Boat4You.
+  <!-- Preheader (hidden inbox preview text) -->
+  <div th:text="#{userInvite.preheader}"
+    style="display:none; font-size:0; line-height:0; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+    We've saved your spot — set a password whenever you're ready.
   </div>
-  <!--[if IE]><div class="ie-container"><![endif]-->
-  <!--[if mso]><div class="mso-container"><![endif]-->
 
-  <table role="presentation" id="u_body" style="
-        border-collapse: collapse;
-        table-layout: fixed;
-        border-spacing: 0;
-        mso-table-lspace: 0pt;
-        mso-table-rspace: 0pt;
-        vertical-align: top;
-        min-width: 320px;
-        margin: 0 auto;
-        background-color: #f9f9f9;
-        width: 100%;
-      " cellpadding="0" cellspacing="0">
-    <tbody>
-      <tr style="vertical-align: top">
-        <td style="
-              word-break: break-word;
-              border-collapse: collapse !important;
-              vertical-align: top;
-            ">
-          <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="background-color: #F9F9F9;"><![endif]-->
+  <!-- Outer wrapper table fills viewport with page-bg color -->
+  <table role="presentation" align="center" border="0" cellpadding="0" cellspacing="0" width="100%"
+    style="background-color:#f4f6fb;">
+    <tr>
+      <td align="center" style="padding:0 0 28px 0;">
 
-          <!-- HEADER SECTION -->
-          <div class="u-row-container" style="padding: 0px; background-color: transparent">
-            <div class="u-row" style="
-                  margin: 0 auto;
-                  min-width: 320px;
-                  max-width: 500px;
-                  overflow-wrap: break-word;
-                  word-wrap: break-word;
-                  word-break: break-word;
-                  background-color: transparent;
-                ">
-              <div style="
-                    border-collapse: collapse;
-                    display: table;
-                    width: 100%;
-                    height: 100%;
-                    background-color: transparent;
-                  ">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
+        <!-- Container 600px -->
+        <table role="presentation" class="container" border="0" cellpadding="0" cellspacing="0" width="600"
+          style="width:600px; max-width:600px;">
 
-                <div class="u-col u-col-100" style="
-                      max-width: 320px;
-                      min-width: 500px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="height: 100%; width: 100% !important">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                        ">
-                      <!--<![endif]-->
+          <!-- HEADER BAND (navy) — official Boat4You SVG logo, wordmark fill
+               flipped to white so it stays readable on the navy background.
+               The light-blue arc (#BCD0FF) and primary-blue chevron (#2856FF)
+               keep their original brand colours. -->
+          <tr>
+            <td bgcolor="#141857" align="left" style="background-color:#141857; padding:18px 28px;">
+              <img src="cid:boat4youLogoFull" alt="Boat4You" width="138" height="35" style="display:block; border:0; outline:none; text-decoration:none;" />
+                    </td>
+          </tr>
 
-                      <!-- Logo -->
-                      <table style="
-                            font-family: arial, helvetica, sans-serif;
-                            background-color: #141857;
-                          " role="presentation" cellpadding="0" cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 34px 24px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                                <tr>
-                                  <td style="
-                                        padding-right: 0px;
-                                        padding-left: 0px;
-                                      " align="left">
-                                    <a th:href="${publicUrl}" target="_blank">
-                                      <img align="left" border="0" src="cid:boat4youLogoFull" alt=""
-                                        title="Boat4You Logo" style="
-                                            outline: none;
-                                            text-decoration: none;
-                                            -ms-interpolation-mode: bicubic;
-                                            clear: both;
-                                            display: inline-block !important;
-                                            border: none;
-                                            height: auto;
-                                            float: none;
-                                            width: 40%;
-                                            max-width: 200px;
-                                          " width="200" />
-                                    </a>
-                                  </td>
-                                </tr>
-                              </table>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
+          <!-- Spacer header -> sheet -->
+          <tr>
+            <td style="height:16px; line-height:16px; font-size:0;">&nbsp;</td>
+          </tr>
+
+          <!-- WHITE SHEET (with horizontal gutter) -->
+          <tr>
+            <td class="gutter" style="padding:0 16px 0 16px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                style="background-color:#ffffff; border-radius:12px;">
+                <tr>
+                  <td class="sheet" style="padding:28px 32px;">
+
+                    <!-- HERO (dark navy) -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="background-color:#141857; border-radius:12px;">
+                      <tr>
+                        <td class="hero" style="padding:22px;">
+                          <!-- Eyebrow -->
+                          <div th:text="#{userInvite.heroLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:1.4px; color:#fbbf24; text-transform:uppercase; margin:0 0 8px 0;">
+                            Welcome aboard
+                          </div>
+                          <!-- Headline -->
+                          <div th:text="#{userInvite.heroTitle(${fullName})}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:22px; font-weight:700; color:#ffffff; line-height:1.25; letter-spacing:-0.3px; margin:0;">
+                            Welcome aboard, Mario Kuzmanic!
+                          </div>
+                          <!-- Sub -->
+                          <div th:text="#{userInvite.heroSub}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:14px; color:#ffffff; opacity:0.75; line-height:1.5; margin:8px 0 0 0;">
+                            It's great to have you with us.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer hero -> body -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="height:24px; line-height:24px; font-size:0;">&nbsp;</td>
+                      </tr>
+                    </table>
+
+                    <!-- Body paragraph -->
+                    <p th:text="#{userInvite.body1}"
+                      style="margin:0 0 14px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; line-height:1.65; color:#334155;">
+                      We've saved your details so next time you stop by you can pick up right where you left off — your
+                      bookings, our support team, and your next charter, all one click away.
+                    </p>
+                    <p th:text="#{userInvite.body2}"
+                      style="margin:0 0 18px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; line-height:1.65; color:#334155;">
+                      As a member you'll also have extra discounts and perks at your fingertips as we roll them out.
+                    </p>
+
+                    <!-- CTA row -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="margin:8px 0 22px 0;">
+                      <tr>
+                        <td align="center">
+                          <!--[if mso]>
+                            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                              th:href="${inviteLink}" style="height:46px; v-text-anchor:middle; width:200px;"
+                              arcsize="22%" stroke="f" fillcolor="#2856ff">
+                              <w:anchorlock/>
+                              <center style="color:#ffffff; font-family:Arial,sans-serif; font-size:15px; font-weight:bold;">
+                                Set my password
+                              </center>
+                            </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a th:href="${inviteLink}" th:text="#{userInvite.cta}" target="_blank"
+                            style="display:inline-block; padding:13px 26px; border-radius:10px; background-color:#2856ff; color:#ffffff; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; font-weight:600; line-height:1; text-decoration:none; box-shadow:0 1px 0 rgba(20,24,87,0.2);">
+                            Set my password
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Disclaimer -->
+                    <div th:text="#{userInvite.disclaimer}"
+                      style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b; text-align:center; line-height:1.5;">
+                      This link is just for you — it stays active for 7 days.
                     </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td></tr></table></td></tr></table><![endif]-->
+
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- FOOTER (outside white sheet, on page bg) -->
+          <tr>
+            <td class="footer" align="center" style="padding:28px 32px 0 32px;">
+
+              <!-- Footer logo — small navy badge wrapping the same cid:logo PNG used
+                   in the header. White-on-transparent PNG needs a navy backdrop
+                   to read on the otherwise white footer area. -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center"
+                style="margin:0 auto 12px auto;">
+                <tr>
+                  <td bgcolor="#141857" style="background-color:#141857; padding:8px 14px; border-radius:8px;">
+                    <img src="cid:boat4youLogoFull" alt="Boat4You" width="100" height="25"
+                      style="display:block; border:0; outline:none; text-decoration:none;" />
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Links + phone -->
+              <div class="footer-line"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#64748b; margin:0 0 8px 0;">
+                <a href="https://www.boat4you.com" target="_blank"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">www.boat4you.com</a>
+                <span style="color:#94a3b8;">&nbsp;·&nbsp;</span>
+                <a href="mailto:info@boat4you.com"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">info@boat4you.com</a>
+                <span style="color:#94a3b8;">&nbsp;·&nbsp;</span>
+                <a href="tel:+385913000009" style="color:#2856ff; font-weight:700; text-decoration:none;; white-space: nowrap;">+385&nbsp;91&nbsp;3000&nbsp;009</a>
               </div>
-            </div>
-          </div>
 
-          <!-- DETAILS SECTION -->
-          <div class="u-row-container" style="padding: 0px; background-color: transparent">
-            <div class="u-row" style="
-                  margin: 0 auto;
-                  min-width: 320px;
-                  max-width: 500px;
-                  overflow-wrap: break-word;
-                  word-wrap: break-word;
-                  word-break: break-word;
-                  background-color: transparent;
-                ">
-              <div style="
-                    border-collapse: collapse;
-                    display: table;
-                    width: 100%;
-                    height: 100%;
-                    background-color: transparent;
-                  ">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <div class="u-col u-col-100" style="
-                      max-width: 320px;
-                      min-width: 500px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="height: 100%; width: 100% !important">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                        ">
-                      <!-- Main Title -->
-                      <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 31px 0 0;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <!--[if mso]><table role="presentation" width="100%"><tr><td><![endif]-->
-                              <h1 style="
-                                    margin: 0px;
-                                    color: #2856ff;
-                                    line-height: 130%;
-                                    text-align: left;
-                                    word-wrap: break-word;
-                                    font-family: 'Raleway', sans-serif;
-                                    font-size: 28px;
-                                    font-weight: 700;
-                                  ">
-                                <em th:text="${messageText}">Dear {{firstName}} {{lastName}}, you've
-                                  been invited to boat4you!</em>
-                              </h1>
-                              <!--[if mso]></td></tr></table><![endif]-->
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!-- Section Title -->
-                      <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 32px 0 0px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <!--[if mso]><table role="presentation" width="100%"><tr><td><![endif]-->
-                              <h4 style="
-                                    margin: 0px;
-                                    color: #292929;
-                                    line-height: 140%;
-                                    text-align: left;
-                                    word-wrap: break-word;
-                                    font-family: 'Raleway', sans-serif;
-                                    font-size: 18px;
-                                    font-weight: 700;
-                                  ">
-                                Complete your registration
-                              </h4>
-                              <!--[if mso]></td></tr></table><![endif]-->
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!-- Description -->
-                      <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 8px 0 24px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <div style="
-                                    font-family: 'Raleway', sans-serif;
-                                    font-size: 16px;
-                                    color: #7c7c7c;
-                                    line-height: 140%;
-                                    word-wrap: break-word;
-                                  ">
-                                <p>
-                                  Welcome to Boat4You! You're just one step
-                                  away from accessing premium boat rental
-                                  services, exclusive member benefits, and the
-                                  perfect vessel for your next maritime
-                                  adventure. Click below to complete your
-                                  registration and start exploring.
-                                </p>
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!-- CTA Button -->
-                      <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 0px 0 64px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <!--[if mso
-                                  ]><style>
-                                    .v-button {
-                                      background: transparent !important;
-                                    }
-                                  </style><!
-                                [endif]-->
-                              <div align="center">
-                                <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" th:href="${publicUrl}" style="height:51px; v-text-anchor:middle; width:452px;" arcsize="10%" stroke="f" fillcolor="#2856ff"><w:anchorlock/><center style="color:#f6f6f6;font-family: 'Raleway',sans-serif;"><![endif]-->
-                                <a th:href="${inviteLink}" target="_blank" class="v-button" style="
-                                      box-sizing: border-box;
-                                      display: inline-block;
-                                      text-decoration: none;
-                                      -webkit-text-size-adjust: none;
-                                      text-align: center;
-                                      color: #f6f6f6;
-                                      background-color: #2856ff;
-                                      border-radius: 5px;
-                                      -webkit-border-radius: 5px;
-                                      -moz-border-radius: 5px;
-                                      width: 100%;
-                                      max-width: 100%;
-                                      overflow-wrap: break-word;
-                                      word-break: break-word;
-                                      word-wrap: break-word;
-                                      mso-border-alt: none;
-                                      font-family: 'Raleway', sans-serif;
-                                      font-size: 16px;
-                                      font-weight: 700;
-                                    ">
-                                  <span style="
-                                        display: block;
-                                        padding: 16px;
-                                        line-height: 120%;
-                                      ">Complete Registration</span>
-                                </a>
-                                <!--[if mso]></center></v:roundrect><![endif]-->
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td></tr></table></td></tr></table><![endif]-->
+              <!-- Legal microcopy -->
+              <div class="footer-line" th:text="#{email.footer.legal(${currentYear})}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                © 2026 Boat4You · Cusmanich d.o.o., Split, Croatia
               </div>
-            </div>
-          </div>
-
-          <!-- CONTACT SECTION -->
-          <div class="u-row-container" style="padding: 0px; background-color: transparent">
-            <div class="u-row" style="
-                  margin: 0 auto;
-                  min-width: 320px;
-                  max-width: 500px;
-                  overflow-wrap: break-word;
-                  word-wrap: break-word;
-                  word-break: break-word;
-                  background-color: transparent;
-                ">
-              <div style="
-                    border-collapse: collapse;
-                    display: table;
-                    width: 100%;
-                    height: 100%;
-                    background-color: transparent;
-                  ">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
-
-                <!-- Phone -->
-                <div class="u-col u-col-50" style="
-                      max-width: 320px;
-                      min-width: 250px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="
-                        height: 100%;
-                        width: 100% !important;
-                        border-radius: 0px;
-                        -webkit-border-radius: 0px;
-                        -moz-border-radius: 0px;
-                      ">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px 0px 24px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                          border-radius: 0px;
-                          -webkit-border-radius: 0px;
-                          -moz-border-radius: 0px;
-                        ">
-                      <!--<![endif]-->
-
-                      <table style="font-family: 'Raleway', sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 10px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <div style="text-align: center">
-                                <a href="tel:+385913000009" style="
-                                      text-decoration: none;
-                                      color: #292929;
-                                      font-family: 'Raleway', sans-serif;
-                                      font-size: 14px;
-                                    ">
-                                  <table role="presentation" style="
-                                        display: inline-table;
-                                        vertical-align: middle;
-                                      " cellpadding="0" cellspacing="0" border="0">
-                                    <tr>
-                                      <td style="
-                                            vertical-align: middle;
-                                            padding-right: 8px;
-                                          ">
-                                        <img src="cid:phoneIcon" alt="Phone" width="20" height="20"
-                                          style="display: block; border: 0" />
-                                      </td>
-                                      <td style="
-                                            vertical-align: middle;
-                                            color: #292929;
-                                            font-family: 'Raleway', sans-serif;
-                                            font-size: 14px;
-                                          ">
-                                        +385 91 3000 009
-                                      </td>
-                                    </tr>
-                                  </table>
-                                </a>
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-
-                <!-- Email -->
-                <div class="u-col u-col-50" style="
-                      max-width: 320px;
-                      min-width: 250px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="
-                        height: 100%;
-                        width: 100% !important;
-                        border-radius: 0px;
-                        -webkit-border-radius: 0px;
-                        -moz-border-radius: 0px;
-                      ">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                          border-radius: 0px;
-                          -webkit-border-radius: 0px;
-                          -moz-border-radius: 0px;
-                        ">
-                      <!--<![endif]-->
-
-                      <table style="font-family: 'Raleway', sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 10px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <div style="text-align: center">
-                                <a href="mailto:info@boat4you.com" style="
-                                      text-decoration: none;
-                                      color: #292929;
-                                      font-family: 'Raleway', sans-serif;
-                                      font-size: 14px;
-                                    ">
-                                  <table role="presentation" style="
-                                        display: inline-table;
-                                        vertical-align: middle;
-                                      " cellpadding="0" cellspacing="0" border="0">
-                                    <tr>
-                                      <td style="
-                                            vertical-align: middle;
-                                            padding-right: 8px;
-                                          ">
-                                        <img src="cid:emailIcon" alt="Email" width="20" height="20"
-                                          style="display: block; border: 0" />
-                                      </td>
-                                      <td style="
-                                            vertical-align: middle;
-                                            color: #292929;
-                                            font-family: 'Raleway', sans-serif;
-                                            font-size: 14px;
-                                          ">
-                                        info@boat4you.com
-                                      </td>
-                                    </tr>
-                                  </table>
-                                </a>
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td></tr></table></td></tr></table><![endif]-->
+              <div class="footer-line" th:text="#{email.footer.notice}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                You're receiving this because of activity on your Boat4You account.
               </div>
-            </div>
-          </div>
 
-          <!-- FOOTER SECTION -->
-          <div class="u-row-container" style="padding: 0px; background-color: transparent">
-            <div class="u-row" style="
-                  margin: 0 auto;
-                  min-width: 320px;
-                  max-width: 500px;
-                  overflow-wrap: break-word;
-                  word-wrap: break-word;
-                  word-break: break-word;
-                  background-color: transparent;
-                ">
-              <div style="
-                    border-collapse: collapse;
-                    display: table;
-                    width: 100%;
-                    height: 100%;
-                    background-color: transparent;
-                  ">
-                <!--[if (mso)|(IE)]><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 0px;background-color: transparent;" align="center"><table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:500px;"><tr style="background-color: transparent;"><![endif]-->
+            </td>
+          </tr>
 
-                <div class="u-col u-col-100" style="
-                      max-width: 320px;
-                      min-width: 500px;
-                      display: table-cell;
-                      vertical-align: top;
-                    ">
-                  <div style="
-                        background-color: #141857;
-                        height: 100%;
-                        width: 100% !important;
-                        border-radius: 0px;
-                        -webkit-border-radius: 0px;
-                        -moz-border-radius: 0px;
-                      ">
-                    <!--[if (!mso)&(!IE)]><!-->
-                    <div style="
-                          box-sizing: border-box;
-                          height: 100%;
-                          padding: 0px;
-                          border-top: 0px solid transparent;
-                          border-left: 0px solid transparent;
-                          border-right: 0px solid transparent;
-                          border-bottom: 0px solid transparent;
-                          border-radius: 0px;
-                          -webkit-border-radius: 0px;
-                          -moz-border-radius: 0px;
-                        ">
-                      <!--<![endif]-->
-
-                      <table style="font-family: arial, helvetica, sans-serif" role="presentation" cellpadding="0"
-                        cellspacing="0" width="100%" border="0">
-                        <tbody>
-                          <tr>
-                            <td style="
-                                  overflow-wrap: break-word;
-                                  word-break: break-word;
-                                  padding: 24px;
-                                  font-family: arial, helvetica, sans-serif;
-                                " align="left">
-                              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                                <tr>
-                                  <td style="
-                                        padding-right: 0px;
-                                        padding-left: 0px;
-                                      " align="center">
-                                    <a th:href="${publicUrl}" target="_blank">
-                                      <img align="center" border="0" src="cid:boat4youLogoFull" alt=""
-                                        title="Boat4You Logo" style="
-                                            outline: none;
-                                            text-decoration: none;
-                                            -ms-interpolation-mode: bicubic;
-                                            clear: both;
-                                            display: inline-block !important;
-                                            border: none;
-                                            height: auto;
-                                            float: none;
-                                            width: 30%;
-                                            max-width: 135.6px;
-                                          " width="135.6" />
-                                    </a>
-                                  </td>
-                                </tr>
-                              </table>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-
-                      <!--[if (!mso)&(!IE)]><!-->
-                    </div>
-                    <!--<![endif]-->
-                  </div>
-                </div>
-                <!--[if (mso)|(IE)]></td></tr></table></td></tr></table><![endif]-->
-              </div>
-            </div>
-          </div>
-
-          <!--[if (mso)|(IE)]></td></tr></table><![endif]-->
-        </td>
-      </tr>
-    </tbody>
+        </table>
+      </td>
+    </tr>
   </table>
-  <!--[if mso]></div><![endif]-->
-  <!--[if IE]></div><![endif]-->
+
 </body>
 
 </html>

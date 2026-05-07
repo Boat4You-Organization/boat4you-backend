@@ -43,4 +43,31 @@ open class YachtEquipment {
 
     @Column(name = "external_id")
     open var externalId: Long? = null
+
+    /**
+     * Partner-flagged premium item (NauSys `highlight`). Rendered with the
+     * yellow row treatment in the partner UI — Generator, Electric winch,
+     * outboard engine, Electric toilet are typical highlights. MMK doesn't
+     * surface a highlight flag, so MMK rows always default to false.
+     */
+    @Column(name = "highlight", nullable = false)
+    open var highlight: Boolean = false
+
+    /**
+     * NauSys per-item count, e.g. 4 x Electric toilet. Null for MMK (no
+     * equivalent field) and for NauSys rows where the partner sent only
+     * the implicit single unit.
+     */
+    @Column(name = "quantity")
+    open var quantity: java.math.BigDecimal? = null
+
+    /**
+     * Free-text qualifier — NauSys ships this as `comment.textEN` (e.g.
+     * "Honda 20hp", "Air conditioning in all cabins and lounge"); MMK ships
+     * the same idea in `EquipmentItemRaw.value` ("130 L", "7,6 kw", "only
+     * in cabins"). Sync writes whichever the partner provides into this
+     * column; renderers display it as a sub-line under the equipment name.
+     */
+    @Column(name = "comment", length = Integer.MAX_VALUE)
+    open var comment: String? = null
 }

@@ -24,6 +24,18 @@ class OptionExpiryJob(
     }
 
     /**
+     * Sends "midway" reminder 72 hours before option expires for LONG
+     * options (≥ 4 days total window). Mario decision 1.5.2026: long
+     * options need a midway nudge so the customer doesn't go silent for
+     * 4+ days between creation and the 48h reminder.
+     */
+    @Scheduled(cron = "0 25 * * * *")
+    fun send72HourOptionExpirationReminder() {
+        log.info("Sending 72 hours midway option expiry reminder email")
+        optionExpiryJobService.send72HourOptionExpirationReminder()
+    }
+
+    /**
      * Sends reminder 48 hours before reservation option expires
      * Triggers every hour of the day.
      */
@@ -34,8 +46,12 @@ class OptionExpiryJob(
     }
 
     /**
-     * This job runs every 30 minutes and checks for reservations in OPTION status expired
-     * If the external reservation status has changed, it updates the local reservation status.
+     * This job runs every 30 minutes and checks for reservations in OPTION status expired.
+     * If the external reservation status has changed, it updates the local reservation status
+     * and sends `optionExpired.html` email to the customer (effectively the "your option was
+     * cancelled because we didn't receive payment" notice). The 24h reminder above is the
+     * customer's last warning — Mario decision 1.5.2026: no further reminders below 24h, the
+     * cancellation is the next step.
      */
     @Scheduled(cron = "0 */30 * * * ?")
     fun syncExpiredOptions() {

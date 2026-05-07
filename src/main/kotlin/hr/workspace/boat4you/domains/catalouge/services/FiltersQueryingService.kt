@@ -67,7 +67,7 @@ class FiltersQueryingService(
                 maxYear = filter.maxBuildYear ?: LocalDate.now().year.toShort(), // buffer overflow in year 32767
                 minWc = secureMinValue(filter.minWc),
                 maxWc = filter.maxWc ?: 20,
-                minEnginePower = secureMinValue(filter.minWc),
+                minEnginePower = secureMinValue(filter.minEnginePower),
                 maxEnginePower = filter.maxEnginePower ?: 5000,
             )
         return filtersDto

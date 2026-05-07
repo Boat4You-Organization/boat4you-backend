@@ -109,6 +109,14 @@ class NauSysYachtSyncService(
                 }
 
             val model = getModel(nausysYacht)
+            if (model == null) {
+                log.warn(
+                    "NauSys yacht ${nausysYacht.id} (${nausysYacht.name}) skipped: " +
+                        "no Model row resolves yachtModelId=${nausysYacht.yachtModelId} " +
+                        "(stale external_mapping after Model dedup?)",
+                )
+                return@forEach
+            }
             if (shouldSkip(nausysYacht, model)) {
                 return@forEach
             }
@@ -399,17 +407,41 @@ class NauSysYachtSyncService(
                     Matchers.extrasNameMatch(eq.getMatchKeysList(), externalEquipmentMatch.name)
                 }
 
+            // Dedup primarily on partner equipmentId (yacht_equipment.external_id
+            // is set to externalEquipmentMatch.externalId at insert time). Falls
+            // back to name match for safety. The pre-fix `eq.equipment?.id ==
+            // boat4youEquipmentMatch?.id` clause silently collapsed all
+            // unmatched (boat4youMatch=null) partner items onto a single
+            // pre-existing unmatched yacht_equipment row because `null == null`
+            // returned true — that's why yacht 13175 stayed at 16 items even
+            // though the partner ships 80.
             val equipmentAlreadyOnYacht =
                 allYachtEquipment.find { eq ->
-                    eq.equipment?.id == boat4youEquipmentMatch?.id || eq.name == externalEquipmentMatch.name
+                    eq.externalId == externalEquipmentMatch.externalId ||
+                        eq.name == externalEquipmentMatch.name
                 }
+
+            // NauSys ships highlight/quantity/comment per-item; sync them every
+            // pass so partner edits propagate. comment is multilingual on the
+            // partner side — for now persist the EN text and fall back to the
+            // first non-null variant if EN is empty.
+            val partnerHighlight = nausysEquipment.highlight ?: false
+            val partnerQuantity =
+                nausysEquipment.quantity?.takeIf { it.compareTo(java.math.BigDecimal.ONE) != 0 }
+            val partnerComment =
+                nausysEquipment.comment?.let { c ->
+                    c.textEN ?: c.textDE ?: c.textHR ?: c.textIT ?: c.textFR ?: c.textES
+                }?.takeIf { it.isNotBlank() }
 
             if (equipmentAlreadyOnYacht != null) {
                 // change equipment match
                 if (equipmentAlreadyOnYacht.equipment == null && boat4youEquipmentMatch != null) {
                     equipmentAlreadyOnYacht.equipment = boat4youEquipmentMatch
-                    yachtEquipmentRepository.save(equipmentAlreadyOnYacht)
                 }
+                equipmentAlreadyOnYacht.highlight = partnerHighlight
+                equipmentAlreadyOnYacht.quantity = partnerQuantity
+                equipmentAlreadyOnYacht.comment = partnerComment
+                yachtEquipmentRepository.save(equipmentAlreadyOnYacht)
 
                 matchedIds.add(equipmentAlreadyOnYacht.id!!)
                 return@forEach
@@ -420,6 +452,9 @@ class NauSysYachtSyncService(
             yachtEquipment.name = externalEquipmentMatch.name
             yachtEquipment.externalId = externalEquipmentMatch.externalId!!
             yachtEquipment.yacht = yacht
+            yachtEquipment.highlight = partnerHighlight
+            yachtEquipment.quantity = partnerQuantity
+            yachtEquipment.comment = partnerComment
             yachtEquipmentRepository.save(yachtEquipment)
 
             yacht.yachtEquipments.add(yachtEquipment)
@@ -591,13 +626,18 @@ class NauSysYachtSyncService(
         }
     }
 
-    private fun getModel(nausysYacht: RestYacht): Model {
+    private fun getModel(nausysYacht: RestYacht): Model? {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
         val allModelMappings =
             externalMappingService.getCachedAllMappingsByType(Model::class.simpleName.toString(), externalSystem)
 
-        val modelMapping = allModelMappings.find { model -> model.externalId == nausysYacht.yachtModelId!! }
-        return modelRepository.findById(modelMapping!!.systemId!!).get()
+        val modelMapping = allModelMappings.find { it.externalId == nausysYacht.yachtModelId } ?: return null
+        // Manufacturer/Model dedup migrations (27.4.2026) deleted Model rows
+        // without rewriting the matching `external_mapping` entries, so a
+        // mapping can point at a now-missing Model id. .orElse(null) drops
+        // the whole agency-level transaction back to the caller, which we
+        // already log + skip per-yacht.
+        return modelRepository.findById(modelMapping.systemId!!).orElse(null)
     }
 
     private fun shouldSkip(
@@ -630,16 +670,23 @@ class NauSysYachtSyncService(
 
             val default = text.textEN ?: "No description"
             val lang = LanguageEnum.fromLocale(lang.locale!!)
+            // Fall back to the EN default for any locale NauSys doesn't ship a
+            // translation for (PL/NL added in V1_68 are the current cases) —
+            // YachtTranslation.value is @NotNull, so a null here used to crash
+            // the entire agency-level sync transaction with
+            // ConstraintViolationException, dropping every yacht in that
+            // agency. EN-as-fallback keeps the row valid; downstream UI still
+            // prefers the user's locale where one exists.
             val value =
                 when (lang) {
                     LanguageEnum.EN -> default
                     LanguageEnum.FR -> text.textFR ?: default
                     LanguageEnum.DE -> text.textDE ?: default
-                    LanguageEnum.PT -> default // nema PT
+                    LanguageEnum.PT -> default // NauSys ships no PT
                     LanguageEnum.IT -> text.textIT ?: default
                     LanguageEnum.ES -> text.textES ?: default
                     LanguageEnum.HR -> text.textHR ?: default
-                    else -> null // Handle other languages if needed
+                    else -> default
                 }
             yachtTranslation.value = value
 

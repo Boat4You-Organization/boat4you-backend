@@ -51,7 +51,7 @@ class NausysSyncJob(
     /**
      * Backup sync in case main sync fails.
      */
-//    @Scheduled(cron = "0 0 6,10,15 * * ?")
+    @Scheduled(cron = "0 0 6,10,15 * * ?")
     fun runCatalogueBackupSync() {
         if (!serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_CATALOGUE_SYNC)) {
             return
@@ -91,7 +91,7 @@ class NausysSyncJob(
     /**
      * Backup sync in case main sync fails.
      */
-//    @Scheduled(cron = "0 15 6,10,15 * * ?")
+    @Scheduled(cron = "0 15 6,10,15 * * ?")
     fun runYachtBackupSync() {
         if (serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_YACHT_SYNC)) {
             log.info("Syncing NauSYS yachts")

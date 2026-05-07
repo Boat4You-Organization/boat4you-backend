@@ -20,6 +20,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 import java.util.Locale
 
 @Service
@@ -46,9 +47,15 @@ class UserQueryingService(
             initSpecification(searchCriteria(query.search))
                 .and(activeOnlyCriteria(query.activeOnly))
                 .and(roleCriteria(query.role?.name))
-                .and(userStatusCriteria(query.userStatus?.toJpaEntityStatus())),
+                .and(userStatusCriteria(query.userStatus?.toJpaEntityStatus()))
+                .and(notDeletedCriteria()),
             pageable,
         )
+
+    private fun notDeletedCriteria(): Specification<UserEntity> =
+        Specification { root, _, cb ->
+            cb.isNull(root.get<Instant>(UserEntity::deletedAt.name))
+        }
 
     private fun searchCriteria(searchString: String?): Specification<UserEntity>? =
         searchString.nonBlankOrNull()?.let {

@@ -14,6 +14,15 @@ data class YachtSearchResponseDto(
     val slug: String,
     val name: String?,
     val location: LocationDto? = null,
+    /**
+     * Drop-off location for one-way charter offerings (yacht starts at
+     * `location` on `offerDateFrom` and is returned to `locationTo` on
+     * `offerDateTo`). Null when pickup == drop-off (same marina), which
+     * is the common case. Frontend renders "{location.name} » {locationTo.name}"
+     * when set so the user immediately sees the one-way arrangement
+     * before clicking through to the detail page.
+     */
+    val locationTo: LocationDto? = null,
     val charterType: CharterType? = null,
     val vesselType: VesselType? = null,
     val buildYear: Short? = null,
@@ -76,4 +85,11 @@ data class YachtSearchResponseDto(
      * partner flagged without a timestamp).
      */
     val optionExpiresAt: LocalDateTime? = null,
+    /**
+     * True when this row represents a custom (admin-managed) yacht — the
+     * search card swaps the green "Available" badge for a blue "On request"
+     * label so users know they need to inquire instead of book directly.
+     * Sourced from yacht_search_view.entry_type == CUSTOM (2).
+     */
+    val custom: Boolean? = null,
 )

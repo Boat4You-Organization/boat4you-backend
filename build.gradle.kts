@@ -75,6 +75,12 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-mail")
     implementation("org.springframework.boot:spring-boot-starter-thymeleaf")
 
+    // openhtmltopdf — Thymeleaf-rendered HTML → PDF for charter agreement
+    // attachments on reservation confirmation emails. 1.0.10 is the latest
+    // stable release on Maven Central.
+    implementation("com.openhtmltopdf:openhtmltopdf-core:1.0.10")
+    implementation("com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:junit-jupiter")

@@ -32,6 +32,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import kotlin.collections.all
 import kotlin.collections.maxOfOrNull
@@ -324,13 +325,14 @@ class NauSysYachtOfferSyncService(
 
         handleExtras(offer, nausysOffer)
 
-        // TODO For now just skipped as we don't need external payment plans
-//        if (!nausysOffer.paymentPlans.isNullOrEmpty()) {
-//            handlePaymentPlans(offer, nausysOffer)
-//        } else {
-//            offer.offerPaymentPlans.clear()
-//            offerRepository.save(offer)
-//        }
+        // Partner payment plan = source of truth for installment timing.
+        // Re-enabled 1.5.2026 — see MmkYachtOfferSyncService for the full note.
+        if (!nausysOffer.paymentPlans.isNullOrEmpty()) {
+            handlePaymentPlans(offer, nausysOffer)
+        } else {
+            offer.offerPaymentPlans.clear()
+            offerRepository.save(offer)
+        }
         return true
     }
 
@@ -490,9 +492,13 @@ class NauSysYachtOfferSyncService(
             val planDate = incomingPlan.date?.value
             val existingPlan = offer.offerPaymentPlans.find { it.date == planDate }
 
+            // Nausys percentage is whole-number percent (e.g. 20.00 means 20%),
+            // not a decimal fraction. Divide by 100 before multiplying or the
+            // stored amount ends up 100× the actual price (offer 319593 case:
+            // 20% × 4,950 € rendered as 99,000 € until this fix).
             val amount =
                 incomingPlan.percentage?.let {
-                    it.multiply(
+                    it.divide(BigDecimal(100), 4, RoundingMode.HALF_UP).multiply(
                         offer.clientPrice ?: BigDecimal.ZERO,
                     )
                 }

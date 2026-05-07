@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.service
 
+import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.reservation.dto.PaymentPhaseDto
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlowRepository
@@ -92,6 +93,74 @@ class ReservationPaymentPhasesService(
         reservationStartDate: LocalDate,
         totalPrice: BigDecimal,
     ): List<Pair<LocalDate, Double>> = calculatePaymentPhases(now, reservationStartDate, totalPrice.toDouble())
+
+    /**
+     * Partner-aware payment-phase calculation. When the partner (MMK / NauSys)
+     * synced an explicit `offer.offerPaymentPlans` for this offer, that plan
+     * is the source of truth for *timing and ratios* — every agency configures
+     * its own schedule (1 rata, 2 rate, 3 rate, custom %), and we honour it so
+     * partner reconciliation lines up.
+     *
+     * Our agency discount is applied **proportionally** to those ratios: if the
+     * agency runs 20% / 80% and we give the customer a 5% discount, the
+     * customer pays 20% × (price - 5%) and 80% × (price - 5%), not the partner-
+     * side numbers. The split goes against `clientTotalPrice` (already discounted).
+     *
+     * Fallback to the internal A/B/C rules when:
+     *   - `offer.offerPaymentPlans` is empty (custom yacht / sync gap / agency
+     *     didn't configure a plan / last-minute partner emit)
+     *   - all partner deadlines are in the past (stale data — sync hasn't
+     *     refreshed since the charter window started)
+     *   - partner total amount sums to ≤ 0 (defensive — bad data)
+     *
+     * Custom yachts never reach this path (they're inquiry-only and never enter
+     * the booking flow), but the empty-plan branch covers them defensively.
+     */
+    fun calculatePaymentPhases(
+        offer: Offer,
+        clientTotalPrice: Double,
+        now: LocalDate = LocalDate.now(),
+    ): List<Pair<LocalDate, Double>> {
+        val reservationStartDate = offer.dateFrom
+            ?: return calculatePaymentPhases(now, LocalDate.now(), clientTotalPrice)
+
+        // Filter out partner phases whose deadline has already passed —
+        // happens with stale sync data or last-minute bookings where the
+        // partner-supplied "20% pri rezervaciji" deadline is technically
+        // in the past by the time the customer hits checkout.
+        val livePartnerPhases = offer.offerPaymentPlans
+            .filter { it.date != null && !it.date!!.isBefore(now) }
+            .filter { it.amount != null && it.amount!! > BigDecimal.ZERO }
+            .sortedBy { it.date }
+
+        if (livePartnerPhases.isEmpty()) {
+            logger.debug("No partner payment plan for offer ${offer.id} — using B4Y A/B/C rules")
+            return calculatePaymentPhases(now, reservationStartDate, clientTotalPrice)
+        }
+
+        val partnerTotal = livePartnerPhases.sumOf { it.amount!!.toDouble() }
+        if (partnerTotal <= 0.0) {
+            logger.warn("Partner payment plan for offer ${offer.id} has non-positive total — falling back to B4Y rules")
+            return calculatePaymentPhases(now, reservationStartDate, clientTotalPrice)
+        }
+
+        // Apply partner ratios to OUR discounted client_price.
+        // Last bucket absorbs the rounding delta so the sum exactly matches
+        // clientTotalPrice (mirrors the existing fiftyFiftySplit behaviour).
+        val rounded = clientTotalPrice.roundDecimals()
+        val phases = livePartnerPhases.mapIndexed { index, phase ->
+            val ratio = phase.amount!!.toDouble() / partnerTotal
+            val rawAmount = (ratio * rounded).roundDecimals()
+            Pair(phase.date!!, rawAmount)
+        }.toMutableList()
+
+        // Adjust last bucket so phases sum to clientTotalPrice exactly
+        val sumSoFar = phases.dropLast(1).sumOf { it.second }
+        val last = phases.last()
+        phases[phases.size - 1] = Pair(last.first, (rounded - sumSoFar).roundDecimals())
+
+        return phases
+    }
 
     @Transactional(readOnly = true)
     fun getPaymentPhases(reservationId: Long): List<PaymentPhaseDto> {

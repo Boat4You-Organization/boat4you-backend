@@ -54,4 +54,16 @@ data class CustomYachtDetailsDto(
     val priceDescription: String?,
     val videoUrl: String?,
     val hasBrochure: Boolean,
+    /**
+     * Free-text "Saloon and Cabins" amenities — the public Amenities tab
+     * splits this on newlines and renders each non-empty line as a
+     * checkmark item. Replaces the predefined equipment dropdown for
+     * custom yachts where the boat owner sends a one-off list.
+     */
+    val amenitiesText: String? = null,
+    /** Free-text "Entertainment" toys, same multi-line treatment. */
+    val toysText: String? = null,
+    /** Free-text engine descriptor — public DetailsTab renders this in
+     *  the Engine row instead of "{enginePower} kW" when present. */
+    val engineText: String? = null,
 )

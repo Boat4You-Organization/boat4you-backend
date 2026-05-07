@@ -292,6 +292,14 @@ open class ReservationView protected constructor() {
     open var reservationCancelationRequest: String? = null
         protected set
 
+    @Column(name = "reservation_cancelation_rejected_at")
+    open var reservationCancelationRejectedAt: LocalDateTime? = null
+        protected set
+
+    @Column(name = "reservation_cancelation_rejected_reason", columnDefinition = "TEXT")
+    open var reservationCancelationRejectedReason: String? = null
+        protected set
+
     @Column(name = "calculated_total_price")
     open var calculatedTotalPrice: BigDecimal? = null
         protected set

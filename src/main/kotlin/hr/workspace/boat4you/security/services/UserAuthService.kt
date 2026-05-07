@@ -2,6 +2,7 @@ package hr.workspace.boat4you.security.services
 
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.common.models.WebRequestContext
+import hr.workspace.boat4you.common.services.resolveEmailLocale
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.users.exceptions.UserDoesNotExistException
 import hr.workspace.boat4you.domains.users.jpa.UserEntity
@@ -28,6 +29,7 @@ import org.openapitools.model.TokenResponse
 import org.openapitools.model.UpdateUserPasswordBody
 import org.openapitools.model.User
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.MessageSource
 import org.springframework.http.HttpHeaders.AUTHORIZATION
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.security.core.context.SecurityContextHolder
@@ -35,6 +37,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.net.URLEncoder
 import java.security.SecureRandom
+import java.time.Duration
 import java.time.Instant
 import java.util.Date
 import kotlin.jvm.optionals.getOrElse
@@ -52,10 +55,13 @@ class UserAuthService(
     private val tokenService: TokenService,
     private val requestContextFactory: RequestContextFactory,
     private val emailService: EmailService,
+    private val messageSource: MessageSource,
     @Value("\${server.host-public}")
     private val serverHostPublic: String,
     @Value("\${application.invites.user.allow-uninvited-login}")
     private val allowUninvitedLogin: Boolean,
+    @Value("\${application.password-reset.expiration:60m}")
+    private val passwordResetExpiration: Duration,
 ) {
     private val secureRandom = SecureRandom.getInstance("SHA1PRNG")
 
@@ -95,6 +101,14 @@ class UserAuthService(
             dbUser.lastUnsuccessfulLogin = Instant.now()
             throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, email) // Will not cause rollback, not a RuntimeException
         }
+
+        // Reset failed-login counters on success + record login moment.
+        // `lastLoginAt` is surfaced on /my-profile so the customer can spot
+        // unfamiliar sessions; resetting attempts/timestamp keeps the lockout
+        // window from triggering for the next legitimate login.
+        dbUser.loginAttempts = 0
+        dbUser.lastUnsuccessfulLogin = null
+        dbUser.lastLoginAt = Instant.now()
 
         val userDomainEntity = dbUser.toDomainUser()
         val userContext = requestContextFactory.buildRequestContext(userDomainEntity)
@@ -239,25 +253,52 @@ class UserAuthService(
                 userRepository.findById(requestPasswordResetBody.userId!!).getOrNull()
             }
 
+        // Account-enumeration defence (OWASP Forgot Password cheatsheet):
+        // anonymous callers must get an identical response whether the email
+        // exists or not — otherwise an attacker can probe which addresses
+        // are registered. Admin callers (context != null) still see the
+        // error so they can spot typos / bad userIds in the admin UI.
         if (dbUser == null) {
-            throw UserDoesNotExistException()
+            if (context != null) {
+                throw UserDoesNotExistException()
+            }
+            return
         }
 
         dbUser.passwordResetCode = Base64.toBase64String(generateRandomBytes())
+        dbUser.passwordResetCodeIssuedAt = Instant.now()
         val passwordResetLink = generatePasswordResetLink(dbUser.passwordResetCode!!)
+
+        // Inbox-friendly recipient: render as `Mario Kuzmanic <email>` when
+        // we have a name; bare email otherwise. Mario rule (3.5.2026): all
+        // client-facing emails carry full name in the To: header.
+        val fullName =
+            dbUser.getFullName().trim().takeIf { it.isNotBlank() } ?: "there"
+        val recipientAddress =
+            if (fullName != "there") "$fullName <${dbUser.email}>" else dbUser.email
+
+        // Localize per recipient — user.language captured at first contact
+        // (booking flow stamps it from front-end Accept-Language). Falls
+        // back to English when null. Admin-driven password reset (manager
+        // resetting another user's password) honours the recipient's
+        // language, not the admin's — the email goes to the recipient.
+        val locale = resolveEmailLocale(dbUser.language)
+        val subject = messageSource.getMessage("passwordReset.subject", null, locale)
 
         val variables =
             mapOf(
-                "message" to "Dear ${dbUser.getFullName()}, please reset your password.",
+                "fullName" to fullName,
                 "passwordResetUrl" to passwordResetLink,
                 "publicUrl" to serverHostPublic,
+                "currentYear" to java.time.LocalDate.now().year.toString(),
             )
 
         emailService.sendEmail(
-            recipients = listOf(dbUser.email),
-            subject = "Reset your Boat4you password",
+            recipients = listOf(recipientAddress),
+            subject = subject,
             templateName = "email/passwordReset",
             variables = variables,
+            locale = locale,
         )
     }
 
@@ -268,7 +309,20 @@ class UserAuthService(
     }
 
     fun checkPasswordResetValidity(passwordResetCode: String): UserEntity {
-        return userRepository.findByPasswordResetCode(passwordResetCode) ?: throw PasswordException(PasswordException.PasswordExceptionType.PASSWORD_RESET_INVALID)
+        val dbUser = userRepository.findByPasswordResetCode(passwordResetCode)
+            ?: throw PasswordException(PasswordException.PasswordExceptionType.PASSWORD_RESET_INVALID)
+
+        // Token TTL (OWASP Forgot Password cheatsheet). Reject codes older
+        // than the configured window so a leaked / forgotten link can't
+        // be replayed days later. Tokens issued before the column existed
+        // (legacy rows where issuedAt is null) are treated as expired —
+        // the user simply requests a fresh reset.
+        val issuedAt = dbUser.passwordResetCodeIssuedAt
+        if (issuedAt == null || issuedAt.plus(passwordResetExpiration).isBefore(Instant.now())) {
+            throw PasswordException(PasswordException.PasswordExceptionType.PASSWORD_RESET_INVALID)
+        }
+
+        return dbUser
     }
 
     @Transactional(readOnly = false)
@@ -285,6 +339,20 @@ class UserAuthService(
         dbUser.apply {
             password = passwordService.encodePassword(userPasswordBody.password)
             this.passwordResetCode = null
+            this.passwordResetCodeIssuedAt = null
+            // Activation-via-reset: a guest who skipped the original invite
+            // email (link expired after 7d) lands here when they hit
+            // "Forgot password" later. Without this flip, login enforces
+            // registrationStatus = REGISTERED and locks them out despite
+            // a valid password. Successfully responding to a reset email
+            // proves ownership of the inbox — treat it as completion of
+            // activation.
+            if (registrationStatus == UserRegistrationStatusEnum.STARTED) {
+                registrationStatus = UserRegistrationStatusEnum.REGISTERED
+                inviteStatus = UserInviteStatusEnum.ACCEPTED
+                inviteCode = null
+                inviteTime = null
+            }
         }
     }
 

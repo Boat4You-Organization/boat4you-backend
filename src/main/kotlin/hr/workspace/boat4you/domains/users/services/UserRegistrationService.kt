@@ -1,10 +1,12 @@
 package hr.workspace.boat4you.domains.users.services
 
 import hr.workspace.boat4you.common.services.getRandomNumericalString
+import hr.workspace.boat4you.common.services.resolveEmailLocale
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.users.exceptions.UserDoesNotExistException
 import hr.workspace.boat4you.domains.users.exceptions.UserRegistrationException
 import hr.workspace.boat4you.domains.users.exceptions.UserRegistrationException.UserRegistrationExceptionReason
+import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import hr.workspace.boat4you.domains.users.jpa.UserInviteStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRegistrationStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
@@ -15,9 +17,15 @@ import org.openapitools.model.User
 import org.openapitools.model.UserEmailVerificationRequest
 import org.openapitools.model.UserRegistrationRequest
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.MessageSource
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.jvm.optionals.getOrElse
 
 @Service
@@ -26,9 +34,15 @@ class UserRegistrationService(
     private val userMutationService: UserMutationService,
     private val userAuthService: UserAuthService,
     private val emailService: EmailService,
+    private val messageSource: MessageSource,
     @Value("\${server.host-public}")
     private val serverHostPublic: String,
 ) {
+    // Header "Sent {date·time (GMT±X)}" — same Europe/Zagreb wall-clock
+    // pattern used by the password-reset / option-reminder emails so all
+    // customer-facing transactional mail carries a consistent timestamp.
+    private val receivedFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm")
+
     @Transactional(readOnly = false)
     fun registerUser(input: UserRegistrationRequest): User {
         val userModel = userMutationService.createUser(input.toUserModel())
@@ -42,23 +56,7 @@ class UserRegistrationService(
 
         userRepository.save(dbUser)
 
-        val emailVariables =
-            mapOf(
-                "message" to "Dear ${input.name}, please verify your email address using the code below to finish setting up your account.",
-                "digit1" to dbUser.emailVerificationCode!![0],
-                "digit2" to dbUser.emailVerificationCode!![1],
-                "digit3" to dbUser.emailVerificationCode!![2],
-                "digit4" to dbUser.emailVerificationCode!![3],
-                "digit5" to dbUser.emailVerificationCode!![4],
-                "digit6" to dbUser.emailVerificationCode!![5],
-                "publicUrl" to serverHostPublic,
-            )
-        emailService.sendEmail(
-            recipients = listOf(dbUser.email),
-            subject = "Verify Your Boat4You Email",
-            templateName = "email/emailVerification",
-            variables = emailVariables,
-        )
+        sendVerificationEmail(dbUser)
 
         return dbUser.toUserModel()
     }
@@ -78,23 +76,7 @@ class UserRegistrationService(
             verificationCodeIssuedAt = Instant.now()
         }
 
-        val emailVariables =
-            mapOf(
-                "message" to "Dear ${dbUser.getFullName()}, please verify your email address using the code below to finish setting up your account.",
-                "digit1" to dbUser.emailVerificationCode!![0],
-                "digit2" to dbUser.emailVerificationCode!![1],
-                "digit3" to dbUser.emailVerificationCode!![2],
-                "digit4" to dbUser.emailVerificationCode!![3],
-                "digit5" to dbUser.emailVerificationCode!![4],
-                "digit6" to dbUser.emailVerificationCode!![5],
-                "publicUrl" to serverHostPublic,
-            )
-        emailService.sendEmail(
-            recipients = listOf(dbUser.email),
-            subject = "Verify Your Boat4You Email",
-            templateName = "email/emailVerification",
-            variables = emailVariables,
-        )
+        sendVerificationEmail(dbUser)
     }
 
     @Transactional(readOnly = false)
@@ -117,5 +99,64 @@ class UserRegistrationService(
         }
 
         return userAuthService.issueTokenAtRegistration(dbUser, httpRequest)
+    }
+
+    /**
+     * Render + dispatch the 6-digit-code verification email. Shared by
+     * `registerUser` (first send during signup) and
+     * `resendEmailVerificationCode` (manual resend after the 60s gate),
+     * so both paths produce an identical, fully-i18n'd message:
+     *  - subject resolved from `emailVerification.subject` per recipient locale
+     *  - RFC2822 `To: Mario Kuzmanic <…>` when we have a name (Mario rule
+     *    3.5.2026: client-facing emails always carry full name)
+     *  - 24h validity disclaimer + body copy fully localized via the
+     *    `emailVerification.*` bundle keys
+     */
+    private fun sendVerificationEmail(dbUser: UserEntity) {
+        // Inbox-friendly recipient: render as `Mario Kuzmanic <email>` when
+        // we have a name; bare email otherwise. Mario rule (3.5.2026): all
+        // client-facing emails carry full name in the To: header.
+        val displayName =
+            dbUser.getFullName().trim().takeIf { it.isNotBlank() } ?: "there"
+        val recipientAddress =
+            if (displayName != "there") "$displayName <${dbUser.email}>" else dbUser.email
+
+        // Localize per recipient — user.language captured at signup from
+        // the front-end's negotiated locale. Falls back to English when null.
+        val customerLocale: Locale = resolveEmailLocale(dbUser.language)
+        val subject = messageSource.getMessage("emailVerification.subject", null, customerLocale)
+
+        val code = dbUser.emailVerificationCode!!
+        val variables: Map<String, Any?> =
+            mapOf(
+                "fullName" to displayName,
+                "digit1" to code[0],
+                "digit2" to code[1],
+                "digit3" to code[2],
+                "digit4" to code[3],
+                "digit5" to code[4],
+                "digit6" to code[5],
+                "publicUrl" to serverHostPublic,
+                "receivedAt" to formatReceivedAt(),
+                "currentYear" to LocalDate.now().year.toString(),
+            )
+
+        emailService.sendEmail(
+            recipients = listOf(recipientAddress),
+            subject = subject,
+            templateName = "email/emailVerification",
+            variables = variables,
+            locale = customerLocale,
+        )
+    }
+
+    /** Format `Apr 24, 2026 · 11:12 (GMT+2)` in Europe/Zagreb. Mirrors the
+     *  helper in `OptionExpiryService` / `PaymentPendingNotificationService`
+     *  so every customer-facing email header reads consistently. */
+    private fun formatReceivedAt(): String {
+        val nowZoned = ZonedDateTime.now(ZoneId.of("Europe/Zagreb"))
+        val offsetHours = nowZoned.offset.totalSeconds / 3600
+        val sign = if (offsetHours >= 0) "+" else "-"
+        return "${nowZoned.format(receivedFormatter)} (GMT$sign${kotlin.math.abs(offsetHours)})"
     }
 }

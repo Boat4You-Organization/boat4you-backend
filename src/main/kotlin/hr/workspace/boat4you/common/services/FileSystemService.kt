@@ -198,10 +198,6 @@ class FileSystemService {
         return contentType
     }
 
-    private fun getFileExtension(filename: String): String {
-        return filename.substringAfterLast('.', "jpg")
-    }
-
     fun deleteFile(filename: String): Boolean {
         return try {
             val filePath = Paths.get(uploadDir, filename)

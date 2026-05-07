@@ -151,6 +151,16 @@ open class YachtSearchView protected constructor() {
     open var locationFullName: String? = null
         protected set
 
+    /**
+     * Same encoding as `location_full_name` but for the drop-off location.
+     * For yachts where pickup == drop-off (most common) this equals
+     * `location_full_name`. Mapper compares both and only surfaces a
+     * separate `locationTo` DTO when they differ (one-way charter).
+     */
+    @Column(name = "location_to_full_name", length = Integer.MAX_VALUE)
+    open var locationToFullName: String? = null
+        protected set
+
     @Enumerated
     @Column(name = "entry_type")
     open var entryType: EntryType? = null
@@ -168,5 +178,15 @@ open class YachtSearchView protected constructor() {
      */
     @Column(name = "offer_status")
     open var offerStatus: Int? = null
+        protected set
+
+    /**
+     * 0/1 mirror of agency.recommended — used by the "Recommended" sort to
+     * promote curated partners' yachts to the top of the page, then
+     * client_price ASC within each bucket. INT instead of boolean so JPA
+     * criteria's MAX() aggregation behaves identically across drivers.
+     */
+    @Column(name = "agency_recommended")
+    open var agencyRecommended: Int? = null
         protected set
 }

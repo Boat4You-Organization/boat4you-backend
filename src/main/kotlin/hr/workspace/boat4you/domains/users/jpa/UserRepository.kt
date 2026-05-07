@@ -47,4 +47,23 @@ interface UserRepository :
         """,
     )
     fun findByIdIn(ids: List<Long>): List<UserEntity>
+
+    /**
+     * Used by `BirthdayEmailJob` to fan out the daily birthday-greeting
+     * batch. Filters by month + day so the year of birth doesn't matter.
+     * Excludes soft-deleted accounts (anonymized email is undeliverable
+     * and we shouldn't be sending mail to a deleted user anyway).
+     */
+    @Query(
+        value = """
+        SELECT * FROM users
+        WHERE birthday IS NOT NULL
+        AND EXTRACT(MONTH FROM birthday) = :month
+        AND EXTRACT(DAY FROM birthday) = :day
+        AND deleted_at IS NULL
+        AND entity_status = 'ACTIVE'
+        """,
+        nativeQuery = true,
+    )
+    fun findAllByBirthdayMonthDay(month: Int, day: Int): List<UserEntity>
 }

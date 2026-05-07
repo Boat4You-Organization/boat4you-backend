@@ -78,4 +78,24 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
         @Param("reservationFlowId") reservationFlowId: Long,
         @Param("newYachtId") newYachtId: Long,
     ): Int
+
+    /**
+     * Confirmed reservations whose pickup falls within `[startTime, endTime)`.
+     * Used by [PreCharterReminderJob] to find tomorrow's bookings (status =
+     * RESERVATION) and dispatch the "tomorrow you sail" email.
+     */
+    @Query(
+        """
+        SELECT r FROM Reservation r
+        JOIN FETCH r.reservationFlow rf
+        JOIN FETCH rf.yacht y
+        WHERE r.sysStatus = :status
+        AND r.dateFrom >= :startTime AND r.dateFrom < :endTime
+    """,
+    )
+    fun findConfirmedStartingBetween(
+        @Param("status") status: ReservationStatus,
+        @Param("startTime") startTime: LocalDateTime,
+        @Param("endTime") endTime: LocalDateTime,
+    ): List<Reservation>
 }

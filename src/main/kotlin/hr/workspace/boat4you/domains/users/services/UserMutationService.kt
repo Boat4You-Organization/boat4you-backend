@@ -20,6 +20,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
 import kotlin.jvm.optionals.getOrElse
 
 @Service
@@ -116,6 +117,7 @@ class UserMutationService(
         address: String?,
         city: String?,
         country: String?,
+        birthday: java.time.LocalDate? = null,
     ): User {
         val dbUser = userRepository.findById(id).getOrElse { throw UserDoesNotExistException() }
 
@@ -144,6 +146,13 @@ class UserMutationService(
         dbUser.address = address?.takeIf { it.isNotBlank() }
         dbUser.city = city?.takeIf { it.isNotBlank() }
         dbUser.country = country?.takeIf { it.isNotBlank() }
+        // birthday: caller passes null only if the field wasn't included in
+        // the request body (PATCH semantics). We don't allow clearing once
+        // set — sentinel for "I want to wipe my birthday" is not implemented;
+        // GDPR delete account already covers the wipe path.
+        if (birthday != null) {
+            dbUser.birthday = birthday
+        }
 
         return userRepository.save(dbUser).toUserModel()
     }
@@ -178,6 +187,60 @@ class UserMutationService(
         userRepository.deleteById(id)
 
         logger.debug("Deleted User with id $id")
+    }
+
+    /**
+     * GDPR Article 17 — right to erasure. Customer-initiated soft delete.
+     *
+     * Anonymizes PII (name, surname, email, phone, address, city, country),
+     * rotates password to a random hash so login is impossible, revokes
+     * tokens and role assignments, and stamps `deleted_at`. Past bookings
+     * (`reservation_flow.user_id` FK) are preserved untouched — Mario
+     * decision 1.5.2026: "ako je klijent rezervirao s nama plovilo, to se
+     * ne smije brisat, to nam treba ostati u našoj evidenciji". Audit +
+     * partner-agency financial trail stays intact; only the personal data
+     * tied to the user identity is wiped.
+     *
+     * Idempotent: calling twice for an already-deleted user returns silently.
+     */
+    @Transactional(readOnly = false)
+    fun softDeleteForGdpr(id: Long) {
+        logger.info("GDPR soft-delete requested for user id={}", id)
+        val user = userRepository.findById(id).getOrElse { throw UserDoesNotExistException() }
+        if (user.deletedAt != null) {
+            logger.info("User id={} already soft-deleted at {} — no-op", id, user.deletedAt)
+            return
+        }
+
+        // Step 1: kill auth — token revocation must happen before we change
+        // the password hash so any in-flight requests holding stale tokens
+        // get 401 immediately (next call) instead of completing on a
+        // partially-anonymized account.
+        tokenService.revokeAllUserTokens(id)
+        roleAssignmentRepository.deleteByUserId(id)
+
+        // Step 2: anonymize PII. Email format `deleted-{id}@boat4you-deleted.invalid`
+        // is unique per user (suffix is the id) and uses the `.invalid` TLD
+        // (RFC 2606 reserved) so it's guaranteed undeliverable.
+        user.name = "Deleted"
+        user.surname = "User"
+        user.email = "deleted-$id@boat4you-deleted.invalid"
+        user.phoneNumber = null
+        user.address = null
+        user.city = null
+        user.country = null
+        // Step 3: kill password — random 64-char + bcrypt rehash. Even if
+        // someone got the row, can't authenticate.
+        user.password = passwordService.encodePassword(java.util.UUID.randomUUID().toString() + java.util.UUID.randomUUID().toString())
+        user.passwordResetCode = null
+        user.passwordResetCodeIssuedAt = null
+        user.emailVerificationCode = null
+        user.inviteCode = null
+
+        user.deletedAt = Instant.now()
+
+        userRepository.save(user)
+        logger.info("GDPR soft-delete completed for user id={}", id)
     }
 
     private fun createUserRoleAssignments(

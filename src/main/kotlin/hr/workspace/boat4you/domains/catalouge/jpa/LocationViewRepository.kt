@@ -35,12 +35,21 @@ interface LocationViewRepository : JpaRepository<LocationView, Long> {
     fun getCountries(): List<LocationView>
 
     @Query(
-        """SELECT lv FROM LocationView lv 
+        """SELECT lv FROM LocationView lv
         WHERE lv.locationType = 'REGION'
         AND lv.countryCode = :countryCode
         """,
     )
     fun getRegions(countryCode: String): List<LocationView>
+
+    @Query(
+        """SELECT lv FROM LocationView lv
+        WHERE lv.locationType = 'MARINA'
+        AND lv.countryCode = :countryCode
+        ORDER BY lv.name ASC
+        """,
+    )
+    fun getMarinas(countryCode: String): List<LocationView>
 
     @Query(
         """

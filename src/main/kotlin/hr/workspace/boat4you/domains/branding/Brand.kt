@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.domains.branding
 
+import org.openapitools.model.LanguageEnum
+
 /**
  * Per-brand context that drives email From line, recipient, logo, and
  * the public-site URL embedded in transactional links (e.g. inquiry
@@ -44,4 +46,11 @@ data class Brand(
     /** Hex accent colour ("#ffd24a") for hero card highlights. Defaults
      *  to Boat4You amber if a brand hasn't picked its own yet. */
     val accentColor: String = "#ffd24a",
+    /** Language used for internal-team email rendered for THIS brand —
+     *  notably the inquiry-notification email read by Mario / agents.
+     *  Catamaran-Croatia → HR (Croatian admin), Catamaran-Italy → IT,
+     *  rest default to EN until per-brand staff confirm a preference.
+     *  Customer-facing emails use the recipient's `user.language`, NOT
+     *  this field. */
+    val defaultLanguage: LanguageEnum = LanguageEnum.EN,
 )

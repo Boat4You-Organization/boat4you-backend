@@ -36,8 +36,13 @@ enum class ApiErrorCodes(
     RESERVATION_STATUS_ERROR(3004, "Reservation status error"),
     RESOURCE_NOT_FOUND(4004, "Requested resource not found"),
     INVOICE_NOT_EXIST(5001, "Invoice does not exist"),
-    EXTERNAL_SYSTEM_ERROR(6001, "External system error"),
-    EXTERNAL_OPTION_ERROR(6002, "External option error"),
-    EXTERNAL_RESERVATION_ERROR(6003, "External reservation error"),
-    EXTERNAL_RESERVATION_CANCELLATION_ERROR(6004, "External reservation cancellation error"),
+    // 6xxx codes are partner-integration failures (MMK / NauSys). The
+    // messages are user-facing — they appear in toast notifications, so
+    // they're intentionally generic apologies. Technical details (raw
+    // partner response bodies, yachtIds, exception traces) stay in the
+    // backend log via ApiErrorHandler's `logger.error`.
+    EXTERNAL_SYSTEM_ERROR(6001, "We're sorry, we're experiencing technical difficulties. Please contact our support team."),
+    EXTERNAL_OPTION_ERROR(6002, "We're sorry, we're experiencing technical difficulties with this booking. Please contact our support team."),
+    EXTERNAL_RESERVATION_ERROR(6003, "We're sorry, we couldn't complete your reservation due to a technical issue. Please contact our support team."),
+    EXTERNAL_RESERVATION_CANCELLATION_ERROR(6004, "We're sorry, the cancellation couldn't be processed due to a technical issue. Please contact our support team."),
 }

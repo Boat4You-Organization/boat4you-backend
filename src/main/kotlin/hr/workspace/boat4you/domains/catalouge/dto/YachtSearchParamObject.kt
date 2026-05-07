@@ -47,6 +47,21 @@ data class YachtSearchParamObject(
      */
     val agencyIds: List<Long>? = null,
     /**
+     * Sitemap-only filter — restrict the yacht list to a 2-letter ISO
+     * country whitelist (BS / ES / FR / GR / HR / IT / ME / MQ / SC / TR /
+     * VG / GD as of 4.5.2026). Used by /sitemap-yachts so Google only
+     * crawls yachts in countries we actively promote, while the customer
+     * search keeps showing every yacht regardless of country (deep-links
+     * to non-promoted countries still resolve normally).
+     *
+     * yacht_search_view stores the country code as the last 2 chars of
+     * `location_full_name` (format: "<id>-<name>-<countryCode>"). The
+     * predicate uses RIGHT() rather than a JOIN to avoid the JPA
+     * fetch-join + Pageable totalElements drift documented in
+     * project_jpa_join_fetch_pagination memory.
+     */
+    val countryCodes: List<String>? = null,
+    /**
      * Admin-only "replacement flow" flag — when true, the search ignores
      * offer availability (UNAVAILABLE / RESERVED / OPTION) and returns every
      * yacht that otherwise matches the filters. Used when the agency has
