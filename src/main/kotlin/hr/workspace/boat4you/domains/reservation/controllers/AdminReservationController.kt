@@ -31,6 +31,7 @@ import hr.workspace.boat4you.security.getAuthenticatedUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.data.web.PageableDefault
@@ -71,6 +72,8 @@ internal class AdminReservationController(
     private val reservationDocumentService: ReservationDocumentService,
     private val reservationMappers: ReservationMappers,
 ) {
+    private val log = LoggerFactory.getLogger(AdminReservationController::class.java)
+
     @Operation(summary = "Aggregates for the admin dashboard (KPI cards + weekly chart).")
     @GetMapping("/dashboard-metrics")
     fun getDashboardMetrics(): ResponseEntity<DashboardMetricsDto> {
@@ -335,10 +338,12 @@ internal class AdminReservationController(
 
         // Step 4: optional option-created email to the customer. Default off
         // so admin controls the moment the customer is notified (e.g. they
-        // want to call first before an email drops in their inbox).
+        // want to call first before an email drops in their inbox). Email
+        // failure must not roll back the reservation, but it MUST be logged
+        // so support can chase it up.
         if (body.sendOptionEmail) {
             runCatching { reservationEmailService.sendOptionCreatedEmail(reservation.id!!) }
-                .onFailure { /* email failure must not roll back the reservation */ }
+                .onFailure { e -> log.error("Failed to send option-created email for reservation ${reservation.id}", e) }
         }
 
         return ResponseEntity.ok(reservation)
@@ -375,7 +380,9 @@ internal class AdminReservationController(
         // email to the customer — rejected has its own send, approved goes
         // here. Wrapped in runCatching so a mail-side hiccup doesn't fail
         // the API response after the booking is already cancelled in DB.
+        // onFailure logs so support can spot mail-side regressions.
         runCatching { reservationEmailService.sendCancellationApproved(id) }
+            .onFailure { e -> log.error("Failed to send cancellation-approved email for reservation $id", e) }
         return ResponseEntity.ok(reservationResponse)
     }
 
