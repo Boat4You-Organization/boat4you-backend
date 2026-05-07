@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
+import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtRequest
 import hr.workspace.boat4you.domains.catalouge.dto.IdDto
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
@@ -122,7 +123,7 @@ class YachtMutationService(
         id: Long,
         customYachtRequest: CustomYachtRequest,
     ): CustomYachtDetailsResponse {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         val customYachtDetails =
             customYachtDetailRepository.findByYachtId(yacht.id!!)
                 ?: throw IllegalArgumentException("Custom yacht details not found for yacht with id ${yacht.id}")
@@ -345,7 +346,7 @@ class YachtMutationService(
         id: Long,
         mainImage: MultipartFile,
     ): IdDto {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         val oldMainImage = yacht.yachtImages.firstOrNull { it.mainImage == true }
         oldMainImage?.let {
             fileSystemService.deleteFile(oldMainImage?.url!!)
@@ -362,7 +363,7 @@ class YachtMutationService(
         id: Long,
         images: List<MultipartFile>,
     ): Set<IdDto> {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         val ids = mutableSetOf<IdDto>()
         images.forEachIndexed { index, image ->
             val img = createNewYachtImage(yacht, image, index + 1, false)
@@ -375,7 +376,7 @@ class YachtMutationService(
         id: Long,
         pdfFile: MultipartFile,
     ) {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         val customYachtDetails =
             customYachtDetailRepository.findByYachtId(id)
                 ?: throw IllegalArgumentException("Custom yacht details not found for yacht with id $id")
@@ -416,7 +417,7 @@ class YachtMutationService(
         ],
     )
     fun deleteYacht(id: Long) {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         yachtImageRepository.deleteAll(yacht.yachtImages)
         customYachtDetailRepository.deleteByYachtId(id)
         yachtTranslationRepository.deleteByYachtId(id)
