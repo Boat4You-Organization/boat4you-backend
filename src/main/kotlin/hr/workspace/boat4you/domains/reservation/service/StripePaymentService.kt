@@ -106,7 +106,11 @@ class StripePaymentService(
         // in Stripe Dashboard search; `payment_intent_data.description`
         // pushes it onto the customer's bank card statement. Fallback to
         // reservation id for the (historical) case where no number was set.
-        val paymentReference = dbReservation.reservationNumber ?: reservationId.toString()
+        // Sanitize to alphanumeric + slash/dash/underscore so admin-entered
+        // junk never lands on a customer's bank statement or in Stripe's
+        // dashboard search index.
+        val paymentReference = (dbReservation.reservationNumber ?: reservationId.toString())
+            .replace(Regex("[^A-Za-z0-9/_-]"), "")
 
         val params =
             SessionCreateParams
