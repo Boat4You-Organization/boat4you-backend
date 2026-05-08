@@ -28,11 +28,11 @@ Legend statusa:
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
 | F1-002 | HIGH | Static OpenAPI YAML datoteke `permitAll()` u Spring Security configu | OPEN (yml-side fixed `2e451cc`; security-policy dio ostaje) |
-| F1-003 | HIGH | Auth endpointi (login/register/reset/invite) bez per-IP rate limita | OPEN — OPS-VERIFY (postoji li nginx limit_req?) |
+| F1-003 | HIGH | Auth endpointi (login/register/reset/invite) bez per-IP rate limita | DEFERRED-Faza7 — confirmed missing on VM2 nginx (2026-05-08) |
 | F1-004 | HIGH | Slabi password requirementi (min 6 znakova, bez kompleksnosti, bez breach checka) | OPEN |
 | F1-005 | HIGH | JWT bez `iss`/`aud` validacije; rola se ne re-fetcha iz DB | OPEN |
 | F1-020 | HIGH | File upload validira samo Content-Type header, ne magic bytes | OPEN |
-| F1-022 | HIGH | `PublicReservationRateLimiter` slijepo vjeruje X-Forwarded-For | OPEN — OPS-VERIFY (strip-a li nginx XFF?) |
+| F1-022 | HIGH | `PublicReservationRateLimiter` slijepo vjeruje X-Forwarded-For | DEFERRED-Faza7 — confirmed scenario C ($proxy_add_x_forwarded_for) on VM2 (2026-05-08) |
 | F1-024 | HIGH | `StripePaymentService.handleWebhookEvent` non-null assertions na user metadata | OPEN |
 | F1-037 | HIGH | NAUSYS_URL default `http://ws.nausys.com` (HTTP, ne HTTPS) | OPEN |
 | F1-041 | HIGH | DevEquipmentSyncController na `/public/dev` + samo profile gating (no auth) | OPEN |
@@ -61,7 +61,7 @@ Legend statusa:
 | F1-033 | MED | Bez virus / malware skena na file uploadima | OPEN |
 | F1-035 | MED | Self-signed `.p12` keystore u repu (prod NE koristi, ali leak privatnog ključa) | OPEN |
 | F1-040 | MED | JWT access token expiration 24h (industrijski 15-60min) | DEFERRED-Faza5 |
-| F1-053 | MED | Nedostaje HSTS header iz nginx-a | OPEN — OPS-VERIFY |
+| F1-053 | MED | Nedostaje HSTS header iz nginx-a | DEFERRED-Faza7 (nginx batch) |
 | F1-055 | MED | Globalni error handler curi internu put-strukturu u 500 response body | OPEN |
 | F1-058 | MED | Repetitivni manual auth check; nedostaje class-level `@PreAuthorize` | OPEN |
 | F1-062 | MED | Login timing attack: BCrypt samo ako user postoji | OPEN |
@@ -80,9 +80,9 @@ Legend statusa:
 | F1-027 | LOW | Generic RuntimeException("Stripe is not enabled") | OPEN |
 | F1-034 | LOW | FileSystemService kanonikalizacija defense-in-depth (callers verified safe) | OPEN |
 | F1-039 | LOW | Swagger gating defaultira na ON; prod env mora postaviti false | OPEN (mitigirano kroz F1-002 fix u prod yml-u) |
-| F1-048 | LOW | nginx.conf TLS 1.0/1.1 (mitigirano za boat4you, samo default 404) | OPEN — OPS-VERIFY |
-| F1-050 | LOW | nginx leak verzije (`server_tokens` zakomentiran) | OPEN — OPS-VERIFY |
-| F1-051 | LOW | Default `_`-host nginx server block | OPEN — OPS-VERIFY |
+| F1-048 | LOW | nginx.conf TLS 1.0/1.1 (mitigirano za boat4you, samo default 404) | DEFERRED-Faza7 (nginx batch) |
+| F1-050 | LOW | nginx leak verzije (`server_tokens` zakomentiran) | DEFERRED-Faza7 (nginx batch) |
+| F1-051 | LOW | Default `_`-host nginx server block | DEFERRED-Faza7 (nginx batch) |
 | F1-066 | LOW | `IllegalStateException` s user-facing porukama u public endpointima | OPEN |
 | F1-074 | LOW | `ReservationPaymentPhasesServiceTest` razilazi se s logikom servisa (29/103 fail) | OPEN — biz signoff (Mario) |
 
@@ -128,13 +128,33 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 2 | — | — | — | — | — | — | **2** |
-| HIGH | 15 | — | — | — | — | — | — | **15** |
-| MED | 19 | — | — | — | — | — | — | **19** |
-| LOW | 11 | — | — | — | — | — | — | **11** |
+| HIGH | 13 | — | — | — | — | — | — | **13** |
+| MED | 18 | — | — | — | — | — | — | **18** |
+| LOW | 8 | — | — | — | — | — | — | **8** |
 | INFO | 4 | — | — | — | — | — | — | **4** |
 | FIXED | 20 | — | — | — | — | — | — | **20** |
-| DEFERRED | 3 | — | — | — | — | — | — | **3** |
+| DEFERRED-Faza7 (nginx batch) | 6 | — | — | — | — | — | — | **6** |
+| DEFERRED-other | 3 | — | — | — | — | — | — | **3** |
 | BLOCKED | 1 | — | — | — | — | — | — | **1** |
-| **OPEN** | **47** | — | — | — | — | — | — | **47** |
+| **OPEN** | **41** | — | — | — | — | — | — | **41** |
 
-Faza 1 STATUS: **CLOSED 2026-05-08.** 67 nalaza ukupno (66 pri kraju read passa + F1-074 iz phase gate-a). 20 fix-eva commit-ano (batch-1 + batch-2). compileKotlin ✓; detekt baseline 291 issues (pre-existing); 29/103 testova fail (pre-existing — F1-074). Korisnička akcija prije Faze 2: ops-verify F1-003 (gateway rate limit) i F1-022 (nginx XFF strip).
+---
+
+## Faza 7 nginx ops batch (DEFERRED 2026-05-08)
+
+Po dogovoru s korisnikom, sve nginx config promjene primjenjuju se u jednom deploy window-u na kraju review-a (Faza 7). Findings ostaju trackani, ali ne blokiraju code review faze 2-6.
+
+| ID | Naslov | Verification status (2026-05-08) |
+|---|---|---|
+| F1-003 | Per-IP rate limit za auth endpointe | `nginx -T \| grep limit_req` vraća prazno → CONFIRMED MISSING |
+| F1-022 | XFF strip / nginx ne smije prosljeđivati klijentski header | `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for` → CONFIRMED scenario C UNSAFE |
+| F1-048 | TLS 1.0/1.1 deprecated (default 404, mitigirano) | not re-verified, presumed unchanged |
+| F1-050 | server_tokens (verzija leak) | not re-verified, presumed unchanged |
+| F1-051 | Default `_`-host server block | not re-verified, presumed unchanged |
+| F1-053 | HSTS header missing | not re-verified, presumed unchanged |
+
+Faza 7 plan: jedan diff `/etc/nginx/sites-enabled/<conf>` koji adresira sve gore u istom commit window-u, validate `nginx -t`, reload `systemctl reload nginx`, smoke test.
+
+---
+
+Faza 1 STATUS: **CLOSED 2026-05-08.** 67 nalaza ukupno (66 pri kraju read passa + F1-074 iz phase gate-a). 20 fix-eva commit-ano (batch-1 + batch-2). compileKotlin ✓; detekt baseline 291 issues (pre-existing); 29/103 testova fail (pre-existing — F1-074). Nginx-side findings (6) deferrirani na Fazu 7 — ne blokiraju Fazu 2.
