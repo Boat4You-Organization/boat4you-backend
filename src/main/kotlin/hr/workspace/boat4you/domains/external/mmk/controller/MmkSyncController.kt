@@ -8,7 +8,7 @@ import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferIntegrati
 import org.springframework.context.annotation.Profile
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
-import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDate
@@ -24,7 +24,11 @@ class MmkSyncController(
     private val mmkCatalogueIntegrationService: MmkCatalogueIntegrationService,
     private val mmkYachtOfferIntegrationService: MmkYachtOfferIntegrationService,
 ) {
-    @GetMapping("/sync")
+    // Sync operations mutate catalogue/yacht state by writing rows from the
+    // upstream MMK API into our DB. They must not be GET (cacheable, prefetch-
+    // safe) — POST signals a state-changing trigger and avoids accidental
+    // re-runs from browsers, link previews, or proxy retries (F1-042).
+    @PostMapping("/sync")
     fun catalouge() {
         mmkCatalogueIntegrationService.countriesSync()
         mmkCatalogueIntegrationService.sailingAreaSync()
@@ -39,30 +43,30 @@ class MmkSyncController(
         mmkCatalogueIntegrationService.equipmentSync()
     }
 
-    @GetMapping("/yachts")
+    @PostMapping("/yachts")
     fun yachts() {
         mmkYachtIntegrationService.yachtSync()
     }
 
-    @GetMapping("/yachts-lang")
+    @PostMapping("/yachts-lang")
     fun yachtsLang() {
         mmkYachtIntegrationService.yachtTranslationsSync()
     }
 
-    @GetMapping("/offer")
+    @PostMapping("/offer")
     fun offer() {
         mmkYachtOfferIntegrationService.yachtOfferSync()
     }
 
-    @GetMapping("/availability")
+    @PostMapping("/availability")
     fun availability() {
         mmkAvailabilityIntegrationService.syncYachtAvailability()
     }
 
-    @GetMapping("/offer2")
+    @PostMapping("/offer2")
     fun offer2(): ResponseEntity<String> {
-        val startDate = LocalDate.of(2025, 8, 9)
-        val endDate = LocalDate.of(2025, 8, 13)
+        val startDate = LocalDate.now()
+        val endDate = startDate.plusDays(4)
         mmkYachtOfferIntegrationServiceAsync.syncOffersForDateRange(startDate, endDate, null, null, null)
         return ResponseEntity.accepted().body("Offer sync started")
     }
