@@ -320,3 +320,93 @@ Najznačajniji nalazi:
 Batch 3 (catalogue core: Yacht/Offer/Inquiry/Location/Agency + view repos) sljedeći — najvjerojatnije najdublji N+1 i complex-query izvor.
 
 ---
+
+## Batch 3a — Catalogue core: Yacht / YachtImage / YachtTranslation (2026-05-08)
+
+### [F2-017] LOW model consistency — `Yacht`, `YachtImage`, `YachtTranslation` ne extendaju `AbstractEntity`
+**Lokacija:** `domains/catalouge/jpa/Yacht.kt:32`, `YachtImage.kt:22`, `YachtTranslation.kt:22`
+**Detekcija:** statička
+**Opis:** Većina entiteta nasljeđuje `AbstractEntity<Long>` koji daje: `id` (BIGSERIAL), `created`, `modified`, `creator_id`, `modifier_id`, `entity_status` + `@Audited` aspekt. **Yacht klasa ima vlastiti `@Id` i nedostaje sve ostalo** — bez audita, bez timestamps, bez entity_status soft-delete pattern-a. **YachtImage**, **YachtTranslation** isto. Komentar uz `Yacht.sysActive` kaže "If yacht is deactivated (deleted) by external system" — to je **ad-hoc soft-delete pattern** umjesto centralnog `entity_status`.
+**Posljedica:** **Yacht promjene nisu auditable.** Cijena, deposit, model, agency — sve može tiho biti promijenjeno bez tracker-a. Combined s F2-001/F2-004 (audit trail dead in general): **historija promjena yachte-a i pripadajućih slika/prijevoda je nepostojeća.** Ako broker podigne cijenu yachti-a noćuska tako da povisi prihod kupca koji je već rezervirao, ne može se utvrditi promjena.
+
+Plus: `Yacht` nema `created` / `modified` kolonu → ne može se sortirati "novi yachti su gore" ili "promijenjeni nedavno". Trenutni queryji koji to trebaju moraju izlučiti iz Envers `_revisions` tablice... ali Yacht nije ni Envers-audited.
+**Predloženi fix:** Yacht extend AbstractEntity. Migracija dira yacht tablicu (dodati 4 kolone, backfill `created/modified` iz prve sync revizije ili NOW(), `creator_id` ostane NULL za postojeće, `entity_status='ACTIVE'`). Velik refactor + Envers `@Audited`.
+**Riziko-procjena fixa:** velik. Migracija na milijunske tablice + sync code update (sync postavlja Yacht.created etc. dolazi iz vanjskih sustava ili NOW()).
+**Status:** OPEN — eskalacija (architectural decision)
+
+---
+
+### [F2-018] MED data integrity risk — `@Enumerated` bez `EnumType.STRING` na većini entiteta = ORDINAL storage
+**Lokacija:** `Yacht.kt:132 (mainsailType)`, `Yacht.kt:142 (genoaType)`, `Yacht.kt:230 (vesselType)`, `Yacht.kt:238 (entryType)`, `YachtTranslation.kt:45 (type)`. Vjerojatno isti pattern u drugim entitetima — treba grep `@Enumerated$` (bez argumenata).
+**Detekcija:** statička
+**Opis:** `@Enumerated` bez argumenta default-a na `EnumType.ORDINAL` — enum vrijednost se sprema kao **integer index** u DB-u (`vesselType=0` za prvi, `=1` za drugi itd.). Posljedica: **ako developer doda novi enum value bilo gdje OSIM na kraj listе, ili promijeni redoslijed, ili obriše vrijednost — svi postojeći redovi tiho čitaju krive vrijednosti**. Klasičan "production-killer".
+
+Primjer: trenutno `EntryType.CUSTOM` možda ima ordinal 1 (na osnovi `entry_type = 1` u native queryju za replacement search). Ako netko sutra preimenuje ili reorderira EntryType enum, svi yachti s `entry_type=1` u DB-u i dalje vraćaju "CUSTOM" iz kod-a — ali ako se enum promijenio i sad `EntryType.EXTERNAL` ima ordinal 1, čitamo CUSTOM kao EXTERNAL. Tipična bug klase koja se manifestira tek post-deploy.
+**Posljedica:** kritičan rizik tihih korumpiranih enum vrijednosti. Combined s F2-019 (native queryji hardkodiraju ordinale) — već svjesno gradimo na tom riziku.
+**Predloženi fix:** **dvostupanjski**: (1) audit svih @Enumerated bez STRING, dokumentirati trenutne ordinale. (2) Migracija u dvije faze:
+  - migracija A: dodati string kolonu `vessel_type_str VARCHAR`, backfill iz int-a, dual-write.
+  - migracija B: drop int kolonu, rename str → original.
+
+Ako fresh DB se još ne deploya — promijeniti `@Enumerated` u `@Enumerated(EnumType.STRING)` PRE prvog deploya je trivial.
+
+**Status:** OPEN — **kritična odluka prije prod deploy-a**: ide li ovaj review-branch live s ORDINAL pattern-om? Ako da, mora biti svjesno acceptirano i strogo zabraniti reorder enuma. Ako ne, migracijska strategija prije live-a.
+
+---
+
+### [F2-019] MED data integrity — Native queryji hardkodiraju enum ordinale (`status IN (1, 2, 3)`, `entry_type = 1`)
+**Lokacija:** `domains/catalouge/jpa/YachtRepository.kt:178, 182, 248` (najmanje)
+**Detekcija:** statička
+**Opis:** `findForReplacementSearch` i `countForReplacementSearch` native queryji koriste raw integer vrijednosti za enum filtriranje:
+- `o.status IN (1, 2, 3)` — pretpostavka da su prve 3 vrijednosti enum-a "active offer states" (CREATED, CONFIRMED, BOOKED ili sl.). Ali nije eksplicitno dokumentirano i ne provjerava se compile-time.
+- `y.entry_type = 1` — vjerojatno `EntryType.CUSTOM`. Komentar uz @Enumerated u Yacht-u ne pomaže.
+
+Combined s F2-018: ako se EntryType enum reorderira, ovi native queryji silently lažu o tome što filtriraju. Native queryji ne mogu se compile-time provjeriti.
+**Posljedica:** dodatna bug-klasa povezana s F2-018. Replacement search (ops-side feature za broker swap rezervacija) može vraćati krive yachte ako se enum promijeni.
+**Predloženi fix:** ili (a) prebaciti na JPQL gdje Hibernate generira ispravne vrijednosti iz enum-a, ili (b) ako native query mora ostati zbog LATERAL join-a, dokumentirati uz query "WARNING: status=1,2,3 mapira na OfferStatus.{X,Y,Z}; ako se enum promijeni, OVO TREBA AŽURIRATI." Plus: koristiti `:status1, :status2, :status3` parametre + sastaviti listu iz Kotlin koda (`OfferStatus.ACTIVE.ordinal + 1` ili sl.) — ne idealno ali eksplicitno.
+
+Najbolji fix: pomiknuti se na `EnumType.STRING` (F2-018) i koristiti string vrijednosti u native queryju (`status IN ('CREATED', 'CONFIRMED', 'BOOKED')`).
+**Status:** BLOCKED-BY F2-018
+
+---
+
+### [F2-020] LOW perf — `findWithReservationOptionsByAgency` JOIN FETCH bez DISTINCT
+**Lokacija:** `domains/catalouge/jpa/YachtRepository.kt:42-52`
+**Detekcija:** statička
+**Opis:** Isti pattern kao F2-010 (UserRepository.findByEmail). `JOIN FETCH y.reservationOptions ro JOIN FETCH y.agency a` bez `DISTINCT` keyword-a. ReservationOptions je Set u Yacht entity, ali dotok preko žice nije dedupliciran u DB sloju.
+**Posljedica:** za yacht s 10 reservation options × 1 agency, vraća se 10 row-eva istog yachti-a iz DB-a. Hibernate dedupes, ali podaci su preneseni 10×.
+**Predloženi fix:** dodati `SELECT DISTINCT y FROM Yacht y ...`.
+**Status:** WAITING-DECISION (trivial)
+
+---
+
+### [F2-021] MED maintainability — `findForReplacementSearch` vs `countForReplacementSearch` divergentna struktura WHERE klauzule
+**Lokacija:** `domains/catalouge/jpa/YachtRepository.kt:138-220` (find) vs `:226-271` (count)
+**Detekcija:** statička
+**Opis:** Komentar iznad count-a kaže "Kept in sync with the main query's WHERE branches", ali implementacije su **strukturno različite**:
+- find query: `... AND (avg_price.avg_per_day IS NOT NULL OR EXISTS (SELECT 1 FROM external_reservations ...))` — koristi LATERAL join rezultat `avg_price.avg_per_day` iz subqueryja gore.
+- count query: `... AND (EXISTS (SELECT 1 FROM offer ...) OR EXISTS (SELECT 1 FROM external_reservations ...))` — re-izvodi EXISTS jer nema LATERAL join.
+
+Funkcionalno **vjerojatno** vraćaju isti broj redova (oba kažu "yacht ima active offer u lokaciji **ILI** preklapajuću external reservation"). Ali ako se kasnije doda još jedan filter status (npr. status=4), dev mora držati u glavi da treba ažurirati **OBA** mjesta sa malo različitim sintaksama. Bug-čekanju: pagination break ako count i find ne reflektiraju isti skup.
+**Posljedica:** mogući subtle pagination bugs ("page 1 ima 12 yachte-a, count kaže 25, page 3 prazan") — vrlo teško otkriti.
+**Predloženi fix:** dvije opcije:
+  - (a) refactor count na isti LATERAL pattern (sporiji, ali strukturno ekvivalentan).
+  - (b) izdvojiti zajedničke filter izraze u baseline view ili stored function. Pre-kompleksno.
+  - (c) ostaviti, ali napraviti **integration test** koji garantira da count = `find.size` za svaki edge filter combination.
+
+Najpragmatičnije: dodati test koji pokriva edge case-ove (locationIds prazno, agencyIds prazno, samo external reservation match) i potvrdi count=find.size.
+**Riziko-procjena fixa:** dira ad-hoc native query — ne pukne nigdje silently.
+**Status:** OPEN — Faza 5 (cross-cutting test coverage) ili tracking-only
+
+---
+
+### Sažetak Batch 3a
+
+- **MED (3):** F2-018 (enum ORDINAL storage — kritičan prije prod deploya), F2-019 (hardkodirani ordinali u native query — ovisi o F2-018), F2-021 (find/count divergence)
+- **LOW (2):** F2-017 (Yacht ne extendira AbstractEntity), F2-020 (DISTINCT missing)
+- **WAITING-DECISION:** F2-020 (trivial DISTINCT add)
+
+**Najkritičniji nalaz batch-a: F2-018.** Nije pitanje "hoćeš li popraviti", nego "koliko to košta sad vs kasnije". Pre-prod deploy s ORDINAL je **prihvaćanje rizika** da se jednom u budućnosti prouzroči production data corruption. Migracija STRING-a kasnije je značajno teža nego sad.
+
+**Batch 3a je incomplete** — još Offer, OfferExtra, OfferPaymentPlan, ReservationOption, Inquiry, CustomYachtDetail, Equipment, Extra, Location, Agency, Manufacturer, Model, View repos čekaju. Splitano u Batch 3b/3c sljedeća sjednica.
+
+---
