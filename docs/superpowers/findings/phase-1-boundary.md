@@ -1,7 +1,8 @@
 # Faza 1 — Boundary / attack surface
 
-**Status:** in progress (read pass)
+**Status:** CLOSED (read pass + batch-1 + batch-2 + closure)
 **Datum starta:** 2026-05-07
+**Datum closure:** 2026-05-08
 **Scope:** security/, *Controller.kt u domains/, payment webhooks, file upload, swagger, dev sync, rate-limit, application yml profile config.
 
 ---
@@ -1122,10 +1123,59 @@ Stripe session je kratkotrajan (24h expiry), tako da napadač ne može trajno fi
 
 ---
 
-## Pending verification (potreban grep / nastavak read pass-a)
+## Pending verification — riješeno (2026-05-08)
 
-- F1-021/F1-034: pozivi `FileSystemService.saveFile/saveImage/deleteFile/getResourcePath` — jesu li ulazi user-controlled? Provjeriti u nastavku Faze 1 (čitanje upload controller-a).
-- F1-002: postoji li negdje `springdoc.swagger-ui.enabled: false` u `application-prod.yml`? Treba verificirati u Fazi 6 / sad u Fazi 1 yml read.
-- F1-003: postoji li WAF ili reverse-proxy rate limiter pred aplikacijom? README_PROD ne spominje.
-- F1-010: što ApiErrorHandler napravi s različitim InternalLoginException tipovima? — Faza 5 dependency.
-- F1-022: je li VM2 stvarno iza nginx-a / IP-a koji strip-a XFF? README_PROD ne spominje.
+- **F1-021/F1-034 — VERIFIED SAFE.** Grep `fileSystemService\.(saveImage|saveFile|savePdfFile|deleteFile|getResourcePath|getResourceFromPath)` pokriva sve callere. Subpath je uvijek `y-${id}` (DB sequence id) ili UUID, customFilename je uvijek `${UUID.randomUUID()}.{webp|pdf}`. `deleteFile` / `getResourcePath` čitaju `pdfUrl` / `image.url` iz DB-a — vrijednosti su pisane prethodno preko `saveFile` koji vraća uuid-baziran path. Path traversal nije eksploatabilan kroz trenutne callere. F1-021 ostaje MED (defense-in-depth: kanonikalizacija u FileSystemService), F1-034 LOW.
+- **F1-002 — DJELOMIČNO FIXED u batch-2.** Originalni `application.yml` defaulta `springdoc.api-docs.enabled` i `swagger-ui.enabled` na `${SWAGGER_ENDPOINT_ENABLED:true}` — ako env nije postavljen, swagger ON. `application-prod.yml` sad eksplicitno overrida na `false` (commit `2e451cc`). Static OpenAPI YAML datoteke (`/boat4you_ws_*.openapi.yaml`, `/nausys_v6.openapi.yaml`, `/mmk_api_2_1_3.json`) ostaju `permitAll()` u Spring Security configu — to nije pokriveno trivijalnim fix-om jer dira security policy. **F1-002 ostaje OPEN** za HIGH dio (security policy promjena).
+- **F1-003 — OPEN, treba ops verifikacija.** README_PROD.md ne spominje rate-limiter na gateway-u. nginx.conf nije u repu (boat4you nginx je na VM2, izvan repository scope-a). Aplikacija ima samo `PublicReservationRateLimiter`, ne pokriva login/register/reset. F1-003 ostaje HIGH/OPEN. **Akcija:** korisnik mora potvrditi je li nginx layer ima `limit_req_zone` postavljen.
+- **F1-010 — VERIFIED.** `ApiErrorHandler.handleInternalLoginException` (linije 274-291) vraća `HTTP 403` s **različitim error code-om** za svaki `InternalLoginException.Type`: `BAD_CREDENTIALS`, `USERS_INVITE_NOT_ACCEPTED`, `LOGIN_ATTEMPTS_EXCEEDED`. Anonimni napadač razlikuje "email ne postoji" od "invite čeka prihvat" od "lockout". Email enumeration **potvrđen**. F1-010 ostaje MED/OPEN za fix u Fazi 5 (cross-cutting exception mapping); fix dira frontend (jedinstveni error code → frontend treba dvije nove poruke).
+- **F1-022 — OPEN, treba ops verifikacija.** README_PROD.md ne dokumentira ponašanje nginx-a oko `X-Forwarded-For`. Aplikacija slijepo trustova prvi `X-Forwarded-For` segment. F1-022 ostaje HIGH/OPEN. **Akcija:** korisnik mora potvrditi strip-a li nginx XFF prije forwardinga (tj. nije li nginx postavljen samo na `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` što propušta klijentski header).
+
+---
+
+## Batch 2 — trivial fixes (commit-i 2e451cc → 274dc5a, 2026-05-08)
+
+| ID | Severity | Naslov | Commit |
+|---|---|---|---|
+| F1-002 | HIGH | (djelomično) Disable swagger by default in prod profile (yml side) | `2e451cc` |
+| F1-016 | LOW | Drop hardcoded swagger server hosts | `d8feb1a` |
+| F1-017 | LOW | Real OpenAPI title/description | `d8feb1a` |
+| F1-042 | LOW | POST for state-changing /admin/mmk + /admin/nausys sync triggers | `c7e1c2e` |
+| F1-043 | MED | Rolling LocalDate.now() for MMK offer2 instead of hardcoded 2025-08-09 | `c7e1c2e` |
+| F1-044 | MED | TestJobController → AdminJobController, drop dead code | `274dc5a` |
+
+---
+
+## Phase gate verification (2026-05-08)
+
+| Provjera | Rezultat | Komentar |
+|---|---|---|
+| `./gradlew compileKotlin` | ✓ PASS (45s) | Niti jedan compile error nakon batch-2 izmjena. |
+| `./gradlew detekt` | ⚠ FAIL (291 weighted issues) | **Pre-existing baseline** — nijedan issue u datotekama batch-2; sve LongMethod / ReturnCount / UnusedProperty / UseRequire smell-ovi po service / controller hijerarhiji. Tracking u Faza 5 (cross-cutting code quality) i Faza 6 (repo hygiene). |
+| `./gradlew test` | ⚠ FAIL (29/103 failed) | **Pre-existing baseline** — sve failure-e u `ReservationPaymentPhasesServiceTest`. Service je promijenjen (commit `6f11eef`) bez ažuriranja testova. Vidi novi nalaz F1-074 niže. Nije batch-2 regresija. |
+
+Phase gate odluka: **PASS s dvije dokumentirane iznimke** (detekt baseline, test baseline). Nijedna iznimka nije nova; obje su pre-existing stanje koje se prati u kasnijim fazama.
+
+---
+
+## Novi nalaz iz phase gate-a
+
+### [F1-074] LOW code health — `ReservationPaymentPhasesServiceTest` razilazi se s logikom servisa
+**Lokacija:** `src/test/kotlin/hr/workspace/boat4you/domains/reservation/service/ReservationPaymentPhasesServiceTest.kt`, `src/main/kotlin/hr/workspace/boat4you/domains/reservation/service/ReservationPaymentPhasesService.kt`
+**Detekcija:** dinamička (gradle test)
+**Opis:** 29/103 unit testova faila. Test "one month plus a day until startDate" očekuje 50/50 split (2 phase) za `now=2025-01-01`, `startDate=2025-02-02`. Service rule A (linija 51-54) sad vraća **100% sada** za sve "charter within 2 months", što daje 1 phase. Service je prepravljen u commit `6f11eef checkpoint: pre filter V2 backend distribution endpoint (25.4.2026)` ili kasnije; testovi opisuju staru poslovnu logiku. Posljedica: cijela `ReservationPaymentPhasesServiceTest` klasa nepouzdana — bilo kao regression detector, bilo kao dokumentacija pravila.
+**Posljedica:** test suite ne hvata regresione na payment-phase logici (jedna od kompleksnijih business rules — A/B/C iz docs comment-a). Ako se ponovno mijenja logika rasporeda plaćanja, ništa ne pucne kao indikator.
+**Predloženi fix:** ili (a) ažurirati testove na trenutnu A/B/C logiku iz dokumentacije servisa, ili (b) ako je test reflektovao pravu poslovnu logiku → service ima bug; pitati Maria koja od dvije logike je željena. Riziko-procjena: dira business rules (pre-payment timeline) → eksplicitan biz signoff prije fix-a.
+**Status:** OPEN — eskalacija Maria (poslovna odluka) prije bilo kakvog fix-a.
+
+---
+
+## Phase 1 closure summary
+
+**Read pass:** dovršen (66 nalaza pri kraju read pass-a + 1 novi iz phase gate-a = 67).
+**Trivial fix-evi:** 14 batch-1 (commit-i `7cc3b09`-`b169ff1`) + 6 batch-2 (commit-i `2e451cc`-`274dc5a`) = **20 fix-eva commit-ano**.
+**OPEN nalaza pri zatvaranju:** 47 (2 CRIT + 16 HIGH + 19 MED + 10 LOW). Vidi `REGISTER.md` za točan breakdown.
+**Pending za phase 6 (repo hygiene):** F1-050, F1-051 (nginx config — out-of-repo, eskalacija ops-u).
+**Pending za phase 5 (cross-cutting):** F1-010 (uniformne login error responses), detekt baseline cleanup, F1-074 (test divergence).
+**Pending blocker odluka:** F1-019 (Stripe webhook idempotency), F1-068 (inquiry send-test email bombing) — autor sam priznaje "blocker before go-live"; ne fixaju se u Fazi 1 jer nisu trivijalni.
+**Korisnička akcija prije Faze 2:** potvrda nginx XFF strip-a (F1-022) i nginx rate-limita (F1-003).
