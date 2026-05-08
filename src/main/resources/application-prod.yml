@@ -31,7 +31,20 @@ application:
   security:
     jwt:
       secret-key: ${JWT_SECRET_KEY}
+# Swagger / OpenAPI must be disabled by default in prod. Root yml defaults
+# to ON (springdoc.api-docs.enabled / swagger-ui.enabled fall back to true
+# unless SWAGGER_ENDPOINT_ENABLED=false). If the env var is forgotten on a
+# new VM, swagger ships live. Lock it off here; flip via env if you really
+# need it on a prod box (F1-002, prod review 2026-05-07).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENDPOINT_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENDPOINT_ENABLED:false}
 spring:
+  web:
+    resources:
+      add-mappings: ${SWAGGER_ENDPOINT_ENABLED:false}
   mail:
     host: ${MAIL_SERVER_HOST}
     port: ${MAIL_SERVER_PORT}
