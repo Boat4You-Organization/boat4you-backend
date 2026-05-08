@@ -205,3 +205,118 @@ Single-entry s `SimpleKey` rado je OK ako je metoda **no-arg** (Spring kreira `S
 F2-001 i F2-004 su povezani (oba "TODO Fill when Security implemented") i trebaju zajedničku odluku Marija prije fix-a — **audit trail je trenutno funkcionalno mrtav.** Eskalacija prije nego nastavim u Batch 2.
 
 ---
+
+## Batch 2 — User / security / roles (2026-05-08)
+
+### [F2-009] LOW perf — `UserEntity.@Formula("concat(name, ' ', surname)")` se uvijek učitava
+**Lokacija:** `domains/users/jpa/UserEntity.kt:131-133`
+**Detekcija:** statička
+**Opis:** `@Formula` deklaracija dodaje computed kolonu **u svaki SELECT** za UserEntity (Hibernate ugradi `concat(name, ' ', surname) AS fullNameByFormula` u svaki query). Polje je `@Deprecated("Use getFullName() method")`, ali je još uvijek `lateinit var` → znači da Hibernate fetcha vrijednost svaki put. Plus: `getFullName()` metoda radi isto u Kotlin-u bez DB računa.
+**Posljedica:** marginalno više CPU-a na DB-u + više bytes po row-u u svakom SELECT-u. User tablica nije najveća, ali svaki request koji loada user-a (autentificirani request) ovo pokupi.
+**Predloženi fix:** obriši `@Formula` polje (deprecated je već). Migracija nije potrebna — Hibernate samo neće više dodavati u SELECT. Verify-grep da nigdje u kodu netko ne pristupa `fullNameByFormula` direktno (ako pristupa, prebaci na `getFullName()`).
+**Riziko-procjena fixa:** trivijalno, dira UserEntity. LOW.
+**Status:** WAITING-DECISION (trivial)
+
+---
+
+### [F2-010] LOW perf — `UserRepository.findByEmail` JPQL `LEFT JOIN FETCH u.roleAssignments` bez `DISTINCT`
+**Lokacija:** `domains/users/jpa/UserRepository.kt:12-19`
+**Detekcija:** statička
+**Opis:** `JOIN FETCH` na kolekciju (`roleAssignments`) bez `DISTINCT` keyword-a generira Cartesian product u rezultatu — ako user ima 3 role assignment-a, DB vraća 3 row-a istog user-a. Hibernate ih u memoriji deduplicira (po default object identity-ju jer UserEntity nema custom equals), ali DB sloj još uvijek prolazi 3× više byteova preko žice.
+**Posljedica:** marginalno spori login + admin lookup za usere s više rola. SYSTEM_ADMIN-i obično imaju samo 1 rola, normalni useri 1, tako da je impact malen u praksi.
+**Predloženi fix:** dodati `SELECT DISTINCT u FROM UserEntity u ...`. Tim DB radi de-dup, mreža prenosi manje, Hibernate svejedno radi memory de-dup ali tek na manjem skupu.
+**Riziko-procjena fixa:** trivijalna, jedan DISTINCT. LOW.
+**Status:** WAITING-DECISION (trivial)
+
+---
+
+### [F2-011] MED data integrity / GDPR — `findAllAdminEmailAddresses` ne filtrira `deleted_at IS NULL`
+**Lokacija:** `domains/users/jpa/UserRepository.kt:30-39`
+**Detekcija:** statička
+**Opis:** Query vraća email-ove svih SYSTEM_ADMIN korisnika za system notifications (npr. "broker je dodao novu agenciju" → notify all admins). Filter `u.entityStatus = 'ACTIVE'` postoji, ALI `u.deletedAt IS NULL` filter NEDOSTAJE. UserEntity ima poseban `deleted_at` GDPR tombstone — when set, user je "anonimiziran" (PII wiped, password rotated, tokens revoked, **ali roles drop-an?**). Treba verifikacija — ako role assignment nije obrisan kad se user GDPR-deletea, onda ovaj query vraća email anoniminiziranog user-a (`deleted-7421@boat4you.invalid` ili sl.) i sistem pokušava poslati notifikaciju koja ili (a) bounce-uje, ili (b) gore — ako anonimizacija ne mijenja email, šalje pravom user-u koji je tražio brisanje. **GDPR right-to-erasure breach.**
+**Posljedica:** ovisi o tome čisti li GDPR delete flow rola; treba verifikacija. Bilo: bounced admin notifikacije, bilo: GDPR breach.
+**Predloženi fix:** dodati `AND u.deletedAt IS NULL` u WHERE klauzulu. Plus: razjasniti GDPR delete flow — drop-aju li se roles assignment-i (ili samo PII fieldovi)?
+**Riziko-procjena fixa:** trivijalno za query. Verify GDPR delete flow je zaseban issue.
+**Status:** OPEN — verify GDPR delete flow prvo, onda fix
+
+---
+
+### [F2-012] LOW perf — `findAllByBirthdayMonthDay` native query bez funkcionalnog indeksa
+**Lokacija:** `domains/users/jpa/UserRepository.kt:57-68`
+**Detekcija:** statička
+**Opis:** `EXTRACT(MONTH FROM birthday) = :month AND EXTRACT(DAY FROM birthday) = :day` — funkcionalni filter koji DB ne može zadovoljiti index-om na `birthday` kolonu. Cron BirthdayEmailJob trigger-a daily → full table scan na `users` tablicu.
+**Posljedica:** za male user-baze (low thousands), neopazi se. Za 100k+ usera, sekunde scan-a svaki dan. Ne urgent.
+**Predloženi fix:** dodati funkcionalni index — `CREATE INDEX users_birthday_md_idx ON users ((EXTRACT(MONTH FROM birthday)), (EXTRACT(DAY FROM birthday))) WHERE birthday IS NOT NULL`. Postgres podržava parcijalne + funkcionalne indekse.
+**Riziko-procjena fixa:** dira shemu (Flyway migracija). LOW priority za sad.
+**Status:** OPEN — defer to Phase 6 (repo hygiene + perf indexes)
+
+---
+
+### [F2-013] MED perf — `TokenEntity.@ManyToOne user` je EAGER by default — fetched on every auth request
+**Lokacija:** `security/jpa/TokenEntity.kt:27-29`
+**Detekcija:** statička
+**Opis:** `@ManyToOne` bez `fetch = FetchType.LAZY` koristi JPA default = EAGER. `JwtAuthenticationFilter` poziva `tokenRepository.findByValue(jwtFromHeader)` na **svaki autentificirani HTTP request**, što triggera SELECT TokenEntity + automatski JOIN/sub-select za UserEntity. Kombinirano s F1-014 (token table grows): svaki request = 2 query-ja minimum (token + user) + Envers _revisions overhead pri save-u.
+**Posljedica:** baseline auth latency 2× nego potrebno. Visibly impacts response time pod load-om. Kod 100 req/s normalan promet i 25 conn pool, conn turnover gušći nego treba.
+**Predloženi fix:** `@ManyToOne(fetch = FetchType.LAZY)` na user FK-u. Verify call sites koji čitaju `token.user` ne padaju izvan transakcije — ako padaju, treba @Transactional ili explicit `JOIN FETCH` u relevantnom query-ju.
+**Riziko-procjena fixa:** dira hot path (auth filter). Treba runtime verifikacija u Fazi 7 — može se desiti LazyInitializationException u nekoj rute koji se na sluti samo kad pukne.
+**Status:** OPEN — fix kandidat za Fazu 5 (cross-cutting perf), s runtime verifikacijom u Fazi 7
+
+---
+
+### [F2-014] MED logic bug — `findAllValidTokenByUserId` ima `OR` umjesto `AND` u WHERE klauzuli, "valid" semantika netočna
+**Lokacija:** `security/jpa/TokenRepository.kt:9-15`
+**Detekcija:** statička
+**Opis:** Query: `WHERE t.user.id = :id AND (t.isExpired = false OR t.isRevoked = false)`. Logika: vraća tokene gdje JE BAR JEDNO false. Token koji je `isExpired=true, isRevoked=false` (npr. natural expiry, ali nije ručno revoked) → vraća se. Token koji je `isExpired=false, isRevoked=true` (forced logout) → također vraća se. **Pravi "valid" filter** bi trebao biti AND: `isExpired=false AND isRevoked=false`. Trenutni query bi se trebao zvati `findAllNotFullyRevokedByUserId` ili sl. — **ime je obmanjujuće.**
+
+Caller `TokenService.revokeAllUserTokens` ne brine za ovu razliku jer postavlja oba flag-a na true → idempotentno. Ali **ako neki budući caller** zatraži "all valid tokens for user" očekujući stvarno valid tokene → dobije i revoked i expired ones. Bug-om-čekanju.
+**Posljedica:** dependent code može ne raditi ono što naziv funkcije sugerira. Code review test bug.
+**Predloženi fix:** dvije opcije:
+  - (a) preimenovati metodu u `findAllNotFullyRevokedByUserId` (zadrži OR semantiku); ili
+  - (b) promijeniti u AND i preimenovati `findAllActuallyValidByUserId`. Update caller-a u TokenService da koristi novu semantiku (ili dodati novi method, ostaviti stari za revoke flow).
+
+Najčistije: dodati novi method `findAllActiveByUserId` s AND semantikom, ostaviti postojeći za revoke flow.
+**Riziko-procjena fixa:** trivijalno, ne dira hot path.
+**Status:** WAITING-DECISION (rename + new method, ili nada)
+
+---
+
+### [F2-015] LOW perf — `revokeAllUserTokens` radi N+1 update umjesto bulk UPDATE statement
+**Lokacija:** `security/jpa/TokenService.kt:9-18`
+**Detekcija:** statička
+**Opis:** Service load-a sve valid tokene → set-a oba flag-a na true → `saveAll`. Hibernate generira N pojedinačnih UPDATE-eva (jedan po tokenu) + N revisions inserts. Za user-a s 10 tokena (browser + mobile + različite sessions tijekom mjeseca) — 20 round-trip-ova.
+**Posljedica:** marginalno spori logout-svuda. Postaje problem ako F1-014 (token table grow) ne riješiti — useri akumuliraju desetke tokena tijekom godine.
+**Predloženi fix:** `@Modifying @Query("UPDATE TokenEntity t SET t.isExpired=true, t.isRevoked=true WHERE t.user.id=:userId AND (t.isExpired=false OR t.isRevoked=false)")` — single statement. **NAPOMENA:** bulk UPDATE bypassa Hibernate event listeners → Envers `_revisions` neće dobiti redove za update. To može biti acceptable (Envers već ima manualni revoke-all event jer bi i ovako u jednom request-u bilo).
+**Riziko-procjena fixa:** dira audit trail. Treba odluku ide li bulk + manual Envers revision insert, ili stati na N+1 pattern-u.
+**Status:** OPEN — Fazi 5 perf + audit decision
+
+---
+
+### [F2-016] MED perf — `RoleAssignmentEntity` ima EAGER user i role @ManyToOne (oba)
+**Lokacija:** `domains/roles/jpa/RoleAssignmentEntity.kt:21-30`
+**Detekcija:** statička
+**Opis:** `@ManyToOne` bez explicit fetch = EAGER. RoleAssignmentEntity ima dva @ManyToOne (user + role) — svaki load triggera 2 додатна SELECT-a. Kad UserEntity loada svoje `roleAssignments` (LAZY collection, učita ih po potrebi), Hibernate fetcha roleAssignment redove + za svaki par 2 додатна SELECT-a (user + role). Klasični N+1 problem na auth path-u.
+
+User → roleAssignments (LAZY, 1 query) → assignment → user (EAGER, već loaded) + role (EAGER, +1 query po assignmentu). Za usera s 2 role: 1 + 2 = 3 query-ja umjesto 1 sa proper JOIN FETCH.
+
+UserRepository.findByEmail koristi explicit `JOIN FETCH u.roleAssignments` — **ali ne i nested role**. Tako da na auth-flow-u imamo: 1 (findByEmail s JOIN FETCH) + N (jedan SELECT po assignment-u za role) = N+1.
+**Posljedica:** auth flow N+1; replicira se na svaki @Authentication / @PreAuthorize check kad se rola provjerava iz tokena (ako se rola ne re-fetcha iz DB-a, OK; ali F1-005 traži da se re-fetcha).
+**Predloženi fix:** `@ManyToOne(fetch = FetchType.LAZY)` na oba; UserRepository.findByEmail proširi na `LEFT JOIN FETCH ra.role` (nested join).
+**Riziko-procjena fixa:** dira auth path (UserAuthService callers). Visi srednje rizično — ne mijenjam dok ne odobriš.
+**Status:** OPEN — Faza 5
+
+---
+
+### Sažetak Batch 2
+
+- **MED (4):** F2-011 (GDPR/admin email), F2-013 (TokenEntity.user EAGER), F2-014 (findAllValid OR/AND bug), F2-016 (RoleAssignment EAGER N+1)
+- **LOW (4):** F2-009 (Formula deprecated), F2-010 (DISTINCT missing), F2-012 (birthday index), F2-015 (revoke bulk)
+- **WAITING-DECISION:** F2-009, F2-010, F2-014 (trivijalna polish/rename)
+
+Najznačajniji nalazi:
+- **F2-013 + F2-016** zajedno: auth path ima 3-4 nepotrebna query-ja po request-u. Pod load-om vidljivo.
+- **F2-011** GDPR koncern — verify GDPR delete flow čisti li role_assignments.
+- **F2-014** je tipičan "bug-čekanju" — ime obmanjuje, čeka novog dev-a da pogriješi.
+
+Batch 3 (catalogue core: Yacht/Offer/Inquiry/Location/Agency + view repos) sljedeći — najvjerojatnije najdublji N+1 i complex-query izvor.
+
+---
