@@ -125,13 +125,21 @@ Legend statusa:
 
 ## Faza 2 — Data layer (persistence, entities, migrations)
 
-**Status:** IN PROGRESS — Batch 1 (common/jpa + cache) ✓, Batch 2 (user/security/roles) ✓, Batch 3a (Yacht core) ✓, Batch 3b (Offer flow) ✓, Batch 3c (catalogue supporting + view repos) ✓, Batch 4 (reservation flow) ✓. Batch 5 (Flyway migrations) pending.
+**Status:** READ-PASS COMPLETE — Batch 1 (common/jpa + cache) ✓, Batch 2 (user/security/roles) ✓, Batch 3a (Yacht core) ✓, Batch 3b (Offer flow) ✓, Batch 3c (catalogue supporting + view repos) ✓, Batch 4 (reservation flow) ✓, Batch 5 (Flyway migrations) ✓. **Next: phase closure + gate decision.**
 
-### HIGH (0)
+### CRIT (1)
 
-(F2-022 fixed — vidi FIXED tablicu.)
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F2-043 | CRIT | V9_xx test data migracije run-aju u prod-u bez `FLYWAY_TARGET_VERSION` override-a; insertira 15+ Workspace.hr team usera s shared bcrypt hash | OPEN — **prod-blocker; verify env var** |
 
-### MED (10)
+### HIGH (1)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F2-044 | HIGH | `V1_24__drop_columns.sql` destructive DROP COLUMN bez rationale komentara — code reviewer ne može verify safety | OPEN — 30min Mario commentary |
+
+### MED (16)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -151,8 +159,11 @@ Legend statusa:
 | F2-036 | MED | `ReservationPaymentPhase.equals` null-bug + mutable Set anti-pattern (F2-026 sibling); F1-019 multiplier za payment double-capture | OPEN — eskalacija (entity contract change, F2-026 family) |
 | F2-037 | MED | `calculateTotalPaid` JPQL SUM null → Kotlin `BigDecimal` non-null NPE risk | WAITING-DECISION (trivial COALESCE) |
 | F2-038 | MED | `ReservationDocument` audit gap — signed contracts + internal admin docs nemaju tamper-evidence trail | OPEN — eskalacija (F2-001/F2-004 dependency + legal compliance) |
+| F2-045 | MED | `V1_64` SET NOT NULL bez UPDATE safety net — prod deploy fail-a na NULL phone redu | OPEN — pre-prod operational checklist |
+| F2-046 | MED | `V1_57` hardkodira ordinal payment_type values koje V1_90 kasnije mapira u STRING — drift risk | OPEN — tracking-only (already applied) |
+| F2-047 | MED | `V1_69`/`V1_70` country.id == location.id numerical overlap assumption — fragile, no constraint | OPEN — Faza 6 (data model documentation) |
 
-### LOW (21)
+### LOW (23)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -177,6 +188,8 @@ Legend statusa:
 | F2-039 | LOW | `ReservationFlowRepository.findIdsInReservationFlowChain` recursive CTE bez cycle detection — corruption loop diverges | OPEN — Faza 6 (defensive coding) ili tracking-only |
 | F2-040 | LOW | `ReservationViewRepository.findAllReservationsByParams` 6-column LOWER+LIKE admin search (F2-023 family) | OPEN — Faza 6 (vezano s F2-023/F2-024/F2-033/F2-034) |
 | F2-041 | LOW | `ReservationFlow.status` TODO + ReservationFlow/Document/ExternalReservationPaymentPlan ne extendaju AbstractEntity (F2-028 family) | OPEN — eskalacija (F2-028 architectural decision) |
+| F2-048 | LOW | `V1_54`/`V1_60`/`V1_67` recreate yacht_search_view s hardkodiranim `o.status <> 4` (superseded by V1_90+R__1_03) | OPEN — tracking-only / convention note |
+| F2-049 | LOW | `V1_88` dedup regex normalization drift s `ManufacturerAliasResolver.kt` Kotlin ekvivalentom | OPEN — Faza 6 (drift-prevention pattern) |
 
 ### FIXED (3)
 
@@ -192,16 +205,16 @@ Legend statusa:
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 2 | 0 | — | — | — | — | — | **2** |
-| HIGH | 13 | 0 | — | — | — | — | — | **13** |
-| MED | 18 | 16 | — | — | — | — | — | **34** |
-| LOW | 8 | 21 | — | — | — | — | — | **29** |
-| INFO | 4 | 2 | — | — | — | — | — | **6** |
+| CRIT | 2 | 1 | — | — | — | — | — | **3** |
+| HIGH | 13 | 1 | — | — | — | — | — | **14** |
+| MED | 18 | 19 | — | — | — | — | — | **37** |
+| LOW | 8 | 23 | — | — | — | — | — | **31** |
+| INFO | 4 | 3 | — | — | — | — | — | **7** |
 | FIXED | 20 | 3 | — | — | — | — | — | **23** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | — | — | — | — | — | **6** |
 | DEFERRED-other | 3 | 0 | — | — | — | — | — | **3** |
 | BLOCKED | 1 | 0 | — | — | — | — | — | **1** |
-| **OPEN** | **41** | **37** | — | — | — | — | — | **78** |
+| **OPEN** | **41** | **44** | — | — | — | — | — | **85** |
 
 ---
 
