@@ -71,9 +71,17 @@ class StripePaymentService(
             when {
                 // A specific phase was pinned from the UI (next-due or later
                 // installment). Wins over `payFullAmount` if both are present.
+                // F3-026: reject already-paid phases here, before any
+                // Stripe Session.create call, so we never have to abandon
+                // a created Stripe session because the local state was
+                // wrong.
                 paymentPhaseId != null -> {
-                    reservationFlow.paymentPhases.find { it.id == paymentPhaseId }?.amount
+                    val phase = reservationFlow.paymentPhases.find { it.id == paymentPhaseId }
                         ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase not found"))
+                    if (phase.paidOn != null) {
+                        throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase is already paid"))
+                    }
+                    phase.amount
                 }
                 // "Pay full remaining" — sum of unpaid phases (NOT the full
                 // reservation total, otherwise customers with a partially-paid
@@ -227,16 +235,23 @@ class StripePaymentService(
         val paymentPhaseId = metadata["paymentPhaseId"]?.toLongOrNull()
 
         val dbPaymentPhases = paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc(session.id)
-        if (dbPaymentPhases.isEmpty()) {
-            logger.error(
-                "Stripe event ${event.id}: no payment phases found for sessionId ${session.id} (reservationId=$reservationId)",
-            )
-            return
-        }
 
         when {
+            // payFullAmount=true tolerates an empty list — the legacy
+            // "first payment, no installment plan rows yet" flow runs
+            // through here with zero matched phases, and the booking
+            // promotion below is what completes the reservation.
             payFullAmount == true -> dbPaymentPhases.forEach(setPaymentMetadata(paymentIntentId))
-            payFullAmount == false -> dbPaymentPhases.first().apply(setPaymentMetadata(paymentIntentId))
+            payFullAmount == false -> {
+                val phase = dbPaymentPhases.firstOrNull()
+                if (phase == null) {
+                    logger.error(
+                        "Stripe event ${event.id}: payFullAmount=false but no phases match sessionId ${session.id}",
+                    )
+                    return
+                }
+                phase.apply(setPaymentMetadata(paymentIntentId))
+            }
             paymentPhaseId != null -> {
                 val phase = dbPaymentPhases.find { it.id == paymentPhaseId }
                 if (phase == null) {
@@ -281,12 +296,58 @@ class StripePaymentService(
         reservationFlow: ReservationFlow,
         sessionId: String,
     ) {
-        if (payFullAmount != null && payFullAmount) {
-            reservationFlow.paymentPhases.forEach { it.stripeSessionId = sessionId }
-        } else if (payFullAmount != null && !payFullAmount) {
-            reservationFlow.paymentPhases.oldest().stripeSessionId = sessionId
-        } else if (paymentPhaseId != null) {
-            reservationFlow.paymentPhases.find { it.id == paymentPhaseId }!!.stripeSessionId = sessionId
+        // F3-026: every branch must select among UNPAID phases. The
+        // previous `oldest()` returned the historically-earliest phase
+        // regardless of paidOn — on admin-replacement reservations that
+        // carry over a paid first installment, that meant stamping the
+        // new sessionId onto an already-paid phase, and the webhook
+        // would later overwrite its paidOn/stripePaymentIntentId on
+        // completion (and the customer would have paid the wrong row).
+        val targets: List<ReservationPaymentPhase> =
+            when {
+                payFullAmount == true -> reservationFlow.paymentPhases.filter { it.paidOn == null }
+                payFullAmount == false -> listOfNotNull(reservationFlow.paymentPhases.oldestUnpaid())
+                paymentPhaseId != null -> {
+                    val phase = reservationFlow.paymentPhases.find { it.id == paymentPhaseId }
+                        ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase not found"))
+                    if (phase.paidOn != null) {
+                        throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase is already paid"))
+                    }
+                    listOf(phase)
+                }
+                else -> emptyList()
+            }
+
+        targets.forEach { phase ->
+            // F3-023: if the phase already has a live Stripe session
+            // (user reopened the payment page → fresh Session.create on
+            // this call), expire the old one before overwriting so the
+            // funds cannot be captured against both sessions in the gap
+            // between issuing the new one and the user paying.
+            phase.stripeSessionId?.let { expireStripeSessionSafely(it) }
+            phase.stripeSessionId = sessionId
+        }
+    }
+
+    /**
+     * Best-effort expire of a previously-issued Stripe Checkout Session.
+     *
+     * Stripe rejects `expire` on terminal sessions (status `complete` or
+     * `expired`); we retrieve first and only call expire while still
+     * `open`. Network or API errors are logged but swallowed — the
+     * caller already has a new sessionId to stamp on the phase and
+     * blocking that on a Stripe API hiccup would be worse than the rare
+     * orphan-open-session it leaves behind.
+     */
+    private fun expireStripeSessionSafely(oldSessionId: String) {
+        try {
+            val oldSession = Session.retrieve(oldSessionId)
+            if (oldSession.status == "open") {
+                oldSession.expire()
+                logger.info("Expired prior open Stripe session $oldSessionId after reissue")
+            }
+        } catch (e: Exception) {
+            logger.warn("Could not expire prior Stripe session $oldSessionId: ${e.message}")
         }
     }
 
@@ -311,5 +372,6 @@ class StripePaymentService(
         }
     }
 
-    private fun Set<ReservationPaymentPhase>.oldest(): ReservationPaymentPhase = this.minBy { it.deadline }
+    private fun Set<ReservationPaymentPhase>.oldestUnpaid(): ReservationPaymentPhase? =
+        this.filter { it.paidOn == null }.minByOrNull { it.deadline }
 }
