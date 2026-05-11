@@ -125,7 +125,7 @@ Legend statusa:
 
 ## Faza 2 — Data layer (persistence, entities, migrations)
 
-**Status:** READ-PASS COMPLETE — Batch 1 (common/jpa + cache) ✓, Batch 2 (user/security/roles) ✓, Batch 3a (Yacht core) ✓, Batch 3b (Offer flow) ✓, Batch 3c (catalogue supporting + view repos) ✓, Batch 4 (reservation flow) ✓, Batch 5 (Flyway migrations) ✓. **Next: phase closure + gate decision.**
+**Status:** CLOSED 2026-05-11 (read-pass kroz 7 batch-eva + 3 fixes + closure summary + phase gate at baseline). 50 findings: 3 FIXED, 44 OPEN (1 CRIT + 1 HIGH + 19 MED + 23 LOW), 3 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F2-043 (`FLYWAY_TARGET_VERSION` env var verify), F2-044 (V1_24 Mario commentary), arhitektonska odluka za audit-trail batch.
 
 ### CRIT (1)
 
