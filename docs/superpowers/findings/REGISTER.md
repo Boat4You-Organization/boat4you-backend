@@ -125,9 +125,15 @@ Legend statusa:
 
 ## Faza 2 — Data layer (persistence, entities, migrations)
 
-**Status:** IN PROGRESS — Batch 1 (common/jpa + cache) ✓, Batch 2 (user/security/roles) ✓, Batch 3a (Yacht core) ✓. Batch 3b/3c (Offer/Inquiry/Location/Agency/view repos), Batch 4 (reservation flow), Batch 5 (Flyway migrations) pending.
+**Status:** IN PROGRESS — Batch 1 (common/jpa + cache) ✓, Batch 2 (user/security/roles) ✓, Batch 3a (Yacht core) ✓, Batch 3b (Offer flow) ✓. Batch 3c (Equipment/Extra/Location/Agency/Manufacturer/Model + view repos), Batch 4 (reservation flow), Batch 5 (Flyway migrations) pending.
 
-### MED (7)
+### HIGH (1)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F2-022 | HIGH | Daily @Scheduled cleanup (`deleteExpiredOffers` + `deleteExpiredReservations`) koristi non-PostgreSQL date syntax → tihi fail svaki dan u 06:00 | OPEN — fix prije prod deploy-a |
+
+### MED (10)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -138,8 +144,11 @@ Legend statusa:
 | F2-014 | MED | `findAllValidTokenByUserId` koristi OR umjesto AND — "valid" semantika netočna | WAITING-DECISION |
 | F2-016 | MED | `RoleAssignmentEntity` ima EAGER user i role @ManyToOne → auth path N+1 | OPEN — Faza 5 |
 | F2-021 | MED | `findForReplacementSearch` vs `countForReplacementSearch` divergentne WHERE klauzule | OPEN — Faza 5 (test coverage) ili tracking-only |
+| F2-023 | MED | `InquiryRepository.findAllByParamsForAdmin` triple leading-wildcard LIKE = full table scan (F1-068 DoS multiplier) | OPEN — Faza 6 (index migracije) |
+| F2-024 | MED | `countByEmailIgnoreCaseAndIdNot` poziva se per inquiry create, bez funkcionalnog `LOWER(email)` indeksa | OPEN — Faza 6 (vezano za F2-023) |
+| F2-026 | MED | `OfferPaymentPlan.equals/hashCode` na mutable poljima u `MutableSet` na Offer-u → broken Set invariant | OPEN — eskalacija (entity contract change) |
 
-### LOW (12)
+### LOW (16)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -155,6 +164,10 @@ Legend statusa:
 | F2-015 | LOW | `revokeAllUserTokens` N+1 update umjesto bulk UPDATE | OPEN — Faza 5 (perf + audit decision) |
 | F2-017 | LOW | `Yacht`/`YachtImage`/`YachtTranslation` ne extendaju `AbstractEntity` — nema auditа | OPEN — eskalacija (velik refactor + migracija) |
 | F2-020 | LOW | `findWithReservationOptionsByAgency` JOIN FETCH bez DISTINCT | WAITING-DECISION |
+| F2-025 | LOW | `offersByYachtAndStatusCache` key tip `Yacht` entity (sibling F2-007) — cache praktički nije korišten | OPEN — fix paralelno s F2-007 |
+| F2-027 | LOW | JPA `orphanRemoval=true` vs DB `OnDelete SET_NULL` na istom FK → orphan rows pri direct SQL delete-u | OPEN — Faza 6 (data integrity sweep) |
+| F2-028 | LOW | Offer/OfferExtra/OfferPaymentPlan/Inquiry/CustomYachtDetail/CustomOffer/ReservationOption ne extendaju AbstractEntity (proširenje F2-017) | OPEN — eskalacija (architectural decision) |
+| F2-029 | LOW | `STR(:search)` JPQL funkcija redundantna u `findAllByParamsForAdmin` | WAITING-DECISION |
 
 ### FIXED (2)
 
@@ -170,15 +183,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 2 | 0 | — | — | — | — | — | **2** |
-| HIGH | 13 | 0 | — | — | — | — | — | **13** |
-| MED | 18 | 7 | — | — | — | — | — | **25** |
-| LOW | 8 | 12 | — | — | — | — | — | **20** |
+| HIGH | 13 | 1 | — | — | — | — | — | **14** |
+| MED | 18 | 10 | — | — | — | — | — | **28** |
+| LOW | 8 | 16 | — | — | — | — | — | **24** |
 | INFO | 4 | 0 | — | — | — | — | — | **4** |
 | FIXED | 20 | 2 | — | — | — | — | — | **22** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | — | — | — | — | — | **6** |
 | DEFERRED-other | 3 | 0 | — | — | — | — | — | **3** |
 | BLOCKED | 1 | 0 | — | — | — | — | — | **1** |
-| **OPEN** | **41** | **19** | — | — | — | — | — | **60** |
+| **OPEN** | **41** | **27** | — | — | — | — | — | **68** |
 
 ---
 
