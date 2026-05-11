@@ -299,20 +299,72 @@ Legend statusa:
 
 ---
 
+## Faza 5 — Cross-cutting (error handling, logging, yml, common services, i18n)
+
+**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline). 21 findings: 0 FIXED, 17 OPEN (1 CRIT + 3 HIGH + 7 MED + 6 LOW), 4 INFO. **Gate: zero regression**. Pending top: F5-012 CRIT (non-crypto Random), F5-001 HIGH (AccessDeniedException wrong class), F5-002 HIGH (catch-all leak), F5-013/014 HIGH (yml fail-fast).
+
+### CRIT (1)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F5-012 | CRIT | `Utils.kt` non-crypto `Random` za password generation + email verification codes; predictable security tokens (F1-068 attack chain) | OPEN — **prod-blocker** prije bilo kakve registration/invite |
+
+### HIGH (3)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F5-001 | HIGH BUG | `@ExceptionHandler(AccessDeniedException::class)` catches `kotlin.io.AccessDeniedException` (file I/O); Spring Security 403 → 500 fall-through (silent prod bug) | OPEN — **HIGH, prod-readiness** |
+| F5-002 | HIGH | Catch-all + SQLException + DataAccess echo `e.message` to customer; F1-055 confirmation s 5 leak vectors | OPEN — **HIGH, F1-055 escalation** |
+| F5-013 | HIGH | `JWT_SECRET_KEY` env var bez `:?required` syntax; silent fail-open for JWT signing key | OPEN — F1-036 family extension |
+
+### MED (7)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F5-003 | MED | Internal field names / user IDs / referencing entities echoed u customer responses (USER_ALREADY_EXISTS = email enumeration channel) | OPEN — pair s F5-002 single commit |
+| F5-004 | MED | HTTP status mapping wrong: 11 not-found → 400 (should 404); ResourceNotFound → 510; DB exceptions → 400 (should 500) | OPEN — pair s F5-002 |
+| F5-005 | MED | `ApiErrorCodes` messages hardcoded English; non-EN customers get English toast unatoč i18n infrastrukturi | WAITING-DECISION (verify s Mario frontend i18n approach) |
+| F5-006 | MED | `InternalLoginException` handler logs `${e.email}` at ERROR svaki failed login — PII, F1-068 amplifier | OPEN — Faza 5 PII masking sweep |
+| F5-014 | HIGH | Mail credentials use placeholder defaults (`your@gmail.com`, `your-app-password`); F1-036 family violation | OPEN — pair s F5-013/F5-016 yml-hardening commit |
+| F5-015 | MED | Logback prod profile `<logger name="hr.workspace.boat4you" level="debug">`; DEBUG-level prod logging amplifies PII + disk fill | OPEN — pre-prod operational hygiene |
+| F5-016 | MED | application-prod.yml `NAUSYS_USERNAME`/`PASSWORD`/`MMK_TOKEN`/`MAIL_SERVER_*` no `:?required` syntax | OPEN — pair s F5-013/F5-014 |
+| F5-017 | MED | Logback `LOG_DIR ./logs` relative path; depends on JVM working directory | OPEN — pre-prod operational checklist |
+
+### LOW (6)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F5-007 | LOW | Stack trace logged at ERROR level za sve exceptions (uključujući expected user errors); log noise + anti-pattern logger format | OPEN — pair s F5-002 |
+| F5-008 | LOW | `PASSWORD_INVALID_LENGTH` typo "could"→"must" + reveals 6-char min length (F1-004 family) | WAITING-DECISION (F1-004 family) |
+| F5-009 | LOW | `AccessDeniedException` handler returns empty body; covered by F5-001 fix | OPEN — covered by F5-001 |
+| F5-010 | LOW | `ImageNotFoundException` TODO + no log; combined s F4-010 = zero audit trail on path traversal probing | WAITING-DECISION (pair s F5-007) |
+| F5-011 | LOW | `ResourceNotFound` exception class empty (3 lines); debug-hostile | OPEN — Faza 5 exception hygiene |
+| F5-018 | LOW | `Utils.kt:46` charset typo missing `Y` (uppercase) + `j` (lowercase); 60 chars instead of intended 62 | WAITING-DECISION (covered by F5-012 fix) |
+| F5-019 | LOW | `Utils.kt:DEFAULT_PASSWORD_LENGTH = 6`; F1-004 family | WAITING-DECISION (covered by F5-012 fix) |
+
+### INFO (4)
+
+| ID | Naslov |
+|---|---|
+| F5-020 | Positive: `UrlShortener.kt` uses `SecureRandom` + clean 62-char base62; F5-012 fix pattern model |
+| F5-021 | Positive: most env vars use `:?required` correctly (DB creds, SSL keystore, SERVER_HOST_PUBLIC, Stripe keys); LocaleHelpers thoughtful 3-tier fallback chain |
+
+---
+
 ## Total cumulative across all phases
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 2 | 1 | 1 | 0 | — | — | — | **4** |
-| HIGH | 13 | 1 | 7 | 3 | — | — | — | **24** |
-| MED | 18 | 19 | 14 | 5 | — | — | — | **56** |
-| LOW | 8 | 23 | 10 | 4 | — | — | — | **45** |
-| INFO | 4 | 3 | 8 | 2 | — | — | — | **17** |
-| FIXED | 20 | 3 | 0 | 0 | — | — | — | **23** |
-| DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | — | — | — | **6** |
-| DEFERRED-other | 3 | 0 | 0 | 0 | — | — | — | **3** |
-| BLOCKED | 1 | 0 | 0 | 0 | — | — | — | **1** |
-| **OPEN** | **41** | **44** | **32** | **12** | — | — | — | **129** |
+| CRIT | 2 | 1 | 1 | 0 | 1 | — | — | **5** |
+| HIGH | 13 | 1 | 7 | 3 | 3 | — | — | **27** |
+| MED | 18 | 19 | 14 | 5 | 7 | — | — | **63** |
+| LOW | 8 | 23 | 10 | 4 | 6 | — | — | **51** |
+| INFO | 4 | 3 | 8 | 2 | 4 | — | — | **21** |
+| FIXED | 20 | 3 | 0 | 0 | 0 | — | — | **23** |
+| DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | — | — | **6** |
+| DEFERRED-other | 3 | 0 | 0 | 0 | 0 | — | — | **3** |
+| BLOCKED | 1 | 0 | 0 | 0 | 0 | — | — | **1** |
+| **OPEN** | **41** | **44** | **32** | **12** | **17** | — | — | **146** |
 
 ---
 
