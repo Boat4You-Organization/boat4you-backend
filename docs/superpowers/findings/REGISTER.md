@@ -203,7 +203,7 @@ Legend statusa:
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓, Batch 3 (MMK integration services) ✓, Batch 4 (Stripe payment integration) ✓. Batch 5 (Mail), 6 (sync orchestration + admin controllers) pending.
+**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓, Batch 3 (MMK integration services) ✓, Batch 4 (Stripe payment integration) ✓, Batch 5 (Mail integration) ✓. Batch 6 (sync orchestration + admin controllers) pending.
 
 ### CRIT (1)
 
@@ -236,8 +236,10 @@ Legend statusa:
 | F3-025 | MED | Mnogo `!!` non-null assertions na Stripe webhook payload-u; NPE pri malformed events | WAITING-DECISION (group s F3-022/F3-024 webhook fix batch) |
 | F3-026 | MED | `payFullAmount=false` webhook flow uvijek označi `first()` phase; bug-čekanju za installment 2 path | OPEN — pair s F3-022 fix |
 | F3-027 | MED | Webhook handler tiho ignorira refund / dispute / expired Stripe event types | OPEN — eskalacija (Stripe event handling roadmap) |
+| F3-030 | MED | User-controlled `inquiry.email`/`user.name`/surname putuju u `setReplyTo`/`setTo` bez explicit CRLF/comma sanitizacije — comma-injection risk | OPEN — Faza 5 (input validation sweep) |
+| F3-031 | MED | SMTP send failures swallowed bez retry / audit — transactional email loss silent (booking confirmation, password reset) | OPEN — Faza 5 / pre-prod minimum (email_outbox pattern) |
 
-### LOW (8)
+### LOW (9)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -249,6 +251,7 @@ Legend statusa:
 | F3-018 | LOW | `MmkYachtIntegrationService.SUPPORTED_LANGUAGES` izričito izostavlja EN — verify intended (default fallback?) | WAITING-DECISION (verify hipoteza) |
 | F3-019 | LOW | `MmkYachtOfferIntegrationServiceAsync.syncOffersForAgencyYachtsOld` deprecated ali aktivan `@Async` + 90 linija duplicirane impl | WAITING-DECISION (grep + delete) |
 | F3-028 | LOW | `toCentsLong()` koristi `RoundingMode.UP` → slight customer overcharge per payment phase | WAITING-DECISION (Mario business choice) |
+| F3-032 | LOW | `helper.setTo` multi-recipient pokazuje sve adresarima; admin notification leak ako se ikad pojavi multi-recipient flow | OPEN — Faza 5 (defensive design) |
 
 ---
 
@@ -258,14 +261,14 @@ Legend statusa:
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 2 | 1 | 1 | — | — | — | — | **4** |
 | HIGH | 13 | 1 | 6 | — | — | — | — | **20** |
-| MED | 18 | 19 | 10 | — | — | — | — | **47** |
-| LOW | 8 | 23 | 8 | — | — | — | — | **39** |
-| INFO | 4 | 3 | 4 | — | — | — | — | **11** |
+| MED | 18 | 19 | 12 | — | — | — | — | **49** |
+| LOW | 8 | 23 | 9 | — | — | — | — | **40** |
+| INFO | 4 | 3 | 6 | — | — | — | — | **13** |
 | FIXED | 20 | 3 | 0 | — | — | — | — | **23** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | — | — | — | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | — | — | — | — | **3** |
 | BLOCKED | 1 | 0 | 0 | — | — | — | — | **1** |
-| **OPEN** | **41** | **44** | **26** | — | — | — | — | **111** |
+| **OPEN** | **41** | **44** | **28** | — | — | — | — | **113** |
 
 ---
 
