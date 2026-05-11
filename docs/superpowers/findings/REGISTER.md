@@ -261,7 +261,7 @@ Legend statusa:
 
 ## Faza 4 — Scheduled jobs + heavy native (jobs, OpenCV, PDF gen)
 
-**Status:** READ-PASS COMPLETE — Batch 1 (Scheduled jobs) ✓, Batch 2 (Heavy native) ✓. **Next: phase closure + gate decision.**
+**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline). 14 findings: 0 FIXED, 12 OPEN (3 HIGH + 5 MED + 4 LOW), 2 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline). Pending: F4-001 (5-min yml fix), F4-002 ShedLock pair s F3-037/F3-014, F4-009 ImageUtils Mat.use, plus ops-side F4-004 image-sync profile verify.
 
 ### HIGH (3)
 
