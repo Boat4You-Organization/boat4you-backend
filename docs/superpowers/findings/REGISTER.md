@@ -259,20 +259,60 @@ Legend statusa:
 
 ---
 
+## Faza 4 — Scheduled jobs + heavy native (jobs, OpenCV, PDF gen)
+
+**Status:** READ-PASS COMPLETE — Batch 1 (Scheduled jobs) ✓, Batch 2 (Heavy native) ✓. **Next: phase closure + gate decision.**
+
+### HIGH (3)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F4-001 | HIGH | Spring `@Scheduled` default single-thread `TaskScheduler`; long sync chains blokiraju ostale crons + cron drift | OPEN — **pre-prod blocker** (5-min yml fix) |
+| F4-002 | HIGH | Profile-only locking (`@Profile("data-sync")`); 2-VM double-fire risk; no ShedLock / distributed lock (paired s F3-037 + F3-014) | OPEN — **pre-prod blocker**, pair s F3-037 fix |
+| F4-009 | HIGH | `ImageUtils` ne release-a intermediate Mat / MatOfByte u success ni exception path-evima — production native memory leak (~1.5GB/day VM3) | OPEN — **production stability bug** |
+
+### MED (5)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F4-003 | MED | Cron clustering xx:00 (DeleteExpired + MMK catalogue + OptionExpiry); DB connection + thread pool contention | OPEN — pair s F4-001 |
+| F4-004 | MED | `ImageDownloadJob` zahtjeva `image-sync` profile koji NIJE postavljen u tracked deploy config — job effectively dead | WAITING-DECISION (verify prod env + Mario intent) |
+| F4-005 | MED | `NausysSyncJob.runYachtSync` chains yacht+offer u 1 metodu bez time-budget-a; 30-90 min wall-time blocks scheduler | OPEN — pair s F4-001 + F3-001 |
+| F4-010 | MED | `YachtImageService.File(uploadDir + "/" + yachtImage.url)` path concatenation bez canonicalize — F1-021 concrete exploit point | OPEN — Faza 5 (path traversal sweep) |
+| F4-011 | MED | `CharterAgreementService.useFastMode()` može onemogućiti XXE protection; no explicit XML parser hardening | OPEN — Faza 5 (template + XML hardening) |
+
+### LOW (4)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F4-006 | LOW | `runCatalogueSync` + `runCatalogueBackupSync` 95% duplication — drift risk | WAITING-DECISION (trivial refactor) |
+| F4-007 | LOW | `GenerateInvoiceJob` bez `shouldRunScheduledSync` check; missing backup-sync pattern | WAITING-DECISION (verify InvoiceService idempotency prvo) |
+| F4-012 | LOW | `CharterAgreementService.renderToPdf` chained `!!` na flow.user/yacht/dateFrom — F2-041 fictitious reservation edge case | WAITING-DECISION (verify if fictitious reaches PDF render) |
+| F4-013 | LOW | `ImageUtils.IllegalArgumentException("Could not load image from path: $imagePath")` curi file path; F1-055/F4-010 family | OPEN — Faza 5 (cross-cutting error sanitization) |
+
+### INFO (2)
+
+| ID | Naslov |
+|---|---|
+| F4-008 | Positive: backup-sync pattern + explicit cron offset comments + Mario decision history u job-ovima |
+| F4-014 | Positive: ImageUtils releases primary Mats, CharterAgreement runCatching currency, lazy signatureDataUrl, defensive fallback chains |
+
+---
+
 ## Total cumulative across all phases
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 2 | 1 | 1 | — | — | — | — | **4** |
-| HIGH | 13 | 1 | 7 | — | — | — | — | **21** |
-| MED | 18 | 19 | 14 | — | — | — | — | **51** |
-| LOW | 8 | 23 | 10 | — | — | — | — | **41** |
-| INFO | 4 | 3 | 8 | — | — | — | — | **15** |
-| FIXED | 20 | 3 | 0 | — | — | — | — | **23** |
-| DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | — | — | — | — | **6** |
-| DEFERRED-other | 3 | 0 | 0 | — | — | — | — | **3** |
-| BLOCKED | 1 | 0 | 0 | — | — | — | — | **1** |
-| **OPEN** | **41** | **44** | **32** | — | — | — | — | **117** |
+| CRIT | 2 | 1 | 1 | 0 | — | — | — | **4** |
+| HIGH | 13 | 1 | 7 | 3 | — | — | — | **24** |
+| MED | 18 | 19 | 14 | 5 | — | — | — | **56** |
+| LOW | 8 | 23 | 10 | 4 | — | — | — | **45** |
+| INFO | 4 | 3 | 8 | 2 | — | — | — | **17** |
+| FIXED | 20 | 3 | 0 | 0 | — | — | — | **23** |
+| DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | — | — | — | **6** |
+| DEFERRED-other | 3 | 0 | 0 | 0 | — | — | — | **3** |
+| BLOCKED | 1 | 0 | 0 | 0 | — | — | — | **1** |
+| **OPEN** | **41** | **44** | **32** | **12** | — | — | — | **129** |
 
 ---
 
