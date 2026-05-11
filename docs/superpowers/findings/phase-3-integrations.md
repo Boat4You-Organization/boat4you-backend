@@ -841,3 +841,363 @@ Plus: `partnerMsg = e.responseBodyAsString.trim().removeSurrounding("\"")` u cre
 **Batch 3 završen. Batch 4 next:** Stripe — `StripeConfig`, `StripePaymentService`, `StripeWebhookController`, `StripePaymentController`, `PublicStripePaymentController`. Pair s F1-019 CRIT (webhook idempotency) + F1-031 (signature error) + F2-026/F2-036 (payment phase entity contract).
 
 ---
+
+## Batch 4 — Stripe payment integration (2026-05-11)
+
+### [F3-022] CRIT idempotency — `StripePaymentService.handleWebhookEvent` ne provjerava `paidOn` na re-delivery → dupli partner confirm + dupli email + duplikat reservation state-change
+**Lokacija:** `domains/reservation/service/StripePaymentService.kt:169-201`
+**Detekcija:** statička
+**Opis:** Ovo je konkretizacija **F1-019** u Phase 3 contextu. Stripe explicitly designs webhook delivery as **at-least-once with retries**. Stripe docs: "*Endpoints must be idempotent. Stripe may deliver the same event multiple times.*"
+
+Trenutni code u `handleWebhookEvent`:
+```kotlin
+if (event.type == "checkout.session.completed") {
+    val dbPaymentPhases = paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc(session.id)
+    if (payFullAmount != null && payFullAmount) {
+        dbPaymentPhases.forEach(setPaymentMetadata(paymentIntentId))  // SET paidOn = Instant.now()
+    } else if (payFullAmount != null && !payFullAmount) {
+        dbPaymentPhases.first().apply(setPaymentMetadata(paymentIntentId))
+    } else if (paymentPhaseId != null) {
+        dbPaymentPhases.find { it.id == paymentPhaseId }!!.apply(setPaymentMetadata(paymentIntentId))
+    }
+    if (paymentPhaseId == null) {
+        promoteReservationToBooking(reservationId)  // → confirmExternalReservation (partner API) + DB save + email
+    }
+}
+```
+
+**Failure scenario:**
+1. Customer plaća → Stripe Checkout completes → Stripe šalje `checkout.session.completed` webhook.
+2. Boat4You handle: `paidOn = Instant.now()`, partner confirmReservation poziv, email poslan.
+3. Network blip između Boat4You ACK i Stripe → Stripe ne primi 200 OK → retry za 1 minutu.
+4. Druga isporuka istog event-a:
+   - `paidOn` se **PREPISUJE** s newer Instant.now() (silent — gubi se točan timestamp originale)
+   - `setPaymentMetadata` postavlja **stripePaymentIntentId** isto (idempotent na DB samo ako paymentIntentId je isti)
+   - **`promoteReservationToBooking` POZIV** se ponovo izvršava jer `paymentPhaseId == null` (initial reservation case)
+   - `confirmExternalReservation` zove NauSys/MMK confirm — **drugi confirm na partner-side** = potencijalni dupli partner booking ili 4xx error
+   - `sendConfirmationForReserved` — **drugi confirmation email customer-u** ("Vaša rezervacija je potvrđena" 2×)
+
+Combined s F3-002 + F3-008 (retry × 9 partner calls) i F3-024 (TX wrap unutar webhook handler-a) — escalates.
+
+**Što treba postojati za idempotency:**
+- Provjera `paidOn != null` prije write-a → već-procesiran event = no-op
+- ALI gornja check je nedovoljna jer dvije Stripe webhook deliveries mogu doći **istovremeno** (race condition) — treba pessimistic lock na payment phase, ili DB unique constraint na (`reservationFlowId`, `stripePaymentIntentId`) koji rejectira duplicate INSERT.
+- Plus: idempotency-key store. Stripe `event.id` je guaranteed unique per delivery — pohrani u tablicu `processed_stripe_events(event_id PRIMARY KEY, processed_at)` i abort ako ID već postoji.
+
+**Posljedica:** Real-money double-charge nije moguć (Stripe naplaćuje customer-a samo jednom, Stripe-side idempotent). **Ali:** dupli partner booking → revenue dispute. Dupli email → customer confusion + support load. Reservation state corruption (paidOn dva puta zapisan, drugi possibly nije ni `Instant.now()` ali nešto sasvim drugo u edge case-u).
+**Predloženi fix:** dva sloja zajedno:
+- (a) **Event-level idempotency:** dodaj tablicu `processed_stripe_events` (Flyway migracija):
+  ```sql
+  CREATE TABLE processed_stripe_events (
+      event_id      VARCHAR(255) PRIMARY KEY,
+      event_type    VARCHAR(64) NOT NULL,
+      processed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  ```
+  Code: prvi step u `handleWebhookEvent` je `INSERT INTO processed_stripe_events (...) ON CONFLICT DO NOTHING RETURNING event_id`. Ako ON CONFLICT → vraćamo 200 OK + abort processing. Stripe vidi 200 i ne retry-a.
+- (b) **Phase-level idempotency:** prije `setPaymentMetadata(paymentIntentId)`, provjeri `if (phase.paidOn != null) return`. Belt-and-braces.
+
+Plus razmotri kako:
+- Move `promoteReservationToBooking` u zaseban transactional helper koji checks "is reservation already in CONFIRMED state?"
+- Email send — ne raditi unutar same TX-a (vidi F3-024)
+
+**Riziko-procjena fixa:** dira hot payment path. **Mora se runtime-testirati u staging-u prije prod-a.** Stripe daje "test webhooks" feature za retry simulation — koristiti.
+**Status:** OPEN — **CRIT, prod-blocker** (F1-019 confirmed)
+
+---
+
+### [F3-023] HIGH money-loss bug — `setSessionIdOnPaymentPhases` prepisuje `stripeSessionId` na phase bez čuvanja prethodne; drugi-paid-prvi-session = orphan payment
+**Lokacija:** `domains/reservation/service/StripePaymentService.kt:217-230`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+private fun setSessionIdOnPaymentPhases(...) {
+    if (payFullAmount != null && payFullAmount) {
+        reservationFlow.paymentPhases.forEach { it.stripeSessionId = sessionId }
+    } else if (...) { reservationFlow.paymentPhases.oldest().stripeSessionId = sessionId }
+    else if (paymentPhaseId != null) { reservationFlow.paymentPhases.find { it.id == paymentPhaseId }!!.stripeSessionId = sessionId }
+}
+```
+
+Direct field assignment bez check-a postojeće vrijednosti. **Failure scenario:**
+1. Customer klikne "Pay" → kreira se Stripe Session A, `phase.stripeSessionId = "sess_A"`.
+2. Customer napusti Stripe Checkout stranicu bez plaćanja (nije auto-cancel; session ostaje "open" 24h kod Stripe-a).
+3. Customer dolazi natrag, klikne "Pay" ponovo (npr. drugi browser tab, drugi uređaj, dan kasnije ali u istom 24h prozoru).
+4. Backend kreira Session B, `phase.stripeSessionId = "sess_B"` (overwrites "sess_A").
+5. **Customer u prvoj kartici (sess_A) završi plaćanje** (zaboravljeno session ostalo otvoreno; Stripe Checkout je još valid).
+6. Stripe šalje webhook za sess_A → `paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc("sess_A")` vraća **EMPTY LIST** (phase ima sess_B na sebi sada).
+7. Code:
+   ```kotlin
+   if (payFullAmount != null && payFullAmount) {
+       dbPaymentPhases.forEach(setPaymentMetadata(paymentIntentId))  // empty loop, no-op
+   }
+   ```
+   No-op. Phase ostaje `paidOn = null`. **Customer je upravo platio €X Stripe-u, ali naša DB to ne reflektira.** Customer dobija na Stripe success-redirect URL (`/payment-success?session_id=sess_A`), ali `checkPaymentStatus("sess_A")` (line 204) — query također vraća empty payment phases → status `PAYMENT_PENDING` (line 209: "if any dbPaymentPhases.paidOn is null"). 
+
+Bonus: ako oba (sess_A i sess_B) eventually complete unutar 24h, double charge customer-u. Stripe svaki naplati. Naša DB samo zna o sess_B.
+
+**Customer-facing impact:**
+- Naplaćen, naša DB ne zna → admin ručno mora reconcile (look up Stripe Dashboard, manualno označiti paidOn).
+- Reservation ne promoted u BOOKING jer `promoteReservationToBooking` ne pokreće se.
+- Customer ne dobija confirmation email.
+- Stripe Dashboard pokazuje paid; naša admin lista pokazuje unpaid.
+**Posljedica:** **direct customer money + Boat4You reputational damage.** Manje vjerojatno u praksi nego F3-022 (zahtjeva specifičan UX flow), ali bilo koji customer support ticket "platio sam, vi kažete da nisam" = bug.
+**Predloženi fix:** dvije razine:
+- (a) **Ne prepisuj postojeći sessionId:** prije `phase.stripeSessionId = sessionId`, ako `phase.stripeSessionId != null && phase.stripeSessionId != sessionId` → invalidate stari session preko Stripe API `Session.expire(oldSessionId)` (Stripe podržava). Onda overwrite.
+- (b) **Store as collection:** phase.stripeSessionId → `stripeSessionIds: List<String>` ili 1:N tablica `payment_phase_stripe_session`. Webhook lookup po sessionId i dalje radi. Više code change-a.
+
+(a) je manje invazivan. Plus: webhook `checkPaymentStatus` flow treba update da pita Stripe za session status, ne samo DB (već je iznad noted u F3-022).
+**Riziko-procjena fixa:** dira payment flow — staging test obavezan. Edge case scenariji: što ako sess_A je expired vs cancelled vs paid u trenutku Session.expire poziva.
+**Status:** OPEN — **HIGH, money-loss bug, prod-blocker scenario**
+
+---
+
+### [F3-024] HIGH atomicity — `handleWebhookEvent` wrapping `@Transactional` proteže oko partner API call (`confirmExternalReservation`) + email send; partner-side double-write na rollback-u
+**Lokacija:** `domains/reservation/service/StripePaymentService.kt:169-201, 238-243`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+@Transactional(readOnly = false)
+fun handleWebhookEvent(event: Event) {
+    ...
+    if (paymentPhaseId == null) {
+        promoteReservationToBooking(reservationId)  // calls partner + DB + email
+    }
+}
+
+private fun promoteReservationToBooking(reservationId: Long) {
+    val externalReservation = reservationIntegrationService.confirmExternalReservation(reservationId)  // PARTNER API
+    val reservationResponse = reservationMutationService.confirmReservation(reservationId, externalReservation)  // DB
+    reservationEmailService.sendConfirmationForReserved(reservationResponse, PaymentType.CARD)  // SMTP
+}
+```
+
+**Sve unutar jedne `@Transactional`.** Failure modes:
+1. **Partner success, DB fail:** `confirmExternalReservation` uspjeva (NauSys booking confirmed) → `confirmReservation` baca exception (CHECK constraint, FK violation, anything) → **outer TX rollback.** Partner side ima confirmed booking, naša DB ima reservation u OPTION (pre-confirm) state. **Forensics: jedva ako se nakon-fact-a uoči.**
+2. **Partner success, email fail:** ako email service throws → rollback → partner ima booking, naša DB nema confirmed reservation. Plus email nije poslan.
+3. **DB success, email fail:** ako email throws nakon `confirmReservation` save-a — TX commit-a tek na method exit. Throw → rollback → ali partner is confirmed. Same as #1.
+
+Same pattern kao F3-007 (TransactionTemplate audit pattern samo u Async metodama). Ovdje je extra weight jer **partner side change je already committed when boundary thrown** — Stripe webhook handler ne može rollback partner state.
+
+Plus combined s F3-022 (Stripe retry will fire ponovo), F3-008 (partner retry × 9), F3-022 (no event-level idempotency) — full failure-cascade:
+- Stripe retries webhook → opet ulazi → confirmExternalReservation ponovo zove partner → partner vidi "već confirmed" (možda 4xx ili duplicate)
+- Email service ponavlja → customer dobiva 2-3 confirmation email-a
+**Posljedica:** real partner state inconsistency. Pre-prod blocker uz F3-022.
+**Predloženi fix:** dva sloja:
+- (a) **Email send IZVAN TX-a:** `@TransactionalEventListener(phase = AFTER_COMMIT)` pattern. Publish domain event `ReservationConfirmedEvent` unutar TX. Listener šalje email AFTER COMMIT. Email failure ne ruši DB save.
+- (b) **Partner call IZVAN TX-a:** `confirmExternalReservation` se zove **prije** ulaska u TX, ili u poseban TX. Onda DB save uvjetuje partner success. Ali što ako partner success → DB save fails → kako rollback partner? Nema atomic distributed TX bez sage pattern-a. **Sage pattern**: state machine kao `confirmed-on-partner`, retry/compensate na DB save fail.
+
+Pragmatic minimum za pre-prod: (a) — moveconfirmation email outside TX. Plus: ako partner call fail, throw — DB write se ne pokušava, customer dobija "payment received but booking pending" status. To je manje od ideal-a ali ne kreira partner-DB drift.
+**Riziko-procjena fixa:** veliki refactor za (b). (a) je manji ali još uvijek touchy.
+**Status:** OPEN — **HIGH, paired s F3-022**
+
+---
+
+### [F3-025] MED defensive — Mnogo `!!` non-null assertions na Stripe payload-u; NPE pri unexpected Stripe events
+**Lokacija:** `StripePaymentService.kt:176, 180, 189, 191`
+**Detekcija:** statička
+**Opis:**
+- `session!!.id` (line 176) — `session` može biti null ako `event.dataObjectDeserializer.object.orElse(null) as? Session` vrati null (data object missing ili krivi tip)
+- `session.metadata["reservationId"]!!.toLong()` (line 180) — metadata key missing = NPE; old Stripe sessions kreirane prije meta-data dodatka mogu nedostajati
+- `dbPaymentPhases.first()` (line 189) — `first()` na praznoj listi baca `NoSuchElementException`
+- `dbPaymentPhases.find { it.id == paymentPhaseId }!!` (line 191) — phase obrisan između session create i webhook delivery → NPE
+
+Plus: `event.type == "checkout.session.completed"` flow ulazi i kad je session null. Bound code path:
+```kotlin
+if (event.type == "checkout.session.completed") {
+    logger.debug("Payment for Stripe sessionId ${session!!.id} successful")
+```
+NPE pri `session!!.id`. Stripe webhook receive-a od bilo kojeg client-a koji ima signature — ako neki external proces (test mode, debug tool) šalje malformed event sa type "checkout.session.completed" ali null data, **app crash** unutar webhook flow → Stripe vidi 500 → retry × 3 → još 3 NPE.
+**Posljedica:** webhook handler može padati u edge case-evima — Stripe retries pile up. F3-022 multiplier.
+**Predloženi fix:** zamijeniti `!!` s explicit null checkovima + return early:
+```kotlin
+val session = event.dataObjectDeserializer.`object`.orElse(null) as? Session
+if (session == null) {
+    logger.error("Stripe event ${event.id} type ${event.type} has no Session payload — ignoring")
+    return  // ack 200 to Stripe so it stops retrying
+}
+val reservationIdStr = session.metadata["reservationId"]
+if (reservationIdStr == null) {
+    logger.error("Stripe session ${session.id} missing reservationId metadata — ignoring")
+    return
+}
+val reservationId = reservationIdStr.toLong()
+...
+```
+
+Plus: `dbPaymentPhases.firstOrNull()` umjesto `first()`. `find { it.id == paymentPhaseId }` umjesto `find { }!!`.
+**Riziko-procjena fixa:** trivijalan, ali code review prije commit-a obavezan jer dira webhook hot path.
+**Status:** WAITING-DECISION (group s F3-022/F3-024 webhook fix batch)
+
+---
+
+### [F3-026] MED bug-čekanju — `payFullAmount=false` flow u webhook handler-u uvijek označava `first()` (earliest deadline) phase, ne phase koju kupac stvarno plaća
+**Lokacija:** `domains/reservation/service/StripePaymentService.kt:184-192`
+**Detekcija:** statička
+**Opis:** Webhook code:
+```kotlin
+val dbPaymentPhases = paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc(session.id)
+if (payFullAmount != null && payFullAmount) {
+    dbPaymentPhases.forEach(setPaymentMetadata(paymentIntentId))
+} else if (payFullAmount != null && !payFullAmount) {
+    dbPaymentPhases.first().apply(setPaymentMetadata(paymentIntentId))  // <-- ovdje
+} else if (paymentPhaseId != null) {
+    dbPaymentPhases.find { it.id == paymentPhaseId }!!.apply(setPaymentMetadata(paymentIntentId))
+}
+```
+
+`payFullAmount=false` is "pay first installment" pattern (line 91 u `initiatePayment`). `setSessionIdOnPaymentPhases` postavlja `stripeSessionId` samo na `oldest()` phase u tom slučaju (line 226). Tako da `findByStripeSessionIdOrderByDeadlineAsc(session.id)` vraća single-element listu — `first()` = `oldest()` = ispravan.
+
+**Ali:** failure case je ako customer **kasnije plaća drugu installment** (line 89 — "pay first installment — next DUE unpaid phase, not the historically-oldest one which might already be paid"). U `initiatePayment` line 92 koristi `unpaidPhases.minByOrNull { it.deadline }` — može biti druga phase, ne earliest by deadline. Tada `setSessionIdOnPaymentPhases` (line 226) `oldest()` (definirano kao `minBy { it.deadline }` line 253) **ne uzima u obzir paidOn filter.** Postavi stripeSessionId na earliest phase **bez obzira što je paid**:
+
+```kotlin
+private fun Set<ReservationPaymentPhase>.oldest(): ReservationPaymentPhase = this.minBy { it.deadline }
+```
+
+Bez `.filter { it.paidOn == null }`. Ako phase 1 je paid (paidOn != null) i customer plaća phase 2:
+1. `initiatePayment` calculates dbPrice = phase 2 amount (line 92, filteruje unpaid).
+2. `setSessionIdOnPaymentPhases` (line 226, payFullAmount=false branch) postavlja sessionId na **phase 1** (`oldest()` — već paid!).
+3. Stripe naplaćuje correct amount (phase 2 amount).
+4. Webhook handler: `findByStripeSessionIdOrderByDeadlineAsc(session.id)` vraća **phase 1** (jer phase 1 ima sessionId, ne phase 2).
+5. `dbPaymentPhases.first().apply(setPaymentMetadata(paymentIntentId))` → **prepisuje paidOn + stripePaymentIntentId na phase 1**. Phase 2 ostaje unpaid.
+
+**Money mismatch:** customer paid phase 2 amount, ali DB sad pokazuje phase 1 paid (twice — overwrite) i phase 2 unpaid. Reservation flow je broken.
+
+Stvarna vjerojatnost: ovaj scenario zahtjeva `payFullAmount=false` *and* phase 1 already paid. Vjerojatno je da se "pay installment 2" UI uvijek šalje `paymentPhaseId` parametarom, **ne** `payFullAmount=false`. Treba verify u frontend kodu (out of scope ovog review-a).
+**Posljedica:** subtilan; vjerojatno nije pogođen u happy path. Ali sad-ili-nikad za fix prije prod-a.
+**Predloženi fix:** uskladiti filter u `oldest()`:
+```kotlin
+private fun Set<ReservationPaymentPhase>.oldest(): ReservationPaymentPhase =
+    this.filter { it.paidOn == null }.minByOrNull { it.deadline }
+        ?: error("No unpaid payment phases")
+```
+
+Plus: dodati integration test koji simulira "pay installment 2 with payFullAmount=false" scenario.
+**Riziko-procjena fixa:** trivijalan one-liner + test. MED severity.
+**Status:** OPEN — pair s F3-022 fix batch
+
+---
+
+### [F3-027] MED operational — Stripe webhook handler tiho ignorira sve non-`checkout.session.completed` event-e (`payment_intent.payment_failed`, `charge.refunded`, `charge.dispute.created` ...)
+**Lokacija:** `domains/reservation/service/StripePaymentService.kt:174-200`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+if (event.type == "checkout.session.completed") {
+    // process
+} else {
+    logger.error("Payment for Stripe sessionId ${session?.id} failed. Stripe event id: ${event.id}")
+}
+```
+
+Else branch logira **kao da je failed**, ali Stripe šalje **mnogo** event-types:
+- `checkout.session.expired` — session istekla nakon 24h bez plaćanja. Treba: invalidate `stripeSessionId` na phase (oslobađa za novi attempt).
+- `payment_intent.payment_failed` — kupac neuspio platiti (kartica odbijena). Treba: notify customer, možda email "možete probati ponovno".
+- `charge.refunded` — admin (ili Stripe sam) je refund-irao. Treba: označi phase `paidOn = null` ili novi `refundedAt` polje, notify customer/admin.
+- `charge.dispute.created` — chargeback! Mora notify admin **immediately** za reakciju (Stripe dispute window je 7-21 dana ovisno o kartici).
+- `payment_intent.created`, `payment_intent.succeeded` — info-only za nas, ali ne treba ih logirati kao "failed".
+- `customer.subscription.*` — nismo subscription business, treba ignored explicitly.
+
+Plus message "Payment failed" je **netočna** — log je "error" level ali većina event-types nisu greške. Spammed log-ovi.
+**Posljedica:**
+- Charge disputes nečuti — Stripe automatski refund-a kupcu nakon dispute window-a, mi gubimo cijelu rezervaciju + extra Stripe dispute fee (~$15).
+- Refund-evi (legit) nisu reflektirani u našoj DB-i. Admin radi manual reconciliation.
+- Log noise — pravi failures se gube u "everything is logged as error" mass-u.
+**Predloženi fix:** explicit event-type handler routing:
+```kotlin
+when (event.type) {
+    "checkout.session.completed" -> handleCheckoutCompleted(event, session)
+    "checkout.session.expired" -> handleSessionExpired(event, session)  // clear stripeSessionId on phase
+    "payment_intent.payment_failed" -> handlePaymentFailed(event, session)  // notify customer
+    "charge.refunded" -> handleRefund(event)  // notify admin, mark phase
+    "charge.dispute.created" -> handleDispute(event)  // ALERT admin
+    "payment_intent.created", "payment_intent.succeeded", "checkout.session.async_payment_succeeded" -> {
+        logger.debug("Stripe info event ${event.type}: ${event.id}")  // info-only
+    }
+    else -> logger.warn("Unhandled Stripe event type ${event.type}: ${event.id}")
+}
+```
+
+Plus: dodati `processed_stripe_events` tabelu (F3-022) i log "duplicate event ignored" za retries — sad svaki event tip može provesti svoj idempotency check.
+
+**Posebno za `charge.dispute.created`:** mora alert-irati admin u real-time (admin email + Slack ako postoji). Phase 5 cross-cutting alerting.
+**Riziko-procjena fixa:** velik (mnogi novi handler-i). Faza 5 / Faza 7 work.
+**Status:** OPEN — eskalacija (Stripe event handling roadmap)
+
+---
+
+### [F3-028] LOW pricing — `toCentsLong()` koristi `RoundingMode.UP` (uvijek round-up); slight overcharge €0.01 po payment-u
+**Lokacija:** `domains/reservation/service/StripePaymentService.kt:245`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+private fun BigDecimal.toCentsLong(): Long = this.setScale(2, RoundingMode.UP).times(100.toBigDecimal()).toLong()
+```
+
+`RoundingMode.UP` always rounds away from zero. Za price 12.341 → 12.35 → 1235 centi. Za 12.349 → 12.35 → 1235 centi.
+
+Industry konvencija za billing:
+- **HALF_UP** — 12.345 → 12.35, 12.344 → 12.34 (banker-friendly)
+- **HALF_EVEN** (banker's rounding) — 12.345 → 12.34, 12.355 → 12.36 (statistically unbiased)
+- **UP** — uvijek u korist seller-a (uvijek malo skuplja cijena za customer-a)
+
+Razlika je u tisuću dijelovima na pojedinačnom payment-u, ali per-installment-per-reservation × tisuće reservation-a kroz vrijeme se akumulira. Plus: GDPR / consumer protection regulations u nekim jurisdikcijama traže `HALF_EVEN` za fairness.
+
+Plus: `dbPrice` calculation prije ovog (line 100: `dbPrice + cardSurchargeAmount`) — surcharge percentage može imati > 2 decimale precision-a. UP rounding compounds drift.
+**Posljedica:** customer prijavljuje "platio sam €.01 više nego što piše". Pre-prod nije blocker, ali brz fix.
+**Predloženi fix:**
+```kotlin
+private fun BigDecimal.toCentsLong(): Long = this.setScale(2, RoundingMode.HALF_UP).times(100.toBigDecimal()).toLong()
+```
+
+Verify: business decision — preferira li boat4you uvijek round-up (extra revenue) ili neutral half-up? Tipično je business choice. Konsultiraj Mario.
+**Riziko-procjena fixa:** trivijalan one-line.
+**Status:** WAITING-DECISION (Mario business choice: UP vs HALF_UP)
+
+---
+
+### [F3-029] INFO positive — Stripe integration pokazuje 3 best-practice patterna kojih trebaju adoptirati NauSys/MMK i drugi sync flow-evi
+**Lokacija:**
+- `StripeConfig.kt:17-21` — explicit `setConnectTimeout(5_000)`, `setReadTimeout(15_000)`, `setMaxNetworkRetries(2)` (na Stripe SDK level-u)
+- `StripePaymentService.kt:153-162` — idempotency-key support u `Session.create(params, idempotencyKey)`
+- `StripeWebhookController.kt:36-48` — proper `Webhook.constructEvent` sa signature verification, distinct catch blocks za `SignatureVerificationException` (400 "Invalid signature") i `Exception` (400 "Webhook processing error") — F1-031 fix already applied here
+
+**Opis:** Stripe integration je **funkcionalno** best-in-class u code base-u. Ne F3-022/F3-023/F3-024 govore "kod je loš" — govore "edge case handling treba dotjerati". Foundational layer (config, idempotency-on-create, signature verification) je dobro postavljen.
+
+Što vrijedi standardize-irati za druge integration-e:
+- **Timeouts at SDK level** — pattern koji NauSys/MMK RestClient layer može copy-paste-ati (F3-001 fix priority).
+- **Idempotency-key na write side** — koncept koji NauSys/MMK rezervacije također trebaju (F3-002 fix priority).
+- **Signature/auth verification na webhook ingress** — Stripe je jedini partner s webhook-om, ali ako se ikad doda npr. MMK webhook → kopirati ovaj pattern.
+
+Plus: `application.stripe.enabled` flag (line 247) omogućuje toggle integration-a per environment. **Anti-pattern**: `throw RuntimeException("Stripe is not enabled")` (F1-027 LOW already filed) — ali sam toggle je dobar.
+
+**Riziko-pre-prod:** F3-022/F3-023/F3-024 idempotency fix-evi prije prod-a su prioritet **iznad** F1-019 (koji je već flag-iran kao prod-blocker). Sve ostale F3-025/F3-026/F3-027 mogu pratiti.
+**Status:** INFO
+
+---
+
+### Sažetak Batch 4
+
+- **CRIT (1):** F3-022 (webhook handler non-idempotent — F1-019 konkretizacija)
+- **HIGH (2):** F3-023 (stripeSessionId overwrite → orphan payment / money-loss scenarij), F3-024 (`@Transactional` wraps partner API + DB + email — atomicity violation)
+- **MED (3):** F3-025 (mnogo `!!` u webhook payload handlingu), F3-026 (`oldest()` ne filtrira unpaid; bug-u-čekanju za installment 2 path), F3-027 (event-type filter ignorira refund / dispute / expired)
+- **LOW (1):** F3-028 (RoundingMode.UP overcharge)
+- **INFO (1):** F3-029 (Stripe foundational patterns za standardize)
+
+**Najkritičniji nalaz batch-a:** **F3-022 + F3-023 + F3-024 zajedno čine payment integrity prod-blocker batch.** F1-019 CRIT iz Phase 1 ovdje dobiva konkretne fix-points. **Sve troje treba ići u single Stripe-hardening commit prije prod-a.**
+
+Fix sequencing:
+1. F3-022 — event-level idempotency (Flyway migracija + table + first-step check)
+2. F3-024 — email out-of-TX (`@TransactionalEventListener AFTER_COMMIT`); partner call ostaje (vidi F3-024 fix predlog)
+3. F3-023 — Session.expire na old sessionId prije overwrite
+4. F3-025 — defensive null checks
+5. F3-026 — `oldest()` filter za unpaid
+6. F3-027 — Faza 5/6, ne pre-prod blocker
+7. F3-028 — Mario decision
+
+**Plus combined s Phase 2:**
+- F2-026 + F2-036 (mutable equals/hashCode na ReservationPaymentPhase + OfferPaymentPlan u Set-u) ide u istu Stripe-hardening fix batch. Sve troje povezano s payment phase lifecycle.
+
+**Batch 4 završen. Batch 5 next:** Mail — `EmailService`, `ReservationEmailService`, `InquiryEmailService`, `PaymentPendingNotificationService`, `BirthdayEmailJob`. PII u email-u, SMTP error handling, async retry.
+
+---
