@@ -203,7 +203,7 @@ Legend statusa:
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓. Batch 3 (MMK), 4 (Stripe), 5 (Mail), 6 (sync orchestration + admin controllers) pending.
+**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓, Batch 3 (MMK integration services) ✓. Batch 4 (Stripe), 5 (Mail), 6 (sync orchestration + admin controllers) pending.
 
 ### HIGH (3)
 
@@ -224,8 +224,9 @@ Legend statusa:
 | F3-010 | MED | `ReservationResponseWrapper.responseBody` čuva cijeli NauSys response JSON; PII u DB bez scrubbing layer-a | OPEN — eskalacija (data minimization decision) |
 | F3-011 | MED | Per-agency forEach + try/catch swallow bez rate-limit / circuit breaker; cascade failure pri partner outage | OPEN — Faza 5 (resilience) ili Faza 6 |
 | F3-012 | MED | `NauSysYachtIntegrationService.yachtSync` re-sync path nikad ne discoveruje nove yachte na partner-side | OPEN — MED bug fix (ne blocker) |
+| F3-017 | MED | `MmkYachtIntegrationService.yachtTranslationsSync` 6-language × N-agency × @Retryable amplification (~900 calls); single-threaded | OPEN — Faza 5 (perf parallelism) ili pair s F3-011 |
 
-### LOW (5)
+### LOW (7)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -233,7 +234,9 @@ Legend statusa:
 | F3-007 | LOW | `transactionTemplate.execute` audit pattern samo u `*Async`; state-change calls gube audit pri TX rollback | OPEN — eskalacija (audit policy decision) |
 | F3-013 | LOW | Prod main-source importira `ProdTestSamples.DREAM_YACHT_AGENCY_ID` u 2 fajla (unused, inverted test dependency) | WAITING-DECISION (trivijalan) |
 | F3-014 | LOW | `@Async syncOffersForDateRange` + TODO "Nausys only one call at the time" bez locking-a | OPEN — pair s Faza 4 jobs locking decision |
-| F3-015 | LOW | `error("No Location for NauSys locationFromId=$id")` exposes partner internal IDs (F1-055 family) | OPEN — Faza 5 (cross-cutting error sanitization) |
+| F3-015 | LOW | `error("No Location for NauSys locationFromId=$id")` exposes partner internal IDs (F1-055 family); MMK sibling u istoj fix scope | OPEN — Faza 5 (cross-cutting error sanitization) |
+| F3-018 | LOW | `MmkYachtIntegrationService.SUPPORTED_LANGUAGES` izričito izostavlja EN — verify intended (default fallback?) | WAITING-DECISION (verify hipoteza) |
+| F3-019 | LOW | `MmkYachtOfferIntegrationServiceAsync.syncOffersForAgencyYachtsOld` deprecated ali aktivan `@Async` + 90 linija duplicirane impl | WAITING-DECISION (grep + delete) |
 
 ---
 
@@ -243,14 +246,14 @@ Legend statusa:
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 2 | 1 | 0 | — | — | — | — | **3** |
 | HIGH | 13 | 1 | 4 | — | — | — | — | **18** |
-| MED | 18 | 19 | 6 | — | — | — | — | **43** |
-| LOW | 8 | 23 | 5 | — | — | — | — | **36** |
-| INFO | 4 | 3 | 1 | — | — | — | — | **8** |
+| MED | 18 | 19 | 7 | — | — | — | — | **44** |
+| LOW | 8 | 23 | 7 | — | — | — | — | **38** |
+| INFO | 4 | 3 | 3 | — | — | — | — | **10** |
 | FIXED | 20 | 3 | 0 | — | — | — | — | **23** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | — | — | — | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | — | — | — | — | **3** |
 | BLOCKED | 1 | 0 | 0 | — | — | — | — | **1** |
-| **OPEN** | **41** | **44** | **16** | — | — | — | — | **101** |
+| **OPEN** | **41** | **44** | **18** | — | — | — | — | **103** |
 
 ---
 
