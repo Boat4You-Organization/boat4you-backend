@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.catalouge.jpa
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalEquipmentType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -38,7 +39,7 @@ open class ExternalEquipment {
     @Column(name = "external_id", nullable = false)
     open var externalId: Long? = null
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "type", nullable = false)
     open var type: ExternalEquipmentType? = null

@@ -68,9 +68,9 @@ class YachtDistributionService(
             marinaIds = marinaIds,
             startDate = startDate,
             endDate = endDate,
-            vesselTypeOrdinals = vesselTypes?.map { it.ordinal },
-            charterTypeOrdinals = charterTypes?.map { it.ordinal },
-            mainsailTypeOrdinals = mainsailTypes?.map { it.ordinal },
+            vesselTypeNames = vesselTypes?.map { it.name },
+            charterTypeNames = charterTypes?.map { it.name },
+            mainsailTypeNames = mainsailTypes?.map { it.name },
             minBuildYear = minBuildYear, maxBuildYear = maxBuildYear,
             minPersons = minPersons, maxPersons = maxPersons,
             minCabins = minCabins, maxCabins = maxCabins,
@@ -123,9 +123,9 @@ class YachtDistributionService(
             // would zero out Sailing/Motorboat/etc. counts (the WHERE clause
             // filters them out before the GROUP BY). Other filters (location,
             // dates, availability) still apply.
-            byVesselType = enumCounts("vessel_type", VesselType::valueOf, ctx.copy(vesselTypeOrdinals = null)),
-            byCharterType = enumCounts("charter_type", CharterType::valueOf, ctx.copy(charterTypeOrdinals = null)),
-            byMainsailType = enumCounts("mainsail_type", SailTypeEnum::valueOf, ctx.copy(mainsailTypeOrdinals = null)),
+            byVesselType = enumCounts("vessel_type", VesselType::valueOf, ctx.copy(vesselTypeNames = null)),
+            byCharterType = enumCounts("charter_type", CharterType::valueOf, ctx.copy(charterTypeNames = null)),
+            byMainsailType = enumCounts("mainsail_type", SailTypeEnum::valueOf, ctx.copy(mainsailTypeNames = null)),
             byCabins = cabinsCounts(ctx.copy(minCabins = null, maxCabins = null)),
             byManufacturer = manufacturerCounts(ctx.copy(manufacturerIds = null)),
             byModel = modelCounts(ctx.copy(modelIds = null)),
@@ -135,17 +135,16 @@ class YachtDistributionService(
 
     /** Bundles the active filter parameters that every aggregator query
      *  needs to honour so distribution counts match the listing's
-     *  "Boats available" total. Vessel + charter types are passed as
-     *  ordinals because the view stores enum-backed columns as INTEGER
-     *  (default JPA mapping for `@Enumerated` is ORDINAL when no annotation
-     *  is set on the entity). */
+     *  "Boats available" total. Vessel + charter + mainsail types are passed
+     *  as enum names (`enum.name`) — the view exposes enum-backed columns
+     *  as VARCHAR after F2-018 migration to `@Enumerated(EnumType.STRING)`. */
     private data class FilterContext(
         val marinaIds: List<Long>?,
         val startDate: LocalDate?,
         val endDate: LocalDate?,
-        val vesselTypeOrdinals: List<Int>? = null,
-        val charterTypeOrdinals: List<Int>? = null,
-        val mainsailTypeOrdinals: List<Int>? = null,
+        val vesselTypeNames: List<String>? = null,
+        val charterTypeNames: List<String>? = null,
+        val mainsailTypeNames: List<String>? = null,
         val minBuildYear: Short? = null,
         val maxBuildYear: Short? = null,
         val minPersons: Short? = null,
@@ -217,7 +216,7 @@ class YachtDistributionService(
      *     BETWEEN startDate-FLEX AND startDate+FLEX` — same flex-by-start-day
      *     contract as `buildYachtSearchPredicates`. */
     private fun whereClause(ctx: FilterContext): String {
-        val parts = mutableListOf(" AND offer_status <> 4")
+        val parts = mutableListOf(" AND offer_status <> 'UNAVAILABLE'")
         when {
             ctx.marinaIds == null -> {}
             ctx.marinaIds.isEmpty() -> parts.add(" AND FALSE")
@@ -227,14 +226,14 @@ class YachtDistributionService(
             ctx.startDate != null -> parts.add(" AND date_from BETWEEN :startMinusFlex AND :startPlusFlex")
             ctx.endDate != null -> parts.add(" AND date_to BETWEEN :endMinusFlex AND :endPlusFlex")
         }
-        if (!ctx.vesselTypeOrdinals.isNullOrEmpty()) {
-            parts.add(" AND vessel_type IN (:vesselTypeOrdinals)")
+        if (!ctx.vesselTypeNames.isNullOrEmpty()) {
+            parts.add(" AND vessel_type IN (:vesselTypeNames)")
         }
-        if (!ctx.charterTypeOrdinals.isNullOrEmpty()) {
-            parts.add(" AND charter_type IN (:charterTypeOrdinals)")
+        if (!ctx.charterTypeNames.isNullOrEmpty()) {
+            parts.add(" AND charter_type IN (:charterTypeNames)")
         }
-        if (!ctx.mainsailTypeOrdinals.isNullOrEmpty()) {
-            parts.add(" AND mainsail_type IN (:mainsailTypeOrdinals)")
+        if (!ctx.mainsailTypeNames.isNullOrEmpty()) {
+            parts.add(" AND mainsail_type IN (:mainsailTypeNames)")
         }
         if (ctx.minBuildYear != null) parts.add(" AND build_year >= :minBuildYear")
         if (ctx.maxBuildYear != null) parts.add(" AND build_year <= :maxBuildYear")
@@ -333,14 +332,14 @@ class YachtDistributionService(
             q.setParameter("endMinusFlex", ctx.endDate.minusDays(DATE_FLEX_DAYS))
             q.setParameter("endPlusFlex", ctx.endDate.plusDays(DATE_FLEX_DAYS))
         }
-        if (!ctx.vesselTypeOrdinals.isNullOrEmpty()) {
-            q.setParameter("vesselTypeOrdinals", ctx.vesselTypeOrdinals)
+        if (!ctx.vesselTypeNames.isNullOrEmpty()) {
+            q.setParameter("vesselTypeNames", ctx.vesselTypeNames)
         }
-        if (!ctx.charterTypeOrdinals.isNullOrEmpty()) {
-            q.setParameter("charterTypeOrdinals", ctx.charterTypeOrdinals)
+        if (!ctx.charterTypeNames.isNullOrEmpty()) {
+            q.setParameter("charterTypeNames", ctx.charterTypeNames)
         }
-        if (!ctx.mainsailTypeOrdinals.isNullOrEmpty()) {
-            q.setParameter("mainsailTypeOrdinals", ctx.mainsailTypeOrdinals)
+        if (!ctx.mainsailTypeNames.isNullOrEmpty()) {
+            q.setParameter("mainsailTypeNames", ctx.mainsailTypeNames)
         }
         ctx.minBuildYear?.let { q.setParameter("minBuildYear", it) }
         ctx.maxBuildYear?.let { q.setParameter("maxBuildYear", it) }

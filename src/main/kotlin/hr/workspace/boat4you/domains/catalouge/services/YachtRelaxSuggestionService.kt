@@ -92,7 +92,7 @@ class YachtRelaxSuggestionService(
         val params = mutableMapOf<String, Any>()
         // Always-on filters (mirror `YachtQueryingService` so relax delta
         // matches the listing's "Boats available" baseline).
-        clauses += "offer_status <> 4"
+        clauses += "offer_status <> 'UNAVAILABLE'"
         when {
             filters.marinaIds == null -> {}
             filters.marinaIds.isEmpty() -> clauses += "FALSE"
@@ -111,12 +111,12 @@ class YachtRelaxSuggestionService(
             params["endPlusFlex"] = it.plusDays(DATE_FLEX_DAYS)
         }
         if (!filters.vesselTypes.isNullOrEmpty()) {
-            clauses += "vessel_type IN (:vesselTypeOrdinals)"
-            params["vesselTypeOrdinals"] = filters.vesselTypes.map { it.ordinal }
+            clauses += "vessel_type IN (:vesselTypeNames)"
+            params["vesselTypeNames"] = filters.vesselTypes.map { it.name }
         }
         if (!filters.charterTypes.isNullOrEmpty()) {
-            clauses += "charter_type IN (:charterTypeOrdinals)"
-            params["charterTypeOrdinals"] = filters.charterTypes.map { it.ordinal }
+            clauses += "charter_type IN (:charterTypeNames)"
+            params["charterTypeNames"] = filters.charterTypes.map { it.name }
         }
         // Relaxable dimensions (subject to `copy(... = null)` in [suggest]).
         filters.minBuildYear?.let { clauses += "build_year >= :minBuildYear"; params["minBuildYear"] = it }

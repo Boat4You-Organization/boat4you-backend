@@ -175,11 +175,11 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
               SELECT AVG(o.client_price / NULLIF(o.date_to - o.date_from, 0)) AS avg_per_day
               FROM offer o
               WHERE o.yacht_id = y.id
-                AND o.status IN (1, 2, 3)
+                AND o.status IN ('FREE', 'OPTION', 'OPTION_WAITING')
                 AND (:locationIdsEmpty = true OR o.location_from IN (:locationIds))
             ) avg_price ON TRUE
             WHERE y.sys_active = true
-              AND y.entry_type = 1
+              AND y.entry_type = 'EXTERNAL'
               AND (
                 :locationIdsEmpty = true
                 OR y.location_id IN (:locationIds)
@@ -210,7 +210,7 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
         locationIdsEmpty: Boolean,
         agencyIds: List<Long>,
         agencyIdsEmpty: Boolean,
-        vesselTypes: List<Int>,
+        vesselTypes: List<String>,
         vesselTypesEmpty: Boolean,
         startDate: java.time.LocalDate,
         endDate: java.time.LocalDate,
@@ -229,7 +229,7 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
             FROM yacht y
             JOIN agency a ON a.id = y.agency_id AND a.active = true
             WHERE y.sys_active = true
-              AND y.entry_type = 1
+              AND y.entry_type = 'EXTERNAL'
               AND (
                 :locationIdsEmpty = true
                 OR y.location_id IN (:locationIds)
@@ -245,7 +245,7 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
                 EXISTS (
                   SELECT 1 FROM offer o
                   WHERE o.yacht_id = y.id
-                    AND o.status IN (1, 2, 3)
+                    AND o.status IN ('FREE', 'OPTION', 'OPTION_WAITING')
                     AND (:locationIdsEmpty = true OR o.location_from IN (:locationIds))
                 )
                 OR EXISTS (
@@ -263,7 +263,7 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
         locationIdsEmpty: Boolean,
         agencyIds: List<Long>,
         agencyIdsEmpty: Boolean,
-        vesselTypes: List<Int>,
+        vesselTypes: List<String>,
         vesselTypesEmpty: Boolean,
         startDate: java.time.LocalDate,
         endDate: java.time.LocalDate,
@@ -284,8 +284,8 @@ interface ReplacementSearchRow {
     val length: java.math.BigDecimal?
     val wc: Short?
     val enginePower: Short?
-    val vesselType: Int?
-    val mainsailType: Int?
+    val vesselType: String?
+    val mainsailType: String?
     val modelId: Long?
     val modelName: String?
     val manufacturerId: Long?

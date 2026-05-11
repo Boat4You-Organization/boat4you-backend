@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
@@ -161,7 +162,7 @@ open class YachtSearchView protected constructor() {
     open var locationToFullName: String? = null
         protected set
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "entry_type")
     open var entryType: EntryType? = null
         protected set

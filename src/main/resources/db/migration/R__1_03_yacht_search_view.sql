@@ -66,7 +66,7 @@ CREATE OR REPLACE VIEW public.yacht_search_view AS
          LEFT JOIN model m          ON  m.id = y.model_id
          LEFT JOIN manufacturer mf  ON  mf.id = m.manufacturer_id
          LEFT JOIN yacht_charter_type yct ON yct.yacht_id = y.id
-  WHERE  y.entry_type = 1
+  WHERE  y.entry_type = 'EXTERNAL'
     AND  y.sys_active = true
 UNION ALL
   SELECT y.id,
@@ -104,7 +104,7 @@ UNION ALL
          a.id AS agency_id,
          a.name AS agency_name,
          y.entry_type,
-         1 AS offer_status,
+         'FREE' AS offer_status,
          (CASE WHEN COALESCE(a.recommended, false) THEN 1 ELSE 0 END) AS agency_recommended
   FROM   yacht y
          LEFT JOIN agency a         ON  y.agency_id = a.id AND a.active = true
@@ -113,7 +113,7 @@ UNION ALL
          LEFT JOIN manufacturer mf  ON  mf.id = m.manufacturer_id
          LEFT JOIN yacht_charter_type yct ON yct.yacht_id = y.id
          JOIN custom_yacht_details cyd ON cyd.yacht_id = y.id
-  WHERE  y.entry_type = 2
+  WHERE  y.entry_type = 'CUSTOM'
     AND  y.sys_active = true;
 
 GRANT SELECT ON public.yacht_search_view TO boat4you_app;

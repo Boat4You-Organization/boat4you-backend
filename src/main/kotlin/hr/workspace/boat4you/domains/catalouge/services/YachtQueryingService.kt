@@ -443,7 +443,7 @@ class YachtQueryingService(
                 ?.distinct()
                 .orEmpty()
         val agencyIds = searchParams.agencyIds.orEmpty()
-        val vesselTypeValues = searchParams.vesselTypes?.map { it.value }.orEmpty()
+        val vesselTypeValues = searchParams.vesselTypes?.map { it.name }.orEmpty()
         val startDate = searchParams.startDate ?: LocalDate.now()
         val endDate = searchParams.endDate ?: startDate.plusDays(7)
         val pageSize = size.coerceAtMost(MAX_PAGE_SIZE)
@@ -482,7 +482,7 @@ class YachtQueryingService(
         row: ReplacementSearchRow,
         currency: CurrencyEnum,
     ): YachtSearchResponseDto {
-        val vesselType = row.vesselType?.let { v -> VesselType.entries.firstOrNull { it.value == v } }
+        val vesselType = row.vesselType?.let { v -> VesselType.entries.firstOrNull { it.name == v } }
         val offerStatus =
             if (row.onlyExternalReservation) OfferStatus.UNAVAILABLE else OfferStatus.FREE
         val priceInfo = row.avgClientPrice?.let { exchangeRateCalculationService.calculatePriceInfo(it, currency) }

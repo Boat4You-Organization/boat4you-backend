@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.OfferType
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -96,12 +97,12 @@ open class Offer {
     /**
      * standard sat-sat or other
      */
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "type", nullable = false)
     open var type: OfferType? = null
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "product", nullable = false)
     open var product: CharterType? = null

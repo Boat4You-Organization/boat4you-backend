@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -68,12 +69,12 @@ open class Reservation {
     /**
      * represents mapped external status
      */
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "status", nullable = false)
     open var status: OfferStatus? = null
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "sys_status", nullable = false)
     open var sysStatus: ReservationStatus? = null
@@ -110,7 +111,7 @@ open class Reservation {
     /**
      * bareboat, crewed, etc
      */
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "product")
     open var product: CharterType? = null
 

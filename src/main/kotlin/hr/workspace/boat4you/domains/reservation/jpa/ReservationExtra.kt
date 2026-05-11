@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import hr.workspace.boat4you.domains.catalouge.jpa.Extra
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -54,7 +55,7 @@ open class ReservationExtra {
     @Column(name = "unit_price")
     open var unitPrice: BigDecimal? = null
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "unit")
     open var unit: ExtrasUnitType? = null
 

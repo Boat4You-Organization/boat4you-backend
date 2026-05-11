@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.catalouge.jpa
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -35,7 +36,7 @@ open class ExternalReservation {
 
     @NotNull
     @Column(name = "status", nullable = false)
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     open var status: ExternalReservationStatus? = null
 
     @Column(name = "option_expiration")

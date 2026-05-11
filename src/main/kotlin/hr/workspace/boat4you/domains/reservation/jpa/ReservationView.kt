@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.Id
 import jakarta.persistence.Table
@@ -32,12 +33,12 @@ open class ReservationView protected constructor() {
     open var reservationFlowId: Long? = null
         protected set
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "reservation_status")
     open var reservationStatus: OfferStatus? = null
         protected set
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "reservation_sys_status")
     open var reservationSysStatus: ReservationStatus? = null
         protected set
@@ -332,7 +333,7 @@ open class ReservationView protected constructor() {
     open var reservationAdminNotes: String? = null
         protected set
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "charter_type")
     open var charterType: CharterType? = null
         protected set

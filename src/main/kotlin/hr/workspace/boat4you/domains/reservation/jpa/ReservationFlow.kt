@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.reservation.enums.ReservationFlowStatus
 import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -59,7 +60,7 @@ open class ReservationFlow {
     open var createdAt: Instant? = null
 
     // TODO should we remove this?
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "status")
     open var status: ReservationFlowStatus? = null
 
