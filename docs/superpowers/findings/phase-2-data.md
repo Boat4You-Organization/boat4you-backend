@@ -882,3 +882,239 @@ Plus: maknuti TODO komentar uz `ReservationFlow.status` nakon odluke.
 **Batch 4 završen. Batch 5 next:** Flyway migracije — chronological pass, focus na riskantne ALTER, NOT NULL backfill, DROP COLUMN. Specifične mete iz inventory-ja: V1_24/V1_54/V1_55 (DROP), V1_64/V1_69/V1_70 (NOT NULL backfill), plus V1_90 (own STRING migracija) i V1_57 (payment_type backfill).
 
 ---
+
+## Batch 5 — Flyway migracije (2026-05-11)
+
+### [F2-043] CRIT security — V9_xx test data migracije nisu gated; prod Flyway će ih izvršiti i unijeti Workspace.hr team usere s shared bcrypt hashem
+**Lokacija:**
+- `src/main/resources/application.yml:87-93` — `spring.flyway.target: ${FLYWAY_TARGET_VERSION:latest}`
+- `application-prod.yml:67-71` — Flyway prod config ne overrida `target` ni `locations`
+- `db/migration/V9_00__insert_test_data.sql` — 15+ user redova s `password = $2a$10$CQd0ZdAerBaOmw5Akg2dpufPwQYkadFtGtTuz9nBLf3eDyqkWE/Bu` (identičan za sve), emails `*@workspace.hr` (pravi team members)
+- `db/migration/V9_02__nausys_test_agency.sql`, `V9_03__mmk_test_agency.sql` — agency test data
+
+**Detekcija:** statička + grep across yml-a
+**Opis:** Flyway sortira migracije po version number-u. V1_00..V1_90 → V9_00 → V9_02 → V9_03 → V9_04 → V9_05. `target: latest` (default) povlači **sve V-migracije** redom. Nema:
+- `spring.flyway.locations` override (npr. `classpath:db/migration/prod`) u `application-prod.yml`
+- `FLYWAY_TARGET_VERSION` env var hardcoded na `1.90` u deploy artefaktu
+- `FLYWAY_IGNORE_MIGRATION_PATTERNS=V9_*` (Flyway 9+ feature) postavka
+- Spring profile-grouping unutar V9_xx samog (npr. `@Profile("dev")` zaštita — Flyway ignorira Spring profile semantiku)
+
+Što to znači u praksi:
+1. Pri prvom prod deploy-u Flyway će rastrti SVE V1_xx + V9_xx migracije
+2. V9_00 ubacuje **15+ pravih Workspace.hr team userа** (Pero Škvorčević, Asan Štekl, Ena Olčar, Lovre Barunđek, ... ti i ostali) s emails koji odgovaraju stvarnim ljudima
+3. **Svi imaju isti bcrypt hash** — `$2a$10$CQd0ZdAerBaOmw5Akg2dpufPwQYkadFtGtTuz9nBLf3eDyqkWE/Bu` (cost 10, plaintext koji TI / team znate iz dev-a)
+4. Hash je u public-no-poznatom layout-u repa → bcrypt offline crack je izvediv s focused attacker-om i common dev password rječnikom
+5. Ako V9_xx također insertira role_assignments za te usere (likely — test data simulira admin/broker workflow), te accounte mogu biti SYSTEM_ADMIN-i
+
+**Combined posljedice:**
+- Anyone na Workspace.hr team-u koji zna dev password može se logirati u prod-u kao svoj testni `@workspace.hr` user
+- Bilo tko s repo accessom (npr. ex-employee) može pokušati offline brute-force na bcrypt hash i pristupiti istim accounts u prod-u
+- Ako test users imaju admin role, prvi sat prod uptime-a je full compromise
+
+**Predloženi fix:** **tri sloja obrane — primijeniti sve:**
+1. **Env var u prod deploy-u (must-have):** `FLYWAY_TARGET_VERSION=1.90` (ili koji god V1.xx je posljednja prod migracija). Flyway će preskočiti V9_xx jer su izvan target window-a.
+2. **Yml-side belt-and-braces:** dodati u `application-prod.yml` `spring.flyway.ignore-migration-patterns: ["*:pending"]` + `target: 1.90` kao default; ili još bolje, premjestiti `V9_*` u zaseban folder `db/migration/test-only/` koji se ne uključuje u prod `locations`:
+```yaml
+# application.yml (default — uključuje sve)
+spring.flyway.locations: classpath:db/migration,classpath:db/migration/test-only
+# application-prod.yml
+spring.flyway.locations: classpath:db/migration   # bez test-only
+```
+3. **Sanitize V9_00:** ukloniti pravi `@workspace.hr` emails — koristiti `test-{n}@boat4you.invalid` format. Plus randomizirati bcrypt hash po useru (ili koristiti standardni "Password123!" sa unique salt-om koji ne odgovara nijednom realnom korisničkom paswordu).
+
+**Pretpostavka koju treba verificirati prije prod cutover-a:**
+- Trenutno prod env var-i (VM2/VM3 deploy yaml/systemd unit) DA LI ima `FLYWAY_TARGET_VERSION` postavljen?
+- Ako da → manje urgentno, ali (2) + (3) treba i dalje uraditi
+- Ako ne → **prod-blocker, MUST fix u sljedećem deploy-u**
+
+**Riziko-procjena fixa:** (1) je trivijalan — dodati env var. (2) zahtjeva direktorij restructuring. (3) je code change u V9_00 (ali Flyway već applied → checksum mismatch ako se mijenja in-place; treba `repair`).
+**Status:** OPEN — **prod-blocker dok se ne potvrdi (1)**. Eskalacija.
+
+---
+
+### [F2-044] HIGH risk — `V1_24__drop_columns.sql` destructive DROP COLUMN bez rationale komentara, bez verify-grep-a
+**Lokacija:** `db/migration/V1_24__drop_columns.sql:1-2`
+**Detekcija:** statička
+**Opis:** Cijeli sadržaj migracije:
+```sql
+ALTER TABLE external_reservations DROP COLUMN external_id;
+ALTER TABLE offer DROP COLUMN payment_plans;
+```
+Dva DROP COLUMN-a bez ijednog komentara. Po Mariovoj konvenciji (svaka druga migracija ima 5-50 linija obrazloženja), **ovo je migracioni orphan.** Što ne znamo bez detaljnog grep-a:
+- **`external_reservations.external_id`** — bio je vjerojatno zamijenjen s `externalId: Long` na ExternalReservation entity-ju (vidio sam u Batch 3a). Ali bez komentara/PR linka, ne može se utvrditi je li ovo bilo:
+  - drop dead orphan column (safe)
+  - drop column s podacima koji su migrirani drugdje (potencijalan data loss ako migracija nije bila izvršena prvo)
+  - drop column koji je još uvijek bio koristen → app pao
+- **`offer.payment_plans`** — eventualno zamijenjen s `OfferPaymentPlan` tablicom (1:N). Isto, bez context-a ne znamo je li bilo backfill-a iz column-a u novu tablicu.
+
+Posljedice za pre-prod review:
+1. Code review bez context-a (ti, autor) — ne može se utvrditi je li to bio safe ili loss-y drop.
+2. Pre-prod prvi-put-deploy radi clean install → V1_24 obriše prazne kolone → safe (jer još nije bilo podataka).
+3. **Ali ako se ikad ponovno trebao migrirati neki staging/QA DB koji je preživio V1_03 era** — bilo bi izgubljeno.
+
+**Predloženi fix:** dodati post-hoc komentar u V1_24 (Flyway prihvaća izmjene komentara bez checksum break-a samo ako `validateMigrationNaming` ne uključuje SQL diff; provjeri jer Flyway hashira sadržaj). Vjerojatno najbolje: **zaseban PR-only doc** u repu koji opisuje "Migracija audit log: V1_24 dropped external_reservations.external_id (replaced by external_id Long field on entity, no backfill needed because table was empty at the time), offer.payment_plans (replaced by OfferPaymentPlan separate table, V1_03 backfill confirmed in commit XYZ)".
+
+Plus: dodati to-do u Phase 7 checklist: verify-grep za reference na ove kolone u stargim git commit-ima i confirm da nije izgubljeno.
+**Riziko-procjena fixa:** dokumentacijski, ne dira shemu. LOW. Ali finding sam je HIGH jer code reviewer ne može potvrditi safety bez sutina.
+**Status:** OPEN — **HIGH za pre-prod** dok se ne dokumentira (može se rezolvirati za 30min Mario commentary)
+
+---
+
+### [F2-045] MED risk — `V1_64__inquiry_phone_required.sql` SET NOT NULL bez safety net-a; prod deploy fail-a ako postoji ijedan NULL
+**Lokacija:** `db/migration/V1_64__inquiry_phone_required.sql:12-13`
+**Detekcija:** statička
+**Opis:**
+```sql
+ALTER TABLE inquiry ALTER COLUMN phone SET NOT NULL;
+```
+Komentar kaže "verified before pushing" (dev) i "if a future scrape uncovers a legacy NULL row, set it to a sentinel like '' before re-running". **Verify je human-driven, ne migration-driven.**
+
+Risk-scenario:
+1. Prod kopija inquiry tablice ima 1+ NULL phone-ova (jer prod podaci ≠ dev podaci, naročito ako inquiry endpoint je već bio prod-public i F1-068 email-bombing CRIT je već iskorišten od nekog — netko poslao curl request bez phone polja).
+2. V1_64 izvršava se → `column "phone" contains null values` SQL Error → cijela Flyway migracija fail-a → app ne startira.
+3. Recovery: ručno SQL `UPDATE inquiry SET phone='' WHERE phone IS NULL; flyway repair; flyway migrate`. Otkud admin dobije pristup prod DB-u u tom trenu? VM4 PostgreSQL direktan psql access od support-a.
+
+Industry pattern za NOT NULL backfill u jednoj migraciji:
+```sql
+UPDATE inquiry SET phone = '' WHERE phone IS NULL;
+ALTER TABLE inquiry ALTER COLUMN phone SET DEFAULT '';
+ALTER TABLE inquiry ALTER COLUMN phone SET NOT NULL;
+```
+Idempotentno, bez surprise-a. Prvi UPDATE = no-op ako nema NULL-ova, ali sigurnost-net.
+**Posljedica:** prod deploy može pasti pri prvoj-run-i ako ima NULL-ova. Recovery: SLA degradation, ručna intervencija.
+**Predloženi fix:** dodati explicit `UPDATE ... SET phone='' WHERE phone IS NULL` ispred ALTER-a. Trivijalno. **Ali Flyway već applied** ovu migraciju u dev/staging → checksum mismatch ako se mijenja. Alternative: dodati **novu** migraciju V1_91 koja prvo UPDATE-a NULL-ove ako postoje, prije nego V1_64 efekt vrijedi. Reverse impossible — V1_64 already ran in dev.
+
+**Najpragmatičnije:** prije prod deploy-a, izvršiti manualni `SELECT COUNT(*) FROM inquiry WHERE phone IS NULL` u staging-mirror-of-prod copy → ako ≥1, `UPDATE inquiry SET phone='' WHERE phone IS NULL` prije Flyway run-a.
+**Riziko-procjena fixa:** human-driven preflight check umjesto in-migration safety. MED jer recovery je možda 1h SLA degradacije.
+**Status:** OPEN — pre-prod operational checklist (verify before deploy, ne code change)
+
+---
+
+### [F2-046] MED maintenance — `V1_57__add_extra_payment_type.sql` hardkodira ordinal vrijednosti (0-3); zavisi o V1_90 kasnijem mapping-u
+**Lokacija:** `db/migration/V1_57__add_extra_payment_type.sql:36-55`
+**Detekcija:** statička
+**Opis:** V1_57 backfill:
+```sql
+UPDATE offer_extras SET payment_type =
+    CASE
+        WHEN price IS NULL OR price = 0 THEN 0  -- INCLUDED
+        WHEN payable_in_base = FALSE THEN 1     -- WITH_BOOKING
+        WHEN LOWER(name) ~ 'tourist tax|...' THEN 3  -- ON_SITE
+        ELSE 2  -- ADVANCE_TO_OPERATOR
+    END
+WHERE payment_type IS NULL;
+```
+Stavi integers 0-3 u smallint kolonu. V1_90 kasnije konvertira u VARCHAR(31) preko CASE:
+```sql
+ALTER TABLE offer_extras ALTER COLUMN payment_type TYPE VARCHAR(31) USING (
+    CASE payment_type
+        WHEN 0 THEN 'INCLUDED'
+        WHEN 1 THEN 'WITH_BOOKING'
+        WHEN 2 THEN 'ADVANCE_TO_OPERATOR'
+        WHEN 3 THEN 'ON_SITE'
+        ELSE NULL
+    END);
+```
+
+Funkcionalno chain radi: V1_57 stavi `2`, V1_90 mapira u `'ADVANCE_TO_OPERATOR'`. Ali **dve migracije moraju biti u sync-u na enum ordinal-u.** Ako se ikad doda novi ExtraPaymentType vrijednost ili reorderira enum (npr. dodati `OWNER_REIMBURSEMENT` između WITH_BOOKING i ADVANCE_TO_OPERATOR):
+1. V1_90 mora dobiti novu `WHEN 2 THEN 'OWNER_REIMBURSEMENT'` linija + sve sljedeće shift up
+2. V1_57 ostaje hardkodiran s 0-3 → ali V1_90 ga već je već primijenio, novi shape se primjenjuje samo na **nove** rows.
+
+Konfuzno za održavanje. Plus: V1_57 implicit dependency na implementaciju `ExtraPaymentType.classify()` Kotlin function — komentar pravilno kaže "keep both regexes in sync".
+
+**Posljedica:** dokumentacijska. Ne pucа prod, ali povećava cognitive overhead i drift risk.
+**Predloženi fix:** post-fact ništa (V1_57 + V1_90 već applied — checksum mismatch ako se mijenja). **Za buduće slične backfill-e:** koristiti string vrijednosti odmah (V1_57 bi mogao biti `SET payment_type = 'INCLUDED'` da je kolona bila VARCHAR od početka). Tracking-only finding.
+**Status:** OPEN — tracking-only (nema concrete fix-a za applied migracije, naučili-smo-lekciju)
+
+---
+
+### [F2-047] MED fragility — `V1_69`/`V1_70` backfill custom_yacht location pretpostavlja country.id == location.id u numeričkom domenu
+**Lokacija:** `db/migration/V1_69__backfill_custom_yacht_location.sql:17-23` + `V1_70__backfill_custom_yacht_location_via_country_key.sql:14-21`
+**Detekcija:** statička
+**Opis:** V1_69 set-a:
+```sql
+UPDATE public.yacht y SET location_id = cyd.country_id ...
+```
+Komentar kaže: *"Country and Location share numeric IDs (Greece = 86 in both tables), so a direct copy works."* V1_70 fallback parsea `country_key` text → `c-86` → 86 → set-a kao location_id.
+
+**Pretpostavka:** numerički ID 86 postoji i kao `country.id = 86` i kao `location.id = 86` istovremeno, **i predstavlja isti entitet** (Greece). To je **akcidentalno-aligned** pattern koji nije enforced ničim — ni FK-om, ni constraint-om, ni dokumentom. Risk-scenariji:
+1. Admin doda novu country (npr. Bahamas) preko admin UI-ja → country dobije sljedeći auto-increment ID (npr. 167). Location tablica ima već 167-ti red (npr. neki marina u Hrvatskoj). Sad `country.id = 167` ≠ `location.id = 167` semantically. Future V_xx koji ponovo radi V1_69 logic → set-a custom yacht location na krivu lokaciju.
+2. Reset sequence-eva ili partial restore iz backup-a → numerički kolaps. Custom yachts ode na pogrešno location.
+
+V1_69 + V1_70 su jednokratni backfill-evi tako da su safe **sad**. Ali pattern može biti ponavljan u budućim migracijama koji rade isto (npr. ako se doda nova "custom yacht country" feature).
+
+**Posljedica:** pre-prod nije rušilac. Faktor budućeg maintenance bug-a.
+**Predloženi fix:** trace gdje god se računa `location_id` iz `country_id` (grep aliases) i dodati **comment explicit assertion** + (idealnije) helper SQL function `country_id_to_location_id(country_id INT)` koja eksplicitno mapira (sad: identity, ali centralizirano). Alternatively: refactor da custom yachts imaju zaseban `location_for_custom_yacht_id` koji je optional.
+
+Plus: dodati constraint check (post-deploy diagnostic): `SELECT y.id FROM yacht y JOIN custom_yacht_details cyd ON y.id=cyd.yacht_id WHERE y.entry_type=2 AND y.location_id IS NOT NULL AND y.location_id <> cyd.country_id` — verify konzistencija mjesečno.
+**Riziko-procjena fixa:** dokumentacijski / dodatni helper. LOW invasiveness. MED concern.
+**Status:** OPEN — Faza 6 (data model documentation sweep)
+
+---
+
+### [F2-048] LOW maintenance — `V1_54` recreates yacht_search_view s hardkodiranim `o.status <> 4` (ordinal); kasnije superseded by V1_90+R__1_03
+**Lokacija:** `db/migration/V1_54__drop_yacht_locations_relict.sql:92` (kao i ostali V1_xx koji recreate-aju view: V1_60, V1_67)
+**Detekcija:** statička
+**Opis:** V1_54 recreate-a `yacht_search_view` s native ordinal komparacijom: `o.status <> 4` (= NOT UNAVAILABLE po OfferStatus enum-u). Ova logika je nasljedovana iz V1_03 pre-F2-018 ere. **Funkcionalno OK** u Flyway run order-u jer:
+1. V1_54 → view s ordinal 4
+2. V1_90 → DROP VIEW (jer convert payment_type/status kolonu)
+3. R__1_03_yacht_search_view.sql → recreate view s `o.status <> 'UNAVAILABLE'` (string ordinal)
+
+Konačno stanje u prod-u nakon ALL migracija: string-typed view. **Ali developer koji čita V1_54 vidi ordinal 4, mora skrolati do R__-a da nađe trenutni shape.** Confusing.
+
+Isti pattern: V1_60 (`o.status <> 4`), V1_67 (`o.status <> 4`), V1_63 (reservation_view recreate).
+**Posljedica:** maintainability — kognitivno trošeno za chase trenutnog view shape-a kroz 5 migracija + R__.
+**Predloženi fix:** nothing actionable (Flyway already applied — checksum mismatch ako se mijenja). Future: nikada ne recreate viewa u V_xx, koristiti dedicated R__ uvijek (Flyway dokumentacija to već preporučuje). Tracking-only.
+**Status:** OPEN — tracking-only / convention note
+
+---
+
+### [F2-049] LOW drift risk — `V1_88__manufacturer_model_dedup.sql` regex normalization rules zavise od sync s `ManufacturerAliasResolver.kt`
+**Lokacija:** `db/migration/V1_88__manufacturer_model_dedup.sql:99-103` (REGEXP_REPLACE drop-suffix list) + `domains/external/.../ManufacturerAliasResolver.kt` (Kotlin equivalent)
+**Detekcija:** statička
+**Opis:** V1_88 koristi REGEXP_REPLACE da skida noise sufixe (`yachts`, `yachtbau`, `catamarans`, `group`, ...) plus TRANSLATE za accent fold. Komentar (l.17-20) kaže "see ManufacturerAliasResolver.kt for the full alias list mirrored in code". Kotlin resolver ima ekvivalent koji se zove iz sync flow-a.
+
+**Drift risk:** ako developer doda novi alias u `ManufacturerAliasResolver.kt` (npr. "Boats Inc." se treba dedup-irati kao "Boats"), V1_88 ostaje hardkodiran na trenutnu listu. Sync detected duplicate (jer Kotlin resolver tako kaže), ali DB nema migrirani dedup → sync flow vjerojatno radi `OR INSERT IGNORE` ili sl. Inkonzistencija između application-level i DB-level dedup.
+**Posljedica:** maintainability bug-čekanju. Pre-prod nije akutni problem.
+**Predloženi fix:** dvije opcije:
+- (a) **Tracking comment:** dodati u `ManufacturerAliasResolver.kt` komentar koji eksplicitno kaže "kad mijenjaš listu, dodaj novu Flyway V_xx migraciju koja primjenjuje istu dedup logic na DB" + checklist u CONTRIBUTING.md.
+- (b) **Single source of truth:** prebaciti regex listu u DB tablicu `manufacturer_alias_pattern` koju Kotlin čita i Flyway updates. Veće preuređenje.
+
+(a) je za pre-prod (5min commit). (b) za Faza 6 ako bude potrebe.
+**Status:** OPEN — Faza 6 (drift-prevention pattern)
+
+---
+
+### [F2-050] INFO positive — Reservation flow + data hygiene migracije pokazuju dobar standard
+**Lokacija:** više migracija
+**Opis:** Pozitivni patternsi za zabilježit:
+- **V1_45 booking_number** — `DROP VIEW IF EXISTS` (idempotent), comment objašnjava R__ recreate; jasan rationale.
+- **V1_50 reservation_yacht_swap_audit** + **V1_53 yacht_dedup_audit** + **V1_58 payment_refund_audit** — append-only audit tables, dedicated forenzika. Pattern koji bi F2-038 ReservationDocument trebao slijediti.
+- **V1_56 unique_stripe_session_id** — unique constraint na Stripe session ID je dobra defense protiv F1-019 (Stripe webhook idempotency).
+- **V1_78 user_soft_delete_gdpr** — partial unique index `WHERE deleted_at IS NULL`, anonymization strategy detailed in comment, FK constraint considerations addressed. Top-tier GDPR migracija.
+- **V1_79 gdpr_audit_log** — audit log per Article 5(2) accountability; columns za IP + user agent + completion timestamp. Pattern za drugi domain audit (vidi F2-038).
+- **V1_82 password_reset_code_issued_at** — TTL pattern eksplicitno po OWASP cheatsheet-u. Eksplicitan reference.
+- **V1_88 manufacturer_model_dedup** — idempotent (HAVING > 1 + EXISTS guards), TEMP tables ON COMMIT DROP, RAISE NOTICE za visibility. Veliki SQL pravilno strukturiran.
+- **V9_04, V9_05** — FK index additions; dobra perf hygiene (ali profile-confusing — vidi F2-043, ovi su zapravo prod-relevantni indexi pomiješani sa test data).
+- **V1_57 + V1_88** — koriste `RAISE NOTICE` / log statements za visibility tijekom Flyway run-a.
+
+Vrijedno standardize-irati: future migracije slijede V1_78/V1_88 strukturu (rationale comment, idempotency, log statements, FK considerations).
+**Status:** INFO
+
+---
+
+### Sažetak Batch 5
+
+- **CRIT (1):** F2-043 (V9_xx test data run-a u prod-u → 15+ Workspace.hr team accounts s shared bcrypt hash → potential full prod compromise)
+- **HIGH (1):** F2-044 (V1_24 destructive DROP COLUMN bez rationale — code reviewer ne može potvrditi safety)
+- **MED (3):** F2-045 (V1_64 NOT NULL bez safety net — prod deploy može pasti na NULL-ovima), F2-046 (V1_57 hardkodira ordinal koji V1_90 mapira — drift risk), F2-047 (V1_69/V1_70 country.id == location.id assumption fragile)
+- **LOW (2):** F2-048 (V1_54+V1_60+V1_67 hardkodiraju ordinal `o.status<>4` u view recreate-u), F2-049 (V1_88 regex normalization drift s ManufacturerAliasResolver.kt)
+- **INFO (1):** F2-050 (10+ pozitivnih patterna — GDPR, audit, idempotency, OWASP TTL, FK indexes)
+
+**Najkritičniji nalaz batch-a: F2-043 CRIT.** Mora se verificirati prije prvog prod deploy-a: postavljen li je `FLYWAY_TARGET_VERSION=1.90` u prod env-u? Ako ne, prvi-put-up insertira test team accounts u prod. Trivial fix (env var dodati), ali kritična verifikacija.
+
+**F2-044 HIGH** je dokumentacijski. Tvojih 30min razgovora razrješi — V1_24 nije code bug, samo nedostaje historical context komentar.
+
+**Batch 5 završen. Phase 2 read-pass GOTOV.** Sljedeća akcija: **closure summary + phase gate decision** (analogno Phase 1 zatvaranju u `7369434` + `9d97675` commit-ima).
+
+---
