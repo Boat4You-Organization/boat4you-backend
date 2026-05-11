@@ -8,8 +8,10 @@ import hr.workspace.boat4you.domains.external.nausys.job.NausysSyncJob
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysCatalogueIntegrationService
 import org.springframework.cache.CacheManager
 import org.springframework.context.annotation.Profile
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -17,19 +19,33 @@ import org.springframework.web.bind.annotation.RestController
  * Dev-only catalog sync trigger so the admin can refresh `external_equipment`
  * (and re-sync yacht_equipment afterwards) from the partner equipment
  * endpoints in a single curl. Production sync runs through the
- * SYSTEM_ADMIN-protected /admin/{partner}/sync controllers — this one
- * bypasses auth because it lives behind the dev-only profile and the local
- * env doesn't have admin JWTs handy.
+ * SYSTEM_ADMIN-protected /admin/{partner}/sync controllers.
  *
- * Pulls the entire MMK + NauSys equipment catalog (one-shot upserts) so
- * the yacht-level sync can finally find an `external_equipment` record
- * for every partner-emitted equipmentId. Without this the yacht_equipment
- * table only ever contained ~8 items per yacht — the rest were silently
- * skipped because the mapping rows didn't exist.
+ * Triple-defense hardening (F1-041 / F3-035), 2026-05-11:
+ * 1. `@Profile("dev")` — bean is not registered unless dev profile is active
+ *    (was the only guard previously).
+ * 2. `/admin/dev` URL prefix — does not match Spring Security's
+ *    `permitAll` on the `/public` path tree, so even if a misconfigured prod ever
+ *    loaded this bean, JWT auth would still be required (analogous to the
+ *    /admin/nausys + /admin/mmk hardening on 23.4.2026, see SecurityConfiguration).
+ * 3. `@PreAuthorize("hasAuthority('SYSTEM_ADMIN')")` at class level —
+ *    role check on top of authentication.
+ * 4. State-changing operations are `@PostMapping` so they can't be invoked
+ *    by the browser address bar / accidental link, and CSRF posture is
+ *    consistent with the rest of the admin surface.
+ *
+ * Diagnostics that only read partner state remain `@GetMapping` because
+ * they have no side-effect on our DB. Pulls the entire MMK + NauSys
+ * equipment catalog (one-shot upserts) so the yacht-level sync can finally
+ * find an `external_equipment` record for every partner-emitted
+ * equipmentId. Without this the yacht_equipment table only ever contained
+ * ~8 items per yacht — the rest were silently skipped because the mapping
+ * rows didn't exist.
  */
 @RestController
 @Profile("dev")
-@RequestMapping("/public/dev")
+@RequestMapping("/admin/dev")
+@PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
 class DevEquipmentSyncController(
     private val mmkCatalogueIntegrationService: MmkCatalogueIntegrationService,
     private val nauSysCatalogueIntegrationService: NauSysCatalogueIntegrationService,
@@ -112,6 +128,7 @@ class DevEquipmentSyncController(
             "equipment" to eqs.take(40).map { mapOf("id" to it.id, "value" to it.value) },
         )
     }
+
     /**
      * Clear ALL Spring caches in one call. Needed after DB writes that bypass
      * the @CacheEvict-annotated mutation paths — e.g. region/location rows
@@ -119,14 +136,14 @@ class DevEquipmentSyncController(
      * autocomplete sees the pre-write snapshot until the TTL expires (or the
      * app restarts). Hit this once after such writes and every cache resets.
      */
-    @GetMapping("/clear-caches")
+    @PostMapping("/clear-caches")
     fun clearCaches(): Map<String, Any> {
         val names = cacheManager.cacheNames.toList()
         names.forEach { cacheManager.getCache(it)?.clear() }
         return mapOf("status" to "ok", "cleared" to names)
     }
 
-    @GetMapping("/sync-equipment-catalog")
+    @PostMapping("/sync-equipment-catalog")
     fun syncEquipmentCatalog(): Map<String, String> {
         mmkCatalogueIntegrationService.equipmentSync()
         nauSysCatalogueIntegrationService.equipmentSync()
@@ -146,7 +163,7 @@ class DevEquipmentSyncController(
      * Running modelsSync recreates the missing Model rows from the partner
      * catalogue, after which yacht sync can resolve them again.
      */
-    @GetMapping("/sync-catalogue")
+    @PostMapping("/sync-catalogue")
     fun syncCatalogue(): Map<String, String> {
         nauSysCatalogueIntegrationService.manufacturerSync()
         nauSysCatalogueIntegrationService.modelsSync()
@@ -161,7 +178,7 @@ class DevEquipmentSyncController(
      * mappings so yacht_equipments now stores every partner-emitted item
      * instead of dropping ~70% to "no mapping found".
      */
-    @GetMapping("/resync-yachts")
+    @PostMapping("/resync-yachts")
     fun resyncYachts(): Map<String, String> {
         mmkYachtIntegrationService.yachtSync()
         nausysSyncJob.runYachtSync()

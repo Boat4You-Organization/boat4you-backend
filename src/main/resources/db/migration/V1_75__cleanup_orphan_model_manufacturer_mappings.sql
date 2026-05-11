@@ -12,7 +12,7 @@
 -- MmkYachtSyncService.findOrCreateModel to return null (post-30.4 fix) and
 -- skip the entire yacht — yacht 13175 (Ninoa) and ~half the NauSys fleet
 -- were affected. After this delete the next NauSys catalogue sync
--- (`/public/dev/sync-catalogue` or scheduled run) repopulates Model rows
+-- (`/admin/dev/sync-catalogue` POST, dev-only, or scheduled run) repopulates Model rows
 -- from the partner catalogue and yacht sync resolves them again.
 
 DELETE FROM external_mapping
