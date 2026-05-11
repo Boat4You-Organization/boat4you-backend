@@ -203,7 +203,7 @@ Legend statusa:
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓, Batch 3 (MMK integration services) ✓, Batch 4 (Stripe payment integration) ✓, Batch 5 (Mail integration) ✓. Batch 6 (sync orchestration + admin controllers) pending.
+**Status:** READ-PASS COMPLETE — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓, Batch 3 (MMK integration services) ✓, Batch 4 (Stripe payment integration) ✓, Batch 5 (Mail integration) ✓, Batch 6 (sync orchestration + admin controllers) ✓. **Next: phase closure + gate decision.**
 
 ### CRIT (1)
 
@@ -238,8 +238,10 @@ Legend statusa:
 | F3-027 | MED | Webhook handler tiho ignorira refund / dispute / expired Stripe event types | OPEN — eskalacija (Stripe event handling roadmap) |
 | F3-030 | MED | User-controlled `inquiry.email`/`user.name`/surname putuju u `setReplyTo`/`setTo` bez explicit CRLF/comma sanitizacije — comma-injection risk | OPEN — Faza 5 (input validation sweep) |
 | F3-031 | MED | SMTP send failures swallowed bez retry / audit — transactional email loss silent (booking confirmation, password reset) | OPEN — Faza 5 / pre-prod minimum (email_outbox pattern) |
+| F3-036 | MED | `ServiceCallCacheService` koristi `Objects.hash().toLong()` (Int range cast) — collision risk na 13M-combinacijski yacht offer cache → silent stale-offer skip | OPEN — MED, real bug; pair s F2-002 retention |
+| F3-037 | MED | `ExternalSyncService.yachtSyncsInProgress` JVM-local mutex; VM2 + VM3 ne dijele state — double concurrent sync per yachtId | OPEN — pair s Faza 4 jobs locking |
 
-### LOW (9)
+### LOW (10)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -252,6 +254,7 @@ Legend statusa:
 | F3-019 | LOW | `MmkYachtOfferIntegrationServiceAsync.syncOffersForAgencyYachtsOld` deprecated ali aktivan `@Async` + 90 linija duplicirane impl | WAITING-DECISION (grep + delete) |
 | F3-028 | LOW | `toCentsLong()` koristi `RoundingMode.UP` → slight customer overcharge per payment phase | WAITING-DECISION (Mario business choice) |
 | F3-032 | LOW | `helper.setTo` multi-recipient pokazuje sve adresarima; admin notification leak ako se ikad pojavi multi-recipient flow | OPEN — Faza 5 (defensive design) |
+| F3-038 | LOW | `ExternalSyncService.syncYachtOffers` chained `!!` on `yacht.agency!!.primarySource!!.externalSystem!!` — NPE fragility (F1-026 family) | WAITING-DECISION (trivijalan, group s F1-026) |
 
 ---
 
@@ -260,15 +263,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 2 | 1 | 1 | — | — | — | — | **4** |
-| HIGH | 13 | 1 | 6 | — | — | — | — | **20** |
-| MED | 18 | 19 | 12 | — | — | — | — | **49** |
-| LOW | 8 | 23 | 9 | — | — | — | — | **40** |
-| INFO | 4 | 3 | 6 | — | — | — | — | **13** |
+| HIGH | 13 | 1 | 7 | — | — | — | — | **21** |
+| MED | 18 | 19 | 14 | — | — | — | — | **51** |
+| LOW | 8 | 23 | 10 | — | — | — | — | **41** |
+| INFO | 4 | 3 | 8 | — | — | — | — | **15** |
 | FIXED | 20 | 3 | 0 | — | — | — | — | **23** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | — | — | — | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | — | — | — | — | **3** |
 | BLOCKED | 1 | 0 | 0 | — | — | — | — | **1** |
-| **OPEN** | **41** | **44** | **28** | — | — | — | — | **113** |
+| **OPEN** | **41** | **44** | **32** | — | — | — | — | **117** |
 
 ---
 
