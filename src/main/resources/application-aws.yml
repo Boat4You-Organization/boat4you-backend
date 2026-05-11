@@ -13,9 +13,13 @@ application:
       base-url: ${NAUSYS_URL:http://ws.nausys.com}
       username: ${NAUSYS_USERNAME}
       password: ${NAUSYS_PASSWORD}
+      connect-timeout-ms: ${NAUSYS_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${NAUSYS_READ_TIMEOUT_MS:60000}
     mmk:
       base-url: ${MMK_URL:https://www.booking-manager.com/api/v2}
       bearer: ${MMK_TOKEN}
+      connect-timeout-ms: ${MMK_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${MMK_READ_TIMEOUT_MS:60000}
 spring:
   mail:
     host: mail.smtp2go.com

@@ -18,9 +18,16 @@ application:
       base-url: ${NAUSYS_URL:http://ws.nausys.com}
       username: ${NAUSYS_USERNAME:?NAUSYS_USERNAME required}
       password: ${NAUSYS_PASSWORD:?NAUSYS_PASSWORD required}
+      # F3-001: bounded partner timeouts. NauSys catalogue calls can be
+      # slow (large payloads), so read is generous; connect stays tight
+      # because TCP/TLS handshake should not need 5+ seconds.
+      connect-timeout-ms: ${NAUSYS_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${NAUSYS_READ_TIMEOUT_MS:60000}
     mmk:
       base-url: ${MMK_URL:https://www.booking-manager.com/api/v2}
       bearer: ${MMK_TOKEN:?MMK_TOKEN required}
+      connect-timeout-ms: ${MMK_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${MMK_READ_TIMEOUT_MS:60000}
   email:
     # Customer-visible From. Falls through to the env var first so we can
     # rotate without a redeploy; default keeps the boat4you mailbox.
