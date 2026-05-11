@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
 
-    <property name="LOG_DIR" value="./logs"/>
+    <!-- LOG_DIR is the directory where log files (rolling/dev) land. Default
+         is ./logs (relative to JVM working directory) for backward compat
+         with the systemd unit WorkingDirectory=/home/cusmaN/boat4you. Ops can
+         override via `Environment=LOG_DIR=/var/log/boat4you` in the systemd
+         unit if logs ever need to land outside the working directory. -->
+    <property name="LOG_DIR" value="${LOG_DIR:-./logs}"/>
 
     <appender name="Console" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
@@ -37,7 +42,13 @@
             <appender-ref ref="Console"/>
         </root>
 
-        <logger name="hr.workspace.boat4you" level="debug" additivity="false">
+        <!-- INFO by default for prod. Env override (B4Y_LOG_LEVEL=debug) flips
+             back to verbose when troubleshooting a specific incident; flip
+             back once issue resolved. DEBUG-level prod logging amplifies
+             PII visibility (e.g. InternalLoginException email logs at ERROR,
+             UserMutationService debug-logs user.email) and fills the 2GB
+             rolling cap faster under high traffic / attack load. -->
+        <logger name="hr.workspace.boat4you" level="${B4Y_LOG_LEVEL:-info}" additivity="false">
             <appender-ref ref="RollingFile"/>
             <appender-ref ref="Console"/>
         </logger>
