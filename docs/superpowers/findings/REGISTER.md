@@ -208,7 +208,7 @@ Legend statusa:
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 6 batch-eva + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 fixes). 40 findings: 5 FIXED, 27 OPEN (0 CRIT + 5 HIGH + 12 MED + 10 LOW), 8 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: NauSys/MMK HTTP foundation (F3-001/002), F3-035 DevController hardening (paired s F1-041 closeout), plus F3-003/009 NauSys HTTPS verify s partner-om. **Stripe payment hardening trio (F3-022/023/024 + F3-025/026) CLOSED in Phase B1.**
+**Status:** CLOSED 2026-05-11 (read-pass kroz 6 batch-eva + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 + B2 fixes). 40 findings: 7 FIXED, 25 OPEN (0 CRIT + 3 HIGH + 12 MED + 10 LOW), 8 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F3-035 DevController hardening (paired s F1-041 closeout), plus F3-003/009 NauSys HTTPS verify s partner-om. **Stripe payment hardening trio (F3-022/023/024 + F3-025/026) CLOSED in Phase B1. NauSys/MMK HTTP foundation (F3-001/002) CLOSED in Phase B2.**
 
 ### CRIT (1)
 
@@ -220,8 +220,8 @@ Legend statusa:
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
-| F3-001 | HIGH | `NauSysRestClientConfig`/`MmkRestClientConfig` nemaju connect/read/write timeouts — partner slow = VM2 unresponsive | OPEN — **prod-blocker scenario** |
-| F3-002 | HIGH | `@Retryable(Exception::class)` na state-changing calls (createOption/confirmReservation/stornoOption/cancelReservation) duplicira partner side-effects (F1-019 sibling) | OPEN — **prod-blocker pair s F1-019** |
+| F3-001 | HIGH | `NauSysRestClientConfig`/`MmkRestClientConfig` nemaju connect/read/write timeouts — partner slow = VM2 unresponsive | FIXED `d681737` (ClientHttpRequestFactoryBuilder w/ 5s connect / 60s read, env-overridable) |
+| F3-002 | HIGH | `@Retryable(Exception::class)` na state-changing calls (createOption/confirmReservation/stornoOption/cancelReservation) duplicira partner side-effects (F1-019 sibling) | FIXED `e0b990d` (annotation stripped on state-changing NauSys + MMK methods; reads retain retry) |
 | F3-003 | HIGH | NauSys credentials u request body putuju preko HTTP plaintext (F1-037 produbljen) | OPEN — partner-side HTTPS verify + env var fix |
 | F3-009 | HIGH | Customer PII (name, surname, crew list) putuje NauSys-u u HTTP body plaintext (F3-003 širenje na PII — GDPR breach risk) | OPEN — pair s F3-003 fix |
 | F3-023 | HIGH | `setSessionIdOnPaymentPhases` overwrites stripeSessionId bez check-a; old-session completion = orphan payment, customer money-loss scenario | FIXED `d6138b3` (best-effort Session.expire prior session before overwrite) |
@@ -262,11 +262,13 @@ Legend statusa:
 | F3-032 | LOW | `helper.setTo` multi-recipient pokazuje sve adresarima; admin notification leak ako se ikad pojavi multi-recipient flow | OPEN — Faza 5 (defensive design) |
 | F3-038 | LOW | `ExternalSyncService.syncYachtOffers` chained `!!` on `yacht.agency!!.primarySource!!.externalSystem!!` — NPE fragility (F1-026 family) | WAITING-DECISION (trivijalan, group s F1-026) |
 
-### FIXED (5)
+### FIXED (7)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
 | F3-022 | CRIT | Event-level idempotency via `processed_stripe_events` (`INSERT ... ON CONFLICT DO NOTHING` in REQUIRES_NEW tx); Stripe retries become no-ops | `f815e1e` + `f30a116` |
+| F3-001 | HIGH | NauSys + MMK RestClient connect/read timeouts via Spring Boot 3.5 `ClientHttpRequestFactoryBuilder.detect()`; env-overridable per partner | `d681737` |
+| F3-002 | HIGH | `@Retryable` stripped from state-changing partner calls (NauSys: createInfo/createOption/confirmReservation/stornoOption; MMK: createOption/confirmReservation/cancelOption); reads retain retry | `e0b990d` |
 | F3-023 | HIGH | Best-effort `Session.expire` on prior open stripeSessionId before overwriting on the phase | `d6138b3` |
 | F3-024 | HIGH | Mitigated via F3-022 claim — Stripe retries skip; residual partial-failure window documented (V1_91), full 2PC out of scope | `f30a116` |
 | F3-025 | MED | Defensive null checks on Stripe webhook payload + logged early-returns (no `!!` left in handleWebhookEvent) | `f30a116` |
@@ -410,15 +412,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 1 | 1 | 0 | 0 | 1 | 0 | — | **3** |
-| HIGH | 12 | 1 | 5 | 2 | 1 | 2 | — | **23** |
+| HIGH | 12 | 1 | 3 | 2 | 1 | 2 | — | **21** |
 | MED | 18 | 17 | 12 | 5 | 4 | 2 | — | **58** |
 | LOW | 8 | 23 | 10 | 4 | 6 | 4 | — | **55** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 23 | 5 | 5 | 1 | 3 | 3 | — | **40** |
+| FIXED | 23 | 5 | 7 | 1 | 3 | 3 | — | **42** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **39** | **42** | **27** | **11** | **14** | **8** | — | **141** |
+| **OPEN** | **39** | **42** | **25** | **11** | **14** | **8** | — | **139** |
 
 ---
 
