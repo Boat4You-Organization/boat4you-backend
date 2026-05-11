@@ -108,8 +108,8 @@ interface OfferRepository : JpaRepository<Offer, Long> {
     @Modifying
     @Query(
         """
-        DELETE FROM Offer o 
-        WHERE o.date_to < DATE_ADD(CURRENT_DATE, '-30 day'::interval)
+        DELETE FROM offer o
+        WHERE o.date_to < CURRENT_DATE - INTERVAL '30 days'
         AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = o.id)
         """,
         nativeQuery = true,
