@@ -573,3 +573,123 @@ Najvažnija praktična posljedica: **brokeri mogu mijenjati cijenu/datume offer-
 **Batch 3b završen. Batch 3c next:** Equipment, Extra, Location, Agency, Manufacturer, Model + view repos (FiltersView, AllLocationView, LocationView, YachtLocationsView, CustomYachtView).
 
 ---
+
+## Batch 3c — Catalogue supporting: Equipment / Extra / Location / Agency / Manufacturer / Model + view repos (2026-05-11)
+
+### [F2-030] MED perf — `AgencyRepository`: 3 query-ja s `JOIN FETCH` na kolekciju bez `DISTINCT` (cartesian product preko žice)
+**Lokacija:** `domains/catalouge/jpa/AgencyRepository.kt:10-21` (`findAllActiveByPrimarySyncProvider`), `:39-53` (`findAllActiveByPrimarySyncProviderAndActiveYachts`), `:55-69` (`findAllActiveByPrimarySyncProviderAndHasYacht`)
+**Detekcija:** statička
+**Opis:** Sva tri query-ja imaju `JOIN FETCH a.agencySources ar JOIN FETCH ar.externalSystem es`. `agencySources` je `MutableSet<AgencySource>` na Agency-ju (1:N relacija). JPQL bez `SELECT DISTINCT a` znači da DB sloj vrati 1 row po (agency × source). Za agency s 5 sourcea (NauSys + MMK + …), 5 row-eva istog agency-ja iz DB-a → 5× više bytes preko žice. Hibernate de-dupes u memoriji (Set vraćeni tip dodatno maskira problem — caller misli da je sve OK), ali DB je već radio Cartesian.
+
+Plus 4. query `findAllByParamsForAdmin` (`:88-111`) ima sibling-pattern F2-023/F2-029: `LIKE LOWER(CONCAT('%', STR(:name), '%'))` — admin search; isto seq scan + `STR()` redundantan.
+**Posljedica:** marginalan network overhead per call (~5-10×). Sync jobs (`findAllActiveByPrimarySyncProvider*`) pozivaju ovo periodički iz NauSys/MMK scheduled task-ova; gomila se s vremenom.
+**Predloženi fix:** dodati `SELECT DISTINCT a` u sva 3 query-ja. Trivijalno. Za 4. (`findAllByParamsForAdmin`) maknuti `STR()` wrapper (F2-029 pattern) i dodati trigram index u Faza 6 batch (F2-023 family).
+**Riziko-procjena fixa:** dira sync hot path query-je — verify da Set dedupes pravilno (trebao bi, jer Hibernate uvijek mapira same-id Agency u isti entity instance unutar PersistenceContext-a).
+**Status:** WAITING-DECISION (3× DISTINCT trivijalno; STR()/LIKE u Faza 6 grupi)
+
+---
+
+### [F2-031] MED perf — `Agency.agencySources` EAGER OneToMany + admin paginated query = N+1 per page hit
+**Lokacija:** `domains/catalouge/jpa/Agency.kt:73-79` + `AgencyRepository.kt:88-111` (`findAllByParamsForAdmin`)
+**Detekcija:** statička
+**Opis:** `@OneToMany(mappedBy = "agency", fetch = FetchType.EAGER)` na `agencySources`. Komentar uz polje navodi razlog: "Page.map serialisation, detached entity reads silently get an empty proxy". Razuman workaround, ali ima cijena.
+
+`findAllByParamsForAdmin` vraća `Page<Agency>` bez `JOIN FETCH a.agencySources`. Hibernate behaviour:
+1. Run paginated SELECT s LIMIT (pravi pagination — OK).
+2. Za **svaki** vraćeni Agency, fire **dodatni** SELECT za `agencySources` (EAGER). N+1.
+
+Za pageSize=20: 1 select + 20 select-a za sources = 21 round trip-ova. Admin liste agencija ovaj problem ne osjete jer agencije nisu hot path, ali svaki page hit fire-a 20 dodatnih queryja koji se mogu izbjeći.
+
+Plus: EAGER se primjenjuje i u **drugim** kontekstima koji ne čitaju `sources` (npr. `findByVatCode`, `findAllActiveWithoutYachts` — koji vraća `Set<Long>` ali Agency entity je ipak load-an EAGER tijekom hydratacije? — verify). Sve hydratacije Agency entity-ja kreiraju eager queries.
+
+EAGER fetch je naprosto "antipattern by default" — pomaknuti detached-entity problem na lokalizirani fix umjesto global EAGER.
+**Posljedica:** dodatni DB round trips. Marginalan na malom agency setu (~tens), znatniji ako lista raste.
+**Predloženi fix:** dvije opcije:
+- (a) **`@EntityGraph(attributePaths = ["agencySources", "agencySources.externalSystem"])` na findAllByParamsForAdmin** — Hibernate generira single JOIN FETCH inside paginirani query (preko outer-join workaround za pagination + collection); preserve pagination correctness via window-function. Vrati Agency entity LAZY, ali admin endpoint dobiva sources unutar TX-a.
+- (b) **Skinuti EAGER**, naprasti LAZY default, i u svakom hot pathu koji treba sources dodati JOIN FETCH ili `@Transactional`-wrap caller-a. Veći refactor.
+
+Opcija (a) je manje invazivna. Zatim `Agency.agencySources` može ostati LAZY.
+**Riziko-procjena fixa:** dira admin queryje i mogući detached-entity callere — treba runtime verifikacija (admin page render se ne smije srušiti s LazyInitializationException-om).
+**Status:** OPEN — Faza 5 (perf + runtime verifikacija) ili Faza 7
+
+---
+
+### [F2-032] LOW bug — `LocationViewRepository` declares `JpaRepository<LocationView, Long>` ali `LocationView.id` je `String`
+**Lokacija:** `domains/catalouge/jpa/LocationViewRepository.kt:10` (`interface LocationViewRepository : JpaRepository<LocationView, Long>`) + `LocationView.kt:21-23` (`open var id: String?`)
+**Detekcija:** statička
+**Opis:** ID kolona je tipa string ("c-123" za country, "r-456" za region, "m-789" za marina — composite namespace). `LocationView.kt:21` deklarira `var id: String?`. Ali repository tipira ID kao `Long`. Ovo radi runtime jer:
+- `findByIds(ids: List<String>)` (`:11-12`) prima String list — radi.
+- Default `findById(Long)` metoda iz `JpaRepository<_, Long>` interface-a bi se srušila pri pozivu (cast String→Long), ali izgleda da je niko ne poziva.
+
+Posljedica je code-smell: developer koji vidi `JpaRepository<LocationView, Long>` može pretpostaviti da LocationView ima numerički ID i pisati novi kod s `findById(123L)` — pri runtimeu dobije `ClassCastException` ili `EntityNotFoundException` ovisno o JPA verziji.
+**Predloženi fix:** promijeniti deklaraciju na `JpaRepository<LocationView, String>`. Trivijalno; compile će potvrditi da nigdje već nije implicit `findById(Long)` u upotrebi.
+**Riziko-procjena fixa:** trivijalan; compile-time check.
+**Status:** WAITING-DECISION (trivial)
+
+---
+
+### [F2-033] MED perf — `LocationViewRepository.findByNameAndIdsNotIn` (public location autocomplete) = leading-wildcard LIKE → seq scan na svaki public search
+**Lokacija:** `domains/catalouge/jpa/LocationViewRepository.kt:14-32`
+**Detekcija:** statička
+**Opis:** Public location autocomplete (search bar dropdown koji se zove pri svakom keystroke-u na search formi). Query:
+```jpql
+WHERE LOWER(lv.searchFiled) LIKE LOWER(CONCAT('%', :name, '%'))
+```
+Sibling F2-023 (admin Inquiry search), F2-024 (admin email count) i F2-034 (manufacturer/model search) — isti pattern. **Razlika:** ovo je **public, no-auth, high-traffic** endpoint (location autocomplete koristi se na home page). Svaki search request triggera seq scan na `location_view` (ne baš mala — Country + Region + Marina aggregated).
+
+Combined s F1-070 (image resize bez validacije = OOM kandidat) i F1-064 (public yacht search trigger-a synkroni external sync) — public search putovi su sumarni DoS surface. Ovo dodaje DB CPU dimenziju.
+**Posljedica:** spori autocomplete pod load-om. Pre-prod nije problem (DB je underutilizirana), ali jednom kad search promet skoči (marketing), ovo postaje vidljivo.
+**Predloženi fix:** trigram (pg_trgm) GIN index — `CREATE INDEX location_view_search_filed_trgm_idx ON ... USING gin (LOWER(search_filed) gin_trgm_ops)`. **NAPOMENA:** `location_view` je **DB view**, ne tabela. Postgres ne dozvoljava index na view direktno; treba ili (a) materijalizirati u materialized view (s refresh trigger-om), ili (b) dodati index na **underlying source tablicama** (`location`, `region`, `country`) tako da view scan koristi te indekse. Najpragmatičnije: index na `LOWER(name)` u source tablicama + sigurati da view predicates push-down (verify EXPLAIN ANALYZE prije i poslije).
+
+Plus: dodati minimum-length validation u controller-u (`name.length >= 2`) tako da `LIKE '%a%'` ne vraća pola tablice.
+**Riziko-procjena fixa:** Flyway migracija (pg_trgm extension je već widely available; verify enabled na VM4 Postgres 18 instalaciji) + 1-3 funkcionalna indeksa. MED, neinvazivno za code.
+**Status:** OPEN — Faza 6 (index migration batch s F2-023/F2-024)
+
+---
+
+### [F2-034] LOW perf — Niz interne admin/sync `LOWER + LIKE` queryja: Manufacturer, Model, Agency admin (LIKE-pattern porodica)
+**Lokacija:**
+- `domains/catalouge/jpa/ManufacturerRepository.kt:10` (`findManufacturersByNameIgnoreCase`)
+- `domains/catalouge/jpa/ModelRepository.kt:14` (`findAllByManufacturerIdAndNameIgnoreCase`)
+- `domains/catalouge/jpa/AgencyRepository.kt:93` (`findAllByParamsForAdmin`)
+- `domains/catalouge/jpa/LocationRepository.kt:43` (`findByNameIgnoreCase` — case-insensitive equality)
+- `domains/catalouge/jpa/AgencyRepository.kt:77` (`findByNameAndNotExistsInOtherSystem` — equality LOWER)
+
+**Detekcija:** statička
+**Opis:** Ista `LOWER(col) LIKE/=` familija kao F2-023/F2-024/F2-033 ali nižeg prometa (admin only, ili sync once-per-yacht). Sve dolaze pod isti pre-prod čeklist: ili (a) funkcionalni `LOWER(...)` indexes + (gdje treba) trigram, ili (b) prebaci na partial-equality s tačnim case-om kad je god moguće. Manufacturer i Model tablice su male (stotine-tisuće), pa scan nije akutan. Agency admin search je nisko-frekventan.
+**Predloženi fix:** uključiti u istu Faza 6 index migration batch koju F2-023/F2-024/F2-033 zahtjevaju. Jedna migracija dodaje:
+- `CREATE INDEX manufacturer_name_lower_idx ON manufacturer (LOWER(name))`
+- `CREATE INDEX model_name_lower_idx ON model (LOWER(name))`
+- `CREATE INDEX location_name_lower_idx ON location (LOWER(name))`
+- `CREATE INDEX agency_name_lower_idx ON agency (LOWER(name))`
+- + trigram indexes za leading-wildcard slučajeve (F2-023, F2-033).
+
+Plus: maknuti `STR(:name)` iz `AgencyRepository.findAllByParamsForAdmin` (F2-029 sibling).
+**Status:** OPEN — Faza 6 (vezano za F2-023/F2-024/F2-033, sve u jednoj migraciji)
+
+---
+
+### [F2-035] INFO positive — Database view entities pravilno `@Immutable` + composite ID klase Serializable s ispravnim equals/hashCode
+**Lokacija:**
+- `@Immutable` view entities: `FiltersView.kt`, `AllLocationView.kt`, `LocationView.kt`, `YachtLocationsView.kt`, `CustomYachtView.kt`, `YachtSearchView.kt` — svi imaju `protected set` na poljima, `@Immutable` aspekt sprječava write paths preko JPA-a.
+- Composite ID klase: `LocationRegionId`, `AgencySourceId`, `YachtLocationsViewId` — sve `@Embeddable`, Serializable, equals/hashCode na temelju `Objects.hash()` + `Hibernate.getClass()` za proxy unwrap. Standardna best practice.
+
+**Opis:** Pozitivna note. View entities ne mogu se accidentalno modificirati. Composite IDs ne mogu se mutirati post-construction (preko `protected set` ili final). Ne vidim niti jedan slučaj gdje je view entity flush-an natrag u DB (što bi failao runtime jer `@Immutable`).
+**Status:** INFO
+
+---
+
+### Sažetak Batch 3c
+
+- **MED (3):** F2-030 (Agency JOIN FETCH × 3 bez DISTINCT), F2-031 (Agency.agencySources EAGER → Page N+1), F2-033 (public location autocomplete seq scan)
+- **LOW (2):** F2-032 (LocationViewRepository ID type mismatch), F2-034 (LOWER+LIKE familija — Manufacturer/Model/Agency admin/Location)
+- **INFO (1):** F2-035 (view entities `@Immutable` + composite IDs solidni)
+- **WAITING-DECISION:** F2-030 (3× DISTINCT trivijalno), F2-032 (Long→String repo deklaracija)
+
+**Najvažniji nalaz batch-a:** F2-033 — public location autocomplete je high-traffic seq scan, vidljivo pod marketing burst-om. Combined s F2-023/F2-024/F2-034 ovo je **batch za Faza 6 index migration** — jedna Flyway migracija s pg_trgm extension + 4-5 funkcionalnih indexa pokriva cijelu LOWER/LIKE familiju.
+
+F2-031 (Agency EAGER) zahtjeva runtime verifikaciju jer LAZY default može pucati u detached-entity context-u. Faza 5 ili Faza 7 (deploy-window testiranje).
+
+**Batch 3 (catalogue core) završen kroz 3a/3b/3c.** Batch 4 (reservation flow) sljedeći: ReservationRepository, ReservationFlowRepository, ReservationDocumentRepository, ReservationPaymentPhaseRepository, ReservationViewRepository, ReservationYachtSwapAuditRepository, BookingSequenceRepository + pripadajući entiteti.
+
+---
