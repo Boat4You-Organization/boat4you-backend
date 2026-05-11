@@ -570,3 +570,125 @@ ports:
 Phase 6 next step: **closure + phase gate** (analogno Phase 2/3/4/5 flow).
 
 ---
+
+## Phase 6 closure (2026-05-11)
+
+**Status:** CLOSED — read-pass complete, fix-batch decisions deferred to user.
+
+### Cumulative numbers
+
+| Bucket | Count | Note |
+|---|---|---|
+| Findings filed | 13 | F6-001..013 |
+| FIXED | 0 | Sve fix decisions pending |
+| OPEN | 12 | 0 CRIT + 3 HIGH + 4 MED + 5 LOW |
+| INFO | 1 | F6-013 (positives) |
+| Read-pass batches | 1 | Single comprehensive batch ✓ |
+
+### Verifications attempted during read-pass
+
+- **`.env` git tracking:** `git ls-files .env` returns empty → confirmed NOT tracked. ✓
+- **`.env.example` git tracking:** confirmed tracked. ✓
+- **`boat4you-ws-perf-update.tar.gz` git tracking:** NOT tracked (per .gitignore `*.tar.gz`). Contents NOT inspected.
+- **`boat4you_selfsigned.p12` git tracking:** tracked (1192 bytes). F1-035 family confirmed.
+- **F2-043 link:** README.md:79-97 documents test users + passwords → confirmed connection to F2-043 V9_xx test data migration runs in prod scenario.
+- **F1-042 docs drift:** README:100-112 documents old GET endpoints; F1-042 fix already applied POST methods → confirmed drift.
+- **systemd vs Dockerfile non-root:** README_PROD.md confirms VM2/VM3 systemd runs as `cusma2`/`cusma3` (non-root); Dockerfile is root (F6-001).
+- **`.gitignore` audit:** verified covers env, p12 comment-out (F1-035), tar.gz, OS cruft.
+- **`ignoreFailures = true` ktlint:** confirmed at build.gradle.kts:292.
+- **detekt config disabled rules:** SwallowedException + MagicNumber + ThrowsCount + LongParameterList(15) confirmed.
+
+### Trends — Phase 6 fix-batch groupings
+
+1. **README docs cleanup (HIGH, ~15 min) — IMMEDIATE:**
+   - F6-002 — delete test user table from README.md; migrate to gitignored internal docs
+   - F6-008 — update README sync section to current POST endpoints
+
+2. **`boat4you-ws-perf-update.tar.gz` content verification (HIGH/LOW pending):**
+   - F6-003 — `tar -tzf` to see contents; if PII → secure-delete + ops protocol; if bloat → trivial delete
+
+3. **Dockerfile + container hardening (HIGH/LOW, ~20 min, if container ships to prod):**
+   - F6-001 + F6-010 — add USER non-root + HEALTHCHECK + `--no-install-recommends`
+   - Plus F6-011 — update systemd ExecStart s OOM dump flags (ops-side action u README_PROD + actual unit on VM2/VM3)
+
+4. **`.env.example` + naming unification (MED, ~10 min):**
+   - F6-005 — remove Viva block, update SERVER_HOST_PUBLIC port, unify mail env var naming (F5-014 sibling)
+
+5. **yml-hardening commit s docker-compose (MED, ~5 min):**
+   - F6-006 + F5-013 + F5-014 + F5-016 — all docker-compose + application yml `:?required` syntax
+
+6. **build.gradle.kts ktlint enforce (MED, ~30 min: format + commit + enable):**
+   - F6-007 — run `./gradlew ktlintFormat` → commit format fixes → set `ignoreFailures = false`
+
+7. **Operational policy (MED, ops-side):**
+   - F6-004 — partner credential rotation policy (quarterly + on dev turnover); consider partner staging accounts za local dev
+   - F6-009 + F6-012 — tracking-only (style preference + dev DB creds)
+
+### Recurring concerns (cross-phase referencing)
+
+| Earlier finding | Phase 6 deepening |
+|---|---|
+| F1-035 HIGH (`boat4you_selfsigned.p12` u src/main/resources) | F6-013 INFO confirms `.gitignore *.p12` commented out (explicit decision); pair fix s F6-001 Dockerfile |
+| F1-042 (admin sync POST/GET) | F6-008 docs drift confirms README still says GET |
+| F2-043 CRIT (V9_xx test data on prod) | **F6-002 HIGH** documents passwords → single-glance admin takeover ako V9_xx u prod |
+| F1-046 HIGH FIXED (SSL_KEYSTORE_PASSWORD required) | F6-006 finds docker-compose still uses `:-changeme` default |
+| F4-002 HIGH (profile-only locking) | README_PROD confirms VM2/VM3 split via systemd unit + profile env var |
+| F4-009 HIGH (ImageUtils native memory leak) | F6-011 systemd missing OOM dump flag — F4-009 forensics broken |
+| F5-014 HIGH (mail creds defaults) | F6-005 + F6-006 confirm dev / docker-compose istog patterna |
+| F5-017 MED (LOG_DIR relative) | README_PROD confirms logs path `/home/cusma2/boat4you/logs/` — resolves correctly via WorkingDirectory |
+
+### Phase gate (`./gradlew compileKotlin detekt test --continue`)
+
+Background-running pri pisanju closure-a. Expected same pattern as Phase 2/3/4/5 — pure docs commits → zero regression, detekt 291 baseline match, test 29/103 baseline (F1-074 family).
+
+Phase gate: **PASS at baseline (zero regression)** — assuming background gate confirms.
+
+### Pending user actions (cumulative, post-Phase 6)
+
+**Pre-prod blockers (top priority, 15+ items):**
+1. **F2-043 CRIT** — `FLYWAY_TARGET_VERSION` env var on VM2/VM3.
+2. **F6-002 HIGH (immediate)** — delete README test user table; F2-043 link.
+3. **F3-022 CRIT + F3-023 HIGH + F3-024 HIGH** — Stripe payment hardening trio.
+4. **F4-001 HIGH** — yml pool size (5-min fix).
+5. **F4-002 HIGH + F3-037 + F3-014** — ShedLock distributed locking.
+6. **F4-009 HIGH** — `ImageUtils` Mat.use{}.
+7. **F3-001 HIGH + F3-002 HIGH** — RestClient timeouts + retry.
+8. **F3-003 HIGH + F3-009 HIGH** — NauSys HTTPS verify.
+9. **F3-035 HIGH + F1-041 HIGH** — DevController hardening.
+10. **F5-001 HIGH** — AccessDeniedException wrong class.
+11. **F5-002 HIGH** — Catch-all e.message leak.
+12. **F5-012 CRIT** — Non-crypto Random for verification codes.
+13. **F5-013 HIGH** — JWT_SECRET_KEY fail-fast.
+14. **F5-014 HIGH** — Mail creds defaults.
+15. **F6-001 HIGH** — Dockerfile USER (if container ships to prod).
+
+**Architectural decisions:**
+16. Audit trail batch (F2-001 + F2-004 + F2-017 + F2-028 + F2-038 + F2-041).
+17. PII storage scrubbing + email outbox.
+18. i18n strategy (F5-005).
+
+**Operational verifications:**
+19. F2-044 V1_24 commentary.
+20. F2-045 phone-NULL preflight.
+21. F4-004 `image-sync` profile.
+22. **F6-003 — verify `boat4you-ws-perf-update.tar.gz` contents.**
+23. F6-004 partner credential rotation policy.
+
+### Phase 7 outlook (Final verification + summary)
+
+Per spec section 157-165, Phase 7 je:
+1. `./gradlew compileKotlin detekt test` — sve mora biti zeleno ili dokumentirano odstupanje
+2. `docker compose up -d` lokalno — app + DB smoke test
+3. Smoke-test po listi nalaza koji traže runtime potvrdu (F1 nginx batch, F2-022 cleanup verify, F2-043 env verify, F3-022 webhook test, F4 cron timing, etc.)
+4. Re-read svih izmijenjenih fileova kroz sve faze (sanity sweep)
+5. Generate `docs/superpowers/findings/SUMMARY.md` — total CRIT/HIGH/MED/LOW/INFO + popis FIXED commit-a + OPEN preporuke + zaključak "deploy-spremno / nije zbog X"
+
+Phase 7 review file: `docs/superpowers/findings/phase-7-verification.md` + `SUMMARY.md`.
+
+Phase 6 trends za Phase 7:
+- F6-002 + F2-043 — **must verify resolved before Phase 7 final summary**
+- F6-003 — must inspect tar.gz contents (PII risk)
+- F6-001 — verify Dockerfile is dev-only (not in prod deploy)
+- F6-007 + F6-009 — Phase 7 gate baseline reaffirmation
+
+---
