@@ -10,10 +10,29 @@ import jakarta.persistence.criteria.Root
 import org.springframework.data.jpa.domain.Specification
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.security.SecureRandom
 import java.util.Optional
-import kotlin.random.Random
 
-private const val DEFAULT_PASSWORD_LENGTH = 6
+// F5-019: raised from 6 → 16. 6-char defaults made auto-generated user
+// passwords trivially brute-forceable; 16 chars over the 62-char alphabet
+// gives ~95 bits of entropy and aligns with NIST 800-63B "long unique
+// random" recommendations for system-generated credentials.
+private const val DEFAULT_PASSWORD_LENGTH = 16
+
+// F5-012: crypto PRNG for any token that grants a capability (password
+// fallback for invited users, email verification codes). Previously
+// `kotlin.random.Random` (linear congruential, seedable from clock) was
+// used, which is predictable enough to chain into the F1-068 anonymous
+// email-bombing flow once an attacker can guess a verification code from
+// the request timestamp. SecureRandom seeds from the OS entropy pool.
+private val secureRandom = SecureRandom()
+
+// F5-018: full 62-char base62 alphabet (was 60 chars previously — typos
+// dropped uppercase Y and lowercase j, and doubled T). Same alphabet as
+// the UrlShortener pattern (see UrlShortener.kt), now the canonical
+// alphanumeric token charset in the codebase.
+private const val BASE62_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+private const val NUMERIC_CHARS = "0123456789"
 
 fun <T : Any, R : Any> Optional<T>.ifNotNull(block: (T) -> R): R? {
     if (this.isPresent) {
@@ -42,26 +61,17 @@ fun <T : Any> T.nullIfSensitive(isSensitive: Boolean): T? {
     }
 }
 
-fun getRandomString(length: Int): String {
-    val charset = "ABCDEFGHIJKLMNOPQRSTUVWXTZabcdefghiklmnopqrstuvwxyz0123456789"
-    return (1..length)
-        .map { charset.random() }
-        .joinToString("")
-}
+fun getRandomString(length: Int): String = randomFromCharset(BASE62_CHARS, length)
 
-fun getRandomNumericalString(length: Int): String {
-    val charset = "0123456789"
-    return (1..length)
-        .map { charset.random() }
-        .joinToString("")
-}
-
-fun getRandomLong(
-    from: Long = 0,
-    to: Long = 1000,
-) = Random.nextLong(from, to)
+fun getRandomNumericalString(length: Int): String = randomFromCharset(NUMERIC_CHARS, length)
 
 fun getRandomPassword() = getRandomString(DEFAULT_PASSWORD_LENGTH)
+
+private fun randomFromCharset(charset: String, length: Int): String {
+    val builder = StringBuilder(length)
+    repeat(length) { builder.append(charset[secureRandom.nextInt(charset.length)]) }
+    return builder.toString()
+}
 
 fun String?.nonBlankOrNull(): String? = if (this.isNullOrBlank()) null else this
 
