@@ -431,7 +431,7 @@ Test suite: 29/103 fail-ovi (baseline). Vjerojatno nema integration testa koji o
 
 Plus: dodati log statement koji broji *koliko* je redova obrisano (Spring Data vraća `int` count za @Modifying queries), tako da admin vidi je li cron stvarno radi. **Plus monitoring:** alert ako 0 redova obrisano 3+ dana u nizu (signal da query opet šuti).
 **Riziko-procjena fixa:** trivijalan u smislu code-a (dvije linije). Ali to su scheduled jobovi koji diraju persistencu — testirati u staging-u prije prod-a (idealno: ručno trigger admin endpointa `/admin/deleteExpiredReservationsAndOffers` koji već postoji u `AdminJobController.kt:26`).
-**Status:** OPEN — **HIGH, fix prije prod deploy-a** (cron tiho ne radi → table growth without bound)
+**Status:** FIXED `0dc514f` — `deleteExpiredOffers` native SQL koristi `CURRENT_DATE - INTERVAL '30 days'`; `deleteExpiredReservations` prebačeno na JPQL `:cutoff` parameter, `ReservationOfferService` prosljeđuje `LocalDate.now().minusDays(30)`. **Staging verification recommended** prije prod-a: ručni trigger preko `/admin/deleteExpiredReservationsAndOffers` (postoji u `AdminJobController.kt:26`) + provjera log-a da nema više `function date_add/dateadd does not exist`.
 
 ---
 

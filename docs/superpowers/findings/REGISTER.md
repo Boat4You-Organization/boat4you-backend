@@ -127,11 +127,9 @@ Legend statusa:
 
 **Status:** IN PROGRESS — Batch 1 (common/jpa + cache) ✓, Batch 2 (user/security/roles) ✓, Batch 3a (Yacht core) ✓, Batch 3b (Offer flow) ✓. Batch 3c (Equipment/Extra/Location/Agency/Manufacturer/Model + view repos), Batch 4 (reservation flow), Batch 5 (Flyway migrations) pending.
 
-### HIGH (1)
+### HIGH (0)
 
-| ID | Severity | Naslov | Status |
-|---|---|---|---|
-| F2-022 | HIGH | Daily @Scheduled cleanup (`deleteExpiredOffers` + `deleteExpiredReservations`) koristi non-PostgreSQL date syntax → tihi fail svaki dan u 06:00 | OPEN — fix prije prod deploy-a |
+(F2-022 fixed — vidi FIXED tablicu.)
 
 ### MED (10)
 
@@ -169,12 +167,13 @@ Legend statusa:
 | F2-028 | LOW | Offer/OfferExtra/OfferPaymentPlan/Inquiry/CustomYachtDetail/CustomOffer/ReservationOption ne extendaju AbstractEntity (proširenje F2-017) | OPEN — eskalacija (architectural decision) |
 | F2-029 | LOW | `STR(:search)` JPQL funkcija redundantna u `findAllByParamsForAdmin` | WAITING-DECISION |
 
-### FIXED (2)
+### FIXED (3)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
 | F2-018 | MED | Migracija svih `@Enumerated` ORDINAL → STRING (18 enum kolona, 22 entity polja, V1_90 + R__ views) | `0d1242a` |
 | F2-019 | MED | Native queryji u `YachtRepository` + service callers prelaze na enum.name() string literale | `0d1242a` |
+| F2-022 | HIGH | Scheduled cleanup native/JPQL queryji koriste PostgreSQL `CURRENT_DATE - INTERVAL` + `:cutoff` parameter | `0dc514f` |
 
 ---
 
@@ -183,15 +182,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 2 | 0 | — | — | — | — | — | **2** |
-| HIGH | 13 | 1 | — | — | — | — | — | **14** |
+| HIGH | 13 | 0 | — | — | — | — | — | **13** |
 | MED | 18 | 10 | — | — | — | — | — | **28** |
 | LOW | 8 | 16 | — | — | — | — | — | **24** |
 | INFO | 4 | 0 | — | — | — | — | — | **4** |
-| FIXED | 20 | 2 | — | — | — | — | — | **22** |
+| FIXED | 20 | 3 | — | — | — | — | — | **23** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | — | — | — | — | — | **6** |
 | DEFERRED-other | 3 | 0 | — | — | — | — | — | **3** |
 | BLOCKED | 1 | 0 | — | — | — | — | — | **1** |
-| **OPEN** | **41** | **27** | — | — | — | — | — | **68** |
+| **OPEN** | **41** | **26** | — | — | — | — | — | **67** |
 
 ---
 
