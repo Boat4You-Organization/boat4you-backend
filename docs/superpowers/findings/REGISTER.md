@@ -211,7 +211,7 @@ Legend statusa:
 |---|---|---|---|
 | F3-022 | CRIT | `StripePaymentService.handleWebhookEvent` non-idempotent — F1-019 konkretizacija (dupli partner confirm + dupli email + state corruption pri Stripe retry) | OPEN — **prod-blocker** |
 
-### HIGH (6)
+### HIGH (7)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -221,8 +221,9 @@ Legend statusa:
 | F3-009 | HIGH | Customer PII (name, surname, crew list) putuje NauSys-u u HTTP body plaintext (F3-003 širenje na PII — GDPR breach risk) | OPEN — pair s F3-003 fix |
 | F3-023 | HIGH | `setSessionIdOnPaymentPhases` overwrites stripeSessionId bez check-a; old-session completion = orphan payment, customer money-loss scenario | OPEN — **prod-blocker scenario** |
 | F3-024 | HIGH | Webhook `@Transactional` wraps partner confirmExternalReservation + DB + email; partial-failure → partner confirmed + DB rollback drift | OPEN — pair s F3-022 fix |
+| F3-035 | HIGH | `DevEquipmentSyncController` `/public/dev/...`: only `@Profile("dev")`, no `@PreAuthorize`, all `@GetMapping` — F1-041 deepened (triple-defense missing) | OPEN — **HIGH, paired s F1-041 closeout** |
 
-### MED (10)
+### MED (14)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
