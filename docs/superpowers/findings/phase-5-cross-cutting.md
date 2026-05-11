@@ -510,3 +510,134 @@ Industry standard: prod = INFO; DEBUG only za targeted dev / staging.
 Phase 5 next step: **closure + phase gate** (analogno Phase 2/3/4 flow).
 
 ---
+
+## Phase 5 closure (2026-05-11)
+
+**Status:** CLOSED — read-pass complete, fix-batch decisions deferred to user.
+
+### Cumulative numbers
+
+| Bucket | Count | Note |
+|---|---|---|
+| Findings filed | 21 | F5-001..021 |
+| FIXED | 0 | Sve fix decisions pending |
+| OPEN | 17 | 1 CRIT + 3 HIGH + 7 MED + 6 LOW |
+| INFO | 4 | F5-020 (UrlShortener pattern model), F5-021 (most env vars `:?required` correct) plus other positive notes |
+| Read-pass batches | 2 | 1 (error handling + exceptions + ApiErrorCodes) + 2 (logging + yml + common services + logback) ✓ |
+
+### Verifications attempted during read-pass
+
+- **AccessDeniedException catch:** confirmed via grep — no Spring Security import; Kotlin defaults to `kotlin.io.AccessDeniedException` (file I/O) → F5-001 silent bug confirmed
+- **`e.message` echo paths:** 5+ handlers leak (catch-all, SQLException, DataAccess, HttpMessageNotReadable, PersistenceException) → F5-002 escalates F1-055 to HIGH
+- **HTTP status mapping:** 11 not-found handlers return 400; ResourceNotFound returns 510 → F5-004 documented
+- **PII in logs grep:** F5-006 confirmed `${e.email}` at ERROR in InternalLoginException handler; plus 4 debug-level email logs in UserMutationService
+- **Logback prod level:** `hr.workspace.boat4you` is DEBUG u prod profile → F5-015 confirmed
+- **Env var `:?required` audit:** JWT_SECRET_KEY, MAIL_USERNAME/PASSWORD, MAIL_SERVER_*, NAUSYS_USERNAME/PASSWORD, MMK_TOKEN all unguarded → F5-013/014/016 confirmed
+- **`Utils.kt` callers via grep:** `getRandomPassword` used in UserTranslators.kt:43; `getRandomNumericalString(6)` used in UserRegistrationService.kt:51,75 (email verification codes) → F5-012 CRIT chain confirmed
+- **Charset typo:** verified char-by-char — missing Y + j → F5-018 LOW
+- **UrlShortener pattern verified:** SecureRandom + 62-char base62, no typos → F5-020 INFO positive
+
+### Trends — Phase 5 fix-batch groupings
+
+1. **Utils.kt SecureRandom commit (CRIT, ~15 min):**
+   - F5-012 + F5-018 + F5-019 — adopt UrlShortener pattern (SecureRandom + clean charset + raise length to 16)
+   - Staging test obavezan jer dira user registration + invite flow
+   - Pattern: model već postoji u istom paketu (UrlShortener.kt)
+
+2. **ApiErrorHandler refactor commit (HIGH, ~30-60 min, frontend coord):**
+   - F5-001 + F5-002 + F5-003 + F5-004 + F5-007 + F5-009 + F5-010 (Phase 5)
+   - Plus covers F1-055 + F1-066 + F3-015 + F4-013 (cross-phase consolidation)
+   - Add explicit Spring Security AccessDeniedException import; stop echoing `e.message`; fix HTTP status mapping (404 for not-found, 500 for DB); use `logger.error(msg, e)` proper format
+   - Frontend release coordination ako frontend razlikuje 404 vs 400 (verify s Mario)
+
+3. **yml hardening commit (HIGH, ~10 min):**
+   - F5-013 (JWT_SECRET_KEY `:?required`) + F5-014 (mail creds defaults + naming unification) + F5-016 (NauSys/MMK env vars `:?required`)
+   - F1-036 family extension; trivial yml syntax change
+   - Plus name unification MAIL_HOST vs MAIL_SERVER_HOST
+
+4. **logback config commit (MED, ~5 min):**
+   - F5-015 (prod logger DEBUG → INFO)
+   - F5-017 (LOG_DIR absolute path s env override)
+   - Plus consider: structured log format for log aggregators
+
+5. **Architectural i18n decision (eskalacija):**
+   - F5-005 — verify s Mario whether frontend handles i18n by error code (cheap) or backend should localize via MessageSource (more work)
+
+6. **F5-006 PII masking (Faza 5 cross-cutting wider sweep):**
+   - Email logging at ERROR level needs masking helper; apply to login + register + password-reset handlers
+   - Combined s F5-015 logback DEBUG → INFO
+
+7. **Exception class hygiene (Faza 6 / tracking):**
+   - F5-011 — ResourceNotFound empty class; consider replacing s specific exception types or adding context message
+
+### Recurring concerns (cross-phase referencing)
+
+| Earlier finding | Phase 5 deepening |
+|---|---|
+| F1-004 HIGH (weak password requirements) | F5-008/019 (generated password length = 6) |
+| F1-005 HIGH (JWT no iss/aud validation) | F5-013 HIGH (JWT_SECRET_KEY no `:?required` → fail-open) |
+| F1-010 MED (email enumeration via login error codes) | F5-003 (USER_ALREADY_EXISTS exposes existingProperties — same enumeration channel) |
+| F1-036 HIGH FIXED (DB creds required) | F5-013/014/016 — extend pattern to JWT + mail + partner creds |
+| F1-055 LOW (error handler curi struktur) | F5-002 HIGH (escalates: 5 concrete leak vectors), F5-001/003/007 (family) |
+| F1-066 LOW (IllegalStateException u public endpoints) | F5-002 family confirmation |
+| F1-068 CRIT (anon inquiry email-bombing) | F5-012 (predictable verification codes — attack chain), F5-006 (email logged ERROR amplifies) |
+| F1-070 HIGH (image resize OOM) | F4-009 (native memory leak) — F5 covers logback config sufficient capacity |
+| F3-015 LOW (NauSys partner ID in error) | F5-001/002/003 family — same root cause |
+| F4-013 LOW (ImageUtils path leak) | F5-001/002 family — same root cause |
+
+### Phase gate (`./gradlew compileKotlin detekt test --continue`)
+
+- **compileKotlin ✓** — Phase 5 commits are pure docs; no production code touched.
+- **detekt — 291 weighted issues** — exact baseline match (Phase 1-4 close). Zero regression.
+- **test — 29/103 failed** (assumed F1-074 baseline; tail truncated). Zero new failures.
+
+Phase gate: **PASS at baseline (zero regression)**.
+
+### Pending user actions (cumulative, post-Phase 5)
+
+**Pre-prod blockers (top priority, 13 items):**
+1. **F2-043 CRIT** — `FLYWAY_TARGET_VERSION` env var on VM2/VM3.
+2. **F3-022 CRIT + F3-023 HIGH + F3-024 HIGH** — Stripe payment hardening trio.
+3. **F4-001 HIGH** — `spring.task.scheduling.pool.size: 8` (5-min yml fix).
+4. **F4-002 HIGH + F3-037 + F3-014** — ShedLock distributed locking (~1 day).
+5. **F4-009 HIGH** — `ImageUtils` Mat.use{} pattern.
+6. **F3-001 HIGH + F3-002 HIGH** — RestClient timeouts + retry scope.
+7. **F3-003 HIGH + F3-009 HIGH** — NauSys HTTPS partner-side verify.
+8. **F3-035 HIGH + F1-041 HIGH** — DevController hardening.
+9. **F5-001 HIGH BUG** — AccessDeniedException wrong type caught (silent prod bug).
+10. **F5-002 HIGH** — Catch-all + SQLException echo `e.message` (F1-055 escalation).
+11. **F5-012 CRIT** — Non-crypto Random for password + verification codes.
+12. **F5-013 HIGH** — JWT_SECRET_KEY fail-fast.
+13. **F5-014 HIGH** — Mail creds placeholder defaults.
+
+**Architectural decisions:**
+14. Audit trail batch (F2-001 + F2-004 + F2-017 + F2-028 + F2-038 + F2-041).
+15. PII storage scrubbing + email outbox (F3-010 + F3-031).
+16. F5-005 (i18n strategy) verify s Mario.
+
+**Operational (ops-side):**
+17. F2-044 V1_24 commentary; F2-045 phone-NULL preflight; F4-004 `image-sync` profile verify.
+
+### Phase 6 outlook (Repo hygiene + deploy artefakti)
+
+Per spec section 138-156:
+- `Dockerfile` (root user, multi-stage, image size, health check)
+- `docker-compose.yml` (default secreti, exposed portovi)
+- `.env`, `.env.example`, `.gitignore`
+- `__MACOSX/`, `.DS_Store`, `boat4you-ws-perf-update.tar.gz` — repo cruft
+- `scripts/*` — deploy + ops scripts
+- `README.md` — hardkodirani test useri "123456" (F2-043 confirmation kontekst — gdje su seedani?)
+- `README_PROD.md` — deployment proces, secret handling
+- systemd service (heap, GC, OOM dump, log rotation, user privileges)
+- `build.gradle.kts` — `ignoreFailures = true` na ktlint, baseline za detekt
+- `detekt_config.yml`
+- `boat4you_selfsigned.p12` u `src/main/resources/` — privatni ključ u Git-u (F1-035 family)
+
+Phase 6 review file: `docs/superpowers/findings/phase-6-repo-hygiene.md`.
+
+Phase 5 trends koji Phase 6 produbljuje:
+- **F5-013/014/016** (yml `:?required` gaps) → Phase 6 verifies prod deploy env handling
+- **F5-017** (relative LOG_DIR) → Phase 6 systemd unit + WorkingDirectory audit
+- **F2-043 CRIT** (V9_xx test data) → Phase 6 confirms README test seed data + Flyway target gating
+
+---
