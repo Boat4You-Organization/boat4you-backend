@@ -20,7 +20,7 @@ Legend statusa:
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
-| F1-019 | CRIT | Stripe webhook nije idempotent; double-processing pri Stripe retry-ju | OPEN — blocker before go-live |
+| F1-019 | CRIT | Stripe webhook nije idempotent; double-processing pri Stripe retry-ju | FIXED `f815e1e` + `f30a116` (concretized via F3-022) |
 | F1-068 | CRIT | `/public/inquiries/{id}/send-test` email-bombing endpoint anonimno | OPEN — blocker before go-live (autor priznaje) |
 
 ### HIGH (15)
@@ -33,7 +33,7 @@ Legend statusa:
 | F1-005 | HIGH | JWT bez `iss`/`aud` validacije; rola se ne re-fetcha iz DB | OPEN |
 | F1-020 | HIGH | File upload validira samo Content-Type header, ne magic bytes | OPEN |
 | F1-022 | HIGH | `PublicReservationRateLimiter` slijepo vjeruje X-Forwarded-For | DEFERRED-Faza7 — confirmed scenario C ($proxy_add_x_forwarded_for) on VM2 (2026-05-08) |
-| F1-024 | HIGH | `StripePaymentService.handleWebhookEvent` non-null assertions na user metadata | OPEN |
+| F1-024 | HIGH | `StripePaymentService.handleWebhookEvent` non-null assertions na user metadata | FIXED `f30a116` (concretized via F3-025) |
 | F1-037 | HIGH | NAUSYS_URL default `http://ws.nausys.com` (HTTP, ne HTTPS) | OPEN |
 | F1-041 | HIGH | DevEquipmentSyncController na `/public/dev` + samo profile gating (no auth) | OPEN |
 | F1-056 | HIGH | `cancelReservation` non-atomic external delete + DB cancel; razdvojeno stanje moguće | OPEN |
@@ -56,7 +56,7 @@ Legend statusa:
 | F1-023 | MED | Rate limiter bucket map ne self-prune; memory leak | OPEN |
 | F1-025 | MED | Stripe `initiatePayment` idempotency optional | OPEN |
 | F1-026 | MED | Multiple `!!` non-null assertions u initiatePayment putu | OPEN |
-| F1-028 | MED | `promoteReservationToBooking` može se izvršiti ponovno (zbog F1-019) | BLOCKED-BY F1-019 |
+| F1-028 | MED | `promoteReservationToBooking` može se izvršiti ponovno (zbog F1-019) | FIXED `f30a116` (closed by F1-019 fix; Stripe retries are no-ops) |
 | F1-030 | MED | StripeWebhookController bez explicit max-size limita | OPEN |
 | F1-033 | MED | Bez virus / malware skena na file uploadima | OPEN |
 | F1-035 | MED | Self-signed `.p12` keystore u repu (prod NE koristi, ali leak privatnog ključa) | OPEN |
@@ -95,11 +95,14 @@ Legend statusa:
 | F1-* | INFO | `ReservationController` ima ekselentne ownership guards — koristiti kao template |
 | F1-* | INFO | GDPR endpointi imaju audit logging (mature dizajn) |
 
-### FIXED (20)
+### FIXED (23)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
+| F1-019 | CRIT | Stripe webhook idempotency via `processed_stripe_events` claim (concretized as F3-022) | `f815e1e` + `f30a116` |
 | F1-049 | CRIT | Java app slušao na `*:8080`, izložen na public IP — bind na 127.0.0.1 | `02532a9` |
+| F1-024 | HIGH | Stripe webhook payload null-safety (concretized as F3-025) | `f30a116` |
+| F1-028 | MED | `promoteReservationToBooking` re-fire on Stripe retry closed by F1-019 fix | `f30a116` |
 | F1-002 | HIGH | (yml-side) Disable swagger by default in prod profile | `2e451cc` |
 | F1-036 | HIGH | DB credentials required (no literal default) | `ab5a210` |
 | F1-009 | MED | Login/password exceptioni s context message-om | `7cc3b09` |
@@ -125,7 +128,7 @@ Legend statusa:
 
 ## Faza 2 — Data layer (persistence, entities, migrations)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 7 batch-eva + 3 fixes + closure summary + phase gate at baseline). 50 findings: 3 FIXED, 44 OPEN (1 CRIT + 1 HIGH + 19 MED + 23 LOW), 3 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F2-043 (`FLYWAY_TARGET_VERSION` env var verify), F2-044 (V1_24 Mario commentary), arhitektonska odluka za audit-trail batch.
+**Status:** CLOSED 2026-05-11 (read-pass kroz 7 batch-eva + 3 fixes + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 entity contract fixes). 50 findings: 5 FIXED, 42 OPEN (1 CRIT + 1 HIGH + 17 MED + 23 LOW), 3 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F2-043 (`FLYWAY_TARGET_VERSION` env var verify), F2-044 (V1_24 Mario commentary), arhitektonska odluka za audit-trail batch.
 
 ### CRIT (1)
 
@@ -152,11 +155,11 @@ Legend statusa:
 | F2-021 | MED | `findForReplacementSearch` vs `countForReplacementSearch` divergentne WHERE klauzule | OPEN — Faza 5 (test coverage) ili tracking-only |
 | F2-023 | MED | `InquiryRepository.findAllByParamsForAdmin` triple leading-wildcard LIKE = full table scan (F1-068 DoS multiplier) | OPEN — Faza 6 (index migracije) |
 | F2-024 | MED | `countByEmailIgnoreCaseAndIdNot` poziva se per inquiry create, bez funkcionalnog `LOWER(email)` indeksa | OPEN — Faza 6 (vezano za F2-023) |
-| F2-026 | MED | `OfferPaymentPlan.equals/hashCode` na mutable poljima u `MutableSet` na Offer-u → broken Set invariant | OPEN — eskalacija (entity contract change) |
+| F2-026 | MED | `OfferPaymentPlan.equals/hashCode` na mutable poljima u `MutableSet` na Offer-u → broken Set invariant | FIXED `42c260e` (id-based equals/hashCode) |
 | F2-030 | MED | `AgencyRepository`: 3× JOIN FETCH na kolekciju bez DISTINCT (cartesian product preko žice) + 4. ima F2-023/F2-029 pattern | WAITING-DECISION (3× DISTINCT trivijalno) |
 | F2-031 | MED | `Agency.agencySources` EAGER OneToMany + `Page<Agency>` admin = N+1 per page | OPEN — Faza 5 (perf + runtime verify) |
 | F2-033 | MED | Public location autocomplete (`LocationViewRepository.findByNameAndIdsNotIn`) LOWER+leading-wildcard LIKE = seq scan na svaki public search | OPEN — Faza 6 (vezano za F2-023/F2-024/F2-034) |
-| F2-036 | MED | `ReservationPaymentPhase.equals` null-bug + mutable Set anti-pattern (F2-026 sibling); F1-019 multiplier za payment double-capture | OPEN — eskalacija (entity contract change, F2-026 family) |
+| F2-036 | MED | `ReservationPaymentPhase.equals` null-bug + mutable Set anti-pattern (F2-026 sibling); F1-019 multiplier za payment double-capture | FIXED `42c260e` (id-based equals/hashCode; null-bug closed) |
 | F2-037 | MED | `calculateTotalPaid` JPQL SUM null → Kotlin `BigDecimal` non-null NPE risk | WAITING-DECISION (trivial COALESCE) |
 | F2-038 | MED | `ReservationDocument` audit gap — signed contracts + internal admin docs nemaju tamper-evidence trail | OPEN — eskalacija (F2-001/F2-004 dependency + legal compliance) |
 | F2-045 | MED | `V1_64` SET NOT NULL bez UPDATE safety net — prod deploy fail-a na NULL phone redu | OPEN — pre-prod operational checklist |
@@ -191,25 +194,27 @@ Legend statusa:
 | F2-048 | LOW | `V1_54`/`V1_60`/`V1_67` recreate yacht_search_view s hardkodiranim `o.status <> 4` (superseded by V1_90+R__1_03) | OPEN — tracking-only / convention note |
 | F2-049 | LOW | `V1_88` dedup regex normalization drift s `ManufacturerAliasResolver.kt` Kotlin ekvivalentom | OPEN — Faza 6 (drift-prevention pattern) |
 
-### FIXED (3)
+### FIXED (5)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
+| F2-022 | HIGH | Scheduled cleanup native/JPQL queryji koriste PostgreSQL `CURRENT_DATE - INTERVAL` + `:cutoff` parameter | `0dc514f` |
 | F2-018 | MED | Migracija svih `@Enumerated` ORDINAL → STRING (18 enum kolona, 22 entity polja, V1_90 + R__ views) | `0d1242a` |
 | F2-019 | MED | Native queryji u `YachtRepository` + service callers prelaze na enum.name() string literale | `0d1242a` |
-| F2-022 | HIGH | Scheduled cleanup native/JPQL queryji koriste PostgreSQL `CURRENT_DATE - INTERVAL` + `:cutoff` parameter | `0dc514f` |
+| F2-026 | MED | `OfferPaymentPlan` id-based equals/hashCode (mutable-set invariant fix) | `42c260e` |
+| F2-036 | MED | `ReservationPaymentPhase` id-based equals/hashCode + null-bug closed | `42c260e` |
 
 ---
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 6 batch-eva + closure summary + phase gate at baseline). 40 findings: 0 FIXED, 32 OPEN (1 CRIT + 7 HIGH + 14 MED + 10 LOW), 8 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: Stripe payment hardening trio (F3-022/023/024), NauSys/MMK HTTP foundation (F3-001/002), F3-035 DevController hardening (paired s F1-041 closeout), plus F3-003/009 NauSys HTTPS verify s partner-om.
+**Status:** CLOSED 2026-05-11 (read-pass kroz 6 batch-eva + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 fixes). 40 findings: 5 FIXED, 27 OPEN (0 CRIT + 5 HIGH + 12 MED + 10 LOW), 8 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: NauSys/MMK HTTP foundation (F3-001/002), F3-035 DevController hardening (paired s F1-041 closeout), plus F3-003/009 NauSys HTTPS verify s partner-om. **Stripe payment hardening trio (F3-022/023/024 + F3-025/026) CLOSED in Phase B1.**
 
 ### CRIT (1)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
-| F3-022 | CRIT | `StripePaymentService.handleWebhookEvent` non-idempotent — F1-019 konkretizacija (dupli partner confirm + dupli email + state corruption pri Stripe retry) | OPEN — **prod-blocker** |
+| F3-022 | CRIT | `StripePaymentService.handleWebhookEvent` non-idempotent — F1-019 konkretizacija (dupli partner confirm + dupli email + state corruption pri Stripe retry) | FIXED `f815e1e` (table+entity+repo) + `f30a116` (claim wired into handler) |
 
 ### HIGH (7)
 
@@ -219,8 +224,8 @@ Legend statusa:
 | F3-002 | HIGH | `@Retryable(Exception::class)` na state-changing calls (createOption/confirmReservation/stornoOption/cancelReservation) duplicira partner side-effects (F1-019 sibling) | OPEN — **prod-blocker pair s F1-019** |
 | F3-003 | HIGH | NauSys credentials u request body putuju preko HTTP plaintext (F1-037 produbljen) | OPEN — partner-side HTTPS verify + env var fix |
 | F3-009 | HIGH | Customer PII (name, surname, crew list) putuje NauSys-u u HTTP body plaintext (F3-003 širenje na PII — GDPR breach risk) | OPEN — pair s F3-003 fix |
-| F3-023 | HIGH | `setSessionIdOnPaymentPhases` overwrites stripeSessionId bez check-a; old-session completion = orphan payment, customer money-loss scenario | OPEN — **prod-blocker scenario** |
-| F3-024 | HIGH | Webhook `@Transactional` wraps partner confirmExternalReservation + DB + email; partial-failure → partner confirmed + DB rollback drift | OPEN — pair s F3-022 fix |
+| F3-023 | HIGH | `setSessionIdOnPaymentPhases` overwrites stripeSessionId bez check-a; old-session completion = orphan payment, customer money-loss scenario | FIXED `d6138b3` (best-effort Session.expire prior session before overwrite) |
+| F3-024 | HIGH | Webhook `@Transactional` wraps partner confirmExternalReservation + DB + email; partial-failure → partner confirmed + DB rollback drift | FIXED `f30a116` (mitigated via F3-022 claim — Stripe retries skip; residual partial-failure window requires manual reconciliation per V1_91, full 2PC out of scope) |
 | F3-035 | HIGH | `DevEquipmentSyncController` `/public/dev/...`: only `@Profile("dev")`, no `@PreAuthorize`, all `@GetMapping` — F1-041 deepened (triple-defense missing) | OPEN — **HIGH, paired s F1-041 closeout** |
 
 ### MED (14)
@@ -234,8 +239,8 @@ Legend statusa:
 | F3-011 | MED | Per-agency forEach + try/catch swallow bez rate-limit / circuit breaker; cascade failure pri partner outage | OPEN — Faza 5 (resilience) ili Faza 6 |
 | F3-012 | MED | `NauSysYachtIntegrationService.yachtSync` re-sync path nikad ne discoveruje nove yachte na partner-side | OPEN — MED bug fix (ne blocker) |
 | F3-017 | MED | `MmkYachtIntegrationService.yachtTranslationsSync` 6-language × N-agency × @Retryable amplification (~900 calls); single-threaded | OPEN — Faza 5 (perf parallelism) ili pair s F3-011 |
-| F3-025 | MED | Mnogo `!!` non-null assertions na Stripe webhook payload-u; NPE pri malformed events | WAITING-DECISION (group s F3-022/F3-024 webhook fix batch) |
-| F3-026 | MED | `payFullAmount=false` webhook flow uvijek označi `first()` phase; bug-čekanju za installment 2 path | OPEN — pair s F3-022 fix |
+| F3-025 | MED | Mnogo `!!` non-null assertions na Stripe webhook payload-u; NPE pri malformed events | FIXED `f30a116` (defensive null checks + logged early-returns) |
+| F3-026 | MED | `payFullAmount=false` webhook flow uvijek označi `first()` phase; bug-čekanju za installment 2 path | FIXED `d6138b3` (unpaid-only phase selection in setSessionIdOnPaymentPhases + initiatePayment guard) |
 | F3-027 | MED | Webhook handler tiho ignorira refund / dispute / expired Stripe event types | OPEN — eskalacija (Stripe event handling roadmap) |
 | F3-030 | MED | User-controlled `inquiry.email`/`user.name`/surname putuju u `setReplyTo`/`setTo` bez explicit CRLF/comma sanitizacije — comma-injection risk | OPEN — Faza 5 (input validation sweep) |
 | F3-031 | MED | SMTP send failures swallowed bez retry / audit — transactional email loss silent (booking confirmation, password reset) | OPEN — Faza 5 / pre-prod minimum (email_outbox pattern) |
@@ -256,6 +261,16 @@ Legend statusa:
 | F3-028 | LOW | `toCentsLong()` koristi `RoundingMode.UP` → slight customer overcharge per payment phase | WAITING-DECISION (Mario business choice) |
 | F3-032 | LOW | `helper.setTo` multi-recipient pokazuje sve adresarima; admin notification leak ako se ikad pojavi multi-recipient flow | OPEN — Faza 5 (defensive design) |
 | F3-038 | LOW | `ExternalSyncService.syncYachtOffers` chained `!!` on `yacht.agency!!.primarySource!!.externalSystem!!` — NPE fragility (F1-026 family) | WAITING-DECISION (trivijalan, group s F1-026) |
+
+### FIXED (5)
+
+| ID | Severity | Naslov | Commit |
+|---|---|---|---|
+| F3-022 | CRIT | Event-level idempotency via `processed_stripe_events` (`INSERT ... ON CONFLICT DO NOTHING` in REQUIRES_NEW tx); Stripe retries become no-ops | `f815e1e` + `f30a116` |
+| F3-023 | HIGH | Best-effort `Session.expire` on prior open stripeSessionId before overwriting on the phase | `d6138b3` |
+| F3-024 | HIGH | Mitigated via F3-022 claim — Stripe retries skip; residual partial-failure window documented (V1_91), full 2PC out of scope | `f30a116` |
+| F3-025 | MED | Defensive null checks on Stripe webhook payload + logged early-returns (no `!!` left in handleWebhookEvent) | `f30a116` |
+| F3-026 | MED | `setSessionIdOnPaymentPhases` selects among UNPAID phases only; `initiatePayment` rejects already-paid `paymentPhaseId` up-front | `d6138b3` |
 
 ---
 
@@ -394,16 +409,16 @@ Legend statusa:
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 2 | 1 | 1 | 0 | 1 | 0 | — | **5** |
-| HIGH | 13 | 1 | 7 | 2 | 1 | 2 | — | **26** |
-| MED | 18 | 19 | 14 | 5 | 4 | 2 | — | **62** |
+| CRIT | 1 | 1 | 0 | 0 | 1 | 0 | — | **3** |
+| HIGH | 12 | 1 | 5 | 2 | 1 | 2 | — | **23** |
+| MED | 18 | 17 | 12 | 5 | 4 | 2 | — | **58** |
 | LOW | 8 | 23 | 10 | 4 | 6 | 4 | — | **55** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 20 | 3 | 0 | 1 | 3 | 3 | — | **30** |
+| FIXED | 23 | 5 | 5 | 1 | 3 | 3 | — | **40** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
-| BLOCKED | 1 | 0 | 0 | 0 | 0 | 0 | — | **1** |
-| **OPEN** | **41** | **44** | **32** | **11** | **14** | **8** | — | **150** |
+| BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
+| **OPEN** | **39** | **42** | **27** | **11** | **14** | **8** | — | **141** |
 
 ---
 
