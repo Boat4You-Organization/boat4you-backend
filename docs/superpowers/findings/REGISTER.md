@@ -267,7 +267,7 @@ Legend statusa:
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
-| F4-001 | HIGH | Spring `@Scheduled` default single-thread `TaskScheduler`; long sync chains blokiraju ostale crons + cron drift | OPEN — **pre-prod blocker** (5-min yml fix) |
+| F4-001 | HIGH | Spring `@Scheduled` default single-thread `TaskScheduler`; long sync chains blokiraju ostale crons + cron drift | FIXED `556de3c` |
 | F4-002 | HIGH | Profile-only locking (`@Profile("data-sync")`); 2-VM double-fire risk; no ShedLock / distributed lock (paired s F3-037 + F3-014) | OPEN — **pre-prod blocker**, pair s F3-037 fix |
 | F4-009 | HIGH | `ImageUtils` ne release-a intermediate Mat / MatOfByte u success ni exception path-evima — production native memory leak (~1.5GB/day VM3) | OPEN — **production stability bug** |
 
@@ -315,7 +315,7 @@ Legend statusa:
 |---|---|---|---|
 | F5-001 | HIGH BUG | `@ExceptionHandler(AccessDeniedException::class)` catches `kotlin.io.AccessDeniedException` (file I/O); Spring Security 403 → 500 fall-through (silent prod bug) | OPEN — **HIGH, prod-readiness** |
 | F5-002 | HIGH | Catch-all + SQLException + DataAccess echo `e.message` to customer; F1-055 confirmation s 5 leak vectors | OPEN — **HIGH, F1-055 escalation** |
-| F5-013 | HIGH | `JWT_SECRET_KEY` env var bez `:?required` syntax; silent fail-open for JWT signing key | OPEN — F1-036 family extension |
+| F5-013 | HIGH | `JWT_SECRET_KEY` env var bez `:?required` syntax; silent fail-open for JWT signing key | FIXED `556de3c` |
 
 ### MED (7)
 
@@ -325,10 +325,10 @@ Legend statusa:
 | F5-004 | MED | HTTP status mapping wrong: 11 not-found → 400 (should 404); ResourceNotFound → 510; DB exceptions → 400 (should 500) | OPEN — pair s F5-002 |
 | F5-005 | MED | `ApiErrorCodes` messages hardcoded English; non-EN customers get English toast unatoč i18n infrastrukturi | WAITING-DECISION (verify s Mario frontend i18n approach) |
 | F5-006 | MED | `InternalLoginException` handler logs `${e.email}` at ERROR svaki failed login — PII, F1-068 amplifier | OPEN — Faza 5 PII masking sweep |
-| F5-014 | HIGH | Mail credentials use placeholder defaults (`your@gmail.com`, `your-app-password`); F1-036 family violation | OPEN — pair s F5-013/F5-016 yml-hardening commit |
-| F5-015 | MED | Logback prod profile `<logger name="hr.workspace.boat4you" level="debug">`; DEBUG-level prod logging amplifies PII + disk fill | OPEN — pre-prod operational hygiene |
-| F5-016 | MED | application-prod.yml `NAUSYS_USERNAME`/`PASSWORD`/`MMK_TOKEN`/`MAIL_SERVER_*` no `:?required` syntax | OPEN — pair s F5-013/F5-014 |
-| F5-017 | MED | Logback `LOG_DIR ./logs` relative path; depends on JVM working directory | OPEN — pre-prod operational checklist |
+| F5-014 | HIGH | Mail credentials use placeholder defaults (`your@gmail.com`, `your-app-password`); F1-036 family violation | FIXED `556de3c` |
+| F5-015 | MED | Logback prod profile `<logger name="hr.workspace.boat4you" level="debug">`; DEBUG-level prod logging amplifies PII + disk fill | FIXED `d2e3ea9` |
+| F5-016 | MED | application-prod.yml `NAUSYS_USERNAME`/`PASSWORD`/`MMK_TOKEN`/`MAIL_SERVER_*` no `:?required` syntax | FIXED `556de3c` |
+| F5-017 | MED | Logback `LOG_DIR ./logs` relative path; depends on JVM working directory | FIXED `d2e3ea9` (env override, default preserved) |
 
 ### LOW (6)
 
@@ -360,7 +360,7 @@ Legend statusa:
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
 | F6-001 | HIGH | `Dockerfile` no `USER` directive → container radi kao root (production systemd je non-root cusma2/cusma3, verify if container ever ships prod) | OPEN — HIGH if container ships prod / MED if dev-only |
-| F6-002 | HIGH | `README.md:79-97` dokumentira test user table sa SYSTEM_ADMIN role + password "123456"; combined s F2-043 CRIT = documented prod admin takeover path | OPEN — **HIGH, immediate README delete** |
+| F6-002 | HIGH | `README.md:79-97` dokumentira test user table sa SYSTEM_ADMIN role + password "123456"; combined s F2-043 CRIT = documented prod admin takeover path | FIXED `27e5228` |
 | F6-003 | HIGH (pending verify) | `boat4you-ws-perf-update.tar.gz` 298 MB u repo root; content unknown (potencijalno PII u backup) | OPEN — **VERIFY contents before classification** |
 
 ### MED (4)
@@ -368,15 +368,15 @@ Legend statusa:
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
 | F6-004 | MED | `.env` (NOT tracked) sadrži PROD partner credentials lokalno (NauSys/MMK live tokens, real mail password); dev-machine compromise = secret leak | OPEN — operational policy |
-| F6-005 | MED | `.env.example` references removed Viva integration + outdated SERVER_HOST_PUBLIC port + inconsistent mail env var naming s prod yml | WAITING-DECISION (trivijalan docs cleanup) |
-| F6-006 | MED | `docker-compose.yml:22` `SSL_KEYSTORE_PASSWORD:-changeme` placeholder default; F5-014 family | OPEN — pair s F5-013/014/016 yml-hardening |
+| F6-005 | MED | `.env.example` references removed Viva integration + outdated SERVER_HOST_PUBLIC port + inconsistent mail env var naming s prod yml | FIXED `27e5228` |
+| F6-006 | MED | `docker-compose.yml:22` `SSL_KEYSTORE_PASSWORD:-changeme` placeholder default; F5-014 family | FIXED `556de3c` |
 | F6-007 | MED | `build.gradle.kts:292 ignoreFailures = true` na ktlint; code-quality failures don't fail build | WAITING-DECISION (trivijalan toggle, but format-and-commit step needed first) |
 
 ### LOW (5)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
-| F6-008 | LOW | `README.md:100-112` documents OLD GET sync endpoints; F1-042 fix already applied POST methods (docs drift) | WAITING-DECISION (trivijalan README update) |
+| F6-008 | LOW | `README.md:100-112` documents OLD GET sync endpoints; F1-042 fix already applied POST methods (docs drift) | FIXED `27e5228` |
 | F6-009 | LOW | `detekt_config.yml` disables SwallowedException + MagicNumber + ThrowsCount; LongParameterList allows 15-param constructors | WAITING-DECISION (style choice) |
 | F6-010 | LOW | Dockerfile no `HEALTHCHECK`; container orchestration can't detect zombie process | OPEN — pair s F6-001 Dockerfile fix |
 | F6-011 | LOW | `README_PROD.md` systemd `ExecStart` missing `-XX:+HeapDumpOnOutOfMemoryError` + `-XX:+ExitOnOutOfMemoryError`; F4-009 OOM forensics broken | OPEN — pre-prod ops checklist |
