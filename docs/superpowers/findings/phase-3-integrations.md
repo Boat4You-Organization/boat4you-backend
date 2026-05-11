@@ -1359,3 +1359,242 @@ Combined s F2-012 (birthday index defer to Phase 6), full birthday flow je solid
 **Batch 5 završen. Batch 6 next:** Sync orchestration + admin controllers (`ExternalSyncService`, `ServiceCallCacheService`, `ServiceCallAuditService`, `ExternalMappingService`, `MmkSyncController`, `NausysSyncController`, `DevEquipmentSyncController`) — F1-064 pairing (public yacht search sync trigger), admin sync trigger auth.
 
 ---
+
+## Batch 6 — Sync orchestration + admin controllers (2026-05-11)
+
+### [F3-035] HIGH security — `DevEquipmentSyncController` na `/public/dev/...` ima `@Profile("dev")` ali **bez** `@PreAuthorize`, sve `@GetMapping` (no F1-042), eksponira NauSys credentials kao diagnostic; F1-041 produbljen
+**Lokacija:** `domains/external/dev/DevEquipmentSyncController.kt:30-170`
+**Detekcija:** statička
+**Opis:** F1-041 zabilježio: "DevEquipmentSyncController na `/public/dev` + samo profile gating (no auth)". Ovaj batch otkriva **višestruke layers defense missing-a:**
+
+1. **`@RequestMapping("/public/dev")`** — `/public/**` prefix u Spring Security konfiguraciji vjerojatno znači `permitAll()` (verify u SecurityConfiguration). Plus `@Profile("dev")` — only enabled u dev profile-u. **Ali ako dev profile se ikad enabled na staging/prod (accidental config, ENV override),** controller je live + anonymous.
+
+2. **Sve metode `@GetMapping`** (lines 53, 99, 122, 129, 149, 164) — F1-042 fix za state-changing sync triggers već primijenjen u MmkSyncController/NausysSyncController (POST). Ovdje su:
+   - `GET /clear-caches` — wipes ALL Spring caches
+   - `GET /sync-equipment-catalog` — triggers MMK + NauSys equipment sync (~minutes)
+   - `GET /sync-catalogue` — triggers full NauSys catalogue sync
+   - `GET /resync-yachts` — triggers full yacht sync (~minutes, 12k yachts)
+   - `GET /nausys-yacht-equipment/{companyId}/{yachtId}` — diagnostic, exposes catalog
+   - `GET /mmk-yacht-equipment/{companyId}/{yachtId}` — same for MMK
+
+   Browser preflight, link previews, proxy retries → all trigger these. Plus easy to enumerate via curl.
+
+3. **`auth.username!!`, `auth.password!!`** (line 61-62 in `nauSysYachtEquipment`) — direct access to NauSys credentials, passed to AllYachtsRequest. **Even though the request body goes to NauSys (not response to user)**, the surrounding context exposes that this endpoint has access to creds.
+
+4. **Diagnostic endpoints return raw partner data** — `nauSysYachtEquipment` returns equipment catalog + quantities + names. If accessible, **information disclosure** about competitor partner data structure.
+
+5. **No rate-limit** on dev endpoints — anonymous attacker can `for i in {1..10000}; do curl /public/dev/resync-yachts; done` → DoS to Boat4You + amplified DoS to partners (each call fires sync).
+
+**Combined risks:**
+- F1-041 (this controller exists at `/public/dev`)
+- F1-003 (no nginx rate limit on auth endpoints; presumably same on `/public/**`)
+- F3-001 (no HTTP timeouts)
+- F3-002 (state-change retry)
+
+**Defense in depth missing.** Per dev/staging promotion script, if `SPRING_PROFILES_ACTIVE=dev` is ever set on staging/prod (typo in deploy yml, dev .env file leaked into VM4) → instant full compromise.
+**Posljedica:** prod safe only because `@Profile("dev")` strict. Single-point-of-failure security model. F1-041 should be HIGH not LOW (Phase 1 listed as HIGH already).
+**Predloženi fix:** trojni:
+- (a) **Move `/public/dev` → `/admin/dev`** + add `@PreAuthorize("hasRole('SYSTEM_ADMIN')")`. Removes public path semantic, adds auth layer.
+- (b) **Migrate state-changing endpoints to `@PostMapping`** — `clear-caches`, `sync-*`, `resync-yachts` all become POST. Diagnostic GETs (`nausys-yacht-equipment`, `mmk-yacht-equipment`) stay GET (read-only).
+- (c) **Multi-profile check:** in `SecurityConfiguration` enforce `if ("dev" in activeProfiles && "prod" in activeProfiles) throw IllegalStateException`. Prevents accidental dev-on-prod activation.
+
+Plus: rate-limit per IP (5 req/min) at nginx (per F1-003 phase 7 deploy window).
+
+(a) + (b) for ~30 min work. (c) ~10 min.
+**Riziko-procjena fixa:** trivijalan. Should pair with F1-041 close-out.
+**Status:** OPEN — **HIGH, paired s F1-041 closeout**
+
+---
+
+### [F3-036] MED data integrity — `ServiceCallCacheService` koristi `Objects.hash(...).toLong()` (Int range cast) za cache ključ; hash collisions na high-volume yacht offer cache → silent sync skips
+**Lokacija:** `domains/external/service/ServiceCallCacheService.kt:77-83, 85-92`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+private fun calculateHash(id: Long, dateFrom: LocalDate?, dateTo: LocalDate?): Long {
+    return Objects.hash(id, dateFrom, dateTo).toLong()
+}
+
+fun createSyncYachtOffersHashSorted(startDate: LocalDate, endDate: LocalDate, locations: List<String>): Long {
+    val sortedLocations = locations.sorted()
+    return Objects.hash(startDate, endDate, sortedLocations).toLong()
+}
+```
+
+`Objects.hash(vararg)` returns Java `Int` (~4 billion possible values). `.toLong()` widens but **doesn't increase entropy** — still only 2^32 distinct values. Cast to Long for DB column but underlying value remains Int range.
+
+**Volume math:**
+- yachtId × dateFrom × dateTo cache: for ~100 yachts × ~365 days × ~365 days = **~13M combinations**.
+- Birthday paradox: collision probability ~30% by 2^16 = 65K entries (sqrt of 2^32). For 13M entries, collisions are guaranteed.
+- For yacht-search cache (startDate × endDate × locations): location list combinatorial explosion — collisions even more likely.
+
+**Concrete failure:**
+1. User search for yacht X, date range A → cache miss → sync fires → cache entry saved with hash H1.
+2. User search for yacht Y, date range B → hash collision with H1 → cache hit (false) → sync skipped.
+3. User sees stale offers for yacht Y because sync never happened.
+
+`shouldCallOffer` (line 19) returns `false` on collision → sync skipped → user sees offers from previous day's sync (or empty).
+
+**Cache TTL is 1 hour** (line 29-31) → mitigates somewhat (stale ≤ 1h). But **cumulative collision rate over 1 week × all users** = significant percentage of stale searches.
+
+Plus: cache table `service_call_cache` grows unbounded (F2-002 sibling for ServiceCallCache vs Token table).
+**Posljedica:** false cache hits → stale yacht availability → customer sees offers koje ne postoje more / vice versa. Sales-impacting bug ali tihi (no error). Combined s F3-022 (Stripe webhook idempotency) i payment double-charge scenarios, ovo dodaje "wrong offer charged" loop.
+**Predloženi fix:** dvije opcije:
+- (a) **SHA-256 ili MurmurHash3 (Guava)** — proper hash with 64-bit (Long) or 128-bit space:
+  ```kotlin
+  import com.google.common.hash.Hashing
+  private fun calculateHash(id: Long, dateFrom: LocalDate?, dateTo: LocalDate?): Long {
+      return Hashing.murmur3_128()
+          .newHasher()
+          .putLong(id)
+          .putString(dateFrom?.toString() ?: "", Charsets.UTF_8)
+          .putString(dateTo?.toString() ?: "", Charsets.UTF_8)
+          .hash()
+          .asLong()
+  }
+  ```
+  Collision prob → astronomically low.
+- (b) **Composite primary key** — change `service_call_cache.hash_code` from BIGINT to `(method, yachtId, dateFrom, dateTo)` tuple. Schema change. Cleaner but more migration work.
+
+(a) is pre-prop minimum.
+
+Plus: add retention policy for `service_call_cache` rows older than 30 days.
+**Riziko-procjena fixa:** dira hot search path. Staging test obavezan — verify shouldCallOffer behavior under load.
+**Status:** OPEN — MED, real bug; pair s F2-002 retention
+
+---
+
+### [F3-037] MED concurrency — `ExternalSyncService.yachtSyncsInProgress` lock je VM-local `ConcurrentHashMap.newKeySet()`; VM2 + VM3 ne dijele state → dupli concurrent sync moguć
+**Lokacija:** `domains/external/service/ExternalSyncService.kt:36, 94-95, 138-140`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+private val yachtSyncsInProgress: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+...
+if (!yachtSyncsInProgress.add(yachtId)) {
+    return  // already syncing, skip
+}
+try { ... } finally { yachtSyncsInProgress.remove(yachtId) }
+```
+
+**Singleton bean → JVM-singleton state.** Boat4You deployment per memory: VM2 (API) + VM3 (sync). Different JVM instances → different `yachtSyncsInProgress` instances. **Mutex bypass:**
+1. VM2 receives user search for yacht X → triggers `syncYachtOffers(yachtId=X)`.
+2. VM3 scheduled cron fires `MmkSyncJob` → also touches yacht X via different code path.
+3. Both instances pass `yachtSyncsInProgress.add(X)` → both proceed → 2× partner API calls in parallel for same (yachtId, dateRange).
+
+Partial scope: only `syncYachtOffers(yachtId, dateFrom, dateTo)` overload uses this mutex (line 94). `syncYachtOffers(startDate, endDate, locations)` overload doesn't have similar mutex — wider concurrent fire still possible.
+
+Plus: combined s **F3-005** (no jitter on retry backoff) — double-fire at same partner-side burst.
+
+`shouldCallOffer` cache check (line 89) provides partial mitigation — cache hit returns false. But race window between cache check and cache write:
+- T0: VM2 calls `shouldCallOffer(X)` → cache miss → returns true → starts sync
+- T1: VM3 calls `shouldCallOffer(X)` → cache miss (still) → returns true → starts sync
+- T2: Both call partners
+- T3: Both save cache → second save is overwrite, no error
+- Result: 2× partner work, 1 cache entry
+
+**Severity:** depending on partner rate-limit budget. NauSys rate-limit unknown; MMK is generally permissive. Pre-prod nije akutni, ali se akumulira.
+**Posljedica:** wasted partner calls + amplified pressure on partner API during peak times. Combined s F3-001 (no timeouts) + F3-005 (no jitter) = real DoS risk to partner during outage.
+**Predloženi fix:** distributed lock. Optionsi:
+- (a) **ShedLock** (jedna od planiranih za Faza 4 — locking VM2 vs VM3) — annotate with `@SchedulerLock` or use `LockProvider` API:
+  ```kotlin
+  lockProvider.lock("syncYachtOffers-$yachtId", duration).use {
+      ...
+  }
+  ```
+- (b) **Redis SETNX** — simpler if Redis already in stack (verify; per yml not visible).
+- (c) **Postgres advisory lock** — `pg_try_advisory_lock(hash(yachtId))` — no extra infrastructure.
+
+Phase 4 (jobs + heavy native) will tackle locking holistically per spec. **Mark F3-037 paired-with-Phase-4 architectural decision.**
+**Riziko-procjena fixa:** infrastructure decision; >30 minutes refactor.
+**Status:** OPEN — pair s Faza 4 jobs locking decision (covered F2-031 family for EAGER too)
+
+---
+
+### [F3-038] LOW fragility — `ExternalSyncService.syncYachtOffers(yachtId)` chained `!!` on entity associations
+**Lokacija:** `domains/external/service/ExternalSyncService.kt:102` (`yacht.agency!!.primarySource!!.externalSystem!!`)
+**Detekcija:** statička
+**Opis:** Chained non-null assertions on lazy-loaded JPA associations. Failure modes:
+- `yacht.agency = null` (data: yacht without agency — should be rejected at schema level, but legacy data may have)
+- `agency.primarySource = null` (line 110-112 u Agency entity uses `agencySources.find { it.primary }` — null ako nijedan `primary = true`)
+- `primarySource.externalSystem = null` (FK nullable verify u AgencySource entity)
+
+Any null → NPE. NPE caught by outer `try/catch (Exception)` (line 136) → log error + return. Silent fail.
+
+Plus: F1-026 already filed: "Multiple `!!` non-null assertions u initiatePayment putu". Same family.
+**Posljedica:** silent sync skip for yachts with malformed agency data. Pre-prod nije problem ako data validation upstream je correct.
+**Predloženi fix:** explicit null checks + log specific reason:
+```kotlin
+val agency = yacht.agency ?: run {
+    log.warn("Yacht {} has no agency — skipping sync", yachtId); return
+}
+val primarySource = agency.primarySource ?: run {
+    log.warn("Agency {} has no primary source — skipping sync", agency.id); return
+}
+val externalSystem = primarySource.externalSystem ?: run {
+    log.warn("Primary source for agency {} has no external system — skipping sync", agency.id); return
+}
+```
+**Status:** WAITING-DECISION (trivijalan, group s F1-026)
+
+---
+
+### [F3-039] INFO positive — Admin sync controllers (`MmkSyncController`, `NausysSyncController`) properly @PreAuthorize + @Profile + @PostMapping; F1-042/F1-043/F1-044 fixes applied
+**Lokacija:**
+- `domains/external/mmk/controller/MmkSyncController.kt:16-19` — `@RestController`, `@Profile("data-sync")`, `@PreAuthorize("hasRole('SYSTEM_ADMIN')")`, `@RequestMapping("/admin/mmk")`
+- `domains/external/nausys/controller/NausysSyncController.kt:11-14` — analognog
+
+**Detekcija:** statička
+**Opis:** Admin sync triggers su properly gated:
+- **Method-level POST** (F1-042 fix): all `/sync`, `/yachts`, `/offer`, `/availability` endpoints — `@PostMapping`, ne `@GetMapping`. Comment u kontroleru (line 27-30 MmkSync, line 19-21 NauSysSync) explicitno spominje F1-042 razlog.
+- **Role gating** (`SYSTEM_ADMIN`) prevents non-admin user trigger.
+- **Profile gating** (`data-sync`) prevents non-sync-VM (VM2) from exposing these endpoints — only VM3 has data-sync profile.
+- **Spring Security `@PreAuthorize`** drives gate; ne ad-hoc auth check.
+- **Defense in depth:** triple-layered (network: nginx routing /admin/* + Spring profile + Spring Security role).
+
+Plus: `MmkSyncController.offer2` (line 67) uses rolling LocalDate.now() — F1-043 fix applied. Comment NOT preserved but functionality confirmed.
+
+**Pattern za standardizirati:** F3-035 (DevEquipmentSyncController) should match this exact set of decorators.
+**Status:** INFO
+
+---
+
+### [F3-040] INFO positive — `ServiceCallAuditService` responseBody audit toggle off by default + REQUIRES_NEW + ExternalMappingService cached lookups
+**Lokacija:**
+- `ServiceCallAuditService.kt:17-21` — `responseBodyAudit` flag, off by default per application.yml line 138 (vidi Batch 1 grep)
+- `ServiceCallAuditService.kt:24` — `@Transactional(propagation = REQUIRES_NEW)` na audit save (isolated TX)
+- `ServiceCallCacheService.kt:51, 64, 106` — REQUIRES_NEW na save methods
+- `ExternalMappingService.kt:35, 43` — `@Cacheable("externalMappingCache")` na hot lookup paths
+
+**Detekcija:** statička
+**Opis:** Pozitivni patterni:
+- **PII opt-in:** response body audit explicit-toggle (off by default). Combined s F2-002 (Envers `_revisions` rast) — by-default off ne kontaminira `service_call` tablicu PII-jem.
+- **REQUIRES_NEW for audit/cache:** isolates audit + cache writes od outer TX-a. F3-007 govori da neki state-change calls ne koriste ovo (audit-loss); ovdje ServiceCallAuditService ga koristi konzistentno. **Pattern model**.
+- **Cached entity-mapping lookups:** `externalMappingCache` redukuje DB pressure za hot sync paths. Combined s F2-005 (cache profile gating) — workload split-an na VM3 only.
+
+Plus: ServiceCallCacheService implementacija s `Propagation.REQUIRES_NEW` ([line 51](src/main/kotlin/hr/workspace/boat4you/domains/external/service/ServiceCallCacheService.kt#L51)) for cache writes — cache entry committed independently of outer offer-sync TX, tako da partial sync still saves cache marker (gating future sync attempts).
+
+Wait — actually line 77 of ExternalSyncService: `serviceCallCacheService.saveYachtSearch(...)` is called **inside** outer TX (the @Async wrapping doesn't open new TX). If async outer TX rollback, REQUIRES_NEW saves cache anyway — good intent. Then next user search hits cache marker, returns 'no sync needed' — but the partner data wasn't actually saved? Verify outer TX persistence semantics.
+
+Actually `@Async` methods don't inherit outer TX — each `@Async` invocation runs in its own thread without TX. So `nauSysYachtOfferIntegrationServiceAsync.syncOffersForDateRange` may have its own TX (verify). Anyway, REQUIRES_NEW for cache ensures cache marker is durable regardless.
+
+**Status:** INFO
+
+---
+
+### Sažetak Batch 6
+
+- **HIGH (1):** F3-035 (DevEquipmentSyncController triple-layered defense missing — F1-041 produbljen)
+- **MED (2):** F3-036 (`Objects.hash` Int-range collision na yacht offer cache), F3-037 (`yachtSyncsInProgress` VM-local mutex)
+- **LOW (1):** F3-038 (`!!` chained on entity associations)
+- **INFO (2):** F3-039 (admin sync controllers properly gated, F1-042/043/044 fixes applied), F3-040 (audit + cache REQUIRES_NEW pattern + responseBody opt-in)
+
+**Najkritičniji nalaz batch-a:** F3-035 — DevEquipmentSyncController je single-profile-flag-away od full anonymous compromise. Move to `/admin/dev` + add `@PreAuthorize` + convert to `@PostMapping` (~30 minuta total).
+
+**F3-036** je tihi data integrity bug — hash collisions na yacht offer cache mogu stvoriti silent stale-offers situaciju. Switch to MurmurHash/SHA-256.
+
+**Batch 6 i Phase 3 read-pass završen!** Total Phase 3: F3-001..F3-040, 6 batch-eva.
+
+Phase 3 next step: **closure + phase gate** (analogno Phase 2 `0af3478`+`f31f2e8` flow).
+
+---
