@@ -125,7 +125,7 @@ Legend statusa:
 
 ## Faza 2 — Data layer (persistence, entities, migrations)
 
-**Status:** IN PROGRESS — Batch 1 (common/jpa + cache) ✓, Batch 2 (user/security/roles) ✓, Batch 3a (Yacht core) ✓, Batch 3b (Offer flow) ✓, Batch 3c (catalogue supporting + view repos) ✓. Batch 4 (reservation flow), Batch 5 (Flyway migrations) pending.
+**Status:** IN PROGRESS — Batch 1 (common/jpa + cache) ✓, Batch 2 (user/security/roles) ✓, Batch 3a (Yacht core) ✓, Batch 3b (Offer flow) ✓, Batch 3c (catalogue supporting + view repos) ✓, Batch 4 (reservation flow) ✓. Batch 5 (Flyway migrations) pending.
 
 ### HIGH (0)
 
@@ -148,8 +148,11 @@ Legend statusa:
 | F2-030 | MED | `AgencyRepository`: 3× JOIN FETCH na kolekciju bez DISTINCT (cartesian product preko žice) + 4. ima F2-023/F2-029 pattern | WAITING-DECISION (3× DISTINCT trivijalno) |
 | F2-031 | MED | `Agency.agencySources` EAGER OneToMany + `Page<Agency>` admin = N+1 per page | OPEN — Faza 5 (perf + runtime verify) |
 | F2-033 | MED | Public location autocomplete (`LocationViewRepository.findByNameAndIdsNotIn`) LOWER+leading-wildcard LIKE = seq scan na svaki public search | OPEN — Faza 6 (vezano za F2-023/F2-024/F2-034) |
+| F2-036 | MED | `ReservationPaymentPhase.equals` null-bug + mutable Set anti-pattern (F2-026 sibling); F1-019 multiplier za payment double-capture | OPEN — eskalacija (entity contract change, F2-026 family) |
+| F2-037 | MED | `calculateTotalPaid` JPQL SUM null → Kotlin `BigDecimal` non-null NPE risk | WAITING-DECISION (trivial COALESCE) |
+| F2-038 | MED | `ReservationDocument` audit gap — signed contracts + internal admin docs nemaju tamper-evidence trail | OPEN — eskalacija (F2-001/F2-004 dependency + legal compliance) |
 
-### LOW (18)
+### LOW (21)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -171,6 +174,9 @@ Legend statusa:
 | F2-029 | LOW | `STR(:search)` JPQL funkcija redundantna u `findAllByParamsForAdmin` | WAITING-DECISION |
 | F2-032 | LOW | `LocationViewRepository` declares `JpaRepository<_, Long>` ali `LocationView.id` je String | WAITING-DECISION |
 | F2-034 | LOW | LOWER+LIKE familija u Manufacturer/Model/Agency admin/Location (low-frequency siblings F2-023/F2-033) | OPEN — Faza 6 (jedna index migracija) |
+| F2-039 | LOW | `ReservationFlowRepository.findIdsInReservationFlowChain` recursive CTE bez cycle detection — corruption loop diverges | OPEN — Faza 6 (defensive coding) ili tracking-only |
+| F2-040 | LOW | `ReservationViewRepository.findAllReservationsByParams` 6-column LOWER+LIKE admin search (F2-023 family) | OPEN — Faza 6 (vezano s F2-023/F2-024/F2-033/F2-034) |
+| F2-041 | LOW | `ReservationFlow.status` TODO + ReservationFlow/Document/ExternalReservationPaymentPlan ne extendaju AbstractEntity (F2-028 family) | OPEN — eskalacija (F2-028 architectural decision) |
 
 ### FIXED (3)
 
@@ -188,14 +194,14 @@ Legend statusa:
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 2 | 0 | — | — | — | — | — | **2** |
 | HIGH | 13 | 0 | — | — | — | — | — | **13** |
-| MED | 18 | 13 | — | — | — | — | — | **31** |
-| LOW | 8 | 18 | — | — | — | — | — | **26** |
-| INFO | 4 | 1 | — | — | — | — | — | **5** |
+| MED | 18 | 16 | — | — | — | — | — | **34** |
+| LOW | 8 | 21 | — | — | — | — | — | **29** |
+| INFO | 4 | 2 | — | — | — | — | — | **6** |
 | FIXED | 20 | 3 | — | — | — | — | — | **23** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | — | — | — | — | — | **6** |
 | DEFERRED-other | 3 | 0 | — | — | — | — | — | **3** |
 | BLOCKED | 1 | 0 | — | — | — | — | — | **1** |
-| **OPEN** | **41** | **31** | — | — | — | — | — | **72** |
+| **OPEN** | **41** | **37** | — | — | — | — | — | **78** |
 
 ---
 
