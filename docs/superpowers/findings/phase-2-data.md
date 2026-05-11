@@ -1118,3 +1118,85 @@ Vrijedno standardize-irati: future migracije slijede V1_78/V1_88 strukturu (rati
 **Batch 5 završen. Phase 2 read-pass GOTOV.** Sljedeća akcija: **closure summary + phase gate decision** (analogno Phase 1 zatvaranju u `7369434` + `9d97675` commit-ima).
 
 ---
+
+## Phase 2 closure (2026-05-11)
+
+**Status:** CLOSED — read-pass complete, fix-batch decisions deferred to user.
+
+### Cumulative numbers
+
+| Bucket | Count | Note |
+|---|---|---|
+| Findings filed | 50 | F2-001..050 |
+| FIXED | 3 | F2-018 / F2-019 (`0d1242a` enum STRING migration), F2-022 (`0dc514f` scheduled cleanup) |
+| OPEN | 44 | 1 CRIT + 1 HIGH + 19 MED + 23 LOW |
+| INFO | 3 | F2-035 / F2-042 / F2-050 — positive patterns |
+| Read-pass batches | 7 | 1, 2, 3a, 3b, 3c, 4, 5 ✓ |
+
+### Verifications atempted during read-pass
+
+- **F2-018 enum migration:** 18 enum mappings cross-verified against Kotlin source declaration order pre-commit. 22 entity fields swept via `@Enumerated` grep — zero leftover ordinal annotations after `0d1242a`. Native query ordinal literals in YachtRepository + view R__-ovi switched to string equivalents.
+- **F2-022 cleanup queries:** verified callers via grep (`DeleteExpiredReservationsAndOffersJob` `@Scheduled(cron = "0 0 6 * * ?")` triggers from prod); confirmed no tests reference `deleteExpiredOffers` (justifies severity — no test fail had been catching this).
+- **F2-043 V9_xx test data execution risk:** verified application.yml + application-prod.yml + ad-hoc grep — no `FLYWAY_TARGET_VERSION` or `spring.flyway.locations` override exists in tracked code. **Out-of-repo verification needed:** prod env var setting (VM2/VM3 deploy artefact).
+- **`@Enumerated` sweep:** zero raw `@Enumerated` annotations remain in `src/main/kotlin` per `Grep @Enumerated$` post-F2-018.
+- **`.ordinal` usage:** 3 hits, all in `ReservationOptionsCombinationProvider.kt` for `DayOfWeek` calendar math (not DB persistence). Safe.
+
+### Trends — fix-batch groupings prepared for execution phases
+
+Phase 2 yielded clean cluster-shaped fix batches that share migration / refactor work; tackling them as groups will minimize touch footprint:
+
+1. **Faza 6 — index migration batch (5 findings):** F2-023 (Inquiry admin search), F2-024 (per-insert email count), F2-033 (public location autocomplete), F2-034 (Manufacturer/Model/Agency admin LIKE family), F2-040 (ReservationView 6-column admin search). One Flyway migration: `CREATE EXTENSION IF NOT EXISTS pg_trgm` + `CREATE INDEX ... USING gin (LOWER(col) gin_trgm_ops)` per table + functional `LOWER(name)` indexes on equality lookups. Plus controller-side `name.length >= 2` validations.
+
+2. **Audit trail eskalacija batch (6 findings + 1 dependency chain):** F2-001 (creator/modifier never populated), F2-004 (CustomRevisionListener hardcodes user 1), F2-017 (Yacht/YachtImage/YachtTranslation ne extendaju AbstractEntity), F2-028 (Offer-flow entitети ne extendaju), F2-038 (ReservationDocument audit gap), F2-041 (ReservationFlow + others ne extendaju + status TODO). **Single architectural decision** unlocks all of them: hook `SecurityContextHolder` into AbstractEntity `@PrePersist`/`@PreUpdate` + decide which currently-non-AbstractEntity classes extend it. Then one Flyway migration adds 4 columns × N tables with backfill.
+
+3. **Payment phase entity contract batch (2 findings):** F2-026 (OfferPaymentPlan equals on mutable fields, `MutableSet`), F2-036 (ReservationPaymentPhase same + null-handling bug). **Critical multiplier with F1-019 CRIT (Stripe webhook non-idempotency).** Fix pattern from F2-026 proposal: id-based equals/hashCode, ili switch to MutableList. Two entity classes, ~30 lines total.
+
+4. **Migration-related cleanups (Faza 6 / tracking):** F2-047 (V1_69/V1_70 country.id == location.id assumption), F2-048 (V1_54+V1_60+V1_67 view recreate ordinal hardcode — tracking-only, applied), F2-049 (V1_88 dedup vs ManufacturerAliasResolver drift — comment + checklist).
+
+5. **Trivial cleanup batch (4 findings, ~10 lines total):** F2-029 (STR removal in InquiryRepository), F2-030 (3× DISTINCT in AgencyRepository), F2-032 (LocationViewRepository declared `<_, Long>` → `<_, String>`), F2-037 (calculateTotalPaid `COALESCE(SUM, 0)`). Single low-risk commit.
+
+6. **Pre-prod operational checklist (not code fixes):**
+   - **F2-043 CRIT:** verify prod `FLYWAY_TARGET_VERSION=1.90` (or whichever last V1.xx) is set in VM2/VM3 deploy artefact. If not, **fix before first prod deploy** (one env var + V9 sanitize).
+   - **F2-044 HIGH:** Mario commentary on V1_24 (5-min documentation pass clearing reviewer doubt).
+   - **F2-045 MED:** staging preflight `SELECT COUNT(*) FROM inquiry WHERE phone IS NULL` before prod deploy — if ≥ 1, `UPDATE ... SET phone='' WHERE phone IS NULL` first.
+
+### Recurring deferrals (cross-phase)
+
+| ID | Razlog defera |
+|---|---|
+| F2-002 | Envers `_revisions` retention policy — Faza 6 (perf + data hygiene) |
+| F2-003 | `entity_status` soft-delete pattern formalization — Faza 5 (cross-cutting modeling) |
+| F2-006/F2-007/F2-008 | Cache config verification — Faza 6 ili paralelno s @Cacheable callers audit |
+| F2-012 | Birthday functional index — Faza 6 |
+| F2-013 | TokenEntity.user EAGER — Faza 5 (cross-cutting perf) |
+| F2-015 | revokeAllUserTokens N+1 bulk update — Faza 5 |
+| F2-021 | find/count divergence test coverage — Faza 5 (test sweep) |
+| F2-039 | Recursive CTE cycle detection — Faza 6 (defensive coding) ili tracking-only |
+
+### Phase gate (`./gradlew compileKotlin detekt test --continue`)
+
+- **compileKotlin ✓** — bez warning-a iz Phase 2 izmjena (V1_90 + 22 entity polja `@Enumerated(EnumType.STRING)` + service callere + scheduled cleanup queries).
+- **detekt — 291 weighted issues** — exact match to Phase 1 baseline (`project_boat4you_baselines.md`). Nijedan novi issue iz Phase 2 fix commit-a `0d1242a` / `0dc514f`. Zero regression. Sve postojeće detekt warnings su pre-existing (TooGenericException, ReturnCount, UseRequire, UnusedPrivate*, ForbiddenComment TODO-i). Pre-existing typo `class Addres11sInfoJsonb` u `AddressInfoJsonb.kt:5` postoji od initial commita; nije touched ovim review-em.
+- **test — 29/103 failed** — exact match to Phase 1 baseline. Svih 29 failures su u `ReservationPaymentPhasesServiceTest`, koji je već zabilježen kao **F1-074** (test divergence from service rule A change, commit `6f11eef` prije review-a). Zero regression — Phase 2 izmjene nisu pokvarile niti jedan dodatni test.
+
+Phase gate: **PASS at baseline (zero regression)**. Phase 2 changes su safe-to-merge tehnički; business gate je `F2-043` verification.
+
+### Pending user actions before Phase 3 (Service / business logic)
+
+1. **F2-043 verify** — confirm `FLYWAY_TARGET_VERSION` env var setting on VM2/VM3 (highest priority; CRIT downgrade depends on this).
+2. **F2-044 commentary** — V1_24 historical context (Mario doc note rejoluje finding).
+3. **Architectural batch decision** — F2-001/F2-004/F2-017/F2-028/F2-038/F2-041: yes/no on AbstractEntity hierarchy expansion + SecurityContext audit injection. Unblocks 6 findings.
+4. **Payment phase fix decision** — F2-026/F2-036: id-based equals (preferred) vs MutableList migration. Trebao bi biti prije prod-a zbog F1-019 multiplier.
+5. **Faza 6 index migration scoping** — bundle 5 findings (F2-023/F2-024/F2-033/F2-034/F2-040) into one pg_trgm + functional LOWER migration. Out-of-repo verify: pg_trgm extension permission on VM4 PostgreSQL 18 user.
+
+### Phase 3 outlook (Service layer / business logic)
+
+Phase 2 surfaced clusters that **Phase 3 will deepen**:
+- **Auth + role re-fetch** (F1-005 + F2-013/F2-016 family) → Phase 3 covers UserAuthService, JwtAuthenticationFilter business path.
+- **Cancellation + payment phase orchestration** (F2-036 + F1-019 CRIT + F1-028 BLOCKED) → Phase 3 covers ReservationFlowMutationService + StripePaymentService transitions.
+- **Yacht swap detection + audit write** (F2-026 swap reference + ReservationSyncService) → Phase 3 covers reservation sync write-side.
+- **Admin search business rules** (F2-023/F2-040 family) → Phase 3 covers admin controllers + DTO mapping (input validation, search trimming).
+
+Plus Phase 3 should validate the architectural decisions made in step 3 above before they apply across service layer.
+
+---
