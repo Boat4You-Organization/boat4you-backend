@@ -1,4 +1,4 @@
-# Faza 3 — Vanjske integracije
+zatvo# Faza 3 — Vanjske integracije
 
 **Status:** in progress (inventory + read pass)
 **Datum starta:** 2026-05-11
@@ -1596,5 +1596,96 @@ Actually `@Async` methods don't inherit outer TX — each `@Async` invocation ru
 **Batch 6 i Phase 3 read-pass završen!** Total Phase 3: F3-001..F3-040, 6 batch-eva.
 
 Phase 3 next step: **closure + phase gate** (analogno Phase 2 `0af3478`+`f31f2e8` flow).
+
+---
+
+## Phase 3 closure (2026-05-11)
+
+**Status:** CLOSED — read-pass complete, fix-batch decisions deferred to user.
+
+### Cumulative numbers
+
+| Bucket | Count | Note |
+|---|---|---|
+| Findings filed | 40 | F3-001..040 |
+| FIXED | 0 | Sve fix decisions pending (no in-flight fixes within Phase 3) |
+| OPEN | 32 | 1 CRIT + 7 HIGH + 14 MED + 10 LOW |
+| INFO | 8 | F3-016, F3-020, F3-021, F3-029, F3-033, F3-034, F3-039, F3-040 — positive patterns |
+| Read-pass batches | 6 | 1 (HTTP foundation), 2 (NauSys), 3 (MMK), 4 (Stripe), 5 (Mail), 6 (sync orchestration + admin) ✓ |
+
+### Verifications attempted during read-pass
+
+- **Stripe SDK timeouts:** confirmed `StripeConfig.kt:17-21` sets connect 5s / read 15s / 2 retries. Pattern model za F3-001 fix u NauSys/MMK.
+- **F1-019 webhook idempotency:** confirmed missing — F3-022 dokumentira concrete fix-points (event-level + phase-level idempotency).
+- **F1-031 Stripe signature verification:** confirmed properly handled u `StripeWebhookController.kt:36-48` (distinct catch blocks za signature vs general failure).
+- **F1-037 NauSys HTTP:** confirmed `application-prod.yml:18` default `http://ws.nausys.com`; F3-003 + F3-009 escalate na PII scope.
+- **F1-041 DevEquipmentSyncController:** confirmed — F3-035 produbljen s 3 missing defense layers.
+- **F1-042 / F1-043 / F1-044 admin sync fixes:** confirmed applied u MmkSyncController + NausysSyncController (F3-039 INFO).
+- **`@Transactional` + email send race (F3-024 scope clarification):** EmailService koristi `afterCommit` synchronization (line 264-272) → email never fires na TX rollback. Email-side concerns u F3-024 ne važe; real F3-024 issue je partner API call unutar webhook TX-a.
+- **MMK HTTPS bearer auth:** confirmed `https://www.booking-manager.com` default → F3-003 / F3-009 ne važe na MMK side.
+
+### Trends — Phase 3 fix-batch groupings
+
+1. **Stripe payment hardening batch (prod-blocker)** — F3-022 CRIT + F3-023/F3-024 HIGH + F3-025/F3-026/F3-027 MED + F3-028 LOW + (Phase 2 family) F2-026/F2-036. **Single Stripe-hardening commit batch** prije prod-a. Fix sequencing dokumentiran u F3-022 finding.
+2. **NauSys/MMK HTTP foundation batch (prod-blocker)** — F3-001 HIGH (timeouts) + F3-002 HIGH (retry scope) + F3-008 MED (getReservation amplification) + F3-005 MED (jitter). Single commit batch koji adoptira Stripe SDK patterns za RestClient configs.
+3. **NauSys HTTPS + creds scope batch (prod-blocker)** — F3-003 HIGH + F3-009 HIGH (F1-037 escalation s creds-only na customer PII). **Env var fix + partner verify s NauSys-om.** ~30 min ops work.
+4. **DevController hardening (HIGH)** — F3-035 + F1-041 closeout. Single commit: move path → /admin/dev, add @PreAuthorize, convert state-changing GET → POST. ~30 min code work.
+5. **PII storage scrub batch (data minimization)** — F3-010 (NauSys responseBody u DB) + F3-004 (MMK interceptor log body) + F3-030 (email header injection) + F2-038 (ReservationDocument audit gap). Cross-cutting Faza 5 work.
+6. **Resilience / circuit-breaker batch (Faza 5)** — F3-011 (per-agency loop bez budget) + F3-017 (MMK translation amplification) + F3-037 (cross-VM mutex) + F3-031 (SMTP retry / outbox). Adopt Resilience4j + email_outbox.
+7. **Architectural Stripe event handling (eskalacija)** — F3-027 (refund / dispute / expired event handlers). Roadmap decision.
+8. **Trivial cleanup batch (Phase 3 trivials, ~10 lines total)** — F3-006 (NauSysAuthProvider !!), F3-013 (ProdTestSamples in main), F3-019 (deprecated MMK old sync), F3-038 (chained !!), F3-028 (RoundingMode UP, business choice). Single low-risk commit.
+
+### Recurring concerns (cross-phase referencing)
+
+| Phase 1 / 2 finding | Phase 3 deepening |
+|---|---|
+| F1-019 CRIT (Stripe webhook idempotency) | F3-022 CRIT (concrete fix points) |
+| F1-031 LOW (Stripe signature error) | Confirmed adequately handled (F3-029 INFO) |
+| F1-037 HIGH (NauSys HTTP) | F3-003 HIGH (creds in body) + F3-009 HIGH (PII in body) |
+| F1-041 HIGH (DevController profile-only auth) | F3-035 HIGH (triple defense missing detail) |
+| F1-042/F1-043/F1-044 (admin sync POST/rolling/dead code) | F3-039 INFO (confirmed applied) |
+| F1-064 HIGH (synchronous external sync from public path) | F3-001 (no timeouts compounds), F3-037 (cross-VM mutex absent) |
+| F2-001/F2-004 (audit trail dead) | F3-010 MED (NauSys responseBody PII), F3-007 LOW (partial audit pattern) |
+| F2-002 LOW (Envers retention) | F3-036 MED (ServiceCallCache also grows unbounded) |
+| F2-026/F2-036 MED (mutable equals u Set) | F3-022 CRIT pair (payment phase entity contract) |
+| F2-038 MED (ReservationDocument audit gap) | F3-031 MED (SMTP failure audit gap) — same family |
+| F2-043 CRIT (V9_xx test data on prod) | _independent_ — Flyway gating, not integration |
+
+### Phase gate (`./gradlew compileKotlin detekt test --continue`)
+
+- **compileKotlin ✓** — Phase 3 commits su pure docs (phase-3-integrations.md + REGISTER.md); no production code touched. Build clean.
+- **detekt — 291 weighted issues** — exact baseline match (Phase 1 + Phase 2 close). Zero regression.
+- **test — 29/103 failed** — exact baseline match. Svih 29 failures u `ReservationPaymentPhasesServiceTest` (F1-074 family). Zero new failures.
+
+Phase gate: **PASS at baseline (zero regression)**. Phase 3 docs su safe-to-merge. Business gate je decision queue niže.
+
+### Pending user actions (cumulative, post-Phase 3)
+
+**Pre-prod blockers (must address before deploy):**
+1. **F2-043 CRIT** — confirm `FLYWAY_TARGET_VERSION` env var on VM2/VM3 (highest priority).
+2. **F3-022 CRIT + F3-023 HIGH + F3-024 HIGH** — Stripe webhook hardening (event-level idempotency + Session.expire + TX scope). Pair fix.
+3. **F3-001 HIGH + F3-002 HIGH** — NauSys/MMK timeouts + retry scope. Adopt StripeConfig pattern.
+4. **F3-003 HIGH + F3-009 HIGH** — NauSys partner-side HTTPS verify + env var. Ops work.
+5. **F3-035 HIGH + F1-041 HIGH** — DevController hardening (path + auth + method). 30-min fix.
+
+**Architectural decisions (unblock multiple findings):**
+6. **Audit trail batch:** F2-001 + F2-004 + F2-017 + F2-028 + F2-038 + F2-041 (Phase 2) — AbstractEntity hierarchy expansion + SecurityContext audit injection. Unblocks 6 audit-trail findings.
+7. **F3-010 + F3-031:** PII storage scrubbing + email outbox — data minimization + reliability decisions.
+8. **F3-037 + F3-014 + Faza 4 jobs locking decision:** ShedLock vs Postgres advisory lock. Cross-VM concurrency control.
+
+**Documentation / operational:**
+9. **F2-044 HIGH** — V1_24 Mario commentary (5-min documentation pass).
+10. **F2-045 MED** — preflight `inquiry.phone IS NULL` check before prod deploy.
+
+### Phase 4 outlook (Scheduled jobs + heavy native)
+
+Phase 3 trends koji Phase 4 produbljuje:
+- **F3-001/F3-005/F3-008** → Phase 4 evidentno pojačava: scheduled jobs orchestriraju mnoge sequential partner calls. Locking decision (F3-037 + F3-014) je Phase 4-prime.
+- **F3-035 + F1-041** → Phase 4 takne ImageDownloadJob (NFS path), OpenCV (native memory), PDF generator (XXE/OOM) — sve potencijalne dev-only-debug-endpoints kandidati.
+- **F3-031 (SMTP retry)** → Phase 4 može uvesti dedicated outbox pickup job.
+
+Plus per spec: locking VM2 vs VM3 (kako se zna da samo VM3 pokreće? ShedLock / Quartz cluster?), idempotencija job re-runa, overlapping run protection, OpenCV native memory cleanup, PDF gen OOM/XXE.
+
+Phase 4 review file: `docs/superpowers/findings/phase-4-jobs-native.md`.
 
 ---
