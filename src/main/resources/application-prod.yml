@@ -16,11 +16,11 @@ application:
         response-body: false
     nausys:
       base-url: ${NAUSYS_URL:http://ws.nausys.com}
-      username: ${NAUSYS_USERNAME}
-      password: ${NAUSYS_PASSWORD}
+      username: ${NAUSYS_USERNAME:?NAUSYS_USERNAME required}
+      password: ${NAUSYS_PASSWORD:?NAUSYS_PASSWORD required}
     mmk:
       base-url: ${MMK_URL:https://www.booking-manager.com/api/v2}
-      bearer: ${MMK_TOKEN}
+      bearer: ${MMK_TOKEN:?MMK_TOKEN required}
   email:
     # Customer-visible From. Falls through to the env var first so we can
     # rotate without a redeploy; default keeps the boat4you mailbox.
@@ -30,7 +30,7 @@ application:
       allow-uninvited-login: false
   security:
     jwt:
-      secret-key: ${JWT_SECRET_KEY}
+      secret-key: ${JWT_SECRET_KEY:?JWT_SECRET_KEY required (32+ bytes recommended for HS256)}
 # Swagger / OpenAPI must be disabled by default in prod. Root yml defaults
 # to ON (springdoc.api-docs.enabled / swagger-ui.enabled fall back to true
 # unless SWAGGER_ENDPOINT_ENABLED=false). If the env var is forgotten on a
@@ -46,10 +46,10 @@ spring:
     resources:
       add-mappings: ${SWAGGER_ENDPOINT_ENABLED:false}
   mail:
-    host: ${MAIL_SERVER_HOST}
-    port: ${MAIL_SERVER_PORT}
-    username: ${MAIL_SERVER_USERNAME}
-    password: ${MAIL_SERVER_PASSWORD}
+    host: ${MAIL_SERVER_HOST:?MAIL_SERVER_HOST required}
+    port: ${MAIL_SERVER_PORT:?MAIL_SERVER_PORT required}
+    username: ${MAIL_SERVER_USERNAME:?MAIL_SERVER_USERNAME required}
+    password: ${MAIL_SERVER_PASSWORD:?MAIL_SERVER_PASSWORD required}
     properties:
       mail:
         test-connection: ${application.email.enabled}

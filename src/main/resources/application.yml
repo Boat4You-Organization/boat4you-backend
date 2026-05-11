@@ -70,10 +70,10 @@ spring:
     # boat4you SMTP (`mail.boat4you.com:465`, SMTPS) can flip via env vars
     # without touching the prod profile. Defaults still target Gmail SMTP
     # for any setup that hasn't been migrated yet.
-    host: ${MAIL_HOST:smtp.gmail.com}
+    host: ${MAIL_HOST:?MAIL_HOST required}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:your@gmail.com}
-    password: ${MAIL_PASSWORD:your-app-password}
+    username: ${MAIL_USERNAME:?MAIL_USERNAME required}
+    password: ${MAIL_PASSWORD:?MAIL_PASSWORD required}
     properties:
       mail:
         smtp:
@@ -98,6 +98,15 @@ spring:
     type: jcache
     jcache:
       provider: org.ehcache.jsr107.EhcacheCachingProvider
+  # Pool size for @Scheduled tasks. Default Spring Boot value is 1 thread,
+  # which makes long-running sync jobs (NauSys/MMK chains) block every other
+  # cron until they return. 8 gives headroom for ~20 @Scheduled methods on
+  # VM3 (data-sync profile) without queueing.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULING_POOL_SIZE:8}
+      thread-name-prefix: b4y-sched-
 springdoc:
   api-docs:
     enabled: ${SWAGGER_ENDPOINT_ENABLED:true}
@@ -123,7 +132,7 @@ application:
     allowed-origins: ${APPLICATION_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   security:
     jwt:
-      secret-key: ${JWT_SECRET_KEY}
+      secret-key: ${JWT_SECRET_KEY:?JWT_SECRET_KEY required (32+ bytes recommended for HS256)}
       expiration: 86400000 # a day
       refresh-token:
         expiration: 259200000 # 3 days (reduced from 7 on 23.4.2026 per security audit)
