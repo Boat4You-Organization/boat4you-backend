@@ -376,3 +376,312 @@ Plus: positives ne adressiraju F4-001 (single-thread) — još uvijek prod-block
 **Batch 1 završen. Batch 2 next:** Heavy native — `ImageUtils` (OpenCV `Mat.release()` patterns), `CharterAgreementService` (openhtmltopdf XHTML parser + PDFBox memory), `YachtImageService`. Plus F1-021 family path traversal check za ImageDownload NFS putanju.
 
 ---
+
+## Batch 2 — Heavy native (OpenCV + openhtmltopdf/PDFBox) (2026-05-11)
+
+### [F4-009] HIGH native memory leak — `ImageUtils` ne release-a intermediate `MatOfByte`/`MatOfInt` u success ni exception path-evima
+**Lokacija:** `common/services/ImageUtils.kt:21-152`
+**Detekcija:** statička
+**Opis:** OpenCV `Mat` (i njegovi varijanti `MatOfByte`, `MatOfInt`) drže **native (off-heap) memoriju** alocira-nu kroz JNI. JVM GC ne čisti native alokacije; **Mat mora explicit `.release()` ili native memory leak-a.**
+
+Trenutni patterni:
+
+**`convertToWebP` (line 21-70):**
+```kotlin
+val matOfByte = MatOfByte(*inputBytes)
+val image = Imgcodecs.imdecode(matOfByte, ...)
+...
+val params = MatOfInt()
+params.fromArray(...)
+...
+val outputMat = MatOfByte()
+val success = Imgcodecs.imencode(".webp", image, outputMat, params)
+
+// Clean up
+image.release()          // ✓
+matOfByte.release()      // ✓
+// outputMat NE release-an
+// params NE release-an
+```
+
+**`resizeImage(imagePath: String, ...)` (line 72-125):**
+```kotlin
+val originalMat = Imgcodecs.imread(imagePath, ...)
+val resizedMat = Mat()
+...
+val matOfByte = MatOfByte()
+val encodeParams = MatOfInt(Imgcodecs.IMWRITE_WEBP_QUALITY, quality)
+val success = Imgcodecs.imencode(".webp", resizedMat, matOfByte, encodeParams)
+
+// Clean up memory
+originalMat.release()    // ✓
+resizedMat.release()     // ✓
+// matOfByte NE release-an
+// encodeParams NE release-an
+```
+
+**`resizeImage(inputBytes: ByteArray, ...)` (line 127-152):** isti pattern, `matOfByte`, `outputMatOfByte`, `encodeParams` ne release-ano.
+
+**Plus exception path:**
+```kotlin
+fun convertToWebP(...) {
+    return try {
+        val matOfByte = MatOfByte(*inputBytes)
+        val image = Imgcodecs.imdecode(...)
+        ...
+        image.release()         // if throws above, this never runs
+        matOfByte.release()
+        ...
+    } catch (e: Exception) {
+        log.error("...", e)
+        null
+    }
+}
+```
+
+Ako `Imgcodecs.imdecode` throws (OOM, malformed image), `image` Mat nikad ne dobiva `release()` poziv. Plus `matOfByte` from line 31 (`MatOfByte(*inputBytes)` — allocates native buffer pri konstrukciji).
+
+**Concrete leak estimate:**
+- Per image: ~10MB native memory (high-res partner image after decode) × 3-4 unreleased Mats per call = ~30-40MB per call.
+- Image sync runs every 2h via `ImageDownloadJob` (F4-004 conditional on profile).
+- Image resize fires per image preview (yacht detail page → `YachtImageService.resizeImage`) — hot path.
+- VM3 over 24h: 50+ resize calls × 30MB leak = **~1.5GB native memory growth/day.**
+- Eventually: OOM at OS level, JVM crash with "Cannot allocate memory" (not a Java OutOfMemoryError — JNI lost), pod restart.
+
+Combined s F1-070 (image resize bez width/height validacije = OOM/DoS): napadač s X requesta na image-resize endpoint → ubija VM2 (memory-host) i potencijalno VM3 (when sync runs).
+**Posljedica:** real production stability bug. Wall-clock to crash depends on traffic.
+**Predloženi fix:** comprehensive cleanup wrappers:
+```kotlin
+inline fun <R> Mat.use(block: (Mat) -> R): R = try {
+    block(this)
+} finally {
+    this.release()
+}
+
+fun convertToWebP(inputStream: InputStream, ...): ByteArray? {
+    return try {
+        val inputBytes = inputStream.readBytes()
+        MatOfByte(*inputBytes).use { matOfByte ->
+            Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR).use { image ->
+                if (image.empty()) return@use null
+                MatOfInt(if (lossless) intArrayOf(IMWRITE_WEBP_QUALITY, 100)
+                         else intArrayOf(IMWRITE_WEBP_QUALITY, quality!!)).use { params ->
+                    MatOfByte().use { outputMat ->
+                        if (Imgcodecs.imencode(".webp", image, outputMat, params)) {
+                            outputMat.toArray()
+                        } else null
+                    }
+                }
+            }
+        }
+    } catch (e: Exception) {
+        log.error("Error converting image to WebP", e)
+        null
+    }
+}
+```
+
+Kotlin's `Mat.use` helper extension wraps native release in try-finally. Apply to all 3 methods.
+
+Plus: dodati JVM monitoring `-XX:NativeMemoryTracking=summary` u prod-u — alarm na native memory growth.
+**Riziko-procjena fixa:** dira hot image path. Staging test obavezan + JVM native memory monitoring uspostaviti prije fix-a (da imamo before/after benchmark).
+**Status:** OPEN — **HIGH, real production stability bug**
+
+---
+
+### [F4-010] MED path traversal — `YachtImageService.File(uploadDir + "/" + yachtImage.url)` koncatenacija bez canonicalize / sanitize; F1-021 family **concrete exploit point**
+**Lokacija:** `domains/catalouge/services/YachtImageService.kt:30`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+val file = File(uploadDir + "/" + yachtImage.url)
+if (!file.exists()) {
+    throw ImageNotFoundException()
+}
+```
+
+`yachtImage.url` dolazi iz DB-a, postavljen iz:
+- `YachtImageIntegrationService.downloadImages()` — partner-supplied filenames
+- Admin upload — user-supplied filenames (verify input sanitization u upload-controllers; out of Phase 4 scope)
+
+Ako bilo koji caller stavi `url = "../../../etc/passwd"` u `yacht_image.url` kolonu:
+1. `File("/app/uploads/" + "../../../etc/passwd")` resolve-a na `/app/uploads/../../../etc/passwd` = `/etc/passwd`.
+2. `file.exists()` returns true.
+3. `ImageUtils.resizeImage(file.absolutePath, ...)` calls OpenCV `imread(file.absolutePath)`. OpenCV expects an image; passwd parsed kao image → empty mat → throws `IllegalArgumentException("Could not load image from path...")` (per ImageUtils.kt:86). **Throws, ne reads.**
+
+Defense via OpenCV's "not an image" check je **accidentalna**. Ako `yachtImage.url` resolve-a na neki **mali parseable image fajl** (npr. partner-controlled SVG/PNG dropped na shared NFS), bytes se vraćaju.
+
+Plus: F1-034 LOW from Phase 1 — "FileSystemService kanonikalizacija defense-in-depth (callers verified safe)". This finding establishes that YachtImageService je **caller koji NIJE bio verified** u Phase 1 scope.
+**Posljedica:** path traversal vulnerable.  Pre-prod nije akutni ako yacht_image.url upstream input je strict (partner downloads obično sanitize). Verify upload-controllers u Phase 5.
+**Predloženi fix:**
+```kotlin
+val file = File(uploadDir, yachtImage.url!!)  // File(dir, child) handles separator + sanitizes
+// PLUS canonicalize check:
+val canonicalUpload = File(uploadDir).canonicalFile
+val canonicalFile = file.canonicalFile
+require(canonicalFile.startsWith(canonicalUpload)) {
+    "Image path escapes upload directory"
+}
+```
+
+Plus: introduce shared helper `FileSystemService.safeResolve(baseDir, relativePath)` — used by YachtImageService, ReservationDocumentService (verify), CharterAgreementService (BASE_URI), itd.
+**Riziko-procjena fixa:** trivijalan defensive code. MED u smislu severity, niski u smislu refactor effort.
+**Status:** OPEN — Faza 5 (path traversal sweep, F1-021 family)
+
+---
+
+### [F4-011] MED security — `CharterAgreementService.PdfRendererBuilder().useFastMode()` može onemogućiti XXE protection; ne config XML parser explicit-no
+**Lokacija:** `domains/catalouge/services/CharterAgreementService.kt:60-67`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+PdfRendererBuilder()
+    .useFastMode()                          // <-- po openhtmltopdf docs, disables some XML strict mode
+    .withHtmlContent(html, BASE_URI)
+    .toStream(out)
+    .run()
+```
+
+openhtmltopdf `PdfRendererBuilder.useFastMode()` per docs: "*disables verification of certain XML features for performance*". Tačno koje features nije documented — possibly includes:
+- DOCTYPE validation
+- External entity resolution
+- XInclude
+
+Trenutno `html` je generated od Thymeleaf template-a — operator-controlled. **Ako template ima dynamic content koji uključuje user data + format-specific characters**, malformed Thymeleaf output može stvoriti exploitable XHTML:
+```html
+<!DOCTYPE foo [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<html>...&xxe;...</html>
+```
+
+Realistic vector: ako Reservation entity ima neki field koji se prosljeđuje raw u template bez escape-a (`th:utext` instead of `th:text`), attacker who controls that field može injektirati. Verify Thymeleaf template (out of Phase 4 scope, Phase 5 cross-cutting).
+
+Plus: F1-068 (anonymous inquiry email-bombing) — inquiry → reservation flow → admin može prebaciti u confirmed → triggera charter agreement render. Sanitization gaps u tom chain-u kreiraju path.
+
+**`useFastMode()` motivation:** speed. Reservation has tens of fields, simple template — useFastMode probably saves 10-50ms per PDF.
+**Posljedica:** XXE if template + data combine wrong. Pre-prod nije akutni dok template kontroliran. Verify.
+**Predloženi fix:** dva sloja:
+- (a) **Remove `useFastMode()`** — accept performance hit; strict XML parsing. Default openhtmltopdf settings have XXE protection.
+- (b) **Configure XML parser explicitly:**
+  ```kotlin
+  PdfRendererBuilder()
+      .useFastMode()                                   // keep speed
+      .useXmlDocumentXmlReader { /* custom SAX reader */ }
+      .withHtmlContent(html, BASE_URI)
+      ...
+  ```
+  Where custom SAX reader sets `XMLConstants.FEATURE_SECURE_PROCESSING = true`, `disallow-doctype-decl = true`, etc.
+
+(a) je trivial — verify performance impact u staging.
+
+Plus: audit `templates/contract/charterAgreement.html` (templates u Thymeleaf scope) for `th:utext` usage. Phase 5 cross-cutting.
+**Riziko-procjena fixa:** trivijalan code change.
+**Status:** OPEN — Faza 5 (template + XML hardening sweep)
+
+---
+
+### [F4-012] LOW fragility — `CharterAgreementService.renderToPdf` chained `!!` na `flow.user!!`, `flow.yacht!!`, `reservation.dateFrom!!`; F2-041 fictitious reservation edge case
+**Lokacija:** `domains/catalouge/services/CharterAgreementService.kt:71-73, 110-117`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+val flow = reservation.reservationFlow!!
+val yacht = flow.yacht!!
+val user = flow.user!!
+...
+val checkInDate = reservation.dateFrom!!.format(DATE_FORMATTER)
+val checkInTime = reservation.dateFrom!!.format(TIME_FORMATTER)
+val checkOutDate = reservation.dateTo!!.format(DATE_FORMATTER)
+val checkOutTime = reservation.dateTo!!.format(TIME_FORMATTER)
+```
+
+F2-041 zabilježio: "admin-only fictitious replacement reservations" (`ReservationFlow.offer` nullable + comment line 47-52 ReservationFlow.kt). Fictitious reservations svojstvo: **user može biti null** ako admin-only crea-ted bez Customer (replacement-only flow).
+
+Trenutni `flow.user!!` baca NPE pri PDF render za fictitious reservation. CharterAgreement nije sent za fictitious (per Mario rule, fictitious je broker-internal), ali ako se admin slučajno trigger-a render preko admin endpoint-a → 500 error.
+**Posljedica:** confirmation email send fail za fictitious. Edge case ali realan.
+**Predloženi fix:** ne render charter agreement ako user/yacht/dates su null:
+```kotlin
+fun renderToPdf(reservation: Reservation): ByteArray {
+    val flow = reservation.reservationFlow
+        ?: error("Cannot render agreement: reservation has no flow")
+    val user = flow.user
+        ?: error("Cannot render agreement: reservation is fictitious (no user)")
+    val yacht = flow.yacht
+        ?: error("Cannot render agreement: reservation has no yacht")
+    val dateFrom = reservation.dateFrom
+        ?: error("Cannot render agreement: reservation has no dateFrom")
+    ...
+}
+```
+
+Caller `ReservationEmailService.sendConfirmationForReserved` should catch + skip PDF attachment ako fictitious flow.
+
+Plus: F3-015 family — error messages contain "fictitious" — internal terminology leak. Use generic messages.
+**Riziko-procjena fixa:** trivijalan defensive code.
+**Status:** WAITING-DECISION (verify if fictitious reservations ever reach this code path)
+
+---
+
+### [F4-013] LOW operational — `ImageUtils.resizeImage(imagePath: String, ...)` baca `IllegalArgumentException` s file path u poruci; potential info leak
+**Lokacija:** `common/services/ImageUtils.kt:86`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+val originalMat = Imgcodecs.imread(imagePath, Imgcodecs.IMREAD_COLOR)
+
+if (originalMat.empty()) {
+    throw IllegalArgumentException("Could not load image from path: $imagePath")
+}
+```
+
+Exception poruka uključuje full file path (which is `uploadDir + "/" + yachtImage.url`). Combined s F1-055 (global error handler curi internu put-strukturu) — error response može vratiti path string. Discloses internal directory structure.
+
+Combined s F4-010 (path traversal): if attacker triggers path traversal then file isn't an image, error message echoes the attempted path. Attacker can probe file system via error messages.
+**Posljedica:** info leak. F1-055/F1-066 family. Combined s F4-010 path-traversal probing.
+**Predloženi fix:** generic error message + log full path internally:
+```kotlin
+if (originalMat.empty()) {
+    log.error("Could not load image from path: $imagePath")
+    throw IllegalArgumentException("Could not load image")  // no path in customer-facing
+}
+```
+**Status:** OPEN — Faza 5 (cross-cutting error sanitization, F1-055 family)
+
+---
+
+### [F4-014] INFO positive — `ImageUtils` releases primary Mats; `CharterAgreementService` uses runCatching for currency, lazy signature cache; `useFastMode` is explicit-decision
+**Lokacija:**
+- `ImageUtils.kt:58-59, 117-118, 148-149` — primary Mats released
+- `CharterAgreementService.kt:120-123` — `runCatching` for `Currency.getInstance` (returns currency code if invalid)
+- `CharterAgreementService.kt:45-48` — `signatureDataUrl by lazy` (loaded once, reused)
+- `CharterAgreementService.kt:62` — `useFastMode()` is explicit-call (developer aware of speed/safety trade-off)
+
+**Detekcija:** statička
+**Opis:** Pozitivni patterns:
+- **`runCatching` for currency lookup** — `Currency.getInstance("XYZ")` throws on invalid; fall back to currency code. Defensive against bad data.
+- **`by lazy` for signature** — disk I/O once, cached. Standard pattern.
+- **Primary Mat release** — F4-009 finds intermediate Mat leak, ali **primary** (image, originalMat, resizedMat) ARE released. Author was partially aware of native memory management; F4-009 just extends to intermediates.
+- **Yacht / user / charter type fallback chains** (line 80-86, 95-97) — defensive `takeIf { it.isNotBlank() } ?: EM_DASH` pattern. PDF doesn't crash on missing optional data, just shows `—`.
+
+Plus: openhtmltopdf + PDFBox combo is industry-standard za PDF rendering. Better choice nego iText (license-heavy).
+**Status:** INFO
+
+---
+
+### Sažetak Batch 2
+
+- **HIGH (1):** F4-009 (ImageUtils native memory leak — production stability)
+- **MED (2):** F4-010 (YachtImageService path traversal — F1-021 concrete exploit point), F4-011 (CharterAgreement XXE possibility via useFastMode + template gaps)
+- **LOW (2):** F4-012 (`!!` chained on fictitious reservation), F4-013 (path leak u error message)
+- **INFO (1):** F4-014 (positives: primary Mat release, runCatching currency, lazy signature, fallback chains)
+
+**Najkritičniji nalaz batch-a: F4-009.** Native memory leaks su debugging-hell — nema GC, no JVM heap dump shows them, akumuliraju silently dok ne kill-aju proces. Standard pattern (`use{}` Kotlin extension) trivijalan za primijeniti, but staging test before prod obavezan jer dira hot image path.
+
+**F4-010 + F4-013** zajedno = path traversal s info leak za probing. Combined s F1-021 family rješenje u Phase 5.
+
+**Phase 4 read-pass završen.** Total Phase 4: F4-001..F4-014, 2 batch-a.
+
+Phase 4 next step: **closure + phase gate** (analogno Phase 2 + Phase 3 flow).
+
+---
