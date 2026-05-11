@@ -346,3 +346,167 @@ Plus: usage scattered — should probably be replaced by specific exception type
 **Batch 2 next:** logging audit (grep `log.*` callsites for PII) + yml profile audit + remaining common services (CommonTranslators, ImageService, LocaleHelpers, PriceCalculations, UnitCalculations, UrlShortener, Utils) + logback-spring.xml.
 
 ---
+
+## Batch 2 — Logging + yml profiles + common services + logback (2026-05-11)
+
+### [F5-012] CRIT crypto — `Utils.kt:getRandomPassword`/`getRandomString`/`getRandomNumericalString` use non-cryptographic `Random`; used for user password + email verification codes
+**Lokacija:** `common/services/Utils.kt:45-64`
+**Detekcija:** statička + grep callers
+**Opis:**
+```kotlin
+fun getRandomString(length: Int): String {
+    val charset = "ABCDEFGHIJKLMNOPQRSTUVWXTZabcdefghiklmnopqrstuvwxyz0123456789"  // <-- typos: missing Y + j
+    return (1..length).map { charset.random() }.joinToString("")  // <-- NON-CRYPTO PRNG
+}
+fun getRandomPassword() = getRandomString(DEFAULT_PASSWORD_LENGTH)  // 6 chars
+fun getRandomNumericalString(length: Int): String { /* same pattern */ }
+```
+
+Kotlin `String.random()` delegates to `kotlin.random.Random.Default` = `ThreadLocalRandom` (non-crypto). Output predictable given seed visibility; statistical attack with ~few hundred samples recovers PRNG state.
+
+**Confirmed security-sensitive callers:**
+1. **`UserTranslators.kt:43`** — admin invite flow generates password if not given. **Initial password predictable** for invited users.
+2. **`UserRegistrationService.kt:51, 75`** — `emailVerificationCode = getRandomNumericalString(6)`. 6-digit numeric verification code (10^6 brute-force-able in seconds; non-crypto PRNG narrows to ~100s after observing one).
+
+**Attack chain:**
+1. Attacker submits fake inquiry (F1-068) + registers fake account → observes own verification code
+2. Statistical attack on PRNG state → predicts subsequent codes (within ~100 candidates)
+3. Registers as victim email → predicts victim's verification code → completes registration → owns account
+
+Combined s F1-068 + F1-067 (PII leak) + F1-069 (no rate limit on inquiry POST) = realistic exploit chain.
+
+Plus: charset has **typos**: missing `Y` uppercase + missing `j` lowercase → 60 chars instead of intended 62. Entropy reduction marginal but demonstrates care wasn't taken u security-relevant code.
+
+Plus: F1-004 HIGH (weak password requirements) — generated passwords are 6 chars (DEFAULT_PASSWORD_LENGTH = 6); admin-given password no UX concern for length but is 6 anyway.
+
+**Anomaly:** `UrlShortener.kt` u istom paketu **correctly** uses `SecureRandom` + clean 62-char charset (F5-020 INFO). Utils.kt je legacy code not migrated to same pattern.
+**Posljedica:** **CRIT — predictable user account compromise vector** via verification code prediction + invited-user password recovery.
+**Predloženi fix:**
+```kotlin
+private val secureRandom = SecureRandom()
+private const val CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+private const val NUMERIC_CHARSET = "0123456789"
+private const val DEFAULT_PASSWORD_LENGTH = 16  // raised from 6
+
+fun getRandomString(length: Int): String =
+    (1..length).map { CHARSET[secureRandom.nextInt(CHARSET.length)] }.joinToString("")
+
+fun getRandomNumericalString(length: Int): String =
+    (1..length).map { NUMERIC_CHARSET[secureRandom.nextInt(NUMERIC_CHARSET.length)] }.joinToString("")
+
+fun getRandomPassword() = getRandomString(DEFAULT_PASSWORD_LENGTH)
+```
+
+Plus: razmotriti increased length za email verification code (10^6 = 1M codes brute-forceable w/o rate limit). 8-10 digit code better. Plus per-user rate-limit (F1-068/F1-069 family).
+**Riziko-procjena fixa:** dira user registration + invite flow. Staging test obavezan.
+**Status:** OPEN — **CRIT, prod-blocker** prije bilo kakve prod registration / invite flow
+
+---
+
+### [F5-013] HIGH config-safety — `JWT_SECRET_KEY` env var bez `:?required` syntax; fails silent → forge-able tokens
+**Lokacija:** `application.yml:126`, `application-prod.yml:33` — `secret-key: ${JWT_SECRET_KEY}`
+**Detekcija:** statička
+**Opis:** Spring `${VAR}` behavior when env unset: substitutes empty/literal. JWT library receives empty key for HMAC-SHA256 signing. Combined s F1-005 (JWT bez iss/aud validation) — already-fragile JWT layer s fail-open secret loading.
+
+Compare s already-fixed F1-036 pattern (DB creds, SSL keystore, Stripe keys — all `:?required`). JWT excluded — anomaly.
+**Predloženi fix:**
+```yaml
+secret-key: ${JWT_SECRET_KEY:?JWT_SECRET_KEY required (min 32 bytes, base64-encoded)}
+```
+Plus: validate key length >= 32 bytes u JwtService startup.
+**Status:** OPEN — **HIGH security**, F1-036 family extension
+
+---
+
+### [F5-014] HIGH config-safety — Mail credentials use placeholder defaults (`your@gmail.com`, `your-app-password`); F1-036 family violation
+**Lokacija:** `application.yml:75-76` (username/password placeholders), `application-prod.yml:49-52` (MAIL_SERVER_* no `:?required`)
+**Detekcija:** statička
+**Opis:** Defaults `your@gmail.com` + `your-app-password` ship as runtime fallback ako env vars missing. Plus prod overrides use `${MAIL_SERVER_*}` without `:?required` → empty string at runtime. SMTP auth fails silently (F3-031 amplifies).
+
+Plus: env var naming inconsistency — `MAIL_HOST` (root yml) vs `MAIL_SERVER_HOST` (prod yml). Document or unify.
+**Predloženi fix:** add `:?required` to all mail env vars across yml files. Unify naming.
+**Status:** OPEN — HIGH config-safety, F1-036 family
+
+---
+
+### [F5-015] MED operational — Logback prod profile sets `<logger name="hr.workspace.boat4you" level="debug">`; DEBUG-level prod logging amplifies PII + disk fill
+**Lokacija:** `logback-spring.xml:40-43`
+**Detekcija:** statička
+**Opis:** Our entire app package logs at DEBUG u prod. Combined s F5-006 (email logged @ ERROR) i F5-007 (stack trace noise) + 4 `${user.email}` logs u UserMutationService = high-volume PII u prod log fajlove. Rolling cap 2GB / 60 days (logback config) reached u dana under F1-068 attack load.
+
+Industry standard: prod = INFO; DEBUG only za targeted dev / staging.
+**Predloženi fix:** change to `level="info"`. Granular DEBUG on specific sub-packages if needed.
+**Status:** OPEN — MED, pre-prod operational hygiene
+
+---
+
+### [F5-016] MED config-safety — `NAUSYS_USERNAME`/`NAUSYS_PASSWORD`/`MMK_TOKEN`/`MAIL_SERVER_*` u prod yml bez `:?required`
+**Lokacija:** `application-prod.yml:19-23, 33, 49-52`
+**Detekcija:** statička
+**Opis:** Partner credentials + mail creds (covered F5-014) + JWT (F5-013 HIGH) use `${ENV}` without enforcement. NauSys/MMK MED severity (silent 401 → no sync, no security risk per se). All in F1-036 family.
+**Predloženi fix:** add `:?required` to all critical env-driven prod creds.
+**Status:** OPEN — pair s F5-013/F5-014 single yml-hardening commit (~10 min)
+
+---
+
+### [F5-017] MED operational — Logback `LOG_DIR ./logs` relative path; depends on JVM working directory
+**Lokacija:** `logback-spring.xml:4`
+**Detekcija:** statička
+**Opis:** Relative path `./logs` resolved against JVM cwd. If systemd unit sets `WorkingDirectory` differently than deploy expects, logs go wrong place; permission denied → silent log loss. Standard prod = absolute path s env override.
+**Predloženi fix:** `<property name="LOG_DIR" value="${LOG_DIR:-/var/log/boat4you}"/>`.
+**Status:** OPEN — pre-prod operational checklist
+
+---
+
+### [F5-018] LOW typo — `Utils.kt:46` charset missing `Y` (uppercase) + `j` (lowercase); 60 chars instead of 62
+**Lokacija:** `common/services/Utils.kt:46`
+**Detekcija:** statička
+**Opis:** `"ABCDEFGHIJKLMNOPQRSTUVWXTZabcdefghiklmnopqrstuvwxyz0123456789"` — uppercase ends `XTZ` (missing Y, double T); lowercase missing `j`. Combined s F5-012 (non-crypto) — fix together.
+**Status:** WAITING-DECISION (covered by F5-012 fix)
+
+---
+
+### [F5-019] LOW — `Utils.kt:DEFAULT_PASSWORD_LENGTH = 6`; F1-004 family
+**Lokacija:** `common/services/Utils.kt:16`
+**Detekcija:** statička
+**Opis:** Generated admin-invited passwords are 6 chars. Should be 16+ (no UX concern — user changes on first login). Combined s F5-012/F5-018 fix.
+**Status:** WAITING-DECISION (covered by F5-012 fix)
+
+---
+
+### [F5-020] INFO positive — `UrlShortener.kt` uses `SecureRandom` + clean charset; F5-012 fix pattern model
+**Lokacija:** `common/services/UrlShortener.kt:1-20`
+**Detekcija:** statička
+**Opis:** Correct pattern u istom paketu — Utils.kt should copy. Demonstrates author was aware of crypto-grade pattern but didn't apply to Utils.
+**Status:** INFO
+
+---
+
+### [F5-021] INFO positive — Most env vars use `:?required` correctly; LocaleHelpers thoughtful fallback chain
+**Lokacija:** application.yml (DB creds, SSL keystore, Server host, Stripe keys), `LocaleHelpers.kt:44-54`
+**Detekcija:** statička
+**Opis:** Already-applied F1-036 pattern across most critical env vars. F5-013/014/016 are gaps in otherwise-applied pattern. Plus LocaleHelpers 3-tier fallback (user.language → request locale → ENGLISH) is defensive.
+**Status:** INFO
+
+---
+
+### Sažetak Batch 2
+
+- **CRIT (1):** F5-012 (non-crypto Random for password/verification — predictable security tokens)
+- **HIGH (2):** F5-013 (JWT_SECRET_KEY no `:?required`), F5-014 (mail creds placeholder defaults)
+- **MED (3):** F5-015 (prod DEBUG logging → PII), F5-016 (NauSys/MMK env vars no `:?required`), F5-017 (relative LOG_DIR)
+- **LOW (2):** F5-018 (charset typo), F5-019 (DEFAULT_PASSWORD_LENGTH 6)
+- **INFO (2):** F5-020 (UrlShortener pattern model), F5-021 (most env vars correctly `:?required`)
+
+**Najkritičniji: F5-012** — non-crypto random for security tokens. Verification codes + admin invite passwords predictable. Real attack vector chained s F1-068.
+
+**Top consolidation:**
+- **F5-012 + F5-018 + F5-019** = single Utils.kt fix commit (~15 min, pattern from UrlShortener)
+- **F5-013 + F5-014 + F5-016** = single yml-hardening commit (~10 min, F1-036 family)
+- **F5-015 + F5-017** = single logback-config commit (~5 min)
+
+**Phase 5 read-pass završen.** Total Phase 5: F5-001..F5-021, 2 batch-a (11 + 10 findings).
+
+Phase 5 next step: **closure + phase gate** (analogno Phase 2/3/4 flow).
+
+---
