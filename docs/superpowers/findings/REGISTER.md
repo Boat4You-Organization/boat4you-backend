@@ -211,7 +211,7 @@ Legend statusa:
 |---|---|---|---|
 | F3-022 | CRIT | `StripePaymentService.handleWebhookEvent` non-idempotent — F1-019 konkretizacija (dupli partner confirm + dupli email + state corruption pri Stripe retry) | OPEN — **prod-blocker** |
 
-### HIGH (3)
+### HIGH (6)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -219,8 +219,10 @@ Legend statusa:
 | F3-002 | HIGH | `@Retryable(Exception::class)` na state-changing calls (createOption/confirmReservation/stornoOption/cancelReservation) duplicira partner side-effects (F1-019 sibling) | OPEN — **prod-blocker pair s F1-019** |
 | F3-003 | HIGH | NauSys credentials u request body putuju preko HTTP plaintext (F1-037 produbljen) | OPEN — partner-side HTTPS verify + env var fix |
 | F3-009 | HIGH | Customer PII (name, surname, crew list) putuje NauSys-u u HTTP body plaintext (F3-003 širenje na PII — GDPR breach risk) | OPEN — pair s F3-003 fix |
+| F3-023 | HIGH | `setSessionIdOnPaymentPhases` overwrites stripeSessionId bez check-a; old-session completion = orphan payment, customer money-loss scenario | OPEN — **prod-blocker scenario** |
+| F3-024 | HIGH | Webhook `@Transactional` wraps partner confirmExternalReservation + DB + email; partial-failure → partner confirmed + DB rollback drift | OPEN — pair s F3-022 fix |
 
-### MED (6)
+### MED (10)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
