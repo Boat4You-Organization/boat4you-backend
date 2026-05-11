@@ -203,7 +203,7 @@ Legend statusa:
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** READ-PASS COMPLETE — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓, Batch 3 (MMK integration services) ✓, Batch 4 (Stripe payment integration) ✓, Batch 5 (Mail integration) ✓, Batch 6 (sync orchestration + admin controllers) ✓. **Next: phase closure + gate decision.**
+**Status:** CLOSED 2026-05-11 (read-pass kroz 6 batch-eva + closure summary + phase gate at baseline). 40 findings: 0 FIXED, 32 OPEN (1 CRIT + 7 HIGH + 14 MED + 10 LOW), 8 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: Stripe payment hardening trio (F3-022/023/024), NauSys/MMK HTTP foundation (F3-001/002), F3-035 DevController hardening (paired s F1-041 closeout), plus F3-003/009 NauSys HTTPS verify s partner-om.
 
 ### CRIT (1)
 
