@@ -693,3 +693,192 @@ F2-031 (Agency EAGER) zahtjeva runtime verifikaciju jer LAZY default može pucat
 **Batch 3 (catalogue core) završen kroz 3a/3b/3c.** Batch 4 (reservation flow) sljedeći: ReservationRepository, ReservationFlowRepository, ReservationDocumentRepository, ReservationPaymentPhaseRepository, ReservationViewRepository, ReservationYachtSwapAuditRepository, BookingSequenceRepository + pripadajući entiteti.
 
 ---
+
+## Batch 4 — Reservation flow: Reservation / ReservationFlow / PaymentPhase / Document / SwapAudit / BookingSequence (2026-05-11)
+
+### [F2-036] MED bug — `ReservationPaymentPhase.equals` vraća false kad su oba `paidOn` null; plus mutable Set anti-pattern (F2-026 sibling)
+**Lokacija:** `domains/reservation/jpa/ReservationPaymentPhase.kt:39-63` (`equals`/`hashCode`) + `ReservationFlow.kt:106` (`paymentPhases: MutableSet<ReservationPaymentPhase>`)
+**Detekcija:** statička
+**Opis:** Dva bug-a u jednoj klasi:
+
+**Bug 1 — null-handling u `equals`:**
+```kotlin
+if (paidOn?.equals(other.paidOn) != true) return false
+```
+Ako su `this.paidOn` i `other.paidOn` oba null:
+- `null?.equals(other.paidOn)` short-circuit → `null`
+- `null != true` → `true`
+- → `return false` (entity-ji se smatraju **različitima** iako su strukturno identični)
+
+Dva pre-payment phase-a (paidOn=null) s istom deadline+amount su `equals=false`. Hibernate dedupes po identity-ju za managed entity-je, ali kad se entity flush-a i ponovo loada iz različitih sessiona, behavior je inconsistent.
+
+**Bug 2 — F2-026 family:** equals/hashCode čitaju mutable polja (`deadline`, `amount`, `paidOn`, `stripeSessionId`, `stripePaymentIntentId`) → entity se stavlja u `MutableSet<ReservationPaymentPhase>` na ReservationFlow → kad se `paidOn` postavi pri capture-u plaćanja (Stripe webhook), hashCode mijenja bucket → `paymentPhases.contains(phase)` može vratiti false čak ako je phase u set-u. Cascade ALL + orphanRemoval=false (default) — duplikati ili "lost" updates mogući pod load-om.
+
+Kombinirano: bug 1 maskira bug 2 jer dva null-paid-on phase-a izgledaju različita pa naoko nema duplikata. Onda se prvo plaćanje captura, paidOn promijeni, hashCode pomakne, drugi capture proba update na "isti" phase ali Set kaže "ne postoji" → kreira dupli. **Tihi double-payment kandidat** u edge case-u.
+
+Plus: equals/hashCode kontrakt subtilno povrijeđen — kad su oba paidOn null, hashCode oba returnuje konstantu (deterministic), ali equals returnuje false. Contract: `a.equals(b)==false` ⇒ `a.hashCode()` može biti razno, ali konverzno se mora držati. Tehnički ne-bug, ali nepouzdano.
+**Posljedica:** mogući subtle duplikati u payment phase logici pri capture vremenu. Pre-prod testovi vjerojatno ne hvataju (zahtjeva specifičan timing). Combined s F1-019 (Stripe webhook non-idempotency CRIT), risk multiplies.
+**Predloženi fix:** id-based equals/hashCode (idiom iz F2-026):
+```kotlin
+override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is ReservationPaymentPhase) return false
+    return id != null && id == other.id
+}
+override fun hashCode(): Int = id?.hashCode() ?: javaClass.hashCode()
+```
+Alternativno: pristup F2-026 (MutableList umjesto MutableSet) ako je redoslijed važan (po deadline-u).
+**Riziko-procjena fixa:** dira entity contract — verify-grep `paymentPhases.contains(...)`, `paymentPhases.remove(...)` callere. MED. Treba ići zajedno s F2-026 (OfferPaymentPlan istog roda).
+**Status:** OPEN — eskalacija (entity contract change, F2-026 family)
+
+---
+
+### [F2-037] MED bug — `calculateTotalPaid` JPQL `SUM` može vratiti null; deklarirano non-null `BigDecimal` → NPE risk
+**Lokacija:** `domains/reservation/jpa/ReservationPaymentPhaseRepository.kt:24-31`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+@Query("SELECT SUM(pp.amount) FROM ReservationPaymentPhase pp WHERE pp.reservationFlow.id IN (:reservationFlowIds) AND pp.paidOn IS NOT NULL")
+fun calculateTotalPaid(reservationFlowIds: Set<Long>): BigDecimal
+```
+JPQL `SUM` na praznom result set-u vraća **null**. Kotlin return tip je `BigDecimal` (non-nullable) — compiler emit-a `@NotNull BigDecimal calculateTotalPaid(...)`. Spring Data dinamički prosljedjuje null vrijednost natrag, što:
+- Java strana: dodaje null u `BigDecimal` variable — OK na JVM-u
+- Kotlin caller-a: `kotlin.jvm.internal.Intrinsics.checkNotNullExpressionValue(...)` (ili sličan check) — u releasebuilds compiler inserts non-null assertion na method exit → `IllegalStateException` ili `NullPointerException` *kod* poziva metode.
+
+Praktično: kad ReservationFlow set-a se proslijedi u `calculateTotalPaid` i nijedna phase nije plaćena (paidOn IS NULL na svim), SUM vraća null → NPE u caller-u. Vjerojatnost: niska u happy path (svaka rezervacija ima bar 1 plaćeno phase) ali svako "calculate paid for cancelled or pre-confirmed reservations" pada.
+
+Plus: `sumCommissionByCreatedAtBetween` na `ReservationViewRepository.kt:79-86` koristi `COALESCE(SUM(rv.reservationCommission), 0)` — **isti repo, isti autor zna pattern.** Nedosljednost.
+**Posljedica:** runtime NPE u edge case-u (no paid phases). Pre-prod testovi vjerojatno ne pogađaju. Failure mod: 500 response pri admin listing-u rezervacija s no-payment phases.
+**Predloženi fix:** dva razumna pristupa:
+- (a) `COALESCE(SUM(pp.amount), 0)` u query-ju (matchira existing `sumCommissionByCreatedAtBetween` pattern). Kotlin signature ostaje `BigDecimal`. Trivijalno.
+- (b) Vratiti nullable `BigDecimal?` u Kotlin signature, callers eksplicitno handle-aju null. Više bolerplate-a ali eksplicitnije.
+
+Preporučujem (a) — match-uje existing convention.
+**Riziko-procjena fixa:** trivijalan. MED.
+**Status:** WAITING-DECISION (trivial COALESCE add)
+
+---
+
+### [F2-038] MED audit gap — `ReservationDocument` ne extendira `AbstractEntity`; uploadi signed contracts / internal admin docs nemaju tamper-evidence trail
+**Lokacija:** `domains/reservation/jpa/ReservationDocument.kt:28`
+**Detekcija:** statička
+**Opis:** ReservationDocument je klasični "compliance/legal" artifact — signed reservation contracts, deposit receipts, admin internal correspondence. Klasa ne extendira AbstractEntity, ne `@Audited`. Što imamo:
+- `uploadedAt`, `uploadedBy` — present (createrInfo na samom row-u).
+- `modified` / `modifier` / `entity_status` — **nedostaju**.
+
+Što se ne tracka:
+- Document modification (admin re-uploads with same id — ne može direktno, ali može `repository.save(modified_doc)`)
+- Document deletion (hard delete preko `repository.delete(doc)`)
+- Document visibility toggle (`isInternal` flip — admin može unhide internal handover note → customer dobije pristup, no trace)
+
+GDPR + business risk: tipičan dispute scenario ("ja sam vam poslao taj signed contract, gdje je?", "obrisali ste moj receipt") — bez audit log-a, ne može se dokazati niti opovrgnuti. Plus: ako admin ažurira `isInternal=false` na sensitive internal note, no trail.
+
+Posebno problematično jer **Reservation flow ima dedicated audit trail (`ReservationYachtSwapAudit`) za yacht swap**, ali document mutations nemaju ekvivalent.
+**Posljedica:** legal/compliance gap. Vjerojatno nije immediate blocker (no PII brisanje obavezno traces danas), ali svaki dispute resolution je "they-said/we-said".
+**Predloženi fix:** dvije razine:
+- (a) **Minimalan:** ReservationDocument extend AbstractEntity → automatski dobiva created/modified/creator/modifier + Envers `_revisions` tablica. Migracija dodaje 4 kolone + backfill (`creator_id` = uploaded_by za postojeće redove, `created` = uploaded_at, `modified` = uploaded_at, `entity_status` = 'ACTIVE').
+- (b) **Sveobuhvatan (preporučljivije za legal docs):** poseban audit table `reservation_document_audit` koji bilježi svaku verziju (append-only): `id, doc_id, action (UPLOAD|MODIFY|DELETE|VISIBILITY_FLIP|DOWNLOAD), actor_id, timestamp, details_json`. Ovo daje full trail uključujući download access (forenzika tko je preuzimao kada).
+
+(a) je minimum za pre-prod. (b) je ako legal compliance to traži.
+**Riziko-procjena fixa:** (a) zahtijeva F2-001/F2-004 prvo (creator/modifier popunjavanje); (b) je zaseban feature. Pre-prod prioritet: (a) zajedno sa F2-028 entity batch-em.
+**Status:** OPEN — eskalacija (F2-001/F2-004 dependency; legal compliance check)
+
+---
+
+### [F2-039] LOW data corruption resilience — `ReservationFlowRepository.findIdsInReservationFlowChain` recursive CTE nema cycle detection
+**Lokacija:** `domains/reservation/jpa/ReservationFlowRepository.kt:7-39`
+**Detekcija:** statička
+**Opis:** Native PostgreSQL `WITH RECURSIVE` CTE prati `previous_flow_id` chain ili gore (do head-a) ili dolje (svi descendant flows). Standardni recursive pattern, bez `CYCLE` klauzule (Postgres 14+ feature). Ako `previous_flow_id` chain ikad formira ciklus (A → B → A), CTE diverges → infinite query → connection timeout (HikariCP 20s) → exception, transaction rollback.
+
+Cycle ne smije se desiti per business logic (yacht swap kreira *new* row, never back-reference). Ali:
+- Manual SQL u ops mode (admin u psql) može slučajno postaviti previous_flow_id na ancestor → cycle.
+- F1-074 (test suite divergence) — testovi koji manipuliraju DB direktno mogu kreirati corrupted state.
+- Buggy sync u budućnosti.
+
+Postgres 14+ ima `WITH RECURSIVE ... CYCLE id SET is_cycle USING path` syntax. Hibernate prosljedjuje native query as-is → može se koristiti.
+**Posljedica:** ako cycle ikad postoji, sve query-je koje koriste flow chain padaju s timeout-om. Customer ne može vidjeti svoju rezervaciju, admin paneli za tu rezervaciju ne rade.
+**Predloženi fix:** dodati explicit recursion depth limit. Najjednostavnije: izmijeniti CTE da broji `steps` i prekine na `WHERE steps < 50` (yacht swap chain nikad više od 50). Alternativno: Postgres 14+ `CYCLE` klauzula:
+```sql
+WITH RECURSIVE to_head AS (
+  SELECT ... -- as before
+) CYCLE id SET is_cycle USING path
+```
+
+Trivijalan defensive fix, ne dira pravi case (depth <50 uvijek).
+**Riziko-procjena fixa:** dira native CTE — verify EXPLAIN ANALYZE da step-counter pristup performira jednako.
+**Status:** OPEN — Faza 6 (defensive coding sweep) ili tracking-only
+
+---
+
+### [F2-040] LOW perf — `ReservationViewRepository.findAllReservationsByParams` 6-column LOWER+LIKE admin search (F2-023 family)
+**Lokacija:** `domains/reservation/jpa/ReservationViewRepository.kt:21-50`
+**Detekcija:** statička
+**Opis:** Admin reservation search filtrira po `reservationNumber`, `reservationFlowName`, `reservationFlowSurname`, `reservationFlowEmail`, `agencyName` plus konkatenirani `name + ' ' + surname` — **6 LOWER+LIKE** klauza s leading wildcard. Isti pattern kao F2-023 (Inquiry admin), F2-033 (public location autocomplete), F2-034 (Manufacturer/Model). Admin-only, niža frekvencija od F2-033, ali query je 6×, ne 3× — najteži među admin search-evima.
+
+Plus: search radi protiv `reservation_view` (DB view), ne tablice direktno → indexi moraju biti na underlying tablicama (`reservation`, `reservation_flow`, `agency`).
+**Posljedica:** seq scan na bookings table-u. Bookings table je core business — biti će više row-eva nego inquiry-ja. Spori admin search uz rast.
+**Predloženi fix:** uključiti u istu Faza 6 index migration batch koju F2-023/F2-024/F2-033/F2-034 zahtjevaju:
+- `CREATE INDEX reservation_flow_email_trgm_idx ON reservation_flow USING gin (LOWER(email) gin_trgm_ops)`
+- `CREATE INDEX reservation_flow_name_trgm_idx ON reservation_flow USING gin (LOWER(name) gin_trgm_ops)`
+- `CREATE INDEX reservation_flow_surname_trgm_idx ON reservation_flow USING gin (LOWER(surname) gin_trgm_ops)`
+- `CREATE INDEX reservation_reservation_number_trgm_idx ON reservation USING gin (LOWER(reservation_number) gin_trgm_ops)`
+- agency.name već pokriven F2-034 batch-em.
+
+Plus: minimum-length validation u kontroleru — `search.length >= 2` preduvjet.
+**Status:** OPEN — Faza 6 (vezano s F2-023/F2-024/F2-033/F2-034 — jedna migracija pokriva sve)
+
+---
+
+### [F2-041] LOW model consistency — `ReservationFlow.status` ima `// TODO should we remove this?` + ReservationFlow/ReservationDocument/ReservationYachtSwapAudit/BookingSequence/ExternalReservationPaymentPlan ne extendaju AbstractEntity (F2-028 family)
+**Lokacija:** `domains/reservation/jpa/ReservationFlow.kt:62-65` + entity izvori (gore navedeni)
+**Detekcija:** statička
+**Opis:** Dvije male povezane stavke:
+
+**1. Dead code smell:** `ReservationFlow.status: ReservationFlowStatus?` ima inline komentar `// TODO should we remove this?`. Status enum je `UNKNOWN/IN_PROGRESS/DONE/ABANDONED` (V1_90 mapping). Verify-grep tko poziva `flow.status`:
+- Ako neki kod čita → ostavi i ukloni TODO.
+- Ako nitko → drop kolone, Flyway migracija + entity polje delete.
+
+**2. F2-028 proširenje:** ReservationFlow, ReservationDocument, ReservationYachtSwapAudit, BookingSequence, ExternalReservationPaymentPlan ne extendaju AbstractEntity. Posljedice (kao F2-017/F2-028):
+- ReservationFlow audit trail: nema modifier/created/modified columns (osim `createdAt`); F2-038 audit gap za documents.
+- ReservationYachtSwapAudit: namjerno append-only, ne treba AbstractEntity (intentional design).
+- BookingSequence: counter, ne treba audit (intentional).
+- ExternalReservationPaymentPlan: business data, treba audit.
+
+Iznimka: **ReservationPaymentPhase DOES extend AbstractEntity** — prva u batch-u, dobra praksa.
+**Posljedica:** ako se ovi entiteti modificiraju (cancel rejection na ReservationFlow, payment plan recalc na ExternalReservationPaymentPlan), no audit trace.
+**Predloženi fix:** u sklopu F2-001/F2-004/F2-017/F2-028 architectural batch:
+- ReservationFlow, ExternalReservationPaymentPlan: extend AbstractEntity. ✓
+- ReservationDocument: F2-038 odgovara — alternativan audit table ili AbstractEntity.
+- ReservationYachtSwapAudit, BookingSequence: ostaviti kako su (intentional — append-only / counter).
+
+Plus: maknuti TODO komentar uz `ReservationFlow.status` nakon odluke.
+**Status:** OPEN — eskalacija (F2-028 family architectural decision)
+
+---
+
+### [F2-042] INFO positive — Reservation flow design solidan: pessimistic lock za sequence, DTO projekcija za BYTEA, denormalized FK-ovi u swap audit (intentional)
+**Lokacija:**
+- `BookingSequenceRepository.kt:13-15` — `@Lock(LockModeType.PESSIMISTIC_WRITE)` na `findByCharterYearForUpdate` (concurrent-safe sequence generation).
+- `ReservationDocumentRepository.kt:11-22` — `findMetadataByReservationId` projeicira u `ReservationDocumentDto` bez `data` BYTEA polja (avoid OOM kad customer otvara reservation detail s 5 documents).
+- `ReservationYachtSwapAudit.kt:32-46` — plain `Long` polja za `reservationId`/`reservationFlowId`/`previousYachtId`/`newYachtId` bez `@ManyToOne` (intentional snapshot — audit row ne smije pucati ako referenced yacht obrisana).
+- `ReservationViewRepository.kt:79-86` — `sumCommissionByCreatedAtBetween` koristi `COALESCE(SUM, 0)` (model za F2-037 fix).
+
+**Opis:** Sva 4 patterna su industry best practices. Vrijedi ih dokumentirati za održavanje (npr. team wiki / CLAUDE.md doc).
+**Status:** INFO
+
+---
+
+### Sažetak Batch 4
+
+- **MED (3):** F2-036 (PaymentPhase equals null-bug + mutable Set; F2-026 family), F2-037 (calculateTotalPaid SUM null NPE risk), F2-038 (ReservationDocument audit gap)
+- **LOW (3):** F2-039 (recursive CTE bez cycle detection), F2-040 (ReservationView admin search 6×LIKE — F2-023 family), F2-041 (status TODO + AbstractEntity extension family)
+- **INFO (1):** F2-042 (4 pozitivna patterna u reservation flow)
+- **WAITING-DECISION:** F2-037 (trivial COALESCE)
+
+**Najkritičniji nalaz batch-a: F2-036.** Combined s F1-019 (Stripe webhook non-idempotency CRIT) — payment phase double-capture u edge case-u je realan scenarij. Fix treba prije prod-a. Ide u isti batch s F2-026 (OfferPaymentPlan — isti rod problema).
+
+**Drugi važan trend:** F2-037 je trivial COALESCE ali ide u F2-029/F2-032 trivial cleanup batch. Plus F2-040 dodaje 4 indexa u F2-023/F2-024/F2-033/F2-034 Faza 6 migration batch — sad je to **5 finding-a u jednoj migraciji.**
+
+**Batch 4 završen. Batch 5 next:** Flyway migracije — chronological pass, focus na riskantne ALTER, NOT NULL backfill, DROP COLUMN. Specifične mete iz inventory-ja: V1_24/V1_54/V1_55 (DROP), V1_64/V1_69/V1_70 (NOT NULL backfill), plus V1_90 (own STRING migracija) i V1_57 (payment_type backfill).
+
+---
