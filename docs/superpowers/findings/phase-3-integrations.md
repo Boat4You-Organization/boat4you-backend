@@ -648,3 +648,196 @@ Combined s F1-055 fix (Phase 5 cross-cutting error handling sweep) — Jedan fix
 **Batch 2 završen. Batch 3 next:** MMK integration services (MmkCatalogueIntegrationService, MmkYachtIntegrationService, MmkYachtOfferIntegrationService, MmkAvailabilityIntegrationService, MmkReservationIntegrationService) — analogna NauSys-u ali via Bearer auth (no creds in body, no F3-003/F3-009 in HTTPS).
 
 ---
+
+## Batch 3 — MMK integration services (2026-05-11)
+
+### Prelim — što se NE ponavlja iz Batch 2
+
+MMK ima HTTPS bazni URL (`https://www.booking-manager.com/api/v2`) + Bearer token u headeru → **F3-003 i F3-009 ne važe na MMK side**. Customer PII (clientName, crew list link) ide preko TLS-a.
+
+Što SE direktno prenosi iz Batch 2 (note-only, ne novi finding ID):
+- **F3-010** sibling — `MmkReservationIntegrationService.kt:183` ima isti `responseBody = objectMapper.writeValueAsString(reservationResponse)` PII storage pattern. Fix istovremen s F3-010.
+- **F3-011** sibling — `MmkAvailabilityIntegrationService.kt:25-40` per-agency × per-year forEach + try/catch swallow, bez rate-limit budget. Plus `MmkYachtIntegrationService.kt:41-50` isti pattern. Fix istovremen s F3-011 (resilience batch).
+- **F3-015** sibling — `MmkReservationIntegrationService.kt:141, 147` ima `error("No Location for MMK baseFromId=${id}...")` — isti partner ID leak. Fix istovremen s F3-015 (error sanitization batch).
+
+---
+
+### [F3-017] MED amplification — `MmkYachtIntegrationService.yachtTranslationsSync` 6-language × N-agency × @Retryable = stotine MMK calls po jednom sync run-u
+**Lokacija:** `domains/external/mmk/service/MmkYachtIntegrationService.kt:83-114`
+**Detekcija:** statička
+**Opis:** `yachtTranslationsSync` iterira:
+```
+for each agency in active_agencies (~50+):
+    for each language in [FR, DE, PT, IT, ES, HR] (6):
+        mmkAuditedClient.getYachts(companyId = agencyExternalId, language = lang)
+```
+Linearno: **~300 calls** za 50 agencija × 6 jezika. Plus svaki poziva `@Retryable(maxAttempts = 3)` na client layer → worst case **900 calls** ako sve fail-aju.
+
+Sekvencijalno (nije chunked parallelism kao u `MmkYachtOfferIntegrationService.yachtOfferSync`). Combined s F3-001 (no timeouts) — ako MMK ima 5-sec spike po pozivu, cijeli translation sync traje 25+ minuta linerano.
+
+Plus: každim get-yachts pozivom MMK vraća full yacht catalog u tom jeziku — Veliki payload-i, gotovo identičan response uz različite name/description translations. Wasteful bandwidth.
+
+Comparison s `MmkYachtOfferIntegrationService.yachtOfferSync` — ovaj koristi `agencies.chunked(3) + CompletableFuture.allOf + 15-min orTimeout` pattern. **`yachtTranslationsSync` ne**.
+**Posljedica:** translation sync je single-thread bottleneck. Ako se izvršava istovremeno s drugim sync job-ovima (Phase 4 deep-dive za scheduling overlap), HikariCP / partner-side rate-limit pressure se kumulira.
+**Predloženi fix:** dvije razine:
+- (a) **Adopt isti chunked-parallel pattern** kao `yachtOfferSync` — `agencies.chunked(3).forEachIndexed { ... CompletableFuture.allOf(...) orTimeout 15-min }`. Cuts wall-time 3×.
+- (b) **MMK API support za multi-language**: provjeri ima li `getYachts` parametar koji vraća sve jezike u jednom response-u (`languages = [FR, DE, ...]` ili sl.). Ako da, 50× redukcija calls.
+
+(a) je trivijalan refactor (~20 linija). (b) ovisi o MMK API capabilities.
+**Riziko-procjena fixa:** (a) dira async + transaction handling — verify-test za TransactionTemplate kompatibilnost.
+**Status:** OPEN — Faza 5 (perf parallelism) ili pair s F3-011 batch fix
+
+---
+
+### [F3-018] LOW completeness — `MmkYachtIntegrationService.SUPPORTED_LANGUAGES` izričito **isključuje** EN; nejasno je li EN "default" ili gap
+**Lokacija:** `domains/external/mmk/service/MmkYachtIntegrationService.kt:22-32`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+companion object {
+    val SUPPORTED_LANGUAGES = setOf<SupportedLanguagesEnum>(
+        SupportedLanguagesEnum.FR,
+        SupportedLanguagesEnum.DE,
+        SupportedLanguagesEnum.PT,
+        SupportedLanguagesEnum.IT,
+        SupportedLanguagesEnum.ES,
+        SupportedLanguagesEnum.HR,
+    )
+}
+```
+Set izričito izostavlja `EN`. MMK `SupportedLanguagesEnum` enum vjerojatno ima EN kao value. Pitanje:
+- **Hipoteza A:** EN je "default" — MMK vraća EN content kad nema language parameter (line 66 koristi `companyId = ..., inventory = RAW` bez language). Tada je EN content već u DB-u iz `yachtSync` poziva, pa `yachtTranslationsSync` samo dodaje translations za druge jezike. **Verify:** `yachtSync` line 66 zaista vraća EN content?
+- **Hipoteza B:** EN content je negdje gubi — yacht translation flow propušta EN. Verify if there's UI surface showing EN content where it goes through translation table.
+
+Bez komentara nema mogućnosti odlučiti koja hipoteza vrijedi bez runtime testiranja.
+**Posljedica:** ako hipoteza B važi, EN content (vjerojatno default UI jezik) je crippled. Pre-prod inquiry: ako boat4you customer base je 60% EN-language, ovo je perception issue.
+**Predloženi fix:** trivijalan komentar na companion object:
+```kotlin
+companion object {
+    // EN content is fetched by `yachtSync` itself (MMK returns EN when no
+    // `language` param is set). Translation sync only mirrors the non-EN
+    // variants. If MMK starts requiring explicit `language=EN` for
+    // English content, add EN here and update yacht_translations to dedup.
+    val SUPPORTED_LANGUAGES = setOf<SupportedLanguagesEnum>(...)
+}
+```
+Plus: integration test koji verificira EN content presence.
+**Riziko-procjena fixa:** dokumentacijski. LOW.
+**Status:** WAITING-DECISION (verify hipoteza A vs B)
+
+---
+
+### [F3-019] LOW dead code — Deprecated `syncOffersForAgencyYachtsOld` i dalje compile-a, `@Async` annotated, i dalje 90+ linija duplicirane implementacije
+**Lokacija:** `domains/external/mmk/service/MmkYachtOfferIntegrationServiceAsync.kt:166-263`
+**Detekcija:** statička
+**Opis:** Metoda `syncOffersForAgencyYachtsOld` je annotated:
+```kotlin
+/**
+ * @deprecated Use syncOffersForAgencyYachts instead
+ * I'm keeping this in an order to preserve logic for old MMK integration. ...
+ */
+@Deprecated("Use syncOffersForAgencyYachtsOld instead")
+@Async("taskExecutor")
+fun syncOffersForAgencyYachtsOld(...) { ... 90 lines ... }
+```
+
+Three concerns:
+1. **Code dupliciran** — 90 linija logike paralelne s novom `syncOffersForAgencyYachts`. Drift risk: bugfix-evi koji se primijene u jednu mogu propustiti drugu.
+2. **`@Async("taskExecutor")` i dalje aktivan** — Spring bean scanning ne ignora `@Deprecated`. Ako neki caller pozove ovu metodu, ide u taskExecutor pool.
+3. **Caller-i** — grep da li je ovo i dalje pozvano negdje. Ako ne, drop.
+
+Comment kaže "I'm keeping this in an order to preserve logic for old MMK integration" — implicira da je možda potreban fallback / regression toggle. Ali nema feature flag-a koji ga aktivira.
+**Posljedica:** code smell + maintenance overhead. Ne immediately exploitable.
+**Predloženi fix:** grep-verify caller-e:
+```bash
+grep -rn "syncOffersForAgencyYachtsOld" src/
+```
+- Ako nema caller-a → obriši metodu.
+- Ako ima caller koji je također `@Deprecated` → ukloni cijeli chain.
+- Ako stvarno je u upotrebi negdje → makni `@Deprecated` ili dodaj komentar zašto je still active.
+
+**Status:** WAITING-DECISION (trivijalan grep + delete)
+
+---
+
+### [F3-020] INFO positive — `MmkYachtOfferIntegrationService.yachtOfferSync` chunked-of-3 parallelism + 15-min per-batch timeout
+**Lokacija:** `domains/external/mmk/service/MmkYachtOfferIntegrationService.kt:31-58`
+**Detekcija:** statička
+**Opis:** Pattern koji bi NauSys offer sync trebao adoptirati:
+```kotlin
+agencies.chunked(3).forEachIndexed { index, agencyBatch ->
+    val futures = agencyBatch.map { agency -> mmkYachtOfferIntegrationServiceAsync.syncOffersForAgencyYachts(agency, agency.getExternalId()!!) }
+    try {
+        CompletableFuture.allOf(*futures.toTypedArray())
+            .orTimeout(15, java.util.concurrent.TimeUnit.MINUTES)
+            .join()
+    } catch (e: Exception) {
+        log.error("MMK offer sync batch $index timed out or failed — agencies in batch: ...", e)
+    }
+}
+```
+
+Što ovaj pattern radi dobro:
+- **Bounded parallelism:** 3 agencije per batch (ne unlimited @Async), upravljiv load na partner + taskExecutor pool
+- **Per-batch deadline:** 15-min `orTimeout` — ako jedna agency hangira, ne blokira ostatak posla. Sibling F3-001 fix u sklopu RestClient layer-a, ali ovaj ujedno mitigira na orchestration level-u.
+- **Per-batch logging:** error sadrži ID + ime svih agencija u batchu — observability solidan.
+
+Plus: comment objašnjava motiv ("a single hung agency call ... used to block the entire 811-agency sync indefinitely") — historical context preserved.
+**Posljedica:** Pre-prod nije problem. Vrijedno standardize-irati za NauSys + drugi sync job-ove.
+**Predloženi fix:** dokumentirati pattern u `docs/superpowers/architecture.md` (ako postoji) ili kao CLAUDE.md note. Plus: tracking ticket za NauSys adopt istog pattern-a.
+**Status:** INFO (apply pattern u F3-011 fix)
+
+---
+
+### [F3-021] INFO positive — `MmkReservationIntegrationService.confirmReservation` graceful crew list link fallback s nested try/catch
+**Lokacija:** `domains/external/mmk/service/MmkReservationIntegrationService.kt:90-110`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+fun confirmReservation(mmkReservationId: Long, ...): ReservationResponseWrapper {
+    return try {
+        val reservationResponse = mmkRetryableClient.confirmReservation(mmkReservationId)
+        val crewListLinkResponse = try {
+            val response = mmkRetryableClient.crewListLink(reservationResponse.id)
+            response.link
+        } catch (e: Exception) {
+            log.error("Error fetching crew list link for MMK reservation ID: $mmkReservationId", e)
+            null  // graceful — booking goes through without crew list URL
+        }
+        toResponseWrapper(reservationResponse, crewListLinkResponse, ...)
+    } catch (e: Exception) {
+        log.error("Error confirming MMK reservation", e)
+        throw ExternalReservationException("Failed to confirm MMK reservation with ID: $mmkReservationId")
+    }
+}
+```
+
+Što je dobro:
+- **Booking primary path je critical** — fail propagiše do caller-a (booking se ne završava bez confirmation).
+- **Crew list link je secondary** — fail logira ali ne ruši booking. Customer dobija booking confirmation bez crew list URL-a u email-u, ali booking je važeći.
+- **Graceful degradation** je explicit (vs swallow-and-pretend-all-OK pattern).
+
+Worth standardize-irati: razlikovati "critical" partner calls (booking confirm) od "enhancement" (crew list, options metadata). Faza 5 cross-cutting pattern.
+
+Plus: `partnerMsg = e.responseBodyAsString.trim().removeSurrounding("\"")` u createOption (line 81) — surfaces partner-side reject string kroz `ExternalOptionException("MMK: ${partnerMsg.ifBlank { "rejected option" }}")`. Pattern omogući korisnik nešto bolje od generic "external system failed" toast-a. **Combined s F3-015** (error info leak) treba pazljiv balans: korisnik dobije generic message, log dobije partner detalje.
+**Status:** INFO (model za "primary vs enhancement call" pattern)
+
+---
+
+### Sažetak Batch 3
+
+- **MED (1):** F3-017 (yachtTranslationsSync 6×N amplification — sibling F3-011 ali poseban scope)
+- **LOW (2):** F3-018 (SUPPORTED_LANGUAGES ne uključuje EN — verify intent), F3-019 (deprecated `syncOffersForAgencyYachtsOld` dead code)
+- **INFO (2):** F3-020 (chunked-3 + 15-min orTimeout pattern), F3-021 (graceful crew list link fallback)
+
+**Note:** F3-010/F3-011/F3-015 ekvivalenti se direktno preslikavaju na MMK side (`MmkReservationIntegrationService.kt:183` responseBody, `MmkAvailabilityIntegrationService.kt:25-40` per-agency forEach, `MmkReservationIntegrationService.kt:141,147` partner ID leak). Fix-evi za te 3 finding-a u Phase 2 prefix-evima (F3-010, F3-011, F3-015) automatski pokrivaju MMK side ili su trivijalne sibling izmjene.
+
+**MMK je solidniji od NauSys-a u nekoliko stvari:**
+- HTTPS bazna URL → F3-003/F3-009 ne važe
+- Chunked-parallelism + per-batch timeout u offer sync → ne treba F3-011 zaseban fix
+- Bearer header umjesto creds-in-body → audit cleaner
+- F3-021 graceful crew list fallback pattern
+
+**Batch 3 završen. Batch 4 next:** Stripe — `StripeConfig`, `StripePaymentService`, `StripeWebhookController`, `StripePaymentController`, `PublicStripePaymentController`. Pair s F1-019 CRIT (webhook idempotency) + F1-031 (signature error) + F2-026/F2-036 (payment phase entity contract).
+
+---
