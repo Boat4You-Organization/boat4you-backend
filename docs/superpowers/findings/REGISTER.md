@@ -35,7 +35,7 @@ Legend statusa:
 | F1-022 | HIGH | `PublicReservationRateLimiter` slijepo vjeruje X-Forwarded-For | DEFERRED-Faza7 — confirmed scenario C ($proxy_add_x_forwarded_for) on VM2 (2026-05-08) |
 | F1-024 | HIGH | `StripePaymentService.handleWebhookEvent` non-null assertions na user metadata | FIXED `f30a116` (concretized via F3-025) |
 | F1-037 | HIGH | NAUSYS_URL default `http://ws.nausys.com` (HTTP, ne HTTPS) | OPEN |
-| F1-041 | HIGH | DevEquipmentSyncController na `/public/dev` + samo profile gating (no auth) | OPEN |
+| F1-041 | HIGH | DevEquipmentSyncController na `/public/dev` + samo profile gating (no auth) | FIXED `4caa8a9` (moved to /admin/dev + @PreAuthorize SYSTEM_ADMIN + POST for state-changing) |
 | F1-056 | HIGH | `cancelReservation` non-atomic external delete + DB cancel; razdvojeno stanje moguće | OPEN |
 | F1-057 | HIGH | `setPasswordForReservation` bez rate limita; reservationId enumeration | OPEN |
 | F1-064 | HIGH | Public yacht search trigger-a synkroni external sync prema NauSys/MMK iz request thread-a | OPEN |
@@ -95,13 +95,14 @@ Legend statusa:
 | F1-* | INFO | `ReservationController` ima ekselentne ownership guards — koristiti kao template |
 | F1-* | INFO | GDPR endpointi imaju audit logging (mature dizajn) |
 
-### FIXED (23)
+### FIXED (24)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
 | F1-019 | CRIT | Stripe webhook idempotency via `processed_stripe_events` claim (concretized as F3-022) | `f815e1e` + `f30a116` |
 | F1-049 | CRIT | Java app slušao na `*:8080`, izložen na public IP — bind na 127.0.0.1 | `02532a9` |
 | F1-024 | HIGH | Stripe webhook payload null-safety (concretized as F3-025) | `f30a116` |
+| F1-041 | HIGH | DevEquipmentSyncController triple-defense: /admin/dev + @PreAuthorize SYSTEM_ADMIN + POST | `4caa8a9` |
 | F1-028 | MED | `promoteReservationToBooking` re-fire on Stripe retry closed by F1-019 fix | `f30a116` |
 | F1-002 | HIGH | (yml-side) Disable swagger by default in prod profile | `2e451cc` |
 | F1-036 | HIGH | DB credentials required (no literal default) | `ab5a210` |
@@ -208,7 +209,7 @@ Legend statusa:
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 6 batch-eva + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 + B2 fixes). 40 findings: 7 FIXED, 25 OPEN (0 CRIT + 3 HIGH + 12 MED + 10 LOW), 8 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F3-035 DevController hardening (paired s F1-041 closeout), plus F3-003/009 NauSys HTTPS verify s partner-om. **Stripe payment hardening trio (F3-022/023/024 + F3-025/026) CLOSED in Phase B1. NauSys/MMK HTTP foundation (F3-001/002) CLOSED in Phase B2.**
+**Status:** CLOSED 2026-05-11 (read-pass kroz 6 batch-eva + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 + B2 + B3 fixes). 40 findings: 8 FIXED, 24 OPEN (0 CRIT + 2 HIGH + 12 MED + 10 LOW), 8 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F3-003/009 NauSys HTTPS verify s partner-om. **Stripe payment hardening trio (F3-022/023/024 + F3-025/026) CLOSED in Phase B1. NauSys/MMK HTTP foundation (F3-001/002) CLOSED in Phase B2. DevController triple-defense (F3-035) CLOSED in Phase B3.**
 
 ### CRIT (1)
 
@@ -226,7 +227,7 @@ Legend statusa:
 | F3-009 | HIGH | Customer PII (name, surname, crew list) putuje NauSys-u u HTTP body plaintext (F3-003 širenje na PII — GDPR breach risk) | OPEN — pair s F3-003 fix |
 | F3-023 | HIGH | `setSessionIdOnPaymentPhases` overwrites stripeSessionId bez check-a; old-session completion = orphan payment, customer money-loss scenario | FIXED `d6138b3` (best-effort Session.expire prior session before overwrite) |
 | F3-024 | HIGH | Webhook `@Transactional` wraps partner confirmExternalReservation + DB + email; partial-failure → partner confirmed + DB rollback drift | FIXED `f30a116` (mitigated via F3-022 claim — Stripe retries skip; residual partial-failure window requires manual reconciliation per V1_91, full 2PC out of scope) |
-| F3-035 | HIGH | `DevEquipmentSyncController` `/public/dev/...`: only `@Profile("dev")`, no `@PreAuthorize`, all `@GetMapping` — F1-041 deepened (triple-defense missing) | OPEN — **HIGH, paired s F1-041 closeout** |
+| F3-035 | HIGH | `DevEquipmentSyncController` `/public/dev/...`: only `@Profile("dev")`, no `@PreAuthorize`, all `@GetMapping` — F1-041 deepened (triple-defense missing) | FIXED `4caa8a9` (paired with F1-041 closeout) |
 
 ### MED (14)
 
@@ -262,7 +263,7 @@ Legend statusa:
 | F3-032 | LOW | `helper.setTo` multi-recipient pokazuje sve adresarima; admin notification leak ako se ikad pojavi multi-recipient flow | OPEN — Faza 5 (defensive design) |
 | F3-038 | LOW | `ExternalSyncService.syncYachtOffers` chained `!!` on `yacht.agency!!.primarySource!!.externalSystem!!` — NPE fragility (F1-026 family) | WAITING-DECISION (trivijalan, group s F1-026) |
 
-### FIXED (7)
+### FIXED (8)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
@@ -271,6 +272,7 @@ Legend statusa:
 | F3-002 | HIGH | `@Retryable` stripped from state-changing partner calls (NauSys: createInfo/createOption/confirmReservation/stornoOption; MMK: createOption/confirmReservation/cancelOption); reads retain retry | `e0b990d` |
 | F3-023 | HIGH | Best-effort `Session.expire` on prior open stripeSessionId before overwriting on the phase | `d6138b3` |
 | F3-024 | HIGH | Mitigated via F3-022 claim — Stripe retries skip; residual partial-failure window documented (V1_91), full 2PC out of scope | `f30a116` |
+| F3-035 | HIGH | DevEquipmentSyncController triple-defense (paired with F1-041 closeout) | `4caa8a9` |
 | F3-025 | MED | Defensive null checks on Stripe webhook payload + logged early-returns (no `!!` left in handleWebhookEvent) | `f30a116` |
 | F3-026 | MED | `setSessionIdOnPaymentPhases` selects among UNPAID phases only; `initiatePayment` rejects already-paid `paymentPhaseId` up-front | `d6138b3` |
 
@@ -412,15 +414,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 1 | 1 | 0 | 0 | 1 | 0 | — | **3** |
-| HIGH | 12 | 1 | 3 | 2 | 1 | 2 | — | **21** |
+| HIGH | 11 | 1 | 2 | 2 | 1 | 2 | — | **19** |
 | MED | 18 | 17 | 12 | 5 | 4 | 2 | — | **58** |
 | LOW | 8 | 23 | 10 | 4 | 6 | 4 | — | **55** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 23 | 5 | 7 | 1 | 3 | 3 | — | **42** |
+| FIXED | 24 | 5 | 8 | 1 | 3 | 3 | — | **44** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **39** | **42** | **25** | **11** | **14** | **8** | — | **139** |
+| **OPEN** | **38** | **42** | **24** | **11** | **14** | **8** | — | **137** |
 
 ---
 
