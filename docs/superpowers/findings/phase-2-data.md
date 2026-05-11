@@ -349,7 +349,7 @@ Primjer: trenutno `EntryType.CUSTOM` možda ima ordinal 1 (na osnovi `entry_type
 
 Ako fresh DB se još ne deploya — promijeniti `@Enumerated` u `@Enumerated(EnumType.STRING)` PRE prvog deploya je trivial.
 
-**Status:** OPEN — **kritična odluka prije prod deploy-a**: ide li ovaj review-branch live s ORDINAL pattern-om? Ako da, mora biti svjesno acceptirano i strogo zabraniti reorder enuma. Ako ne, migracijska strategija prije live-a.
+**Status:** FIXED `0d1242a` — V1_90 migracija (smallint → VARCHAR(31), CASE-mapped per enum.name() declaration order) + `@Enumerated(EnumType.STRING)` na 22 entity polja. 18 enuma cross-verificirano protiv Kotlin source order-a prije commit-a. Adresira F2-018 i F2-019 (native queryji preneseni na string literale) u istom commit-u.
 
 ---
 
@@ -365,7 +365,7 @@ Combined s F2-018: ako se EntryType enum reorderira, ovi native queryji silently
 **Predloženi fix:** ili (a) prebaciti na JPQL gdje Hibernate generira ispravne vrijednosti iz enum-a, ili (b) ako native query mora ostati zbog LATERAL join-a, dokumentirati uz query "WARNING: status=1,2,3 mapira na OfferStatus.{X,Y,Z}; ako se enum promijeni, OVO TREBA AŽURIRATI." Plus: koristiti `:status1, :status2, :status3` parametre + sastaviti listu iz Kotlin koda (`OfferStatus.ACTIVE.ordinal + 1` ili sl.) — ne idealno ali eksplicitno.
 
 Najbolji fix: pomiknuti se na `EnumType.STRING` (F2-018) i koristiti string vrijednosti u native queryju (`status IN ('CREATED', 'CONFIRMED', 'BOOKED')`).
-**Status:** BLOCKED-BY F2-018
+**Status:** FIXED `0d1242a` — uz F2-018 STRING migraciju, native queryji u `YachtRepository` su preneseni na string literale (`o.status IN ('FREE','OPTION','OPTION_WAITING')`, `y.entry_type = 'EXTERNAL'`); parametri `vesselTypes: List<Int>` → `List<String>`; isto za `YachtDistributionService` i `YachtRelaxSuggestionService` (prosljeđuju `enum.name` umjesto `.ordinal`).
 
 ---
 

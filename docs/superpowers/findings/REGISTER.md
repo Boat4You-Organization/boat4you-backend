@@ -123,20 +123,62 @@ Legend statusa:
 
 ---
 
+## Faza 2 — Data layer (persistence, entities, migrations)
+
+**Status:** IN PROGRESS — Batch 1 (common/jpa + cache) ✓, Batch 2 (user/security/roles) ✓, Batch 3a (Yacht core) ✓. Batch 3b/3c (Offer/Inquiry/Location/Agency/view repos), Batch 4 (reservation flow), Batch 5 (Flyway migrations) pending.
+
+### MED (7)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F2-001 | MED | `creatorId`/`modifierId` audit kolone se nikad ne popunjavaju (AbstractEntity TODO) | OPEN — eskalacija (architectural decision) |
+| F2-004 | MED | `CustomRevisionListener` hardkodira `modifier_user_id = 1L` — audit log laže | OPEN — eskalacija (uz F2-001) |
+| F2-011 | MED | `findAllAdminEmailAddresses` ne filtrira `deleted_at IS NULL` (potencijalni GDPR breach) | OPEN — verify GDPR delete flow prvo |
+| F2-013 | MED | `TokenEntity.@ManyToOne user` EAGER — fetched na svaki auth request | OPEN — Faza 5 (cross-cutting perf) |
+| F2-014 | MED | `findAllValidTokenByUserId` koristi OR umjesto AND — "valid" semantika netočna | WAITING-DECISION |
+| F2-016 | MED | `RoleAssignmentEntity` ima EAGER user i role @ManyToOne → auth path N+1 | OPEN — Faza 5 |
+| F2-021 | MED | `findForReplacementSearch` vs `countForReplacementSearch` divergentne WHERE klauzule | OPEN — Faza 5 (test coverage) ili tracking-only |
+
+### LOW (12)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F2-002 | LOW | `@Audited` na `AbstractEntity` + `store_data_at_delete:true` → `_revisions` rastu za sve | OPEN — Faza 2 follow-up |
+| F2-003 | LOW | `entity_status` soft-delete pattern nije dokumentiran ni centraliziran | OPEN — Faza 5 (cross-cutting modeling) |
+| F2-005 | LOW | `dataSyncCacheManagerCustomizer` nije profile-gated | WAITING-DECISION |
+| F2-006 | LOW | Single-entry cache thrashing kandidati (`usedVesselTypesCache` itd.) | OPEN — verify u Batch 3 |
+| F2-007 | LOW | `yachtExtrasCache` deklariran s key `Yacht::class.java` umjesto `Long` | OPEN — verify callers |
+| F2-008 | LOW | Većina config cache-eva ima 10h TTL bez explicit `@CacheEvict` na admin mutaciji | OPEN — verify admin mutation servisa |
+| F2-009 | LOW | `UserEntity.@Formula("concat(name,' ',surname)")` se loada u svaki SELECT (deprecated) | WAITING-DECISION |
+| F2-010 | LOW | `UserRepository.findByEmail` JOIN FETCH bez DISTINCT | WAITING-DECISION |
+| F2-012 | LOW | `findAllByBirthdayMonthDay` native query bez funkcionalnog indeksa | OPEN — defer Faza 6 |
+| F2-015 | LOW | `revokeAllUserTokens` N+1 update umjesto bulk UPDATE | OPEN — Faza 5 (perf + audit decision) |
+| F2-017 | LOW | `Yacht`/`YachtImage`/`YachtTranslation` ne extendaju `AbstractEntity` — nema auditа | OPEN — eskalacija (velik refactor + migracija) |
+| F2-020 | LOW | `findWithReservationOptionsByAgency` JOIN FETCH bez DISTINCT | WAITING-DECISION |
+
+### FIXED (2)
+
+| ID | Severity | Naslov | Commit |
+|---|---|---|---|
+| F2-018 | MED | Migracija svih `@Enumerated` ORDINAL → STRING (18 enum kolona, 22 entity polja, V1_90 + R__ views) | `0d1242a` |
+| F2-019 | MED | Native queryji u `YachtRepository` + service callers prelaze na enum.name() string literale | `0d1242a` |
+
+---
+
 ## Total cumulative across all phases
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 2 | — | — | — | — | — | — | **2** |
-| HIGH | 13 | — | — | — | — | — | — | **13** |
-| MED | 18 | — | — | — | — | — | — | **18** |
-| LOW | 8 | — | — | — | — | — | — | **8** |
-| INFO | 4 | — | — | — | — | — | — | **4** |
-| FIXED | 20 | — | — | — | — | — | — | **20** |
-| DEFERRED-Faza7 (nginx batch) | 6 | — | — | — | — | — | — | **6** |
-| DEFERRED-other | 3 | — | — | — | — | — | — | **3** |
-| BLOCKED | 1 | — | — | — | — | — | — | **1** |
-| **OPEN** | **41** | — | — | — | — | — | — | **41** |
+| CRIT | 2 | 0 | — | — | — | — | — | **2** |
+| HIGH | 13 | 0 | — | — | — | — | — | **13** |
+| MED | 18 | 7 | — | — | — | — | — | **25** |
+| LOW | 8 | 12 | — | — | — | — | — | **20** |
+| INFO | 4 | 0 | — | — | — | — | — | **4** |
+| FIXED | 20 | 2 | — | — | — | — | — | **22** |
+| DEFERRED-Faza7 (nginx batch) | 6 | 0 | — | — | — | — | — | **6** |
+| DEFERRED-other | 3 | 0 | — | — | — | — | — | **3** |
+| BLOCKED | 1 | 0 | — | — | — | — | — | **1** |
+| **OPEN** | **41** | **19** | — | — | — | — | — | **60** |
 
 ---
 
