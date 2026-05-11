@@ -203,7 +203,7 @@ Legend statusa:
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓. Batch 2 (NauSys integration services), 3 (MMK), 4 (Stripe), 5 (Mail), 6 (sync orchestration + admin controllers) pending.
+**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓. Batch 3 (MMK), 4 (Stripe), 5 (Mail), 6 (sync orchestration + admin controllers) pending.
 
 ### HIGH (3)
 
@@ -212,21 +212,28 @@ Legend statusa:
 | F3-001 | HIGH | `NauSysRestClientConfig`/`MmkRestClientConfig` nemaju connect/read/write timeouts — partner slow = VM2 unresponsive | OPEN — **prod-blocker scenario** |
 | F3-002 | HIGH | `@Retryable(Exception::class)` na state-changing calls (createOption/confirmReservation/stornoOption/cancelReservation) duplicira partner side-effects (F1-019 sibling) | OPEN — **prod-blocker pair s F1-019** |
 | F3-003 | HIGH | NauSys credentials u request body putuju preko HTTP plaintext (F1-037 produbljen) | OPEN — partner-side HTTPS verify + env var fix |
+| F3-009 | HIGH | Customer PII (name, surname, crew list) putuje NauSys-u u HTTP body plaintext (F3-003 širenje na PII — GDPR breach risk) | OPEN — pair s F3-003 fix |
 
-### MED (3)
+### MED (6)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
 | F3-004 | MED | `MmkRestClientConfig` interceptor logira FULL request body + headers; Reservation payload PII u log-u | OPEN — Faza 5 (cross-cutting log audit) ili profile-gate |
 | F3-005 | MED | `@Retryable` Backoff bez jitter — thundering herd risk pri partner outage burst-u | WAITING-DECISION (group s F3-002 retry fix) |
 | F3-008 | MED | `NauSysRetryableClient.getReservation` 3 serial endpoint-a × @Retryable = do 9 partner calls po lookup-u | OPEN — paralelno s F3-001/002 fix |
+| F3-010 | MED | `ReservationResponseWrapper.responseBody` čuva cijeli NauSys response JSON; PII u DB bez scrubbing layer-a | OPEN — eskalacija (data minimization decision) |
+| F3-011 | MED | Per-agency forEach + try/catch swallow bez rate-limit / circuit breaker; cascade failure pri partner outage | OPEN — Faza 5 (resilience) ili Faza 6 |
+| F3-012 | MED | `NauSysYachtIntegrationService.yachtSync` re-sync path nikad ne discoveruje nove yachte na partner-side | OPEN — MED bug fix (ne blocker) |
 
-### LOW (2)
+### LOW (5)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
 | F3-006 | LOW | `NauSysAuthProvider.username!!`/`password!!` NPE pri praznom env var — treba Spring required syntax | WAITING-DECISION (paralelno s required-env fix) |
 | F3-007 | LOW | `transactionTemplate.execute` audit pattern samo u `*Async`; state-change calls gube audit pri TX rollback | OPEN — eskalacija (audit policy decision) |
+| F3-013 | LOW | Prod main-source importira `ProdTestSamples.DREAM_YACHT_AGENCY_ID` u 2 fajla (unused, inverted test dependency) | WAITING-DECISION (trivijalan) |
+| F3-014 | LOW | `@Async syncOffersForDateRange` + TODO "Nausys only one call at the time" bez locking-a | OPEN — pair s Faza 4 jobs locking decision |
+| F3-015 | LOW | `error("No Location for NauSys locationFromId=$id")` exposes partner internal IDs (F1-055 family) | OPEN — Faza 5 (cross-cutting error sanitization) |
 
 ---
 
@@ -235,15 +242,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 2 | 1 | 0 | — | — | — | — | **3** |
-| HIGH | 13 | 1 | 3 | — | — | — | — | **17** |
-| MED | 18 | 19 | 3 | — | — | — | — | **40** |
-| LOW | 8 | 23 | 2 | — | — | — | — | **33** |
-| INFO | 4 | 3 | 0 | — | — | — | — | **7** |
+| HIGH | 13 | 1 | 4 | — | — | — | — | **18** |
+| MED | 18 | 19 | 6 | — | — | — | — | **43** |
+| LOW | 8 | 23 | 5 | — | — | — | — | **36** |
+| INFO | 4 | 3 | 1 | — | — | — | — | **8** |
 | FIXED | 20 | 3 | 0 | — | — | — | — | **23** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | — | — | — | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | — | — | — | — | **3** |
 | BLOCKED | 1 | 0 | 0 | — | — | — | — | **1** |
-| **OPEN** | **41** | **44** | **8** | — | — | — | — | **93** |
+| **OPEN** | **41** | **44** | **16** | — | — | — | — | **101** |
 
 ---
 
