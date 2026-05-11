@@ -33,6 +33,7 @@ class StripePaymentService(
     private val reservationMutationService: ReservationMutationService,
     private val reservationIntegrationService: ReservationIntegrationService,
     private val reservationEmailService: ReservationEmailService,
+    private val stripeEventIdempotencyService: StripeEventIdempotencyService,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${application.stripe.enabled}") private val stripeEnabled: Boolean,
     // 3-letter ISO 4217. Stripe wants lowercase. EUR is the product default;
@@ -169,34 +170,94 @@ class StripePaymentService(
     @Transactional(readOnly = false)
     fun handleWebhookEvent(event: Event) {
         checkIfStripeIsEnabled()
+
+        // F3-022: event-level idempotency. Stripe webhook delivery is
+        // at-least-once with automatic retries (~3 day window). Without
+        // this claim, every redelivery of `checkout.session.completed`
+        // re-fires the full promoteReservationToBooking chain (partner
+        // confirm + DB save + customer email), causing duplicate partner
+        // bookings and duplicate customer emails. The claim commits in
+        // REQUIRES_NEW so it survives a rollback of the outer handler —
+        // subsequent retries become no-ops at the cost of needing manual
+        // reconciliation for partial failures (V1_91 migration comment).
+        //
+        // F3-024 note: the partner confirm → DB save → email chain
+        // inside promoteReservationToBooking is not atomic across the
+        // external partner call. A successful partner confirm followed
+        // by a local rollback would normally leave the partner with a
+        // booking we do not know about; the idempotency claim above
+        // turns that into a manual-reconciliation case instead of a
+        // duplicate-booking case on Stripe retry.
+        if (!stripeEventIdempotencyService.claimEventIfNew(event.id, event.type)) {
+            logger.info("Stripe event ${event.id} (${event.type}) already processed — skipping")
+            return
+        }
+
+        // F3-025: webhook payloads are external input, so defensively
+        // null-check every step instead of `!!`-asserting. Any malformed
+        // event is logged at error and skipped — the claim above means
+        // Stripe will not retry it, so an operator alert is the right
+        // outcome rather than a crash loop.
         val session = event.dataObjectDeserializer.`object`.orElse(null) as? Session
+        if (session == null) {
+            logger.error("Stripe event ${event.id} (${event.type}) has no Session payload — skipping")
+            return
+        }
 
-        if (event.type == "checkout.session.completed") {
-            // Session object always exists on a successful payment?
-            logger.debug("Payment for Stripe sessionId ${session!!.id} successful")
+        if (event.type != "checkout.session.completed") {
+            logger.error(
+                "Stripe event ${event.id} (${event.type}) for sessionId ${session.id} is not a completion event — skipping",
+            )
+            return
+        }
 
-            val paymentIntentId = session.paymentIntent
+        logger.debug("Payment for Stripe sessionId ${session.id} successful")
 
-            val reservationId = session.metadata["reservationId"]!!.toLong()
-            val payFullAmount = session.metadata["payFullAmount"]?.toBoolean()
-            val paymentPhaseId = session.metadata["paymentPhaseId"]?.toLong()
+        val paymentIntentId = session.paymentIntent
+        val metadata = session.metadata ?: emptyMap()
 
-            val dbPaymentPhases = paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc(session.id)
+        val reservationId = metadata["reservationId"]?.toLongOrNull()
+        if (reservationId == null) {
+            logger.error(
+                "Stripe event ${event.id}: session ${session.id} missing or invalid reservationId metadata",
+            )
+            return
+        }
+        val payFullAmount = metadata["payFullAmount"]?.toBoolean()
+        val paymentPhaseId = metadata["paymentPhaseId"]?.toLongOrNull()
 
-            if (payFullAmount != null && payFullAmount) {
-                dbPaymentPhases.forEach(setPaymentMetadata(paymentIntentId))
-            } else if (payFullAmount != null && !payFullAmount) {
-                dbPaymentPhases.first().apply(setPaymentMetadata(paymentIntentId))
-            } else if (paymentPhaseId != null) {
-                dbPaymentPhases.find { it.id == paymentPhaseId }!!.apply(setPaymentMetadata(paymentIntentId))
+        val dbPaymentPhases = paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc(session.id)
+        if (dbPaymentPhases.isEmpty()) {
+            logger.error(
+                "Stripe event ${event.id}: no payment phases found for sessionId ${session.id} (reservationId=$reservationId)",
+            )
+            return
+        }
+
+        when {
+            payFullAmount == true -> dbPaymentPhases.forEach(setPaymentMetadata(paymentIntentId))
+            payFullAmount == false -> dbPaymentPhases.first().apply(setPaymentMetadata(paymentIntentId))
+            paymentPhaseId != null -> {
+                val phase = dbPaymentPhases.find { it.id == paymentPhaseId }
+                if (phase == null) {
+                    logger.error(
+                        "Stripe event ${event.id}: paymentPhaseId=$paymentPhaseId not present among phases for sessionId ${session.id}",
+                    )
+                    return
+                }
+                phase.apply(setPaymentMetadata(paymentIntentId))
             }
-
-            // Reservation is created for the first time
-            if (paymentPhaseId == null) {
-                promoteReservationToBooking(reservationId)
+            else -> {
+                logger.error(
+                    "Stripe event ${event.id}: session ${session.id} has neither payFullAmount nor paymentPhaseId metadata",
+                )
+                return
             }
-        } else {
-            logger.error("Payment for Stripe sessionId ${session?.id} failed. Stripe event id: ${event.id}")
+        }
+
+        // Reservation is created for the first time
+        if (paymentPhaseId == null) {
+            promoteReservationToBooking(reservationId)
         }
     }
 
