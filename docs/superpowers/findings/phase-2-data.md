@@ -410,3 +410,166 @@ Najpragmatičnije: dodati test koji pokriva edge case-ove (locationIds prazno, a
 **Batch 3a je incomplete** — još Offer, OfferExtra, OfferPaymentPlan, ReservationOption, Inquiry, CustomYachtDetail, Equipment, Extra, Location, Agency, Manufacturer, Model, View repos čekaju. Splitano u Batch 3b/3c sljedeća sjednica.
 
 ---
+
+## Batch 3b — Offer flow: Offer / OfferExtra / OfferPaymentPlan / ReservationOption / Inquiry / CustomYachtDetail / CustomOffer (2026-05-11)
+
+### [F2-022] HIGH bug — Daily scheduled cleanup koristi non-PostgreSQL date syntax → tihi failure svaki dan u 06:00
+**Lokacija:** `domains/catalouge/jpa/OfferRepository.kt:108-117` (`deleteExpiredOffers`, `nativeQuery=true`) i `domains/catalouge/jpa/ExternalReservationRepository.kt:13-15` (`deleteExpiredReservations`, JPQL).
+**Detekcija:** statička + trace caller (`DeleteExpiredReservationsAndOffersJob.kt:20` `@Scheduled(cron = "0 0 6 * * ?")` → `ReservationOfferService.deleteExpiredReservationsAndOffers()`).
+**Opis:** Cron job poziva oba `delete` query-ja u istoj `@Transactional` metodi. **Ni jedan nije validni PostgreSQL:**
+- `OfferRepository.deleteExpiredOffers`: native SQL koristi `DATE_ADD(CURRENT_DATE, '-30 day'::interval)`. **PostgreSQL nema `DATE_ADD` funkciju** (MySQL syntax). PostgreSQL ekvivalent: `CURRENT_DATE - INTERVAL '30 days'`.
+- `ExternalReservationRepository.deleteExpiredReservations`: JPQL koristi `DATEADD(day, -30, CURRENT_DATE)`. **`DATEADD` nije standardni JPQL niti PostgreSQL function** (T-SQL/MSSQL syntax).
+
+Migracije ne registriraju custom `date_add` ili `dateadd` Postgres funkcije (grep `db/migration/**/*.sql`). Hibernate ne transformira native query-je → first query baca `ERROR: function date_add(date, interval) does not exist`. Transakcija rolls back, drugi query se ne izvršava. **Cron logira exception ali ne kill-a JVM** — svaki sljedeći dan ista priča.
+
+Posljedica: **expired offers + external reservations se nikad ne brišu**, tablice `offer` i `external_reservations` rastu bez retencije. Combined sa Envers `store_data_at_delete:true` (već F2-002 koncern) i sync flow-ovima koji daily refresh-aju offers — `offer_revisions` tablica može akumulirati ~10k+ row-eva tjedno i bez čišćenja. Disk + query plan bloat pre-prod.
+
+Test suite: 29/103 fail-ovi (baseline). Vjerojatno nema integration testa koji ovo cilja — inače bi failao.
+**Predloženi fix:** dvije male promjene:
+- `OfferRepository.deleteExpiredOffers`: `WHERE o.date_to < CURRENT_DATE - INTERVAL '30 days'` (native).
+- `ExternalReservationRepository.deleteExpiredReservations`: prebaciti na JPQL parameter — `WHERE r.dateTo < :cutoff`, callback prosljeđuje `LocalDate.now().minusDays(30)`. Eliminira dialect-specific funkcije iz koda.
+
+Plus: dodati log statement koji broji *koliko* je redova obrisano (Spring Data vraća `int` count za @Modifying queries), tako da admin vidi je li cron stvarno radi. **Plus monitoring:** alert ako 0 redova obrisano 3+ dana u nizu (signal da query opet šuti).
+**Riziko-procjena fixa:** trivijalan u smislu code-a (dvije linije). Ali to su scheduled jobovi koji diraju persistencu — testirati u staging-u prije prod-a (idealno: ručno trigger admin endpointa `/admin/deleteExpiredReservationsAndOffers` koji već postoji u `AdminJobController.kt:26`).
+**Status:** OPEN — **HIGH, fix prije prod deploy-a** (cron tiho ne radi → table growth without bound)
+
+---
+
+### [F2-023] MED perf — `InquiryRepository.findAllByParamsForAdmin` triple leading-wildcard LIKE = full table scan; multiplikator za F1-068 email-bombing
+**Lokacija:** `domains/catalouge/jpa/InquiryRepository.kt:11-25`
+**Detekcija:** statička
+**Opis:** Admin inquiry search:
+```jpql
+LOWER(i.email) LIKE LOWER(CONCAT('%', STR(:search), '%'))
+  OR LOWER(i.name) LIKE LOWER(CONCAT('%', STR(:search), '%'))
+  OR LOWER(i.surname) LIKE LOWER(CONCAT('%', STR(:search), '%'))
+```
+Leading wildcard `%X%` znači da **nijedan B-tree index ne može poslužiti** — Postgres mora projekcionirati cijelu `inquiry` tablicu i izvršiti case-folding na 3 kolone po row-u. Plus svaki `LOWER(col)` u funkcionalnom kontekstu znači da i regular index na `email` ne bi bio koristan; trebao bi specifičan `LOWER(email)` funkcionalni index — koji ne postoji.
+
+Kombinirano s F1-068 (`/public/inquiries/{id}/send-test` anon email-bombing): napadač kreira tisuće inquiry zapisa → admin search postaje sekunde po query-ju. DoS multiplikator: spori admin UX (kad netko ipak provjeri) + više CPU na DB-u.
+
+`STR(:search)` je dodatna anomalija — Hibernate JPQL `STR` funkcija konvertira u string. Ako `:search` već je String parametar, ovo je no-op (Hibernate translates to `cast(? as varchar)`). Funkcijski nepotrebno; potencijalno smetnje za optimizer ali ne kritično.
+**Posljedica:** admin search degradira non-linearno s rastom `inquiry` tablice. Combined s F1-068 ovo je vektor DoS-a.
+**Predloženi fix:** dvije opcije:
+- (a) **Trigram index** — pg_trgm extension, `CREATE INDEX inquiry_email_trgm_idx ON inquiry USING gin (LOWER(email) gin_trgm_ops)` (+ ista za name/surname). Omogućava `LIKE '%x%'` index-supported scan. Najbolja pragmatika.
+- (b) **Full-text search** — `tsvector` kolona, ali overkill za admin search.
+- (c) **Fail-fast minimum length** — odbiti search query < 3 chars (vraćati 400) tako da je rezultat brzo bounded. Combined s (a) za najbolji rezultat.
+
+Plus: prebaciti `STR(:search)` na običan `:search` (redundantno).
+**Riziko-procjena fixa:** dira shemu (Flyway migracija za pg_trgm + indexe). MED.
+**Status:** OPEN — Faza 6 (perf indexes) ili paralelno s F1-068 fix-om
+
+---
+
+### [F2-024] MED perf — `countByEmailIgnoreCaseAndIdNot` poziva se na svaku novu inquiry; bez funkcionalnog indeksa = O(n) po insertu
+**Lokacija:** `domains/catalouge/jpa/InquiryRepository.kt:29-39`
+**Detekcija:** statička
+**Opis:** `LOWER(i.email) = LOWER(:email) AND i.id <> :idNot` — pokreće se nakon spremanja svake inquiry da bi "NEW CLIENT" pill bio točan u sljedećem email-u. Bez `LOWER(email)` funkcionalnog indeksa, ovo je seq scan na cijelom `inquiry` tabli pri svakom insert-u.
+
+Combined s F1-068 (anon email-bombing): napadač šalje 1000 inquiry POST-ova → svaki insert pokreće seq scan po 1000-rastućoj tabli. **Quadratic behavior** O(n²) na bursts: 1000 inquiries = 500k row reads ukupno. Plus svaka inquiry već pokreće mail-send pa je IO bottleneck dominantan, ali DB CPU is collateral.
+**Posljedica:** pod load-om inquiry creation throughput pada. Combined s F1-069 (`/public/inquiries` POST no rate-limit) i F1-068 (email-bombing) ovo je treći faktor istog problema — burst attack ima O(n²) DB cost.
+**Predloženi fix:** isto kao F2-023 — funkcionalni index `CREATE INDEX inquiry_email_lower_idx ON inquiry (LOWER(email))`. Tada `WHERE LOWER(i.email) = LOWER(:email)` koristi index. **Najbolji potez:** kombinirati u jednoj migraciji s F2-023 trigram indeksom (oba dira `email` kolonu).
+
+Alternativno: cache-irati count za email u Redis/in-memory s short TTL — ali to dodaje state. Index je čistiji.
+**Riziko-procjena fixa:** Flyway migracija + index na milijunskoj tabli ali inquiry je manja od yacht-a tako da nije skupa. MED.
+**Status:** OPEN — Faza 6 (vezano za F2-023)
+
+---
+
+### [F2-025] LOW perf — `offersByYachtAndStatusCache` key tip je `Yacht` entity, ne `Long` (sibling F2-007)
+**Lokacija:** `common/cache/CacheConfig.kt:130` (deklaracija) + `domains/catalouge/jpa/OfferRepository.kt:39-50` (`@Cacheable("offersByYachtAndStatusCache")`)
+**Detekcija:** statička
+**Opis:** Isti pattern kao F2-007 (yachtExtrasCache) — cache deklariran s `Yacht::class.java` kao key tip, EhCache koristi `equals()`/`hashCode()`. `Yacht` entity (provjereno u Batch 3a) nema custom equals/hashCode → default Object identity. Različite Yacht instance s istim id-jem su različiti ključevi. Plus key u @Cacheable je default `SimpleKey(yacht, statuses)` što ovisi o `yacht.hashCode()` koji = identityHashCode → cache nikad ne hit-uje između transakcija.
+
+Pozitivno: `OfferMutationService.kt:17` ima eviction `allEntries = true` pa stale data nije briga — samo cache se ne koristi efektivno (svaki request je miss).
+**Posljedica:** annotation cijelo vrijeme zaposlena, cache je praktički prazan. Zero perf gain.
+**Predloženi fix:** isto kao F2-007 (sibling) — promijeniti key tip u `java.lang.Long::class.java`, dodati `@Cacheable(key = "T(java.util.Arrays).hashCode(new Object[]{#yacht.id, #statuses})")` ili jednostavnije pivotati na metodu koja prima `yachtId: Long` umjesto Yacht entity. Ako ostane Yacht, dodati custom `equals/hashCode` na Yacht (rizik za druge dependencije — verify).
+**Status:** OPEN — fix paralelno s F2-007 (oba dira CacheConfig)
+
+---
+
+### [F2-026] MED bug-u-čekanju — `OfferPaymentPlan.equals/hashCode` koristi mutable polja, čuva se u `Set<OfferPaymentPlan>` na Offer-u
+**Lokacija:** `domains/catalouge/jpa/OfferPaymentPlan.kt:43-63` (equals/hashCode) + `domains/catalouge/jpa/Offer.kt:94-95` (`offerPaymentPlans: MutableSet<OfferPaymentPlan>`)
+**Detekcija:** statička
+**Opis:** `OfferPaymentPlan.equals/hashCode` rade na `offer`, `date`, `amount`, `percentage` — **svi su mutable (`open var`).** Klasični Kotlin/JPA pitfall: objekt se stavi u `MutableSet` s hashCode bazom na trenutnim vrijednostima → kasnije se vrijednost promijeni (npr. broker update-a datum/iznos) → hashCode više ne odgovara bucketu u kojem entity sjedi → `set.contains(plan) == false` iako je `plan` upravo u tom set-u. Posljedica:
+- `offer.offerPaymentPlans.remove(plan)` može ne ukloniti plan (krivi bucket).
+- Hibernate's "dirty checking" + cascade ALL + orphanRemoval može tiho stvoriti dupli plan ili pustiti orphan.
+- Two PaymentPlans s istim datumom + amount u istom offer-u su `equals()=true` čak ako su različiti DB redovi — Set ih dedupes, **drugi se gubi pri save-u**.
+
+Spring/Hibernate guidance: na entity-jima koji se drže u kolekciji uvijek equals/hashCode po identity (`id` jednom postavljen) ili klasa = data class s `id` only.
+**Posljedica:** subtle bugs pri update-ovanju payment plana koji se ne reproduciraju lokalno. Pre-prod, plan update flow se vjerojatno još malo koristi pa ovo čeka da prvi broker ažurira plan datum nakon save-a.
+**Predloženi fix:** promijeniti equals/hashCode na bazi `id` (vraćati `false` ako oba `id` nisu set-ana, ili koristiti `super.equals` kad oba unsaved). Idiom:
+```kotlin
+override fun equals(other: Any?): Boolean {
+    if (this === other) return true
+    if (other !is OfferPaymentPlan) return false
+    return id != null && id == other.id
+}
+override fun hashCode(): Int = id?.hashCode() ?: javaClass.hashCode()
+```
+Alternativno: prebaciti kolekciju na `MutableList<OfferPaymentPlan>` (lista ne ovisi o hashCode/equals za identitet — koristi pozicijski index).
+**Riziko-procjena fixa:** dira entity contract — postojeći callers koji se oslanjaju na "structural equality" za detect-change moraju biti revisited. MED kandidat za grep.
+**Status:** OPEN — eskalacija (entity contract change)
+
+---
+
+### [F2-027] LOW data integrity — JPA `orphanRemoval=true` vs DB `OnDelete SET_NULL` na istom FK = orphan rows nakon direct SQL delete-a
+**Lokacija:** `domains/catalouge/jpa/Offer.kt:94, 110` (`@OneToMany cascade=ALL, orphanRemoval=true`) + `OfferExtra.kt:51-54` (`@OnDelete(action = OnDeleteAction.SET_NULL)` na `offer_id`) + `OfferPaymentPlan.kt:28-31` isto
+**Detekcija:** statička
+**Opis:** Hibridna semantika brisanja:
+- JPA strana (kad app obriše Offer kroz `EntityManager.remove(offer)`): `orphanRemoval=true` + `cascade=ALL` znači da Hibernate emita DELETE na child redove (`offer_extras WHERE offer_id=?`, `offer_payment_plan WHERE offer_id=?`) prije DELETE FROM offer.
+- DB strana (kad operator radi direktan `DELETE FROM offer WHERE id=N` u psql, ili kad Flyway migracija obriše red): `OnDelete SET_NULL` znači child redovi ostaju, samo se `offer_id` postavlja na NULL. To su **orphan rows** koje nikad nitko ne čita (sve queryji JOIN-aju na offer_id), ali postoje u DB-u.
+
+Posljedica:
+- Disk grow ako se Offer brisanje radi izvan app-a (npr. F2-022 kad se ikad popravi, F1-074 test fixtures koji direktno bake DB state).
+- "Tiha" semantika: čišćenje preko `JpaRepository.delete(offer)` se ponaša drugačije od `repository.deleteById(id)` — prvi triggera orphanRemoval, drugi može (ovisno o Hibernate-u) izvršiti direct DELETE bez load-anja entity-ja, pa OnDelete preuzme. **Inconsistent behavior** po endpointu.
+**Predloženi fix:** uskladiti smjer. Dvije opcije:
+- (a) `OnDelete(action = OnDeleteAction.CASCADE)` — DB-side cleanup, omogućuje direct SQL delete bez orphan-ova. Najpragmatičnije za pre-prod (ne dira app logic).
+- (b) `OnDelete(action = OnDeleteAction.RESTRICT)` — DB ne dopušta delete dok child redovi postoje. Forsira app-side cleanup. Sigurnije ali zahtjeva izmjene u code (mora explicit deleteAll children prije offer-a).
+
+Preporučujem (a) — CASCADE — jer već imamo orphanRemoval=true na JPA strani, tako da je app-side ponašanje **istovremeno** s onim što DB sad već radi automatski. Migracija jednog FK constraint-a.
+**Riziko-procjena fixa:** Flyway migracija (DROP CONSTRAINT + ADD CONSTRAINT s CASCADE). Bezopasno ako nema postojećih orphan-ova (verify prije: `SELECT count(*) FROM offer_extras WHERE offer_id IS NULL`).
+**Status:** OPEN — Faza 6 (data integrity sweep)
+
+---
+
+### [F2-028] LOW model consistency — Offer, OfferExtra, OfferPaymentPlan, ReservationOption, Inquiry, CustomYachtDetail, CustomOffer ne extendaju `AbstractEntity` (proširenje F2-017)
+**Lokacija:** `domains/catalouge/jpa/Offer.kt:33`, `OfferExtra.kt:24`, `OfferPaymentPlan.kt:21`, `ReservationOption.kt:24`, `Inquiry.kt:26`, `CustomYachtDetail.kt:20`, `CustomOffer.kt:28`
+**Detekcija:** statička
+**Opis:** Isti pattern kao F2-017 (Yacht/YachtImage/YachtTranslation). Sve gore navedene klase imaju vlastiti `@Id` umjesto da nasljeđuju `AbstractEntity<Long>`. Posljedice:
+- **Nema `created`/`modified` kolone** (osim Inquiry i CustomOffer koji imaju manual `createdAt` polja → bar djelomično). Nemoguće je sortirati "recent offers" osim preko id-a.
+- **Nema `creator_id`/`modifier_id`** — combined s F2-001/F2-004 (audit trail dead) — Offer cijena se može promijeniti, ne zna se tko.
+- **Nema `entity_status` soft-delete pattern-a** — direct DELETE (vidi F2-022/F2-027) jedini način "remove-a", što ide preko hard delete (Envers _revisions ima dead bodies).
+- **Nema centralnog `@Audited`** — F2-002 perf koncern se zaobilazi, ali audit trail nije ujednačen.
+
+Najvažnija praktična posljedica: **brokeri mogu mijenjati cijenu/datume offer-a bez audit traga.** Combined s F2-026 (mutable PaymentPlan equals) i F2-022 (broken cleanup) — Offer lifecycle je nepouzdan.
+**Predloženi fix:** isto kao F2-017 — extend AbstractEntity, migracija dodaje 4 kolone + backfill. Velik refactor. Mora ići u jednu pre-prod migraciju za sve "core business" entitete (Yacht + Offer + Inquiry + Reservation iz Batch 3a).
+**Riziko-procjena fixa:** velik. Sync flow-ovi koji insertaju offer-e moraju postaviti created/modified iz partner data-e ili NOW(). Migracija dira velike tablice.
+**Status:** OPEN — eskalacija (architectural decision, paralelno s F2-017)
+
+---
+
+### [F2-029] LOW code smell — `STR(:search)` JPQL funkcija u `findAllByParamsForAdmin` redundantna
+**Lokacija:** `domains/catalouge/jpa/InquiryRepository.kt:15-17`
+**Detekcija:** statička
+**Opis:** Spomenuto pod F2-023 ali samostalno bilježim. JPQL `STR(x)` Hibernate funkcija konvertira argument u string (generira `CAST(? AS varchar)`). Za `:search` parametar koji je već `String?`, ovo je no-op. Vjerojatno copy-paste iz prijašnjeg query-ja gdje je parametar bio `Long` ili sl. Vizualni noise + zbunjuje budućeg developera ("zašto je ovdje STR?").
+**Predloženi fix:** ukloniti `STR(...)` wrapper — koristiti `:search` direktno.
+**Riziko-procjena fixa:** trivijalno.
+**Status:** WAITING-DECISION (trivial)
+
+---
+
+### Sažetak Batch 3b
+
+- **HIGH (1):** F2-022 (scheduled cleanup tiho ne radi — non-PG date syntax)
+- **MED (3):** F2-023 (admin search seq scan, F1-068 multiplikator), F2-024 (per-insert email count seq scan, F1-068 multiplikator), F2-026 (mutable equals/hashCode u Set)
+- **LOW (4):** F2-025 (cache key Yacht entity — sibling F2-007), F2-027 (cascade vs OnDelete mismatch), F2-028 (Offer flow entiteti ne extendaju AbstractEntity — proširenje F2-017), F2-029 (STR redundantan)
+- **WAITING-DECISION:** F2-029 (trivijalan)
+
+**Najkritičniji nalaz batch-a: F2-022.** Daily scheduled cleanup baca exception već **sad** u staging-u/dev-u (svaki dan u 06:00). U Spring `@Scheduled` log-u je tiho. Tablice rastu jer cleanup ne uspjeva. Mora se popraviti prije prod deploy-a — fix je <10 linija u 2 query-ja.
+
+**Drugi važan trend:** F2-023 + F2-024 + F1-068 + F1-069 zajedno čine **inquiry endpoint DoS surface**. Index migracija (trigram + LOWER) značajno reducira napad-cost. Faza 6 kandidat za batch index migracije.
+
+**Batch 3b završen. Batch 3c next:** Equipment, Extra, Location, Agency, Manufacturer, Model + view repos (FiltersView, AllLocationView, LocationView, YachtLocationsView, CustomYachtView).
+
+---
