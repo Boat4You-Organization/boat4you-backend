@@ -1189,14 +1189,18 @@ Phase gate: **PASS at baseline (zero regression)**. Phase 2 changes su safe-to-m
 4. **Payment phase fix decision** — F2-026/F2-036: id-based equals (preferred) vs MutableList migration. Trebao bi biti prije prod-a zbog F1-019 multiplier.
 5. **Faza 6 index migration scoping** — bundle 5 findings (F2-023/F2-024/F2-033/F2-034/F2-040) into one pg_trgm + functional LOWER migration. Out-of-repo verify: pg_trgm extension permission on VM4 PostgreSQL 18 user.
 
-### Phase 3 outlook (Service layer / business logic)
+### Phase 3 outlook (Vanjske integracije — per spec section)
 
-Phase 2 surfaced clusters that **Phase 3 will deepen**:
-- **Auth + role re-fetch** (F1-005 + F2-013/F2-016 family) → Phase 3 covers UserAuthService, JwtAuthenticationFilter business path.
-- **Cancellation + payment phase orchestration** (F2-036 + F1-019 CRIT + F1-028 BLOCKED) → Phase 3 covers ReservationFlowMutationService + StripePaymentService transitions.
-- **Yacht swap detection + audit write** (F2-026 swap reference + ReservationSyncService) → Phase 3 covers reservation sync write-side.
-- **Admin search business rules** (F2-023/F2-040 family) → Phase 3 covers admin controllers + DTO mapping (input validation, search trimming).
+Phase 3 per spec (`2026-05-07-boat4you-prod-review-design.md:96`) pokriva vanjske integracije: NauSys / MMK / Stripe / mail / HTTP klijenti.
 
-Plus Phase 3 should validate the architectural decisions made in step 3 above before they apply across service layer.
+Phase 2 nalazi koji direktno informiraju Phase 3:
+- **F1-019 CRIT (Stripe webhook idempotency)** + **F1-031 LOW (Stripe signature error mapping)** + **F2-022 fix-precedent** (PostgreSQL syntax fix u scheduled cleanup) → Phase 3 produbljuje Stripe webhook flow + retry/idempotency policy across NauSys/MMK clients.
+- **F1-037 HIGH (`NAUSYS_URL` default `http://`)** → Phase 3 TLS / URL validation.
+- **F1-064 HIGH (public yacht search trigger-a synchroni external sync)** → Phase 3 sync orchestration + back-pressure.
+- **F2-002 (Envers `_revisions` rast)** + **F2-022 (cleanup queries)** → Phase 4 scheduled jobs će ponovno doticati ovo, ne Phase 3.
+
+Internal business-logic findings (auth/role-refetch, cancellation orchestration, admin search business rules) **NE pripadaju Phase 3** — to pokriva **Phase 5 (cross-cutting)** za error handling/logging i pojedinačni service review koji se odvija unutar svake integracijske faze.
+
+Phase 4 (jobs + heavy native) i Phase 5 (cross-cutting) slijede nakon Phase 3.
 
 ---
