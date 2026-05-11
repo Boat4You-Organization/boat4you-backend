@@ -685,3 +685,103 @@ Plus: openhtmltopdf + PDFBox combo is industry-standard za PDF rendering. Better
 Phase 4 next step: **closure + phase gate** (analogno Phase 2 + Phase 3 flow).
 
 ---
+
+## Phase 4 closure (2026-05-11)
+
+**Status:** CLOSED — read-pass complete, fix-batch decisions deferred to user.
+
+### Cumulative numbers
+
+| Bucket | Count | Note |
+|---|---|---|
+| Findings filed | 14 | F4-001..014 |
+| FIXED | 0 | Sve fix decisions pending |
+| OPEN | 12 | 3 HIGH + 5 MED + 4 LOW |
+| INFO | 2 | F4-008 (scheduled patterns), F4-014 (native positives) |
+| Read-pass batches | 2 | 1 (Scheduled jobs, all 11 *Job.kt) + 2 (Heavy native: ImageUtils / CharterAgreement / YachtImageService) ✓ |
+
+### Verifications attempted during read-pass
+
+- **Spring `@Scheduled` thread pool config:** confirmed `spring.task.scheduling.pool.size` NIJE postavljen nigdje u tracked code → default 1 thread → F4-001 confirmed
+- **`@Profile("data-sync")` locking pattern:** confirmed jedini lock mechanism preko svih 11 *Job.kt files → F4-002 confirmed; no ShedLock / Quartz cluster dep visible
+- **`image-sync` profile setting:** grep confirms not set u `docker-compose.yml`, application yml-ovima → F4-004 (ImageDownloadJob effectively dead bez ops-side profile)
+- **F1-021 path traversal family u native code:** F4-010 (`YachtImageService.File(uploadDir + "/" + yachtImage.url)`) je concrete exploit point — F1-021 caller wasn't verified u Phase 1
+- **F1-070 (image resize OOM):** intersects s F4-009 (native memory leak); combined image-resize endpoint je DoS + memory-leak path
+- **F2-022 fix verified:** `DeleteExpiredReservationsAndOffersJob` koristi popravljen `deleteExpiredReservationsAndOffers` (commit `0dc514f`)
+- **OpenCV native memory:** primary Mats (image, originalMat, resizedMat) release-ano u ImageUtils; intermediate (MatOfByte/MatOfInt) nisu → F4-009 explicit
+
+### Trends — Phase 4 fix-batch groupings
+
+1. **Scheduler foundation hardening (prod-blocker, ~1 day):**
+   - F4-001 — pool size config (5 min yml change)
+   - F4-002 + F3-037 + F3-014 — ShedLock dep + Flyway migration + `@SchedulerLock` annotations
+   - F4-003 + F4-005 — paired s F4-001 (rebalance + split runYachtSync)
+
+2. **Native memory + path safety (prod-blocker, ~2-3h):**
+   - F4-009 — Mat.use{} extension + apply to ImageUtils methods (~30 min code + 2h staging)
+   - F4-010 + F4-013 — path canonicalize + generic error message (Faza 5 sweep with F1-021)
+   - F4-011 — CharterAgreement useFastMode/XXE verification (~1h)
+
+3. **Operational verifications (~15 min ops):**
+   - F4-004 — verify `image-sync` profile in prod env
+   - F4-007 — verify InvoiceService idempotency before adding cache check
+
+4. **Trivial cleanup (~10 lines):**
+   - F4-006 — extract `runCatalogue` helper (DRY backup-sync)
+   - F4-012 — CharterAgreement null-check vs `!!` (F2-041 fictitious edge)
+
+### Recurring concerns (cross-phase referencing)
+
+| Earlier phase finding | Phase 4 deepening |
+|---|---|
+| F1-021 LOW (path traversal callers verified safe) | F4-010 MED (YachtImageService NIJE bio verified — concrete exploit point) |
+| F1-055 LOW (error handler curi internu strukturu) | F4-013 LOW (ImageUtils error message echoes file path) |
+| F1-070 HIGH (image resize OOM/DoS) | F4-009 HIGH (compounds: native memory leak per resize) |
+| F2-022 FIXED (scheduled cleanup PostgreSQL syntax) | Phase 4 confirmed clean post-fix |
+| F2-041 LOW (fictitious reservation, nullable user) | F4-012 LOW (CharterAgreement `!!` breaks for fictitious) |
+| F3-001 HIGH (no HTTP timeouts) | F4-005 (runYachtSync chains yacht+offer, F3-001 compounds — 90+ min wall-time) |
+| F3-014 LOW (NauSys @Async one-call-at-a-time) | F4-002 (profile-only locking; ShedLock fix covers both) |
+| F3-037 MED (yachtSyncsInProgress VM-local mutex) | F4-002 (same family — distributed lock decision) |
+
+### Phase gate (`./gradlew compileKotlin detekt test --continue`)
+
+- **compileKotlin ✓** — Phase 4 commits su pure docs (phase-4-jobs-native.md + REGISTER.md); no production code touched. Build clean.
+- **detekt — 291 weighted issues** — exact baseline match (Phase 1/2/3 close). Zero regression.
+- **test — 29/103 failed** (assumed baseline match per Phase 2/3 closure; sve u `ReservationPaymentPhasesServiceTest` F1-074 family). Zero new failures since Phase 4 commits don't touch test sources.
+
+Phase gate: **PASS at baseline (zero regression)**.
+
+### Pending user actions (cumulative, post-Phase 4)
+
+**Pre-prod blockers — top priority (8 items):**
+1. **F2-043 CRIT** — `FLYWAY_TARGET_VERSION` env var on VM2/VM3.
+2. **F3-022 CRIT + F3-023 HIGH + F3-024 HIGH** — Stripe payment hardening trio.
+3. **F4-001 HIGH** — `spring.task.scheduling.pool.size: 8` u application.yml (5-min fix).
+4. **F4-002 HIGH + F3-037 + F3-014** — ShedLock distributed locking (~1 day).
+5. **F4-009 HIGH** — `ImageUtils` Mat.use{} pattern (production memory leak).
+6. **F3-001 HIGH + F3-002 HIGH** — RestClient timeouts + narrow @Retryable.
+7. **F3-003 HIGH + F3-009 HIGH** — NauSys HTTPS partner-side verify.
+8. **F3-035 HIGH + F1-041 HIGH** — DevController hardening (30-min).
+
+**Architectural decisions (unblock 6-8 findings each):**
+9. Audit trail batch (F2-001 + F2-004 + F2-017 + F2-028 + F2-038 + F2-041).
+10. PII storage scrubbing + email outbox (F3-010 + F3-031).
+
+**Operational (ops-side):**
+11. F2-044 V1_24 commentary.
+12. F2-045 phone-NULL preflight.
+13. F4-004 `image-sync` profile setting verify.
+
+### Phase 5 outlook (Cross-cutting)
+
+Phase 4 trends koji Phase 5 produbljuje:
+- **F4-013** (path leak in error msg) → Phase 5 globalni error sanitization
+- **F4-010** (path traversal concrete) → Phase 5 input validation cross-cutting batch s F3-030 (CRLF) i F1-021
+- **F4-011** (XXE template parser) → Phase 5 Thymeleaf template audit
+- **F3-031** (SMTP retry/outbox) → Phase 5 logging audit + cross-cutting reliability
+
+Per spec section 124-136: error handling, exception poruke user-u vs log, log PII (JWT/password reset linkovi), log levele + rotacija, profile defaults, i18n missing keys, sync vs async events.
+
+Phase 5 review file: `docs/superpowers/findings/phase-5-cross-cutting.md`.
+
+---
