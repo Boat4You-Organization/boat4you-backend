@@ -351,20 +351,59 @@ Legend statusa:
 
 ---
 
+## Faza 6 — Repo hygiene + deploy artefakti
+
+**Status:** CLOSED 2026-05-11 (read-pass kroz 1 batch + closure summary + phase gate at baseline). 13 findings: 0 FIXED, 12 OPEN (3 HIGH + 4 MED + 5 LOW), 1 INFO. **Gate: zero regression**. **Top concern: F6-002 + F2-043 = documented prod admin takeover via README test-user table.**
+
+### HIGH (3)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F6-001 | HIGH | `Dockerfile` no `USER` directive → container radi kao root (production systemd je non-root cusma2/cusma3, verify if container ever ships prod) | OPEN — HIGH if container ships prod / MED if dev-only |
+| F6-002 | HIGH | `README.md:79-97` dokumentira test user table sa SYSTEM_ADMIN role + password "123456"; combined s F2-043 CRIT = documented prod admin takeover path | OPEN — **HIGH, immediate README delete** |
+| F6-003 | HIGH (pending verify) | `boat4you-ws-perf-update.tar.gz` 298 MB u repo root; content unknown (potencijalno PII u backup) | OPEN — **VERIFY contents before classification** |
+
+### MED (4)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F6-004 | MED | `.env` (NOT tracked) sadrži PROD partner credentials lokalno (NauSys/MMK live tokens, real mail password); dev-machine compromise = secret leak | OPEN — operational policy |
+| F6-005 | MED | `.env.example` references removed Viva integration + outdated SERVER_HOST_PUBLIC port + inconsistent mail env var naming s prod yml | WAITING-DECISION (trivijalan docs cleanup) |
+| F6-006 | MED | `docker-compose.yml:22` `SSL_KEYSTORE_PASSWORD:-changeme` placeholder default; F5-014 family | OPEN — pair s F5-013/014/016 yml-hardening |
+| F6-007 | MED | `build.gradle.kts:292 ignoreFailures = true` na ktlint; code-quality failures don't fail build | WAITING-DECISION (trivijalan toggle, but format-and-commit step needed first) |
+
+### LOW (5)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F6-008 | LOW | `README.md:100-112` documents OLD GET sync endpoints; F1-042 fix already applied POST methods (docs drift) | WAITING-DECISION (trivijalan README update) |
+| F6-009 | LOW | `detekt_config.yml` disables SwallowedException + MagicNumber + ThrowsCount; LongParameterList allows 15-param constructors | WAITING-DECISION (style choice) |
+| F6-010 | LOW | Dockerfile no `HEALTHCHECK`; container orchestration can't detect zombie process | OPEN — pair s F6-001 Dockerfile fix |
+| F6-011 | LOW | `README_PROD.md` systemd `ExecStart` missing `-XX:+HeapDumpOnOutOfMemoryError` + `-XX:+ExitOnOutOfMemoryError`; F4-009 OOM forensics broken | OPEN — pre-prod ops checklist |
+| F6-012 | LOW | `model/docker-compose.yml` hardcodes `POSTGRES_USER/PASSWORD=boat4you_owner` u tracked file (dev-only) | WAITING-DECISION (trivijalan) |
+
+### INFO (1)
+
+| ID | Naslov |
+|---|---|
+| F6-013 | Positive: `.gitignore` solid (env, p12 comment, tar.gz, OS cruft); systemd non-root cusma2/cusma3; Dockerfile multi-stage build; cron schedule documented in README_PROD |
+
+---
+
 ## Total cumulative across all phases
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 2 | 1 | 1 | 0 | 1 | — | — | **5** |
-| HIGH | 13 | 1 | 7 | 3 | 3 | — | — | **27** |
-| MED | 18 | 19 | 14 | 5 | 7 | — | — | **63** |
-| LOW | 8 | 23 | 10 | 4 | 6 | — | — | **51** |
-| INFO | 4 | 3 | 8 | 2 | 4 | — | — | **21** |
-| FIXED | 20 | 3 | 0 | 0 | 0 | — | — | **23** |
-| DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | — | — | **6** |
-| DEFERRED-other | 3 | 0 | 0 | 0 | 0 | — | — | **3** |
-| BLOCKED | 1 | 0 | 0 | 0 | 0 | — | — | **1** |
-| **OPEN** | **41** | **44** | **32** | **12** | **17** | — | — | **146** |
+| CRIT | 2 | 1 | 1 | 0 | 1 | 0 | — | **5** |
+| HIGH | 13 | 1 | 7 | 3 | 3 | 3 | — | **30** |
+| MED | 18 | 19 | 14 | 5 | 7 | 4 | — | **67** |
+| LOW | 8 | 23 | 10 | 4 | 6 | 5 | — | **56** |
+| INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
+| FIXED | 20 | 3 | 0 | 0 | 0 | 0 | — | **23** |
+| DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
+| DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
+| BLOCKED | 1 | 0 | 0 | 0 | 0 | 0 | — | **1** |
+| **OPEN** | **41** | **44** | **32** | **12** | **17** | **12** | — | **158** |
 
 ---
 
