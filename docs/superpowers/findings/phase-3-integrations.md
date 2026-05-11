@@ -1201,3 +1201,161 @@ Fix sequencing:
 **Batch 4 završen. Batch 5 next:** Mail — `EmailService`, `ReservationEmailService`, `InquiryEmailService`, `PaymentPendingNotificationService`, `BirthdayEmailJob`. PII u email-u, SMTP error handling, async retry.
 
 ---
+
+## Batch 5 — Mail integration (EmailService + downstream) (2026-05-11)
+
+### [F3-030] MED security — User-controlled email/name fields (`inquiry.email`, `user.name`/`surname`) putuju u `setReplyTo`/`setTo` headers bez explicit CRLF/comma sanitizacije; potencijal header injection
+**Lokacija:**
+- `InquiryEmailService.kt:99` — `replyTo = inquiry.email` (public-form input, F1-068 vector)
+- `BirthdayEmailJob.kt:69` — `recipientAddress = "$fullName <${user.email}>"` (user-profile input)
+- `ReservationEmailService.kt` — slični pattern-i (verify u Batch follow-up)
+- `EmailService.kt:207-216` — `helper.setTo(recipients.toTypedArray())`, `helper.setReplyTo(effectiveReplyTo)`
+
+**Detekcija:** statička
+**Opis:** JavaMail's `MimeMessageHelper.setReplyTo(String)` interno poziva `InternetAddress.parse(...)` koji **splita na komu** (jer email field može biti list). Ako attacker uspješno submit-ne inquiry s emailom poput `"victim@target.com,attacker@evil.com"`, JavaMail parse-a **dvije adrese** i obje stavi u Reply-To header.
+
+CRLF u stringu — moderni JavaMail (Jakarta Mail 2.x) reject-a; throw-uje `AddressException`. Plus: `MimeUtility.unfold(String)` strip-a CRLF u header value-u. **Tako da CRLF injection sam po sebi je teško eksploatibilan** s aktualnim JavaMail-om. Ali **comma-injection** za multi-recipient cilja je vjerojatno otvoren — InternetAddress smatra to legitimnim multi-address syntax-om.
+
+Concrete attack scenariji:
+1. **Reply-To list injection:** anonimni napadač submit-ne inquiry s `email = "lead@target.com,attacker@evil.com"`. Mario reply (admin clicks Reply u Outlook-u) ide na **oba** adresarima. Attacker sazna inquiry sadržaj + Mario follow-up message.
+2. **Recipient injection u birthday/transactional flow:** user registers s `email = "victim@me.com,attacker@evil.com"` (ako registration validacija pusti). Svaki transactional email going to user (booking confirmation, password reset, birthday) BCC-a attacker-a implicit-no preko To: field-a. **Severity gore — attacker dobiva password reset linkove.**
+
+Mitigation zavisi od:
+- **Input validation u InquiryController, RegistrationController, UserMutationService** — jesu li `email` field validacije strict (single address, no comma, no whitespace)? Treba verificirati via Phase 5 cross-cutting (input validation sweep).
+- **JavaMail behavior verification** — runtime test s malformed addresses za potvrdu da neki path nije bypass-an.
+
+`fullName` (line 69 BirthdayEmailJob) takav je `${user.name} ${user.surname}`. Ako name/surname imaju RFC-2822 special chars (komu, angle bracket), JavaMail's `InternetAddress` constructor (s `personal` parametrom) trebao bi izboriti, ali `recipientAddress = "$fullName <${user.email}>"` ide kao **plain string** u `helper.setTo(arrayOf(recipientAddress))` → parse-an as raw "Personal <email>" string. Ako user.name ima nezaštićen `>` ili komu, parse fail → throws → BirthdayEmailJob catch-suit (line 86-89) increments `skipped`, log error, continue. Ne immediate exploit, ali tihi delivery skip.
+**Posljedica:** depending on input layer strictness — MED if input validation u Phase 5 nije bullet-proof. Anonymous public inquiry endpoint je primary risk vektor.
+**Predloženi fix:** dva sloja:
+- (a) **Explicit sanitization u EmailService:** prije `helper.setTo`/`setReplyTo`, verify:
+  ```kotlin
+  private fun assertSingleAddress(value: String, field: String) {
+      val parsed = jakarta.mail.internet.InternetAddress.parse(value, true)  // strict
+      require(parsed.size == 1) { "$field must be a single address, got ${parsed.size}: $value" }
+  }
+  ```
+  Pozvati prije `setReplyTo(replyTo)`. Plus: dump arg na log za audit.
+- (b) **Input boundary validation:** u Inquiry controller, User registration / mutation — `@Email` (Bean Validation) annotation je već vjerojatno tu, ali ne reject-a multi-address. Custom validator `@StrictEmail` koji uses `InternetAddress.parse(..., true)` + asserts size==1.
+
+(b) je proper fix. (a) je defense-in-depth.
+**Riziko-procjena fixa:** trivijalan. Phase 5 input validation sweep tema.
+**Status:** OPEN — Faza 5 (cross-cutting input validation + email sanitization)
+
+---
+
+### [F3-031] MED operational — SMTP failures swallowed bez retry-ja, bez audit-a; transactional email loss (booking confirmation, password reset) silent
+**Lokacija:** `domains/catalouge/services/EmailService.kt:253-263`
+**Detekcija:** statička
+**Opis:**
+```kotlin
+executor.submit {
+    try {
+        mailSender.send(message)
+    } catch (e: MailException) {
+        logger.error("Could not send email to '$recipients' because '${e.message}'")
+    }
+}
+```
+
+Email send je deferred preko `afterCommit` synchronization (vidi F3-033 INFO — well-designed). Ali ako SMTP send fail-a:
+- Exception caught, logged at error level
+- **No retry** — ali transient SMTP errors (rate-limit, temporary DNS, mailbox quota) su uobičajeni
+- **No audit trail** — nigdje DB-side zapis "we owe customer email X for reservation Y"
+- **No alerting** — admin nema notification da je booking-confirmation email failed za rezervaciju X
+
+Customer impact scenariji:
+- Customer plaća → booking confirmed u DB → confirmation email SMTP fails (npr. Gmail temporarily rate-limits us) → customer čeka email koji nikad ne dođe → support ticket "platio sam, nisam dobio potvrdu"
+- Password reset → user requests reset → SMTP fail → user nikad ne dobije link → user retry-a 5 minuta kasnije → opet fail → user frustration
+- Inquiry notification → Mario nikad ne sazna da je novi customer poslao inquiry → izgubljeni lead
+
+Combined s F1-074 (test divergence) — nema test coverage-a za SMTP failure paths. Plus: F2-038 (ReservationDocument audit gap) family — ovo je email-side audit gap.
+
+Plus: logger error level fires svaki put → log noise ako SMTP ima transient issues.
+**Posljedica:** customer email reliability problem. Pre-prod nije akutni blocker jer SMTP je rijetko fail-a, ali pri partner-side (Gmail/Outlook) rate-limit episodes može cascadirati.
+**Predloženi fix:** dva sloja:
+- (a) **Outbox pattern (pre-prod minimum):** `email_outbox` tablica (Flyway migracija) — INSERT row na svaki `sendEmail` call: `(id, recipient, subject, template, variables_json, status='PENDING', created_at, attempts=0)`. `mailSender.send(message)` UPDATE row to status='SENT' + sent_at. SMTP failure UPDATE attempts++, status='FAILED' if attempts >= max. Scheduled retry job re-pickup-a 'FAILED' rows starije od X min. Audit trail garantovan.
+- (b) **Resilience4j retry on `mailSender.send`:** 3 attempts with exponential backoff. Simpler ali ne audit-rješava.
+
+(a) je standard Spring/JPA pattern; ~50 linija code-a + 1 migracija. Preporučljivo.
+**Riziko-procjena fixa:** dira hot send path. Staging test obavezan.
+**Status:** OPEN — Faza 5 (resilience) ili pre-prod minimum
+
+---
+
+### [F3-032] LOW privacy — `helper.setTo(recipients.toTypedArray())` showuje sve recipient adrese svakoj recipient-u (admin notifications, batch sends)
+**Lokacija:** `domains/catalouge/services/EmailService.kt:207`
+**Detekcija:** statička
+**Opis:** Standard SMTP behavior: ako `setTo(recipient1, recipient2, recipient3)` setuje 3 adresa, **svaki primatelj vidi sve 3 u To: header-u**. To je legitimna behavior, ali za batch-send admin notifications (F2-011 `findAllAdminEmailAddresses`) ovo izlaže admin team-ove email adrese međusobno:
+- Mario interpres-uje recipient list kao bcc, šalje sa svim admin emails u To
+- Admin1 dobija email, vidi Admin2 + Admin3 email adrese u headeru
+- Marginalan privacy issue unutar team-a
+
+Plus: ako negdje `recipients = listOf(customer1.email, customer2.email)` se ikad pojavi (cross-customer marketing? unlikely per Mario rule "newsletter smo makli", ali grep da provjerimo), to bi bio veći leak.
+
+Trenutni audit: BirthdayEmailJob, InquiryEmailService, ReservationEmailService svi šalju single-recipient (single user) → no current exposure. Tehnički-LOW concern dok god se ne doda multi-recipient flow.
+**Posljedica:** pre-prod nije problem. Future-flag za batch sends.
+**Predloženi fix:** dva pattern-a:
+- (a) **BCC za batch:** kad `recipients.size > 1`, use `helper.setBcc(...)` umjesto `setTo(...)`, ide `helper.setTo("noreply@boat4you.com")` (placeholder). Standard pattern.
+- (b) **Per-recipient send:** loop `recipients.forEach { helper.setTo(arrayOf(it)); mailSender.send(...) }` — više SMTP traffic-a ali zero leakage.
+
+(a) je pragmatic.
+
+Plus: dodati assert u EmailService — ako `recipients.size > 1` log warning ili throw u dev profile.
+**Status:** OPEN — Faza 5 (defensive design)
+
+---
+
+### [F3-033] INFO positive — `EmailService` foundation je best-engineered file u code base-u; obrazac za druge transactional integration-e
+**Lokacija:** `domains/catalouge/services/EmailService.kt` (entire file)
+**Detekcija:** statička
+**Opis:** Pattern-i koji vrijede standardize-irati / dokumentirati:
+- **`@TransactionSynchronization.afterCommit` defer** (line 264-272) — SMTP send se izvršava tek **AFTER** outer JPA TX commits. Email failure ne može triggerirati TX rollback. Email never sent if outer TX rolls back. **Mitigira F3-024** (email-side concerns); čisto rješenje za async outgoing side-effects.
+- **Virtual thread executor** (`Executors.newVirtualThreadPerTaskExecutor()`, line 56) — Project Loom (Java 21) — clean concurrency bez ThreadPool-a, perfect za blocking I/O.
+- **Dev-log-to-file escape hatch** (line 41) — dev profile renders template to disk, no SMTP required. Tests email content lokalno.
+- **`force` parameter** za one-off real-SMTP tests u dev-u. Razdvaja debug-flow od prod-flow.
+- **`extraInlineImages` + `fromOverride`** — clean multi-brand support bez baking-into-config.
+- **`locale` parameter + i18n message bundles** — i18n built-in.
+- **`dynamicAttachments`** za per-send generated PDFs.
+- **Detailed historical comments** — `templatesWithoutSharedFooter`, `redesignedHeaderTemplates`, `templatesWithBookingVector` — sve sa contextom zašto/kad (line 67-138). Senior-level documentation.
+
+Plus: `writeEmailToDevLog` sanitizira filename input (line 301-307) — defensive code style.
+
+**Najvažnije za drugu reportažu:**
+- **F3-024 fix predlog "email out-of-TX preko `@TransactionalEventListener AFTER_COMMIT`"** — već implementirano kroz `afterCommit` pattern u EmailService. F3-024 zaista treba ažurirati: email-side concerns u F3-024 ne postoje. Realna F3-024 priča je **partner API call unutar TX-a + DB save fail = partner-confirmed-DB-rolled-back drift**, ne email. Email je safe.
+
+Update F3-024 status field u sljedećem REGISTER pass-u da reflektira scope clarification.
+**Status:** INFO
+
+---
+
+### [F3-034] INFO positive — `BirthdayEmailJob` GDPR-aware cron design
+**Lokacija:** `domains/users/job/BirthdayEmailJob.kt:1-93`
+**Detekcija:** statička
+**Opis:** Cron implementacija pokazuje GDPR awareness:
+- **Header comment objašnjava legal basis** (line 16-31) — "legitimate interest" justification, soft-deleted user skip, opt-out path documented.
+- **Soft-delete check** (line 56) — `user.deletedAt != null` → skip + skipped counter increment. Komentar (line 28-30) objašnjava zašto: anonymized email je undeliverable, ne želimo GDPR audit noise.
+- **Per-user try/catch** (line 55-89) — jedna user-side failure ne ruši cron za ostale. Sent/skipped counters logged.
+- **Locale resolution sa fallback** (line 63) — `user.language?.toLocale() ?: Locale.ENGLISH` — defensive.
+- **`getFullName().trim().takeIf { it.isNotBlank() } ?: "there"`** (line 64) — graceful fallback ako name fields prazni.
+
+Combined s F2-012 (birthday index defer to Phase 6), full birthday flow je solidan. Pattern za druge per-user cron-eve.
+**Status:** INFO
+
+---
+
+### Sažetak Batch 5
+
+- **MED (2):** F3-030 (CRLF/comma injection u email headers), F3-031 (SMTP failure swallowed bez retry / audit)
+- **LOW (1):** F3-032 (`setTo` multi-recipient privacy leak — currently no exposed flow)
+- **INFO (2):** F3-033 (EmailService best-engineered foundation), F3-034 (BirthdayEmailJob GDPR-aware)
+
+**F3-024 scope clarification (note-only):** Realna F3-024 priča je **partner API call unutar webhook TX-a → DB save fail = partner-confirmed-DB-rolled-back drift**. Email side je SAFE — `EmailService.sendEmail` koristi `afterCommit` synchronization, email never fires ako TX rollback-a. F3-024 fix se svodi na partner-call placement, ne email.
+
+**Mail foundation je best-in-class.** Glavni concerns su:
+1. Input validation na boundary (F3-030 — Faza 5)
+2. Outbox pattern za reliable transactional email (F3-031 — Faza 5 ili pre-prod)
+3. Trivial defensive checks (F3-032)
+
+**Batch 5 završen. Batch 6 next:** Sync orchestration + admin controllers (`ExternalSyncService`, `ServiceCallCacheService`, `ServiceCallAuditService`, `ExternalMappingService`, `MmkSyncController`, `NausysSyncController`, `DevEquipmentSyncController`) — F1-064 pairing (public yacht search sync trigger), admin sync trigger auth.
+
+---
