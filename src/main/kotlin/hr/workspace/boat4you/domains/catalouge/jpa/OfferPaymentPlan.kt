@@ -40,25 +40,22 @@ open class OfferPaymentPlan {
     @Column(name = "percentage")
     open var percentage: BigDecimal? = null
 
+    // Id-based equals/hashCode. F2-026 — earlier the structural comparison
+    // used mutable fields (offer, date, amount, percentage) as the equality
+    // key, which broke `MutableSet<OfferPaymentPlan>` semantics on
+    // Offer.offerPaymentPlans whenever any of those fields was reassigned
+    // after Set insertion: the hashCode migrated buckets, leaving the
+    // entity unreachable via `contains`/`remove`.
+    //
+    // Unpersisted entities (id == null) compare by reference identity —
+    // two fresh-from-builder instances are never equal until at least one
+    // is persisted. Standard JPA recommendation that avoids the
+    // "two new entities accidentally collapse in a Set before flush" bug.
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-
-        other as OfferPaymentPlan
-
-        if (offer != other.offer) return false
-        if (date != other.date) return false
-        if (amount != other.amount) return false
-        if (percentage != other.percentage) return false
-
-        return true
+        if (other !is OfferPaymentPlan) return false
+        return id != null && id == other.id
     }
 
-    override fun hashCode(): Int {
-        var result = offer?.hashCode() ?: 0
-        result = 31 * result + (date?.hashCode() ?: 0)
-        result = 31 * result + (amount?.hashCode() ?: 0)
-        result = 31 * result + (percentage?.hashCode() ?: 0)
-        return result
-    }
+    override fun hashCode(): Int = id?.hashCode() ?: javaClass.hashCode()
 }
