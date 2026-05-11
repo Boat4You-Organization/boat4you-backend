@@ -320,13 +320,13 @@ Legend statusa:
 
 ## Faza 5 — Cross-cutting (error handling, logging, yml, common services, i18n)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline). 21 findings: 0 FIXED, 17 OPEN (1 CRIT + 3 HIGH + 7 MED + 6 LOW), 4 INFO. **Gate: zero regression**. Pending top: F5-012 CRIT (non-crypto Random), F5-001 HIGH (AccessDeniedException wrong class), F5-002 HIGH (catch-all leak), F5-013/014 HIGH (yml fail-fast).
+**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline; updated 2026-05-11 with Phase A + B4 fixes). 21 findings: 8 FIXED (F5-012 CRIT + F5-013/014 HIGH + F5-015/016/017 MED + F5-018/019 LOW), 9 active OPEN (2 HIGH + 4 MED + 3 LOW). **Gate: zero regression**. Pending top: F5-001 HIGH (AccessDeniedException wrong class), F5-002 HIGH (catch-all leak), F5-003/004 MED (next ApiErrorHandler batch B5). **Utils SecureRandom (F5-012/018/019) CLOSED in Phase B4.**
 
 ### CRIT (1)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
-| F5-012 | CRIT | `Utils.kt` non-crypto `Random` za password generation + email verification codes; predictable security tokens (F1-068 attack chain) | OPEN — **prod-blocker** prije bilo kakve registration/invite |
+| F5-012 | CRIT | `Utils.kt` non-crypto `Random` za password generation + email verification codes; predictable security tokens (F1-068 attack chain) | FIXED `4e75639` (SecureRandom, charset+length companions also closed) |
 
 ### HIGH (3)
 
@@ -358,8 +358,8 @@ Legend statusa:
 | F5-009 | LOW | `AccessDeniedException` handler returns empty body; covered by F5-001 fix | OPEN — covered by F5-001 |
 | F5-010 | LOW | `ImageNotFoundException` TODO + no log; combined s F4-010 = zero audit trail on path traversal probing | WAITING-DECISION (pair s F5-007) |
 | F5-011 | LOW | `ResourceNotFound` exception class empty (3 lines); debug-hostile | OPEN — Faza 5 exception hygiene |
-| F5-018 | LOW | `Utils.kt:46` charset typo missing `Y` (uppercase) + `j` (lowercase); 60 chars instead of intended 62 | WAITING-DECISION (covered by F5-012 fix) |
-| F5-019 | LOW | `Utils.kt:DEFAULT_PASSWORD_LENGTH = 6`; F1-004 family | WAITING-DECISION (covered by F5-012 fix) |
+| F5-018 | LOW | `Utils.kt:46` charset typo missing `Y` (uppercase) + `j` (lowercase); 60 chars instead of intended 62 | FIXED `4e75639` (full 62-char base62, aligned with UrlShortener) |
+| F5-019 | LOW | `Utils.kt:DEFAULT_PASSWORD_LENGTH = 6`; F1-004 family | FIXED `4e75639` (raised to 16, ~95 bits entropy) |
 
 ### INFO (4)
 
@@ -413,16 +413,16 @@ Legend statusa:
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 1 | 1 | 0 | 0 | 1 | 0 | — | **3** |
+| CRIT | 1 | 1 | 0 | 0 | 0 | 0 | — | **2** |
 | HIGH | 11 | 1 | 2 | 2 | 1 | 2 | — | **19** |
 | MED | 18 | 17 | 12 | 5 | 4 | 2 | — | **58** |
-| LOW | 8 | 23 | 10 | 4 | 6 | 4 | — | **55** |
+| LOW | 8 | 23 | 10 | 4 | 4 | 4 | — | **53** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 24 | 5 | 8 | 1 | 3 | 3 | — | **44** |
+| FIXED | 24 | 5 | 8 | 1 | 6 | 3 | — | **47** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **38** | **42** | **24** | **11** | **14** | **8** | — | **137** |
+| **OPEN** | **38** | **42** | **24** | **11** | **11** | **8** | — | **134** |
 
 ---
 
