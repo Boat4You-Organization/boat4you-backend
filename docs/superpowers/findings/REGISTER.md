@@ -201,20 +201,49 @@ Legend statusa:
 
 ---
 
+## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
+
+**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓. Batch 2 (NauSys integration services), 3 (MMK), 4 (Stripe), 5 (Mail), 6 (sync orchestration + admin controllers) pending.
+
+### HIGH (3)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F3-001 | HIGH | `NauSysRestClientConfig`/`MmkRestClientConfig` nemaju connect/read/write timeouts — partner slow = VM2 unresponsive | OPEN — **prod-blocker scenario** |
+| F3-002 | HIGH | `@Retryable(Exception::class)` na state-changing calls (createOption/confirmReservation/stornoOption/cancelReservation) duplicira partner side-effects (F1-019 sibling) | OPEN — **prod-blocker pair s F1-019** |
+| F3-003 | HIGH | NauSys credentials u request body putuju preko HTTP plaintext (F1-037 produbljen) | OPEN — partner-side HTTPS verify + env var fix |
+
+### MED (3)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F3-004 | MED | `MmkRestClientConfig` interceptor logira FULL request body + headers; Reservation payload PII u log-u | OPEN — Faza 5 (cross-cutting log audit) ili profile-gate |
+| F3-005 | MED | `@Retryable` Backoff bez jitter — thundering herd risk pri partner outage burst-u | WAITING-DECISION (group s F3-002 retry fix) |
+| F3-008 | MED | `NauSysRetryableClient.getReservation` 3 serial endpoint-a × @Retryable = do 9 partner calls po lookup-u | OPEN — paralelno s F3-001/002 fix |
+
+### LOW (2)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F3-006 | LOW | `NauSysAuthProvider.username!!`/`password!!` NPE pri praznom env var — treba Spring required syntax | WAITING-DECISION (paralelno s required-env fix) |
+| F3-007 | LOW | `transactionTemplate.execute` audit pattern samo u `*Async`; state-change calls gube audit pri TX rollback | OPEN — eskalacija (audit policy decision) |
+
+---
+
 ## Total cumulative across all phases
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 2 | 1 | — | — | — | — | — | **3** |
-| HIGH | 13 | 1 | — | — | — | — | — | **14** |
-| MED | 18 | 19 | — | — | — | — | — | **37** |
-| LOW | 8 | 23 | — | — | — | — | — | **31** |
-| INFO | 4 | 3 | — | — | — | — | — | **7** |
-| FIXED | 20 | 3 | — | — | — | — | — | **23** |
-| DEFERRED-Faza7 (nginx batch) | 6 | 0 | — | — | — | — | — | **6** |
-| DEFERRED-other | 3 | 0 | — | — | — | — | — | **3** |
-| BLOCKED | 1 | 0 | — | — | — | — | — | **1** |
-| **OPEN** | **41** | **44** | — | — | — | — | — | **85** |
+| CRIT | 2 | 1 | 0 | — | — | — | — | **3** |
+| HIGH | 13 | 1 | 3 | — | — | — | — | **17** |
+| MED | 18 | 19 | 3 | — | — | — | — | **40** |
+| LOW | 8 | 23 | 2 | — | — | — | — | **33** |
+| INFO | 4 | 3 | 0 | — | — | — | — | **7** |
+| FIXED | 20 | 3 | 0 | — | — | — | — | **23** |
+| DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | — | — | — | — | **6** |
+| DEFERRED-other | 3 | 0 | 0 | — | — | — | — | **3** |
+| BLOCKED | 1 | 0 | 0 | — | — | — | — | **1** |
+| **OPEN** | **41** | **44** | **8** | — | — | — | — | **93** |
 
 ---
 
