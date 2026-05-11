@@ -203,7 +203,13 @@ Legend statusa:
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓, Batch 3 (MMK integration services) ✓. Batch 4 (Stripe), 5 (Mail), 6 (sync orchestration + admin controllers) pending.
+**Status:** IN PROGRESS — Batch 1 (HTTP client foundation) ✓, Batch 2 (NauSys integration services) ✓, Batch 3 (MMK integration services) ✓, Batch 4 (Stripe payment integration) ✓. Batch 5 (Mail), 6 (sync orchestration + admin controllers) pending.
+
+### CRIT (1)
+
+| ID | Severity | Naslov | Status |
+|---|---|---|---|
+| F3-022 | CRIT | `StripePaymentService.handleWebhookEvent` non-idempotent — F1-019 konkretizacija (dupli partner confirm + dupli email + state corruption pri Stripe retry) | OPEN — **prod-blocker** |
 
 ### HIGH (3)
 
@@ -225,8 +231,11 @@ Legend statusa:
 | F3-011 | MED | Per-agency forEach + try/catch swallow bez rate-limit / circuit breaker; cascade failure pri partner outage | OPEN — Faza 5 (resilience) ili Faza 6 |
 | F3-012 | MED | `NauSysYachtIntegrationService.yachtSync` re-sync path nikad ne discoveruje nove yachte na partner-side | OPEN — MED bug fix (ne blocker) |
 | F3-017 | MED | `MmkYachtIntegrationService.yachtTranslationsSync` 6-language × N-agency × @Retryable amplification (~900 calls); single-threaded | OPEN — Faza 5 (perf parallelism) ili pair s F3-011 |
+| F3-025 | MED | Mnogo `!!` non-null assertions na Stripe webhook payload-u; NPE pri malformed events | WAITING-DECISION (group s F3-022/F3-024 webhook fix batch) |
+| F3-026 | MED | `payFullAmount=false` webhook flow uvijek označi `first()` phase; bug-čekanju za installment 2 path | OPEN — pair s F3-022 fix |
+| F3-027 | MED | Webhook handler tiho ignorira refund / dispute / expired Stripe event types | OPEN — eskalacija (Stripe event handling roadmap) |
 
-### LOW (7)
+### LOW (8)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
@@ -237,6 +246,7 @@ Legend statusa:
 | F3-015 | LOW | `error("No Location for NauSys locationFromId=$id")` exposes partner internal IDs (F1-055 family); MMK sibling u istoj fix scope | OPEN — Faza 5 (cross-cutting error sanitization) |
 | F3-018 | LOW | `MmkYachtIntegrationService.SUPPORTED_LANGUAGES` izričito izostavlja EN — verify intended (default fallback?) | WAITING-DECISION (verify hipoteza) |
 | F3-019 | LOW | `MmkYachtOfferIntegrationServiceAsync.syncOffersForAgencyYachtsOld` deprecated ali aktivan `@Async` + 90 linija duplicirane impl | WAITING-DECISION (grep + delete) |
+| F3-028 | LOW | `toCentsLong()` koristi `RoundingMode.UP` → slight customer overcharge per payment phase | WAITING-DECISION (Mario business choice) |
 
 ---
 
@@ -244,16 +254,16 @@ Legend statusa:
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 2 | 1 | 0 | — | — | — | — | **3** |
-| HIGH | 13 | 1 | 4 | — | — | — | — | **18** |
-| MED | 18 | 19 | 7 | — | — | — | — | **44** |
-| LOW | 8 | 23 | 7 | — | — | — | — | **38** |
-| INFO | 4 | 3 | 3 | — | — | — | — | **10** |
+| CRIT | 2 | 1 | 1 | — | — | — | — | **4** |
+| HIGH | 13 | 1 | 6 | — | — | — | — | **20** |
+| MED | 18 | 19 | 10 | — | — | — | — | **47** |
+| LOW | 8 | 23 | 8 | — | — | — | — | **39** |
+| INFO | 4 | 3 | 4 | — | — | — | — | **11** |
 | FIXED | 20 | 3 | 0 | — | — | — | — | **23** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | — | — | — | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | — | — | — | — | **3** |
 | BLOCKED | 1 | 0 | 0 | — | — | — | — | **1** |
-| **OPEN** | **41** | **44** | **18** | — | — | — | — | **103** |
+| **OPEN** | **41** | **44** | **26** | — | — | — | — | **111** |
 
 ---
 
