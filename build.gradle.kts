@@ -37,6 +37,11 @@ val stripeSdkVersion = "31.1.0"
 val eCacheVersion = "3.10.9"
 val opencvVersion = "4.9.0-0"
 val koTestVersion = "6.0.7"
+// ShedLock — distributed lock for @Scheduled cron methods so VM2 and VM3
+// (and any future replica) do not both fire the same job at once
+// (F4-002 prod-blocker for 2-VM deploy). 5.16.0 is the latest stable
+// line, supports Spring Boot 3.x + JdbcTemplate provider.
+val shedlockVersion = "5.16.0"
 
 dependencies {
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
@@ -64,6 +69,9 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:$jjwtVersion")
     runtimeOnly("org.postgresql:postgresql")
     implementation("org.springframework.retry:spring-retry")
+    // ShedLock — see version comment above
+    implementation("net.javacrumbs.shedlock:shedlock-spring:$shedlockVersion")
+    implementation("net.javacrumbs.shedlock:shedlock-provider-jdbc-template:$shedlockVersion")
     // cache
     implementation("org.springframework.boot:spring-boot-starter-cache")
     implementation("org.ehcache:ehcache:$eCacheVersion")
