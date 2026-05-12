@@ -29,7 +29,18 @@ class NauSysYachtOfferIntegrationServiceAsync(
         regions: List<Long>?,
         marinas: List<Long>?,
     ): CompletableFuture<Unit> {
-        // TODO Nausys only one call at the time
+        // F3-014 (note): "only one Nausys call at a time" was a stale TODO
+        // from before scheduler-side serialization existed. The cron-driven
+        // catchment paths (`NausysSyncJob.runCatalogueSync` /
+        // `runYachtSync` / `runYachtBackupSync` / `availabilitySync`) now
+        // each carry @SchedulerLock so VM2 and VM3 cannot fire them at
+        // the same time, and the public per-yacht path
+        // (`ExternalSyncService.syncYachtOffers(yachtId, ...)`) is
+        // serialized cross-VM by YachtSyncMutex's advisory lock.
+        // Partner-side global concurrency (a hard "only one outbound
+        // request" semaphore) is intentionally NOT enforced here —
+        // NauSys has not asked for it, and the partner's own rate-limit
+        // is the right place to push back if it ever changes.
         try {
             val freeYachtRequest =
                 RestFreeYachtsSearchRequest(

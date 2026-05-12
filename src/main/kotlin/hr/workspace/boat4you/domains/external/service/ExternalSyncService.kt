@@ -18,7 +18,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ConcurrentHashMap
 
 @Service
 @Transactional(readOnly = true)
@@ -31,9 +30,9 @@ class ExternalSyncService(
     private val mmkYachtOfferIntegrationService: MmkYachtOfferIntegrationService,
     private val externalMappingService: ExternalMappingService,
     private val serviceCallCacheService: ServiceCallCacheService,
+    private val yachtSyncMutex: YachtSyncMutex,
 ) {
     private val log = LoggerFactory.getLogger(ExternalSyncService::class.java)
-    private val yachtSyncsInProgress: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
     @Async("taskExecutor")
     fun syncYachtOffers(
@@ -91,52 +90,58 @@ class ExternalSyncService(
             return
         }
 
-        if (!yachtSyncsInProgress.add(yachtId)) {
-            return
-        }
-        try {
-            val yacht = yachtRepository.findById(yachtId).orElseThrow { YachtDoesNotExistException() }
-            if (yacht.entryType != EntryType.EXTERNAL) {
-                return
-            }
-            val externalSystem = yacht.agency!!.primarySource!!.externalSystem!!
-            val yachtMapping =
-                externalMappingService.findBySystemIdAndExternalSystemAndType(
-                    yacht.id!!,
-                    externalSystem,
-                    Yacht::class.simpleName.toString(),
-                )!!
-            if (yachtMapping.externalId == null) {
-                return
-            }
-
-            when (externalSystem.id) {
-                ExternalSystemEnum.NAUSYS.value -> {
-                    nauSysYachtOfferIntegrationService.syncOffersForYachtIdAndDateRage(
-                        yachtMapping.externalId!!,
-                        startDate,
-                        endDate,
-                    )
+        // F3-037: cross-VM serialization via Postgres advisory lock.
+        // The earlier JVM-local `MutableSet<Long>` only blocked
+        // concurrent calls within this JVM; with VM2 and VM3 both
+        // serving public yacht-search requests, the same yachtId could
+        // sync twice in parallel and race on the cache-marker write
+        // (plus double the partner rate-limit pressure). `withYachtLock`
+        // returns null without invoking `block` if another VM already
+        // holds the lock — same observable behavior as the old
+        // `Set.add == false` early-return, just cross-VM correct.
+        yachtSyncMutex.withYachtLock(yachtId) {
+            try {
+                val yacht = yachtRepository.findById(yachtId).orElseThrow { YachtDoesNotExistException() }
+                if (yacht.entryType != EntryType.EXTERNAL) {
+                    return@withYachtLock
+                }
+                val externalSystem = yacht.agency!!.primarySource!!.externalSystem!!
+                val yachtMapping =
+                    externalMappingService.findBySystemIdAndExternalSystemAndType(
+                        yacht.id!!,
+                        externalSystem,
+                        Yacht::class.simpleName.toString(),
+                    )!!
+                if (yachtMapping.externalId == null) {
+                    return@withYachtLock
                 }
 
-                ExternalSystemEnum.MMK.value -> {
-                    mmkYachtOfferIntegrationService.syncOffersForYachtIdAndDateRage(
-                        yachtMapping.externalId!!,
-                        startDate,
-                        endDate,
-                    )
+                when (externalSystem.id) {
+                    ExternalSystemEnum.NAUSYS.value -> {
+                        nauSysYachtOfferIntegrationService.syncOffersForYachtIdAndDateRage(
+                            yachtMapping.externalId!!,
+                            startDate,
+                            endDate,
+                        )
+                    }
+
+                    ExternalSystemEnum.MMK.value -> {
+                        mmkYachtOfferIntegrationService.syncOffersForYachtIdAndDateRage(
+                            yachtMapping.externalId!!,
+                            startDate,
+                            endDate,
+                        )
+                    }
+
+                    else -> {
+                        return@withYachtLock
+                    }
                 }
 
-                else -> {
-                    return
-                }
+                serviceCallCacheService.saveOfferSync(yachtId, startDate, endDate)
+            } catch (e: Exception) {
+                log.error("Failed to sync offers for yacht {}: {}", yachtId, e.message, e)
             }
-
-            serviceCallCacheService.saveOfferSync(yachtId, startDate, endDate)
-        } catch (e: Exception) {
-            log.error("Failed to sync offers for yacht {}: {}", yachtId, e.message, e)
-        } finally {
-            yachtSyncsInProgress.remove(yachtId)
         }
     }
 
