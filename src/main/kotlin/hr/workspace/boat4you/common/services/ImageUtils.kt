@@ -18,56 +18,59 @@ object ImageUtils {
 
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
+    /**
+     * F4-009: every OpenCV `Mat` (and its `MatOfByte` / `MatOfInt` etc.
+     * subclasses) is backed by an off-heap native buffer. The JVM
+     * `finalize`-based safety net does eventually reclaim them, but on
+     * a workload that processes thousands of images a day VM3 native
+     * memory grew ~1.5 GB/day before OOM-kill — finalize ran far behind
+     * allocation. The original code only called `.release()` on the
+     * happy path and only for some of the Mats, so any exception or
+     * early return leaked the rest.
+     *
+     * This extension mirrors `java.io.Closeable.use { }` but for
+     * OpenCV's hand-rolled `.release()` API. `runCatching` on release
+     * ensures one failing release does not mask the original exception
+     * or skip releases of siblings further up the stack.
+     */
+    private inline fun <T : Mat, R> T.use(block: (T) -> R): R {
+        try {
+            return block(this)
+        } finally {
+            runCatching { this.release() }
+        }
+    }
+
     fun convertToWebP(
         inputStream: InputStream,
         quality: Int? = 80,
         lossless: Boolean = false,
-    ): ByteArray? {
-        return try {
-            // Read input stream to byte array
+    ): ByteArray? =
+        try {
             val inputBytes = inputStream.readBytes()
-
-            // Decode image from byte array
-            val matOfByte = MatOfByte(*inputBytes)
-            val image = Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR)
-
-            if (image.empty()) {
-                println("Could not decode image from input stream")
-                return null
-            }
-
-            // Prepare WebP encoding parameters
-            val params = MatOfInt()
-            if (lossless) {
-                params.fromArray(
-                    Imgcodecs.IMWRITE_WEBP_QUALITY,
-                    100,
-                )
-            } else {
-                params.fromArray(
-                    Imgcodecs.IMWRITE_WEBP_QUALITY,
-                    quality!!,
-                )
-            }
-
-            // Encode to WebP
-            val outputMat = MatOfByte()
-            val success = Imgcodecs.imencode(".webp", image, outputMat, params)
-
-            // Clean up
-            image.release()
-            matOfByte.release()
-
-            if (success) {
-                outputMat.toArray()
-            } else {
-                null
+            MatOfByte(*inputBytes).use { matOfByte ->
+                Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR).use { image ->
+                    if (image.empty()) {
+                        log.error("Could not decode image from input stream")
+                        null
+                    } else {
+                        MatOfInt().use { params ->
+                            params.fromArray(
+                                Imgcodecs.IMWRITE_WEBP_QUALITY,
+                                if (lossless) 100 else quality!!,
+                            )
+                            MatOfByte().use { outputMat ->
+                                val success = Imgcodecs.imencode(".webp", image, outputMat, params)
+                                if (success) outputMat.toArray() else null
+                            }
+                        }
+                    }
+                }
             }
         } catch (e: Exception) {
             log.error("Error converting image to WebP", e)
             null
         }
-    }
 
     fun resizeImage(
         imagePath: String,
@@ -79,75 +82,39 @@ object ImageUtils {
         require(targetWidth > 0) { "targetWidth must be > 0" }
         require(quality in 0..100) { "quality must be in 0..100" }
 
-        // Read image (OpenCV automatically detects format including WebP)
-        val originalMat = Imgcodecs.imread(imagePath, Imgcodecs.IMREAD_COLOR)
-
-        if (originalMat.empty()) {
-            throw IllegalArgumentException("Could not load image from path: $imagePath")
-        }
-
-        // Calculate height if null, while keeping aspect ratio
-        val srcW = originalMat.cols()
-        val srcH = originalMat.rows()
-        require(srcW > 0 && srcH > 0) { "Invalid source image dimensions: ${srcW}x$srcH" }
-
-        val computedHeight =
-            targetHeight?.also {
-                require(it > 0) { "targetHeight must be > 0" }
-            } ?: run {
-                // height = width * (srcH/srcW), rounded to nearest int, but at least 1
-                val h = ((targetWidth.toDouble() * srcH.toDouble()) / srcW.toDouble()).roundToInt()
-                maxOf(1, h)
+        return Imgcodecs.imread(imagePath, Imgcodecs.IMREAD_COLOR).use { originalMat ->
+            if (originalMat.empty()) {
+                throw IllegalArgumentException("Could not load image from path: $imagePath")
             }
 
-        // Create destination matrix
-        val resizedMat = Mat()
+            val srcW = originalMat.cols()
+            val srcH = originalMat.rows()
+            require(srcW > 0 && srcH > 0) { "Invalid source image dimensions: ${srcW}x$srcH" }
 
-        // Resize image
-        val newSize = Size(targetWidth.toDouble(), computedHeight.toDouble())
-        Imgproc.resize(originalMat, resizedMat, newSize, 0.0, 0.0, interpolationMethod)
+            val computedHeight =
+                targetHeight?.also {
+                    require(it > 0) { "targetHeight must be > 0" }
+                } ?: run {
+                    // height = width * (srcH/srcW), rounded to nearest int, but at least 1
+                    val h = ((targetWidth.toDouble() * srcH.toDouble()) / srcW.toDouble()).roundToInt()
+                    maxOf(1, h)
+                }
 
-        // Encode to WebP format
-        val matOfByte = MatOfByte()
-        val encodeParams = MatOfInt(Imgcodecs.IMWRITE_WEBP_QUALITY, quality)
+            Mat().use { resizedMat ->
+                val newSize = Size(targetWidth.toDouble(), computedHeight.toDouble())
+                Imgproc.resize(originalMat, resizedMat, newSize, 0.0, 0.0, interpolationMethod)
 
-        val success = Imgcodecs.imencode(".webp", resizedMat, matOfByte, encodeParams)
-
-        // Clean up memory
-        originalMat.release()
-        resizedMat.release()
-
-        if (!success) {
-            throw RuntimeException("Failed to encode image to WebP format")
+                MatOfInt(Imgcodecs.IMWRITE_WEBP_QUALITY, quality).use { encodeParams ->
+                    MatOfByte().use { matOfByte ->
+                        val success = Imgcodecs.imencode(".webp", resizedMat, matOfByte, encodeParams)
+                        if (!success) {
+                            throw RuntimeException("Failed to encode image to WebP format")
+                        }
+                        matOfByte.toArray()
+                    }
+                }
+            }
         }
-
-        return matOfByte.toArray()
     }
 
-    fun resizeImage(
-        inputBytes: ByteArray,
-        width: Int,
-        height: Int,
-        quality: Int = 90,
-    ): ByteArray {
-        // Decode from byte array
-        val matOfByte = MatOfByte(*inputBytes)
-        val originalMat = Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR)
-
-        // Resize
-        val resizedMat = Mat()
-        val newSize = Size(width.toDouble(), height.toDouble())
-        Imgproc.resize(originalMat, resizedMat, newSize, 0.0, 0.0, Imgproc.INTER_LINEAR)
-
-        // Encode to WebP
-        val outputMatOfByte = MatOfByte()
-        val encodeParams = MatOfInt(Imgcodecs.IMWRITE_WEBP_QUALITY, quality)
-        Imgcodecs.imencode(".webp", resizedMat, outputMatOfByte, encodeParams)
-
-        // Clean up
-        originalMat.release()
-        resizedMat.release()
-
-        return outputMatOfByte.toArray()
-    }
 }
