@@ -209,7 +209,7 @@ Legend statusa:
 
 ## Faza 3 — Vanjske integracije (NauSys, MMK, Stripe, mail, HTTP klijenti)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 6 batch-eva + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 + B2 + B3 fixes). 40 findings: 8 FIXED, 24 OPEN (0 CRIT + 2 HIGH + 12 MED + 10 LOW), 8 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F3-003/009 NauSys HTTPS verify s partner-om. **Stripe payment hardening trio (F3-022/023/024 + F3-025/026) CLOSED in Phase B1. NauSys/MMK HTTP foundation (F3-001/002) CLOSED in Phase B2. DevController triple-defense (F3-035) CLOSED in Phase B3.**
+**Status:** CLOSED 2026-05-11 (read-pass kroz 6 batch-eva + closure summary + phase gate at baseline; updated 2026-05-12 with Phase B1+B2+B3 + C1 fixes). 40 findings: 10 FIXED, 22 OPEN (0 CRIT + 2 HIGH + 11 MED + 9 LOW), 8 INFO. **Gate: zero regression**. Pending user action: F3-003/009 NauSys HTTPS verify s partner-om. **Stripe payment hardening (F3-022/023/024 + F3-025/026) CLOSED in Phase B1. NauSys/MMK HTTP foundation (F3-001/002) CLOSED in Phase B2. DevController triple-defense (F3-035) CLOSED in Phase B3. Per-yacht advisory lock (F3-037 + F3-014) CLOSED in Phase C1.**
 
 ### CRIT (1)
 
@@ -246,7 +246,7 @@ Legend statusa:
 | F3-030 | MED | User-controlled `inquiry.email`/`user.name`/surname putuju u `setReplyTo`/`setTo` bez explicit CRLF/comma sanitizacije — comma-injection risk | OPEN — Faza 5 (input validation sweep) |
 | F3-031 | MED | SMTP send failures swallowed bez retry / audit — transactional email loss silent (booking confirmation, password reset) | OPEN — Faza 5 / pre-prod minimum (email_outbox pattern) |
 | F3-036 | MED | `ServiceCallCacheService` koristi `Objects.hash().toLong()` (Int range cast) — collision risk na 13M-combinacijski yacht offer cache → silent stale-offer skip | OPEN — MED, real bug; pair s F2-002 retention |
-| F3-037 | MED | `ExternalSyncService.yachtSyncsInProgress` JVM-local mutex; VM2 + VM3 ne dijele state — double concurrent sync per yachtId | OPEN — pair s Faza 4 jobs locking |
+| F3-037 | MED | `ExternalSyncService.yachtSyncsInProgress` JVM-local mutex; VM2 + VM3 ne dijele state — double concurrent sync per yachtId | FIXED `ff30c4e` (YachtSyncMutex + pg_try_advisory_lock; JVM-local Set removed) |
 
 ### LOW (10)
 
@@ -255,7 +255,7 @@ Legend statusa:
 | F3-006 | LOW | `NauSysAuthProvider.username!!`/`password!!` NPE pri praznom env var — treba Spring required syntax | WAITING-DECISION (paralelno s required-env fix) |
 | F3-007 | LOW | `transactionTemplate.execute` audit pattern samo u `*Async`; state-change calls gube audit pri TX rollback | OPEN — eskalacija (audit policy decision) |
 | F3-013 | LOW | Prod main-source importira `ProdTestSamples.DREAM_YACHT_AGENCY_ID` u 2 fajla (unused, inverted test dependency) | WAITING-DECISION (trivijalan) |
-| F3-014 | LOW | `@Async syncOffersForDateRange` + TODO "Nausys only one call at the time" bez locking-a | OPEN — pair s Faza 4 jobs locking decision |
+| F3-014 | LOW | `@Async syncOffersForDateRange` + TODO "Nausys only one call at the time" bez locking-a | FIXED `ff30c4e` (TODO replaced with comment pointing at ShedLock cron axis + YachtSyncMutex per-yacht axis) |
 | F3-015 | LOW | `error("No Location for NauSys locationFromId=$id")` exposes partner internal IDs (F1-055 family); MMK sibling u istoj fix scope | OPEN — Faza 5 (cross-cutting error sanitization) |
 | F3-018 | LOW | `MmkYachtIntegrationService.SUPPORTED_LANGUAGES` izričito izostavlja EN — verify intended (default fallback?) | WAITING-DECISION (verify hipoteza) |
 | F3-019 | LOW | `MmkYachtOfferIntegrationServiceAsync.syncOffersForAgencyYachtsOld` deprecated ali aktivan `@Async` + 90 linija duplicirane impl | WAITING-DECISION (grep + delete) |
@@ -263,7 +263,7 @@ Legend statusa:
 | F3-032 | LOW | `helper.setTo` multi-recipient pokazuje sve adresarima; admin notification leak ako se ikad pojavi multi-recipient flow | OPEN — Faza 5 (defensive design) |
 | F3-038 | LOW | `ExternalSyncService.syncYachtOffers` chained `!!` on `yacht.agency!!.primarySource!!.externalSystem!!` — NPE fragility (F1-026 family) | WAITING-DECISION (trivijalan, group s F1-026) |
 
-### FIXED (8)
+### FIXED (10)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
@@ -275,19 +275,21 @@ Legend statusa:
 | F3-035 | HIGH | DevEquipmentSyncController triple-defense (paired with F1-041 closeout) | `4caa8a9` |
 | F3-025 | MED | Defensive null checks on Stripe webhook payload + logged early-returns (no `!!` left in handleWebhookEvent) | `f30a116` |
 | F3-026 | MED | `setSessionIdOnPaymentPhases` selects among UNPAID phases only; `initiatePayment` rejects already-paid `paymentPhaseId` up-front | `d6138b3` |
+| F3-037 | MED | YachtSyncMutex via `pg_try_advisory_lock`; replaces JVM-local Set for cross-VM per-yacht serialization | `ff30c4e` |
+| F3-014 | LOW | Stale "Nausys only one call at the time" TODO closed by ShedLock cron axis + YachtSyncMutex per-yacht axis (no partner-side global semaphore introduced) | `ff30c4e` |
 
 ---
 
 ## Faza 4 — Scheduled jobs + heavy native (jobs, OpenCV, PDF gen)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline; updated 2026-05-12 with Phase A + C2 fixes). 14 findings: 2 FIXED (F4-001 HIGH yml + F4-009 HIGH ImageUtils Mat.use), 10 OPEN (1 HIGH + 5 MED + 4 LOW), 2 INFO. **Gate: zero regression**. Pending: F4-002 ShedLock pair s F3-037/F3-014 (Phase C1), F4-003/4-005 cron clustering + sync timebox (pair s F4-001/F4-002 batch), plus ops-side F4-004 image-sync profile verify.
+**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline; updated 2026-05-12 with Phase A + C1 + C2 fixes). 14 findings: 3 FIXED (F4-001 HIGH yml + F4-002 HIGH ShedLock + F4-009 HIGH ImageUtils), 9 OPEN (0 HIGH + 5 MED + 4 LOW), 2 INFO. **Gate: zero regression**. Pending: F4-003/F4-005 cron clustering + sync timebox (related but lower severity), plus ops-side F4-004 image-sync profile verify.
 
 ### HIGH (3)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
 | F4-001 | HIGH | Spring `@Scheduled` default single-thread `TaskScheduler`; long sync chains blokiraju ostale crons + cron drift | FIXED `556de3c` |
-| F4-002 | HIGH | Profile-only locking (`@Profile("data-sync")`); 2-VM double-fire risk; no ShedLock / distributed lock (paired s F3-037 + F3-014) | OPEN — **pre-prod blocker**, pair s F3-037 fix |
+| F4-002 | HIGH | Profile-only locking (`@Profile("data-sync")`); 2-VM double-fire risk; no ShedLock / distributed lock (paired s F3-037 + F3-014) | FIXED `75e8002` + `c969067` (ShedLock 5.16, V1_92 migracija, @SchedulerLock na svih 24 @Scheduled metoda) |
 | F4-009 | HIGH | `ImageUtils` ne release-a intermediate Mat / MatOfByte u success ni exception path-evima — production native memory leak (~1.5GB/day VM3) | FIXED `b2d3695` (Mat.use{} extension applied to convertToWebP + resizeImage; dead resizeImage(ByteArray) overload deleted) |
 
 ### MED (5)
@@ -316,11 +318,12 @@ Legend statusa:
 | F4-008 | Positive: backup-sync pattern + explicit cron offset comments + Mario decision history u job-ovima |
 | F4-014 | Positive: ImageUtils releases primary Mats, CharterAgreement runCatching currency, lazy signatureDataUrl, defensive fallback chains |
 
-### FIXED (2)
+### FIXED (3)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
 | F4-001 | HIGH | Spring `@Scheduled` thread pool size (yml fix) | `556de3c` |
+| F4-002 | HIGH | ShedLock 5.16 + V1_92 migration + @SchedulerLock na svih 24 @Scheduled metoda (2-VM safe) | `75e8002` + `c969067` |
 | F4-009 | HIGH | `Mat.use{}` extension closes intermediate Mat/MatOfByte leak; dead resizeImage(ByteArray) overload removed | `b2d3695` |
 
 ---
@@ -421,15 +424,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 1 | 1 | 0 | 0 | 0 | 0 | — | **2** |
-| HIGH | 11 | 1 | 2 | 1 | 0 | 2 | — | **17** |
-| MED | 17 | 17 | 12 | 5 | 2 | 2 | — | **55** |
-| LOW | 8 | 23 | 10 | 4 | 2 | 4 | — | **51** |
+| HIGH | 11 | 1 | 2 | 0 | 0 | 2 | — | **16** |
+| MED | 17 | 17 | 11 | 5 | 2 | 2 | — | **54** |
+| LOW | 8 | 23 | 9 | 4 | 2 | 4 | — | **50** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 25 | 5 | 8 | 2 | 13 | 3 | — | **56** |
+| FIXED | 25 | 5 | 10 | 3 | 13 | 3 | — | **59** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **37** | **42** | **24** | **10** | **4** | **8** | — | **125** |
+| **OPEN** | **37** | **42** | **22** | **9** | **4** | **8** | — | **122** |
 
 ---
 
