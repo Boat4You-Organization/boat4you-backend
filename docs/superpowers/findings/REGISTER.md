@@ -62,7 +62,7 @@ Legend statusa:
 | F1-035 | MED | Self-signed `.p12` keystore u repu (prod NE koristi, ali leak privatnog ključa) | OPEN |
 | F1-040 | MED | JWT access token expiration 24h (industrijski 15-60min) | DEFERRED-Faza5 |
 | F1-053 | MED | Nedostaje HSTS header iz nginx-a | DEFERRED-Faza7 (nginx batch) |
-| F1-055 | MED | Globalni error handler curi internu put-strukturu u 500 response body | OPEN |
+| F1-055 | MED | Globalni error handler curi internu put-strukturu u 500 response body | FIXED `6098250` (closed via F5-002 — `e.message` no longer echoed in catch-all / SQL / DataAccess / Persistence / HttpMessageNotReadable) |
 | F1-058 | MED | Repetitivni manual auth check; nedostaje class-level `@PreAuthorize` | OPEN |
 | F1-062 | MED | Login timing attack: BCrypt samo ako user postoji | OPEN |
 | F1-063 | MED | YachtController query param list size unvalidated | OPEN |
@@ -320,7 +320,7 @@ Legend statusa:
 
 ## Faza 5 — Cross-cutting (error handling, logging, yml, common services, i18n)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline; updated 2026-05-11 with Phase A + B4 fixes). 21 findings: 8 FIXED (F5-012 CRIT + F5-013/014 HIGH + F5-015/016/017 MED + F5-018/019 LOW), 9 active OPEN (2 HIGH + 4 MED + 3 LOW). **Gate: zero regression**. Pending top: F5-001 HIGH (AccessDeniedException wrong class), F5-002 HIGH (catch-all leak), F5-003/004 MED (next ApiErrorHandler batch B5). **Utils SecureRandom (F5-012/018/019) CLOSED in Phase B4.**
+**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline; updated 2026-05-12 with Phase A + B4 + B5 fixes). 21 findings: 15 FIXED (F5-012 CRIT + F5-001/002/013/014 HIGH + F5-003/004/015/016/017 MED + F5-007/009/010/018/019 LOW), 2 active OPEN (F5-005 MED + F5-006 MED + F5-008 LOW + F5-011 LOW — actually 4 active, 2 of those WAITING-DECISION). **Gate: zero regression**. **Utils SecureRandom (F5-012/018/019) CLOSED in Phase B4. ApiErrorHandler refactor (F5-001/002/003/004/007/009/010) CLOSED in Phase B5.**
 
 ### CRIT (1)
 
@@ -332,16 +332,16 @@ Legend statusa:
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
-| F5-001 | HIGH BUG | `@ExceptionHandler(AccessDeniedException::class)` catches `kotlin.io.AccessDeniedException` (file I/O); Spring Security 403 → 500 fall-through (silent prod bug) | OPEN — **HIGH, prod-readiness** |
-| F5-002 | HIGH | Catch-all + SQLException + DataAccess echo `e.message` to customer; F1-055 confirmation s 5 leak vectors | OPEN — **HIGH, F1-055 escalation** |
+| F5-001 | HIGH BUG | `@ExceptionHandler(AccessDeniedException::class)` catches `kotlin.io.AccessDeniedException` (file I/O); Spring Security 403 → 500 fall-through (silent prod bug) | FIXED `6098250` (explicit Spring Security import) |
+| F5-002 | HIGH | Catch-all + SQLException + DataAccess echo `e.message` to customer; F1-055 confirmation s 5 leak vectors | FIXED `6098250` (5 leak vectors closed) |
 | F5-013 | HIGH | `JWT_SECRET_KEY` env var bez `:?required` syntax; silent fail-open for JWT signing key | FIXED `556de3c` |
 
 ### MED (7)
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
-| F5-003 | MED | Internal field names / user IDs / referencing entities echoed u customer responses (USER_ALREADY_EXISTS = email enumeration channel) | OPEN — pair s F5-002 single commit |
-| F5-004 | MED | HTTP status mapping wrong: 11 not-found → 400 (should 404); ResourceNotFound → 510; DB exceptions → 400 (should 500) | OPEN — pair s F5-002 |
+| F5-003 | MED | Internal field names / user IDs / referencing entities echoed u customer responses (USER_ALREADY_EXISTS = email enumeration channel) | FIXED `6098250` (5 handlers stripped of context echo) |
+| F5-004 | MED | HTTP status mapping wrong: 11 not-found → 400 (should 404); ResourceNotFound → 510; DB exceptions → 400 (should 500) | FIXED `6098250` (9 not-found → 404, SQL/DataAccess → 500, ResourceNotFound 510 → 404) |
 | F5-005 | MED | `ApiErrorCodes` messages hardcoded English; non-EN customers get English toast unatoč i18n infrastrukturi | WAITING-DECISION (verify s Mario frontend i18n approach) |
 | F5-006 | MED | `InternalLoginException` handler logs `${e.email}` at ERROR svaki failed login — PII, F1-068 amplifier | OPEN — Faza 5 PII masking sweep |
 | F5-014 | HIGH | Mail credentials use placeholder defaults (`your@gmail.com`, `your-app-password`); F1-036 family violation | FIXED `556de3c` |
@@ -353,10 +353,10 @@ Legend statusa:
 
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
-| F5-007 | LOW | Stack trace logged at ERROR level za sve exceptions (uključujući expected user errors); log noise + anti-pattern logger format | OPEN — pair s F5-002 |
+| F5-007 | LOW | Stack trace logged at ERROR level za sve exceptions (uključujući expected user errors); log noise + anti-pattern logger format | FIXED `6098250` (SLF4J parameterized form throughout; 4xx → warn, 5xx → error) |
 | F5-008 | LOW | `PASSWORD_INVALID_LENGTH` typo "could"→"must" + reveals 6-char min length (F1-004 family) | WAITING-DECISION (F1-004 family) |
-| F5-009 | LOW | `AccessDeniedException` handler returns empty body; covered by F5-001 fix | OPEN — covered by F5-001 |
-| F5-010 | LOW | `ImageNotFoundException` TODO + no log; combined s F4-010 = zero audit trail on path traversal probing | WAITING-DECISION (pair s F5-007) |
+| F5-009 | LOW | `AccessDeniedException` handler returns empty body; covered by F5-001 fix | FIXED `6098250` (proper ErrorSchema body restored) |
+| F5-010 | LOW | `ImageNotFoundException` TODO + no log; combined s F4-010 = zero audit trail on path traversal probing | FIXED `6098250` (TODO removed, WARN log added) |
 | F5-011 | LOW | `ResourceNotFound` exception class empty (3 lines); debug-hostile | OPEN — Faza 5 exception hygiene |
 | F5-018 | LOW | `Utils.kt:46` charset typo missing `Y` (uppercase) + `j` (lowercase); 60 chars instead of intended 62 | FIXED `4e75639` (full 62-char base62, aligned with UrlShortener) |
 | F5-019 | LOW | `Utils.kt:DEFAULT_PASSWORD_LENGTH = 6`; F1-004 family | FIXED `4e75639` (raised to 16, ~95 bits entropy) |
@@ -414,15 +414,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 1 | 1 | 0 | 0 | 0 | 0 | — | **2** |
-| HIGH | 11 | 1 | 2 | 2 | 1 | 2 | — | **19** |
-| MED | 18 | 17 | 12 | 5 | 4 | 2 | — | **58** |
-| LOW | 8 | 23 | 10 | 4 | 4 | 4 | — | **53** |
+| HIGH | 11 | 1 | 2 | 2 | 0 | 2 | — | **18** |
+| MED | 17 | 17 | 12 | 5 | 2 | 2 | — | **55** |
+| LOW | 8 | 23 | 10 | 4 | 2 | 4 | — | **51** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 24 | 5 | 8 | 1 | 6 | 3 | — | **47** |
+| FIXED | 25 | 5 | 8 | 1 | 13 | 3 | — | **55** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **38** | **42** | **24** | **11** | **11** | **8** | — | **134** |
+| **OPEN** | **37** | **42** | **24** | **11** | **4** | **8** | — | **126** |
 
 ---
 
