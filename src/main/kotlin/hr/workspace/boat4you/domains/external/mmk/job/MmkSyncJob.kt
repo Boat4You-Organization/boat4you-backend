@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.external.mmk.service.MmkCatalogueIntegratio
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtIntegrationService
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferIntegrationService
 import hr.workspace.boat4you.domains.external.service.ServiceCallCacheService
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
@@ -25,6 +26,7 @@ class MmkSyncJob(
 
     //    @Scheduled(cron = "0 0 4 * * ?")
     @Scheduled(cron = "0 0 6 * * ?")
+    @SchedulerLock(name = "mmkCatalogueSync", lockAtMostFor = "PT1H")
     fun runCatalogueSync() {
         log.info("Starting MMK catalogue sync")
 
@@ -43,6 +45,7 @@ class MmkSyncJob(
     }
 
     @Scheduled(cron = "0 0 7,11,16 * * ?")
+    @SchedulerLock(name = "mmkCatalogueBackupSync", lockAtMostFor = "PT1H")
     fun runCatalogueBackupSync() {
         if (!serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_MMK_CATALOGUE_SYNC)) {
             return
@@ -60,6 +63,7 @@ class MmkSyncJob(
 
     //    @Scheduled(cron = "0 10 4 * * ?")
     @Scheduled(cron = "0 10 6 * * ?")
+    @SchedulerLock(name = "mmkYachtSync", lockAtMostFor = "PT1H")
     fun runYachtSync() {
         log.info("Syncing MMK yachts")
         val startTimeYachts = System.currentTimeMillis()
@@ -69,6 +73,7 @@ class MmkSyncJob(
     }
 
     @Scheduled(cron = "0 30 6 * * ?")
+    @SchedulerLock(name = "mmkYachtOfferSync", lockAtMostFor = "PT2H")
     fun runYachtOfferSync() {
         log.info("Syncing MMK yacht offers")
         val startTimeOffer = System.currentTimeMillis()
@@ -78,6 +83,7 @@ class MmkSyncJob(
     }
 
     @Scheduled(cron = "0 10 7,11,16 * * ?")
+    @SchedulerLock(name = "mmkYachtBackupSync", lockAtMostFor = "PT1H")
     fun runYachtBackupSync() {
         if (serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_MMK_YACHT_SYNC)) {
             log.info("Syncing MMK yachts")
@@ -98,6 +104,7 @@ class MmkSyncJob(
 
     //    @Scheduled(cron = "0 0 5 * * ?")
     @Scheduled(cron = "0 20 7 * * ?")
+    @SchedulerLock(name = "mmkYachtLangSync", lockAtMostFor = "PT1H")
     fun runYachtLangSync() {
         log.info("Syncing MMK yachts multilingual data")
         val startTime = System.currentTimeMillis()
@@ -107,6 +114,7 @@ class MmkSyncJob(
     }
 
     @Scheduled(cron = "0 0 8,12,17 * * ?")
+    @SchedulerLock(name = "mmkYachtLangBackupSync", lockAtMostFor = "PT1H")
     fun runYachtLangBackupSync() {
         if (!serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_MMK_YACHT_LANG_SYNC)) {
             return
@@ -119,6 +127,7 @@ class MmkSyncJob(
     }
 
     @Scheduled(cron = "0 10 8 * * ?")
+    @SchedulerLock(name = "mmkAvailabilitySync", lockAtMostFor = "PT1H")
     fun availabilitySync() {
         log.info("Syncing MMK yacht availability")
         val startTime = System.currentTimeMillis()

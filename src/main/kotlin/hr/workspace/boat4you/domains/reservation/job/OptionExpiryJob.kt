@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.job
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
@@ -18,6 +19,7 @@ class OptionExpiryJob(
      * Triggers every hour of the day.
      */
     @Scheduled(cron = "0 0 * * * *")
+    @SchedulerLock(name = "optionExpirySend24h", lockAtMostFor = "PT30M")
     fun send24HourOptionExpirationReminder() {
         log.info("Sending 24 hours option expiry reminder email")
         optionExpiryJobService.send24HourOptionExpirationReminder()
@@ -30,6 +32,7 @@ class OptionExpiryJob(
      * 4+ days between creation and the 48h reminder.
      */
     @Scheduled(cron = "0 25 * * * *")
+    @SchedulerLock(name = "optionExpirySend72h", lockAtMostFor = "PT30M")
     fun send72HourOptionExpirationReminder() {
         log.info("Sending 72 hours midway option expiry reminder email")
         optionExpiryJobService.send72HourOptionExpirationReminder()
@@ -40,6 +43,7 @@ class OptionExpiryJob(
      * Triggers every hour of the day.
      */
     @Scheduled(cron = "0 5 * * * *")
+    @SchedulerLock(name = "optionExpirySend48h", lockAtMostFor = "PT30M")
     fun send48HourOptionExpirationReminder() {
         log.info("Sending 48 hours option expiry reminder email")
         optionExpiryJobService.send48HourOptionExpirationReminder()
@@ -54,6 +58,7 @@ class OptionExpiryJob(
      * cancellation is the next step.
      */
     @Scheduled(cron = "0 */30 * * * ?")
+    @SchedulerLock(name = "optionExpirySync", lockAtMostFor = "PT20M")
     fun syncExpiredOptions() {
         optionExpiryJobService.syncExpiredOptions()
     }

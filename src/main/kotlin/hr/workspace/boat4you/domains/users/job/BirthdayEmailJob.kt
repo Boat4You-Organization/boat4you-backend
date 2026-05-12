@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.users.job
 import hr.workspace.boat4you.common.services.toLocale
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.MessageSource
@@ -40,6 +41,7 @@ class BirthdayEmailJob(
     private val log = LoggerFactory.getLogger(this::class.java)
 
     @Scheduled(cron = "0 0 9 * * *")
+    @SchedulerLock(name = "birthdayEmail", lockAtMostFor = "PT30M")
     @Transactional(readOnly = true)
     fun sendBirthdayWishes() {
         val today = LocalDate.now()

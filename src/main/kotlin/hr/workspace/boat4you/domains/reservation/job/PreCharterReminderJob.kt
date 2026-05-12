@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.reservation.job
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.service.ReservationEmailService
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
@@ -27,6 +28,7 @@ class PreCharterReminderJob(
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
     @Scheduled(cron = "0 32 9 ? * *")
+    @SchedulerLock(name = "preCharterReminder", lockAtMostFor = "PT45M")
     @Transactional(readOnly = true)
     fun run() {
         val tomorrow = LocalDate.now().plusDays(1)
