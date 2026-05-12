@@ -280,7 +280,7 @@ Legend statusa:
 
 ## Faza 4 — Scheduled jobs + heavy native (jobs, OpenCV, PDF gen)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline). 14 findings: 0 FIXED, 12 OPEN (3 HIGH + 5 MED + 4 LOW), 2 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline). Pending: F4-001 (5-min yml fix), F4-002 ShedLock pair s F3-037/F3-014, F4-009 ImageUtils Mat.use, plus ops-side F4-004 image-sync profile verify.
+**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline; updated 2026-05-12 with Phase A + C2 fixes). 14 findings: 2 FIXED (F4-001 HIGH yml + F4-009 HIGH ImageUtils Mat.use), 10 OPEN (1 HIGH + 5 MED + 4 LOW), 2 INFO. **Gate: zero regression**. Pending: F4-002 ShedLock pair s F3-037/F3-014 (Phase C1), F4-003/4-005 cron clustering + sync timebox (pair s F4-001/F4-002 batch), plus ops-side F4-004 image-sync profile verify.
 
 ### HIGH (3)
 
@@ -288,7 +288,7 @@ Legend statusa:
 |---|---|---|---|
 | F4-001 | HIGH | Spring `@Scheduled` default single-thread `TaskScheduler`; long sync chains blokiraju ostale crons + cron drift | FIXED `556de3c` |
 | F4-002 | HIGH | Profile-only locking (`@Profile("data-sync")`); 2-VM double-fire risk; no ShedLock / distributed lock (paired s F3-037 + F3-014) | OPEN — **pre-prod blocker**, pair s F3-037 fix |
-| F4-009 | HIGH | `ImageUtils` ne release-a intermediate Mat / MatOfByte u success ni exception path-evima — production native memory leak (~1.5GB/day VM3) | OPEN — **production stability bug** |
+| F4-009 | HIGH | `ImageUtils` ne release-a intermediate Mat / MatOfByte u success ni exception path-evima — production native memory leak (~1.5GB/day VM3) | FIXED `b2d3695` (Mat.use{} extension applied to convertToWebP + resizeImage; dead resizeImage(ByteArray) overload deleted) |
 
 ### MED (5)
 
@@ -315,6 +315,13 @@ Legend statusa:
 |---|---|
 | F4-008 | Positive: backup-sync pattern + explicit cron offset comments + Mario decision history u job-ovima |
 | F4-014 | Positive: ImageUtils releases primary Mats, CharterAgreement runCatching currency, lazy signatureDataUrl, defensive fallback chains |
+
+### FIXED (2)
+
+| ID | Severity | Naslov | Commit |
+|---|---|---|---|
+| F4-001 | HIGH | Spring `@Scheduled` thread pool size (yml fix) | `556de3c` |
+| F4-009 | HIGH | `Mat.use{}` extension closes intermediate Mat/MatOfByte leak; dead resizeImage(ByteArray) overload removed | `b2d3695` |
 
 ---
 
@@ -414,15 +421,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 1 | 1 | 0 | 0 | 0 | 0 | — | **2** |
-| HIGH | 11 | 1 | 2 | 2 | 0 | 2 | — | **18** |
+| HIGH | 11 | 1 | 2 | 1 | 0 | 2 | — | **17** |
 | MED | 17 | 17 | 12 | 5 | 2 | 2 | — | **55** |
 | LOW | 8 | 23 | 10 | 4 | 2 | 4 | — | **51** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 25 | 5 | 8 | 1 | 13 | 3 | — | **55** |
+| FIXED | 25 | 5 | 8 | 2 | 13 | 3 | — | **56** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **37** | **42** | **24** | **11** | **4** | **8** | — | **126** |
+| **OPEN** | **37** | **42** | **24** | **10** | **4** | **8** | — | **125** |
 
 ---
 
