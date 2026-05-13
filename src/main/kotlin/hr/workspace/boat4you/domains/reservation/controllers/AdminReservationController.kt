@@ -374,8 +374,40 @@ internal class AdminReservationController(
         // why the booking was cancelled without needing a follow-up call.
         @RequestBody(required = false) body: CancelBody? = null,
     ): ResponseEntity<ReservationDto> {
-        val externalReservation = reservationIntegrationService.deleteExternalReservation(id)
-        val reservationResponse = reservationMutationService.cancelReservation(id, externalReservation, body?.reason)
+        // F1-056: stamp `cancelationRequest` / `cancelationRequestAt` on
+        // reservation_flow BEFORE we call the partner. This commits in
+        // its own REQUIRES_NEW tx so a partner-success / local-fail
+        // drift leaves a visible "[AGENT] cancel initiated at T" trail
+        // for ops reconciliation. The post-partner step
+        // (`reservationMutationService.cancelReservation`) then flips
+        // sysStatus to CANCELLED and is idempotent if retried.
+        reservationMutationService.markCancellationInitiated(id, body?.reason)
+        val externalReservation =
+            try {
+                reservationIntegrationService.deleteExternalReservation(id)
+            } catch (e: Exception) {
+                // Partner cancel failed before any side-effect we know
+                // of. cancelationRequest stays set so admin can see the
+                // pending state and retry; partner side has no booking
+                // change yet (assuming partner is idempotent on retry).
+                log.warn("F1-056: partner cancel failed for reservation $id; cancellation request marker stays set for retry", e)
+                throw e
+            }
+        val reservationResponse =
+            try {
+                reservationMutationService.cancelReservation(id, externalReservation)
+            } catch (e: Exception) {
+                // F1-056 drift window: partner cancel SUCCEEDED but the
+                // local CANCELLED flip failed. The cancelationRequest
+                // marker from the pre-step is the breadcrumb ops uses
+                // to find this. Logged at ERROR so the alerting picks
+                // it up.
+                log.error(
+                    "F1-056 drift: partner cancel succeeded for reservation {} but local CANCELLED commit failed — needs manual reconciliation",
+                    id, e,
+                )
+                throw e
+            }
         // Mario rule (May 2026): every cancellation decision triggers an
         // email to the customer — rejected has its own send, approved goes
         // here. Wrapped in runCatching so a mail-side hiccup doesn't fail

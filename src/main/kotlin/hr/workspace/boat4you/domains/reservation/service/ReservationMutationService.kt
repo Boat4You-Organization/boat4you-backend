@@ -14,6 +14,7 @@ import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.mapper.ReservationMappers
 import hr.workspace.boat4you.domains.reservation.model.ReservationResponseWrapper
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.time.LocalDateTime
@@ -256,11 +257,53 @@ class ReservationMutationService(
         return reservationMappers.toReservationDto(reservation)
     }
 
+    /**
+     * F1-056: stamp the cancellation-audit fields BEFORE the partner
+     * call. Runs in its own REQUIRES_NEW transaction so it commits
+     * independently of whatever happens next — even if the partner
+     * cancelOption fails or the post-partner [cancelReservation] step
+     * never gets to commit, `reservationFlow.cancelationRequestAt`
+     * survives as evidence that a cancellation was attempted at this
+     * moment by an admin.
+     *
+     * The same `[AGENT]` prefix that the post-partner step used to
+     * apply is applied here instead — admin's reason (if any) wins,
+     * customer-side reason (if pre-existing) is preserved as a
+     * fallback. Idempotent: re-running on an already-prefixed row
+     * does NOT double-prefix because the guard checks for `[AGENT]`
+     * before adding it.
+     *
+     * The cancelation_request column is the existing column for this
+     * purpose — no schema migration needed.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun markCancellationInitiated(
+        reservationId: Long,
+        adminReason: String? = null,
+    ) {
+        val reservation = reservationRepository.findById(reservationId).orElseThrow()
+        val reservationFlow = reservation.reservationFlow!!
+
+        val existingReason = reservationFlow.cancelationRequest?.trim().orEmpty()
+        if (!existingReason.startsWith("[AGENT]")) {
+            val resolvedReason = adminReason?.trim().orEmpty().ifBlank {
+                existingReason.removePrefix("[AGENT]").trim()
+            }
+            reservationFlow.cancelationRequest = if (resolvedReason.isNotBlank()) {
+                "[AGENT] $resolvedReason"
+            } else {
+                "[AGENT]"
+            }
+        }
+        if (reservationFlow.cancelationRequestAt == null) {
+            reservationFlow.cancelationRequestAt = LocalDateTime.now()
+        }
+    }
+
     @Transactional
     fun cancelReservation(
         reservationId: Long,
         externalReservation: ReservationResponseWrapper,
-        adminReason: String? = null,
     ): ReservationDto {
         val reservation = reservationRepository.findById(reservationId).orElseThrow()
         reservation.status = externalReservation.status
@@ -271,29 +314,12 @@ class ReservationMutationService(
         val reservationFlow = reservation.reservationFlow!!
         offerMutationService.updateOfferStatus(reservationFlow.offer!!.id!!, OfferStatus.FREE)
 
-        // Tag every admin-triggered cancellation with "[AGENT]" so the
-        // customer's /my-bookings page can render a distinct "Cancelled by
-        // agent" label regardless of whether the customer had first
-        // requested it. Three scenarios we cover:
-        //   1. Customer requested cancel, admin approves → we keep the
-        //      customer's reason but prefix with [AGENT] so the FINAL
-        //      status reflects "closed by agent".
-        //   2. Admin cancels directly (overbooking, charter pulled) with
-        //      an explicit reason → [AGENT] + admin reason.
-        //   3. Admin cancels with no reason → just [AGENT].
-        // The prefix is stripped from the rendered reason before it is
-        // shown to the customer (see ReservationHeroSection).
-        // No DB migration needed — reuses the existing cancelation_request column.
-        val existingReason = reservationFlow.cancelationRequest?.trim().orEmpty()
-        val resolvedReason = adminReason?.trim().orEmpty().ifBlank { existingReason }
-        reservationFlow.cancelationRequest = if (resolvedReason.isNotBlank()) {
-            "[AGENT] $resolvedReason"
-        } else {
-            "[AGENT]"
-        }
-        if (reservationFlow.cancelationRequestAt == null) {
-            reservationFlow.cancelationRequestAt = LocalDateTime.now()
-        }
+        // F1-056: cancellation-audit fields (cancelationRequest /
+        // cancelationRequestAt) are stamped by
+        // [markCancellationInitiated] BEFORE the partner call, so a
+        // partner-success / local-fail drift still leaves a visible
+        // "[AGENT] cancellation initiated at T" trail on
+        // reservation_flow even if this method never reaches commit.
 
         return reservationMappers.toReservationDto(reservation)
     }
