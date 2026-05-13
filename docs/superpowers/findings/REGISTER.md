@@ -30,7 +30,7 @@ Legend statusa:
 | F1-002 | HIGH | Static OpenAPI YAML datoteke `permitAll()` u Spring Security configu | OPEN (yml-side fixed `2e451cc`; security-policy dio ostaje) |
 | F1-003 | HIGH | Auth endpointi (login/register/reset/invite) bez per-IP rate limita | DEFERRED-Faza7 — confirmed missing on VM2 nginx (2026-05-08) |
 | F1-004 | HIGH | Slabi password requirementi (min 6 znakova, bez kompleksnosti, bez breach checka) | OPEN |
-| F1-005 | HIGH | JWT bez `iss`/`aud` validacije; rola se ne re-fetcha iz DB | OPEN |
+| F1-005 | HIGH | JWT bez `iss`/`aud` validacije; rola se ne re-fetcha iz DB | FIXED `2ecc8ce` (requireIssuer + requireAudience on parser; authorities from dbUser.roleAssignments) |
 | F1-020 | HIGH | File upload validira samo Content-Type header, ne magic bytes | OPEN |
 | F1-022 | HIGH | `PublicReservationRateLimiter` slijepo vjeruje X-Forwarded-For | DEFERRED-Faza7 — confirmed scenario C ($proxy_add_x_forwarded_for) on VM2 (2026-05-08) |
 | F1-024 | HIGH | `StripePaymentService.handleWebhookEvent` non-null assertions na user metadata | FIXED `f30a116` (concretized via F3-025) |
@@ -95,13 +95,14 @@ Legend statusa:
 | F1-* | INFO | `ReservationController` ima ekselentne ownership guards — koristiti kao template |
 | F1-* | INFO | GDPR endpointi imaju audit logging (mature dizajn) |
 
-### FIXED (29)
+### FIXED (30)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
 | F1-019 | CRIT | Stripe webhook idempotency via `processed_stripe_events` claim (concretized as F3-022) | `f815e1e` + `f30a116` |
 | F1-049 | CRIT | Java app slušao na `*:8080`, izložen na public IP — bind na 127.0.0.1 | `02532a9` |
 | F1-068 | CRIT | Anonymous email-bombing endpoint moved to /admin/inquiries/debug + @Profile("dev") + @PreAuthorize SYSTEM_ADMIN | `ad5399c` |
+| F1-005 | HIGH | JWT iss/aud claims required on parse; authorities re-fetched from `dbUser.roleAssignments` not JWT claim | `2ecc8ce` |
 | F1-024 | HIGH | Stripe webhook payload null-safety (concretized as F3-025) | `f30a116` |
 | F1-041 | HIGH | DevEquipmentSyncController triple-defense: /admin/dev + @PreAuthorize SYSTEM_ADMIN + POST | `4caa8a9` |
 | F1-057 | HIGH | `setPasswordForReservation` rate limit via PublicEndpointRateLimiter (reservationId enumeration window narrowed) | `0ec4c42` |
@@ -429,15 +430,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 0 | 1 | 0 | 0 | 0 | 0 | — | **1** |
-| HIGH | 7 | 1 | 2 | 0 | 0 | 2 | — | **12** |
+| HIGH | 6 | 1 | 2 | 0 | 0 | 2 | — | **11** |
 | MED | 17 | 17 | 11 | 5 | 2 | 2 | — | **54** |
 | LOW | 8 | 23 | 9 | 4 | 2 | 4 | — | **50** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 30 | 5 | 10 | 3 | 13 | 3 | — | **64** |
+| FIXED | 31 | 5 | 10 | 3 | 13 | 3 | — | **65** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **32** | **42** | **22** | **9** | **4** | **8** | — | **117** |
+| **OPEN** | **31** | **42** | **22** | **9** | **4** | **8** | — | **116** |
 
 ---
 
