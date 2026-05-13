@@ -7,13 +7,19 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
 interface AgencyRepository : JpaRepository<Agency, Long> {
+    // F2-030: `JOIN FETCH a.agencySources` is a collection fetch — each
+    // agency row is multiplied by the number of agencySources over
+    // the wire before Hibernate de-dupes in memory. `DISTINCT` on the
+    // three affected queries collapses to one row per agency. Same end
+    // result, much smaller payload when the agency has 2+ sync sources.
+
     @Query(
         """
-        SELECT a
+        SELECT DISTINCT a
         FROM Agency a
         JOIN FETCH a.agencySources ar
         JOIN FETCH ar.externalSystem es
-        WHERE ar.primary = true 
+        WHERE ar.primary = true
         AND es.id = :extarnalSystemId
         AND a.active = true
         """,
@@ -38,11 +44,11 @@ interface AgencyRepository : JpaRepository<Agency, Long> {
 
     @Query(
         """
-        SELECT a
+        SELECT DISTINCT a
         FROM Agency a
         JOIN FETCH a.agencySources ar
         JOIN FETCH ar.externalSystem es
-        WHERE ar.primary = true 
+        WHERE ar.primary = true
         AND es.id = :extarnalSystemId
         AND a.active = true
         AND EXISTS (
@@ -54,11 +60,11 @@ interface AgencyRepository : JpaRepository<Agency, Long> {
 
     @Query(
         """
-        SELECT a
+        SELECT DISTINCT a
         FROM Agency a
         JOIN FETCH a.agencySources ar
         JOIN FETCH ar.externalSystem es
-        WHERE ar.primary = true 
+        WHERE ar.primary = true
         AND es.id = :extarnalSystemId
         AND a.active = true
         AND EXISTS (
@@ -85,12 +91,14 @@ interface AgencyRepository : JpaRepository<Agency, Long> {
         externalSystemId: Int,
     ): Agency?
 
+    // F2-029: same redundant-STR fix as in InquiryRepository. `:name`
+    // is bound as String, the JPQL `STR(...)` is a no-op.
     @Query(
         """
         SELECT a FROM Agency a
         WHERE 1 = 1
         AND (:active IS NULL OR a.active = :active)
-        AND (:name IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%', STR(:name), '%')))
+        AND (:name IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%', :name, '%')))
         AND (:countryCode IS NULL OR a.country = :countryCode)
         AND (
             :primarySource IS NULL OR EXISTS (

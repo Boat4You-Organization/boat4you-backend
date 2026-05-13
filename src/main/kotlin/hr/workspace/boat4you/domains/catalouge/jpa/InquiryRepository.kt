@@ -8,13 +8,18 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
 interface InquiryRepository : JpaRepository<Inquiry, Long> {
+    // F2-029: drop redundant `STR(:search)` — the parameter is already
+    // a Kotlin String (and bound as String through @Param), so the
+    // JPQL `STR(...)` function call is a no-op. Removing it lets the
+    // Hibernate query parser skip an extra type-conversion node and
+    // makes the query body marginally easier to grep.
     @Query(
         """
         SELECT i FROM Inquiry i
         WHERE 1 = 1
-        AND (:search IS NULL OR LOWER(i.email) LIKE LOWER(CONCAT('%', STR(:search), '%')) 
-            OR LOWER(i.name) LIKE LOWER(CONCAT('%', STR(:search), '%')) 
-            OR LOWER(i.surname) LIKE LOWER(CONCAT('%', STR(:search), '%')))
+        AND (:search IS NULL OR LOWER(i.email) LIKE LOWER(CONCAT('%', :search, '%'))
+            OR LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%'))
+            OR LOWER(i.surname) LIKE LOWER(CONCAT('%', :search, '%')))
         AND (:statuses IS NULL OR i.status IN :statuses)
         """,
     )

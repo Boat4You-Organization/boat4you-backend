@@ -38,9 +38,16 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
     )
     fun findAllByAgencyIdToDto(agencyId: Long): List<AgencyYachtDto>
 
+    /**
+     * F2-020: `JOIN FETCH y.reservationOptions ro` is a collection
+     * fetch — each yacht row is multiplied by the number of active
+     * reservationOptions over the wire. `DISTINCT` collapses to one
+     * row per yacht (Hibernate also de-dupes in memory but that
+     * happens AFTER the cartesian payload crosses the wire).
+     */
     @Query(
         """
-        SELECT y
+        SELECT DISTINCT y
         FROM Yacht y
         JOIN FETCH y.reservationOptions ro
         JOIN FETCH y.agency a
