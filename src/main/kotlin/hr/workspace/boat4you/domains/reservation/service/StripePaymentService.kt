@@ -54,6 +54,14 @@ class StripePaymentService(
         checkIfStripeIsEnabled()
         val dbReservation = reservationRepository.findById(reservationId).getOrElse { throw ReservationNotExistException() }
         val reservationFlow = dbReservation.reservationFlow ?: throw ReservationNotExistException()
+        // F1-026: extract the reservation-flow id once with an explicit
+        // null check so the metadata calls below do not need `!!`. A
+        // persisted reservation flow loaded via repository always has
+        // an id, but the type is `Long?` on AbstractEntity — making
+        // the assumption explicit fails fast with a clear message
+        // instead of an NPE somewhere in the Stripe SDK.
+        val reservationFlowId = reservationFlow.id
+            ?: throw ReservationNotExistException()
 
         if (payFullAmount == null && paymentPhaseId == null) {
             throw ParameterValidationException(mapOf("payFullAmount" to "Provide either payFullAmount or paymentPhaseId parameter"))
@@ -88,17 +96,26 @@ class StripePaymentService(
                 // reservation would be overcharged).
                 payFullAmount == true -> {
                     val remaining = unpaidPhases.sumOf { it.amount }
-                    if (remaining > BigDecimal.ZERO) remaining
-                    // Legacy fallback: if we have no phase rows at all yet
-                    // (brand-new reservation, phases generated later), use
-                    // the reservation total. This keeps the pre-installment
-                    // flow intact for initial guest bookings.
-                    else reservationFlow.calculatedTotalPrice!!
+                    if (remaining > BigDecimal.ZERO) {
+                        remaining
+                    } else {
+                        // Legacy fallback: no phase rows yet (brand-new
+                        // reservation, phases generated later). Use the
+                        // reservation total. F1-026: explicit exception
+                        // when even calculatedTotalPrice is missing
+                        // instead of `!!` → NPE → 500.
+                        reservationFlow.calculatedTotalPrice
+                            ?: throw ParameterValidationException(
+                                mapOf("calculatedTotalPrice" to "Reservation has no total price and no payment phases"),
+                            )
+                    }
                 }
                 // "Pay first installment" — next DUE unpaid phase, not the
                 // historically-oldest one which might already be paid.
+                // F1-026: `it.deadline` is a `lateinit var` (non-null in
+                // Kotlin type) so the previous `!!` was redundant noise.
                 payFullAmount == false -> {
-                    unpaidPhases.minByOrNull { it.deadline!! }?.amount
+                    unpaidPhases.minByOrNull { it.deadline }?.amount
                         ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "No unpaid payment phases remain"))
                 }
                 else -> throw ParameterValidationException(mapOf("payFullAmount" to "Provide either payFullAmount or paymentPhaseId parameter"))
@@ -133,11 +150,11 @@ class StripePaymentService(
                         .builder()
                         .setDescription("Boat4you reservation #$paymentReference")
                         .putMetadata("reservationId", reservationId.toString())
-                        .putMetadata("reservationFlowId", reservationFlow.id!!.toString())
+                        .putMetadata("reservationFlowId", reservationFlowId.toString())
                         .build(),
                 )
                 .putMetadata("reservationId", reservationId.toString())
-                .putMetadata("reservationFlowId", reservationFlow.id!!.toString())
+                .putMetadata("reservationFlowId", reservationFlowId.toString())
                 .apply {
                     payFullAmount?.let { putMetadata("payFullAmount", it.toString()) }
                     paymentPhaseId?.let { putMetadata("paymentPhaseId", it.toString()) }

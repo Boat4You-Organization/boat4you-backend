@@ -105,14 +105,29 @@ class ExternalSyncService(
                 if (yacht.entryType != EntryType.EXTERNAL) {
                     return@withYachtLock
                 }
-                val externalSystem = yacht.agency!!.primarySource!!.externalSystem!!
+                // F3-038: replace `yacht.agency!!.primarySource!!.externalSystem!!`
+                // chain with an explicit guarded resolve. A missing link
+                // in this chain previously NPE-d inside the @Async task
+                // and the user-search caller would never know. Logging
+                // here + skipping the sync keeps the request thread
+                // alive and ops can grep the WARN line if a yacht's
+                // agency wiring is in a bad state.
+                val externalSystem = yacht.agency?.primarySource?.externalSystem
+                if (externalSystem == null) {
+                    log.warn(
+                        "Skipping per-yacht sync for yachtId={}: missing agency/primarySource/externalSystem chain",
+                        yachtId,
+                    )
+                    return@withYachtLock
+                }
+                val resolvedYachtId = yacht.id ?: return@withYachtLock
                 val yachtMapping =
                     externalMappingService.findBySystemIdAndExternalSystemAndType(
-                        yacht.id!!,
+                        resolvedYachtId,
                         externalSystem,
                         Yacht::class.simpleName.toString(),
-                    )!!
-                if (yachtMapping.externalId == null) {
+                    )
+                if (yachtMapping?.externalId == null) {
                     return@withYachtLock
                 }
 

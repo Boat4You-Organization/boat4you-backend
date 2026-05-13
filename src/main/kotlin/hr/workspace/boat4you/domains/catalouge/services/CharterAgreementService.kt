@@ -68,11 +68,23 @@ class CharterAgreementService(
     }
 
     private fun buildVariables(reservation: Reservation): Map<String, Any?> {
-        val flow = reservation.reservationFlow!!
-        val yacht = flow.yacht!!
-        val user = flow.user!!
+        // F4-012: PDF render is an admin-side operation on a confirmed
+        // reservation — `reservationFlow`, its `yacht`, and its `user`
+        // are all required for the template variables. The earlier
+        // `!!` chain would NPE with no context if any link was null
+        // (the F2-041 fictitious-reservation edge case left some of
+        // these unset). Explicit guards surface which field is
+        // missing as a real IllegalStateException, caught by the
+        // outer error handler as 500 GENERAL_ERROR with structured
+        // logging for ops.
+        val flow = reservation.reservationFlow
+            ?: throw IllegalStateException("Cannot render charter agreement: reservation has no reservation_flow (id=${reservation.id})")
+        val yacht = flow.yacht
+            ?: throw IllegalStateException("Cannot render charter agreement: reservation_flow has no yacht (flowId=${flow.id})")
+        val user = flow.user
+            ?: throw IllegalStateException("Cannot render charter agreement: reservation_flow has no user (flowId=${flow.id})")
 
-        val displayReservationRef = reservation.reservationNumber ?: "${reservation.id!!}"
+        val displayReservationRef = reservation.reservationNumber ?: reservation.id?.toString() ?: EM_DASH
         val agreementDate = LocalDate.now().format(DATE_FORMATTER)
 
         // Charterer (klijent)
