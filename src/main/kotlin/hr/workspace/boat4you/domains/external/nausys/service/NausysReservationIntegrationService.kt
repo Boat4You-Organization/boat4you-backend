@@ -130,18 +130,29 @@ class NausysReservationIntegrationService(
         // partner→our-location lookup returning null even though a live Location
         // exists for the yacht. Fall back to the offer's persisted location so
         // booking flow doesn't NPE on the response wrapper.
+        // F3-015: partner internal IDs go to the log via parameterised
+        // SLF4J only, never into the exception message itself. The
+        // exception message stays generic so even an unanticipated
+        // bypass of the catch-all sanitiser (F1-055/F5-002) cannot
+        // surface partner IDs to the customer.
         val locationFrom =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.locationFromId!!,
                 ExternalSystemEnum.NAUSYS.value.toLong(),
             ) ?: fallbackLocationFrom
-                ?: error("No Location for NauSys locationFromId=${reservationResponse.locationFromId} and no fallback supplied")
+                ?: run {
+                    log.error("No Location for NauSys locationFromId={} and no fallback supplied", reservationResponse.locationFromId)
+                    throw IllegalStateException("Unmapped partner location on reservation response")
+                }
         val locationTo =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.locationToId!!,
                 ExternalSystemEnum.NAUSYS.value.toLong(),
             ) ?: fallbackLocationTo
-                ?: error("No Location for NauSys locationToId=${reservationResponse.locationToId} and no fallback supplied")
+                ?: run {
+                    log.error("No Location for NauSys locationToId={} and no fallback supplied", reservationResponse.locationToId)
+                    throw IllegalStateException("Unmapped partner location on reservation response")
+                }
 
         val totalDiscount = reservationResponse.discounts?.sumOf { it.amount!!.toBigDecimal() } ?: BigDecimal.ZERO
         val agencyCommission =

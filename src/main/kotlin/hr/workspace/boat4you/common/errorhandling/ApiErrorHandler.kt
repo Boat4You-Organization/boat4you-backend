@@ -4,6 +4,7 @@ import hr.workspace.boat4you.common.exceptions.EntityNotDeletableException
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.common.exceptions.ResourceNotFound
 import hr.workspace.boat4you.common.exceptions.UnmodifiableFieldsException
+import hr.workspace.boat4you.common.services.LogMasking
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageNotFoundException
@@ -328,10 +329,13 @@ internal class ApiErrorHandler {
 
     @ExceptionHandler(InternalLoginException::class)
     fun handleInternalLoginException(e: InternalLoginException): ResponseEntity<ErrorSchema> {
-        // F5-007: failed login is a routine 4xx, not an application error.
-        // The `e.email` PII leak is tracked separately as F5-006 and will
-        // be masked in the Faza 5 PII sweep batch.
-        logger.warn("InternalLoginException: {}: {}", e.email, e.type.name)
+        // F5-007: failed login is a routine 4xx, not an application
+        // error — WARN level.
+        // F5-006: mask the email before it lands in operator dashboards
+        // / ELK. The masked form still gives ops "same person retrying
+        // 5× this minute" correlation within a single log session;
+        // raw email belongs in the DB audit trail, not in flight logs.
+        logger.warn("InternalLoginException: {}: {}", LogMasking.maskEmail(e.email), e.type.name)
         val errorCode =
             when (e.type) {
                 InternalLoginException.Type.BAD_CREDENTIALS -> ApiErrorCodes.BAD_CREDENTIALS

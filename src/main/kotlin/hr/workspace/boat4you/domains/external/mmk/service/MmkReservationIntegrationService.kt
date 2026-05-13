@@ -133,18 +133,28 @@ class MmkReservationIntegrationService(
         // partner→our-location lookup returning null even though a live Location
         // exists for the yacht. Fall back to the offer's persisted location so
         // booking flow doesn't NPE on the response wrapper.
+        // F3-015: same pattern as NausysReservationIntegrationService —
+        // partner IDs to parameterised log, generic exception message
+        // so a future bypass of the catch-all sanitiser cannot surface
+        // partner internals to the customer.
         val locationFrom =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.baseFromId,
                 ExternalSystemEnum.MMK.value.toLong(),
             ) ?: fallbackLocationFrom
-                ?: error("No Location for MMK baseFromId=${reservationResponse.baseFromId} and no fallback supplied")
+                ?: run {
+                    log.error("No Location for MMK baseFromId={} and no fallback supplied", reservationResponse.baseFromId)
+                    throw IllegalStateException("Unmapped partner location on reservation response")
+                }
         val locationTo =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.baseToId,
                 ExternalSystemEnum.MMK.value.toLong(),
             ) ?: fallbackLocationTo
-                ?: error("No Location for MMK baseToId=${reservationResponse.baseToId} and no fallback supplied")
+                ?: run {
+                    log.error("No Location for MMK baseToId={} and no fallback supplied", reservationResponse.baseToId)
+                    throw IllegalStateException("Unmapped partner location on reservation response")
+                }
 
         return ReservationResponseWrapper(
             externalId = reservationResponse.id,

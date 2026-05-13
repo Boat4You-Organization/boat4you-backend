@@ -84,7 +84,14 @@ object ImageUtils {
 
         return Imgcodecs.imread(imagePath, Imgcodecs.IMREAD_COLOR).use { originalMat ->
             if (originalMat.empty()) {
-                throw IllegalArgumentException("Could not load image from path: $imagePath")
+                // F4-013: file path stays in the log, never in the
+                // exception message. Path leaks via the message used
+                // to surface in 500 responses through the F1-055
+                // catch-all (now closed in B5) — defence-in-depth
+                // keeps the message generic even if a future leak
+                // channel reappears.
+                log.error("Could not load image from path: {}", imagePath)
+                throw IllegalArgumentException("Could not load image")
             }
 
             val srcW = originalMat.cols()
