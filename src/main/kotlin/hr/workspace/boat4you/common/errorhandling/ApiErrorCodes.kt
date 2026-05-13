@@ -8,7 +8,12 @@ enum class ApiErrorCodes(
     BAD_CREDENTIALS(1011, "Bad credentials"),
     LOGIN_ATTEMPTS_EXCEEDED(1012, "Maximum number of login attempts exceeded"),
     PASSWORD_RESET_INVALID(1013, "Password reset request invalid"),
-    PASSWORD_INVALID_LENGTH(1014, "Password could contain at least six characters"),
+    // F1-004: generic message — does not reveal exact minimum (was
+    // "could contain at least six characters", which was both an
+    // attacker hint AND a misleading typo of "must"). Enum constant
+    // name preserved so the frontend error-code switch (1014) keeps
+    // working; only the human-readable message changes.
+    PASSWORD_INVALID_LENGTH(1014, "Password does not meet the strength requirements"),
     OLD_PASSWORD_INVALID(1015, "Old password not valid"),
     REQUEST_NOT_PARSEABLE(1101, "Request JSON not parseable"),
     INVALID_REQUEST_PARAMETERS(1102, "Invalid request parameters"),

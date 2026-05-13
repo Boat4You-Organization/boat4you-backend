@@ -9,7 +9,7 @@ import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import hr.workspace.boat4you.domains.users.jpa.UserInviteStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRegistrationStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
-import hr.workspace.boat4you.security.exceptions.PasswordException
+import hr.workspace.boat4you.security.services.PasswordPolicy
 import hr.workspace.boat4you.security.services.PasswordService
 import org.bouncycastle.util.encoders.Base64
 import org.openapitools.model.SetUserPasswordBody
@@ -127,9 +127,7 @@ class UserInviteService(
     ) {
         val dbUser = checkInvitationValidity(inviteCode)
 
-        if (setUserPasswordBody.password.length < 6) {
-            throw PasswordException(PasswordException.PasswordExceptionType.PASSWORD_INVALID_LENGTH)
-        }
+        PasswordPolicy.validate(setUserPasswordBody.password)
 
         dbUser.apply {
             password = passwordService.encodePassword(setUserPasswordBody.password)

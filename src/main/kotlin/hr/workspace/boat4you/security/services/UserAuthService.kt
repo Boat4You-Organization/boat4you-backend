@@ -185,9 +185,7 @@ class UserAuthService(
             throw PasswordException(PasswordException.PasswordExceptionType.OLD_PASSWORD_INVALID)
         }
 
-        if (body.newPassword.length < 6) {
-            throw PasswordException(PasswordException.PasswordExceptionType.PASSWORD_INVALID_LENGTH)
-        }
+        PasswordPolicy.validate(body.newPassword)
 
         dbUser.password = passwordService.encodePassword(body.newPassword)
         tokenService.revokeAllUserTokens(dbUser.id!!)
@@ -332,9 +330,7 @@ class UserAuthService(
     ) {
         val dbUser = checkPasswordResetValidity(passwordResetCode)
 
-        if (userPasswordBody.password.length < 6) {
-            throw PasswordException(PasswordException.PasswordExceptionType.PASSWORD_INVALID_LENGTH)
-        }
+        PasswordPolicy.validate(userPasswordBody.password)
 
         dbUser.apply {
             password = passwordService.encodePassword(userPasswordBody.password)
