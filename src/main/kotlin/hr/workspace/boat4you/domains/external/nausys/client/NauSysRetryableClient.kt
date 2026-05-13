@@ -40,7 +40,10 @@ class NauSysRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
+        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER, random = true),
     )
     fun getFreeYachts(request: RestFreeYachtsRequest): RestFreeYachtList {
         val response =
@@ -60,7 +63,7 @@ class NauSysRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
+        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER, random = true),
     )
     fun getFreeYachtsSearchForAsync(request: RestFreeYachtsSearchRequest): RestFreeYachtsSearchResponse {
         val response =
@@ -80,9 +83,20 @@ class NauSysRetryableClient(
     }
 
     @Retryable(
-        value = [Exception::class],
+        retryFor = [Exception::class],
+        // F3-008: the method makes THREE serial partner calls
+        // (getAllOptions, stornos, getAllReservations). Default
+        // @Retryable on Exception means a clean "not found" outcome
+        // — all three calls returned OK but with no results, so we
+        // throw ExternalSystemException at the end — would be retried
+        // up to 3 times, fanning 3 calls × 3 attempts = 9 partner
+        // hits for a single lookup that will deterministically fail.
+        // Excluding ExternalSystemException keeps the retry on
+        // transient HTTP / partner 5xx errors while letting the
+        // "not found" path fail fast after 3 calls.
+        noRetryFor = [hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
+        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER, random = true),
     )
     fun getReservation(request: RestYachtReservationsRequest): RestYachtReservation {
         // there is no API for fetching reservation status by ID, so we need to call endpoint for each status

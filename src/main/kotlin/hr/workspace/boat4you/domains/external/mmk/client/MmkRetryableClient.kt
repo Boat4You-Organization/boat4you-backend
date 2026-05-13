@@ -31,10 +31,14 @@ class MmkRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
         backoff =
             Backoff(
                 delay = DEFAULT_DELAY,
                 multiplier = DEFAULT_MULTIPLIER,
+                random = true,
             ),
     )
     fun getOffers(
@@ -109,10 +113,14 @@ class MmkRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
         backoff =
             Backoff(
                 delay = DEFAULT_DELAY,
                 multiplier = DEFAULT_MULTIPLIER,
+                random = true,
             ),
     )
     fun getOffersForAsync(
@@ -189,10 +197,14 @@ class MmkRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
         backoff =
             Backoff(
                 delay = DEFAULT_DELAY,
                 multiplier = DEFAULT_MULTIPLIER,
+                random = true,
             ),
     )
     fun getReservation(reservationId: Long): ReservationResponse {
@@ -245,10 +257,14 @@ class MmkRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
         backoff =
             Backoff(
                 delay = DEFAULT_DELAY,
                 multiplier = DEFAULT_MULTIPLIER,
+                random = true,
             ),
     )
     fun crewListLink(reservationId: Long): CrewListLink {
