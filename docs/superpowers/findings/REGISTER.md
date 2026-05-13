@@ -139,7 +139,7 @@ Legend statusa:
 
 ## Faza 2 — Data layer (persistence, entities, migrations)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 7 batch-eva + 3 fixes + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 entity contract fixes). 50 findings: 5 FIXED, 42 OPEN (1 CRIT + 1 HIGH + 17 MED + 23 LOW), 3 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F2-043 (`FLYWAY_TARGET_VERSION` env var verify), F2-044 (V1_24 Mario commentary), arhitektonska odluka za audit-trail batch.
+**Status:** CLOSED 2026-05-11 (read-pass kroz 7 batch-eva + 3 fixes + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 entity contract fixes; updated 2026-05-13 s 5 yacht-search-view nalaza). 55 findings: 5 FIXED, 47 OPEN (1 CRIT + 1 HIGH + 19 MED + 26 LOW), 3 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F2-043 (`FLYWAY_TARGET_VERSION` env var verify), F2-044 (V1_24 Mario commentary), arhitektonska odluka za audit-trail batch. **New yacht-search-view findings (F2-050 → F2-054)**: date-less search coverage gap (external yachts without offers invisible), `total_locations` SUM-not-COUNT, no DISTINCT-by-yacht in pagination, custom-yacht NULL location, JOIN+Pageable workaround.
 
 ### CRIT (1)
 
@@ -176,6 +176,8 @@ Legend statusa:
 | F2-045 | MED | `V1_64` SET NOT NULL bez UPDATE safety net — prod deploy fail-a na NULL phone redu | OPEN — pre-prod operational checklist |
 | F2-046 | MED | `V1_57` hardkodira ordinal payment_type values koje V1_90 kasnije mapira u STRING — drift risk | OPEN — tracking-only (already applied) |
 | F2-047 | MED | `V1_69`/`V1_70` country.id == location.id numerical overlap assumption — fragile, no constraint | OPEN — Faza 6 (data model documentation) |
+| F2-050 | MED | `yacht_search_view` branch 1 (entry_type=1) INNER JOINs `offer` — external yachti bez ijednog offera (sync gap, all-cancelled, all status=4) **nevidljivi** u customer search-u. Custom yachti imaju `dateFrom IS NULL` escape hatch, external nemaju. Date-less search po marini/tipu prikazuje samo subset DB-a. | OPEN — search-coverage bug, observable kao "search returns fewer yachts than admin sees" |
+| F2-052 | MED | `YachtQueryingService.getYachts` Criteria query nema explicit DISTINCT po `yacht.id` — `yacht_search_view` daje 1 red PO (yacht × offer × charter_type), tako da yacht s N offera generira N redova. Pagination + `getYachtSearchTotalCount` mogu vraćati napuhane brojeve ("100 yachti pronađeno" ali stvarno 20 distinct). Frontend može pokazivati duplikate kroz stranice. | OPEN — verify s frontend ekipom, kandidat za window function / DISTINCT ON |
 
 ### LOW (23)
 
@@ -204,6 +206,9 @@ Legend statusa:
 | F2-041 | LOW | `ReservationFlow.status` TODO + ReservationFlow/Document/ExternalReservationPaymentPlan ne extendaju AbstractEntity (F2-028 family) | OPEN — eskalacija (F2-028 architectural decision) |
 | F2-048 | LOW | `V1_54`/`V1_60`/`V1_67` recreate yacht_search_view s hardkodiranim `o.status <> 4` (superseded by V1_90+R__1_03) | OPEN — tracking-only / convention note |
 | F2-049 | LOW | `V1_88` dedup regex normalization drift s `ManufacturerAliasResolver.kt` Kotlin ekvivalentom | OPEN — Faza 6 (drift-prevention pattern) |
+| F2-051 | LOW | `yacht_search_view` `total_locations` CASE računa **sum** `location_id` brojeva umjesto count distinct lokacija. One-way Split (id=8) → Dubrovnik (id=42) daje `total_locations = 50`. Ako frontend koristi za "1 marina" vs "2 marinas" badge — mislabel. Round-trip slučaj (id=id) slučajno radi (vraća sam id koji se može tretirati kao 1-element-set). | OPEN — verify frontend usage; svjesna konvencija ili real bug |
+| F2-053 | LOW | `yacht_search_view` branch 2 `LEFT JOIN location l ON l.id = y.location_id` — ako je custom `yacht.location_id` NULL, view emitira NULL `locationFromName`/`locationFullName`. Yacht se i dalje pojavljuje u search-u, ali bez prikaza marine. Frontend mora biti null-safe ili admin form mora forsirati location selector. | OPEN — defensive coding / form validation |
+| F2-054 | LOW | `YachtQueryingService.buildYachtSearchPredicates` koristi `RIGHT(locationFullName, 2)` umjesto JOIN-a na country.code za country-code filter. Inline komentar priznaje: "sidesteps the JOIN + Pageable bug" — workaround za Hibernate's pagination duplicate-row issue. Funkcionalno radi ali fragile: ako `location_full_name` format (`id-Name-CC`) ikad promijeni, filter pucati će tiho. | OPEN — track underlying JOIN+Pageable issue; document format invariant or refactor s window-function approach |
 
 ### FIXED (5)
 
@@ -435,14 +440,14 @@ Legend statusa:
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 0 | 1 | 0 | 0 | 0 | 0 | — | **1** |
 | HIGH | 2 | 1 | 2 | 0 | 0 | 2 | — | **7** |
-| MED | 17 | 17 | 11 | 5 | 2 | 2 | — | **54** |
-| LOW | 8 | 23 | 9 | 4 | 1 | 4 | — | **49** |
+| MED | 17 | 19 | 11 | 5 | 2 | 2 | — | **56** |
+| LOW | 8 | 26 | 9 | 4 | 1 | 4 | — | **52** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
 | FIXED | 35 | 5 | 10 | 3 | 14 | 3 | — | **70** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **27** | **42** | **22** | **9** | **3** | **8** | — | **111** |
+| **OPEN** | **27** | **47** | **22** | **9** | **3** | **8** | — | **116** |
 
 ---
 
