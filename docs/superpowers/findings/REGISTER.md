@@ -280,7 +280,7 @@ Legend statusa:
 | F3-007 | LOW | `transactionTemplate.execute` audit pattern samo u `*Async`; state-change calls gube audit pri TX rollback | OPEN — eskalacija (audit policy decision) |
 | F3-013 | LOW | Prod main-source importira `ProdTestSamples.DREAM_YACHT_AGENCY_ID` u 2 fajla (unused, inverted test dependency) | WAITING-DECISION (trivijalan) |
 | F3-014 | LOW | `@Async syncOffersForDateRange` + TODO "Nausys only one call at the time" bez locking-a | FIXED `ff30c4e` (TODO replaced with comment pointing at ShedLock cron axis + YachtSyncMutex per-yacht axis) |
-| F3-015 | LOW | `error("No Location for NauSys locationFromId=$id")` exposes partner internal IDs (F1-055 family); MMK sibling u istoj fix scope | OPEN — Faza 5 (cross-cutting error sanitization) |
+| F3-015 | LOW | `error("No Location for NauSys locationFromId=$id")` exposes partner internal IDs (F1-055 family); MMK sibling u istoj fix scope | FIXED `83c8770` (partner IDs to parameterised log; generic exception message — both NauSys + MMK) |
 | F3-018 | LOW | `MmkYachtIntegrationService.SUPPORTED_LANGUAGES` izričito izostavlja EN — verify intended (default fallback?) | WAITING-DECISION (verify hipoteza) |
 | F3-019 | LOW | `MmkYachtOfferIntegrationServiceAsync.syncOffersForAgencyYachtsOld` deprecated ali aktivan `@Async` + 90 linija duplicirane impl | WAITING-DECISION (grep + delete) |
 | F3-028 | LOW | `toCentsLong()` koristi `RoundingMode.UP` → slight customer overcharge per payment phase | WAITING-DECISION (Mario business choice) |
@@ -303,6 +303,7 @@ Legend statusa:
 | F3-005 | MED | Backoff jitter (random=true) na svim read-only @Retryable methods — NauSys + MMK | `0426162` |
 | F3-008 | MED | NauSys getReservation noRetryFor=ExternalSystemException — 9× amplification capped at 3 calls for "not found" | `0426162` |
 | F3-014 | LOW | Stale "Nausys only one call at the time" TODO closed by ShedLock cron axis + YachtSyncMutex per-yacht axis (no partner-side global semaphore introduced) | `ff30c4e` |
+| F3-015 | LOW | Partner IDs out of `error()` message; structured `log.error("...", id)` instead — NauSys + MMK ReservationIntegrationService | `83c8770` |
 
 ---
 
@@ -335,7 +336,7 @@ Legend statusa:
 | F4-006 | LOW | `runCatalogueSync` + `runCatalogueBackupSync` 95% duplication — drift risk | WAITING-DECISION (trivial refactor) |
 | F4-007 | LOW | `GenerateInvoiceJob` bez `shouldRunScheduledSync` check; missing backup-sync pattern | WAITING-DECISION (verify InvoiceService idempotency prvo) |
 | F4-012 | LOW | `CharterAgreementService.renderToPdf` chained `!!` na flow.user/yacht/dateFrom — F2-041 fictitious reservation edge case | WAITING-DECISION (verify if fictitious reaches PDF render) |
-| F4-013 | LOW | `ImageUtils.IllegalArgumentException("Could not load image from path: $imagePath")` curi file path; F1-055/F4-010 family | OPEN — Faza 5 (cross-cutting error sanitization) |
+| F4-013 | LOW | `ImageUtils.IllegalArgumentException("Could not load image from path: $imagePath")` curi file path; F1-055/F4-010 family | FIXED `83c8770` (path to parameterised log.error; exception message generic) |
 
 ### INFO (2)
 
@@ -344,19 +345,20 @@ Legend statusa:
 | F4-008 | Positive: backup-sync pattern + explicit cron offset comments + Mario decision history u job-ovima |
 | F4-014 | Positive: ImageUtils releases primary Mats, CharterAgreement runCatching currency, lazy signatureDataUrl, defensive fallback chains |
 
-### FIXED (3)
+### FIXED (4)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
 | F4-001 | HIGH | Spring `@Scheduled` thread pool size (yml fix) | `556de3c` |
 | F4-002 | HIGH | ShedLock 5.16 + V1_92 migration + @SchedulerLock na svih 24 @Scheduled metoda (2-VM safe) | `75e8002` + `c969067` |
 | F4-009 | HIGH | `Mat.use{}` extension closes intermediate Mat/MatOfByte leak; dead resizeImage(ByteArray) overload removed | `b2d3695` |
+| F4-013 | LOW | File path out of IllegalArgumentException message; logged via `log.error("...", path)` | `83c8770` |
 
 ---
 
 ## Faza 5 — Cross-cutting (error handling, logging, yml, common services, i18n)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline; updated 2026-05-12 with Phase A + B4 + B5 fixes). 21 findings: 15 FIXED (F5-012 CRIT + F5-001/002/013/014 HIGH + F5-003/004/015/016/017 MED + F5-007/009/010/018/019 LOW), 2 active OPEN (F5-005 MED + F5-006 MED + F5-008 LOW + F5-011 LOW — actually 4 active, 2 of those WAITING-DECISION). **Gate: zero regression**. **Utils SecureRandom (F5-012/018/019) CLOSED in Phase B4. ApiErrorHandler refactor (F5-001/002/003/004/007/009/010) CLOSED in Phase B5.**
+**Status:** CLOSED 2026-05-11 (read-pass kroz 2 batch-a + closure summary + phase gate at baseline; updated 2026-05-12 with Phase A + B4 + B5 fixes; updated 2026-05-13 with F5-006 PII masking). 21 findings: 16 FIXED (F5-012 CRIT + F5-001/002/013/014 HIGH + F5-003/004/006/015/016/017 MED + F5-007/009/010/018/019 LOW), 3 active OPEN (F5-005 WAITING-DECISION + F5-008 WAITING-DECISION + F5-011 LOW). **Gate: zero regression**. **Utils SecureRandom (F5-012/018/019) CLOSED in B4. ApiErrorHandler refactor (F5-001..F5-010 minus F5-005/006/008/011) CLOSED in B5. F5-006 PII email masking via LogMasking.maskEmail CLOSED 2026-05-13.**
 
 ### CRIT (1)
 
@@ -379,7 +381,7 @@ Legend statusa:
 | F5-003 | MED | Internal field names / user IDs / referencing entities echoed u customer responses (USER_ALREADY_EXISTS = email enumeration channel) | FIXED `6098250` (5 handlers stripped of context echo) |
 | F5-004 | MED | HTTP status mapping wrong: 11 not-found → 400 (should 404); ResourceNotFound → 510; DB exceptions → 400 (should 500) | FIXED `6098250` (9 not-found → 404, SQL/DataAccess → 500, ResourceNotFound 510 → 404) |
 | F5-005 | MED | `ApiErrorCodes` messages hardcoded English; non-EN customers get English toast unatoč i18n infrastrukturi | WAITING-DECISION (verify s Mario frontend i18n approach) |
-| F5-006 | MED | `InternalLoginException` handler logs `${e.email}` at ERROR svaki failed login — PII, F1-068 amplifier | OPEN — Faza 5 PII masking sweep |
+| F5-006 | MED | `InternalLoginException` handler logs `${e.email}` at ERROR svaki failed login — PII, F1-068 amplifier | FIXED `83c8770` (LogMasking.maskEmail → `j***@example.com`) |
 | F5-014 | HIGH | Mail credentials use placeholder defaults (`your@gmail.com`, `your-app-password`); F1-036 family violation | FIXED `556de3c` |
 | F5-015 | MED | Logback prod profile `<logger name="hr.workspace.boat4you" level="debug">`; DEBUG-level prod logging amplifies PII + disk fill | FIXED `d2e3ea9` |
 | F5-016 | MED | application-prod.yml `NAUSYS_USERNAME`/`PASSWORD`/`MMK_TOKEN`/`MAIL_SERVER_*` no `:?required` syntax | FIXED `556de3c` |
@@ -451,14 +453,14 @@ Legend statusa:
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 0 | 1 | 0 | 0 | 0 | 0 | — | **1** |
 | HIGH | 2 | 1 | 2 | 0 | 0 | 2 | — | **7** |
-| MED | 17 | 15 | 9 | 5 | 2 | 2 | — | **50** |
-| LOW | 8 | 22 | 9 | 4 | 1 | 4 | — | **48** |
+| MED | 17 | 15 | 9 | 5 | 1 | 2 | — | **49** |
+| LOW | 8 | 22 | 8 | 3 | 1 | 4 | — | **46** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 35 | 14 | 12 | 3 | 14 | 3 | — | **81** |
+| FIXED | 35 | 14 | 13 | 4 | 15 | 3 | — | **84** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **27** | **38** | **20** | **9** | **3** | **8** | — | **105** |
+| **OPEN** | **27** | **38** | **19** | **8** | **2** | **8** | — | **102** |
 
 ---
 
