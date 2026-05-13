@@ -38,7 +38,7 @@ Legend statusa:
 | F1-041 | HIGH | DevEquipmentSyncController na `/public/dev` + samo profile gating (no auth) | FIXED `4caa8a9` (moved to /admin/dev + @PreAuthorize SYSTEM_ADMIN + POST for state-changing) |
 | F1-056 | HIGH | `cancelReservation` non-atomic external delete + DB cancel; razdvojeno stanje moguće | FIXED `af2b027` (pre-partner audit stamp in REQUIRES_NEW + structured drift logging — full 2PC out of scope, mirrors F3-024 trade-off) |
 | F1-057 | HIGH | `setPasswordForReservation` bez rate limita; reservationId enumeration | FIXED `0ec4c42` (added to generalized PublicEndpointRateLimiter, 5/min/IP default) |
-| F1-064 | HIGH | Public yacht search trigger-a synkroni external sync prema NauSys/MMK iz request thread-a | OPEN |
+| F1-064 | HIGH | Public yacht search trigger-a synkroni external sync prema NauSys/MMK iz request thread-a | FIXED `ca8378c` (drop-on-saturation policy replaces caller-runs fallback in taskExecutor) |
 | F1-067 | HIGH | `/public/inquiries/{id}/email-preview` curi PII (autor: "before go-live") | FIXED `ad5399c` (paired with F1-068 closeout — same triple-defense move) |
 | F1-069 | HIGH | `/public/inquiries` POST nema rate limita | FIXED `0ec4c42` (added to generalized PublicEndpointRateLimiter, 5/min/IP default) |
 | F1-070 | HIGH | `/public/image/{imageId}` resize bez validacije width/height (OOM/DoS) | FIXED `fd3c082` (cap 4096 on both dims; ParameterValidationException → 400) |
@@ -95,7 +95,7 @@ Legend statusa:
 | F1-* | INFO | `ReservationController` ima ekselentne ownership guards — koristiti kao template |
 | F1-* | INFO | GDPR endpointi imaju audit logging (mature dizajn) |
 
-### FIXED (33)
+### FIXED (34)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
@@ -109,6 +109,7 @@ Legend statusa:
 | F1-041 | HIGH | DevEquipmentSyncController triple-defense: /admin/dev + @PreAuthorize SYSTEM_ADMIN + POST | `4caa8a9` |
 | F1-056 | HIGH | Pre-partner audit stamp + drift logging on cancelReservation (mirrors F3-024 trade-off, full 2PC out of scope) | `af2b027` |
 | F1-057 | HIGH | `setPasswordForReservation` rate limit via PublicEndpointRateLimiter (reservationId enumeration window narrowed) | `0ec4c42` |
+| F1-064 | HIGH | taskExecutor drop-on-saturation policy replaces caller-runs fallback that turned partner slowdown into request-thread starvation | `ca8378c` |
 | F1-067 | HIGH | PII-leak email-preview moved to /admin/inquiries/debug (paired with F1-068) | `ad5399c` |
 | F1-069 | HIGH | `/public/inquiries` POST rate limit via PublicEndpointRateLimiter (broker email-flood vector closed) | `0ec4c42` |
 | F1-070 | HIGH | Image resize OOM/DoS bound: cap 4096 on width and height with ParameterValidationException | `fd3c082` |
@@ -433,15 +434,15 @@ Legend statusa:
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 0 | 1 | 0 | 0 | 0 | 0 | — | **1** |
-| HIGH | 3 | 1 | 2 | 0 | 0 | 2 | — | **8** |
+| HIGH | 2 | 1 | 2 | 0 | 0 | 2 | — | **7** |
 | MED | 17 | 17 | 11 | 5 | 2 | 2 | — | **54** |
 | LOW | 8 | 23 | 9 | 4 | 1 | 4 | — | **49** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 34 | 5 | 10 | 3 | 14 | 3 | — | **69** |
+| FIXED | 35 | 5 | 10 | 3 | 14 | 3 | — | **70** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **28** | **42** | **22** | **9** | **3** | **8** | — | **112** |
+| **OPEN** | **27** | **42** | **22** | **9** | **3** | **8** | — | **111** |
 
 ---
 
