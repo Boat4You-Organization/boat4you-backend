@@ -55,7 +55,7 @@ Legend statusa:
 | F1-021 | MED | Path traversal kanonikalizacija (defense-in-depth, callers verified safe) | OPEN |
 | F1-023 | MED | Rate limiter bucket map ne self-prune; memory leak | OPEN |
 | F1-025 | MED | Stripe `initiatePayment` idempotency optional | OPEN |
-| F1-026 | MED | Multiple `!!` non-null assertions u initiatePayment putu | OPEN |
+| F1-026 | MED | Multiple `!!` non-null assertions u initiatePayment putu | FIXED `c105c0b` (reservationFlowId extracted with explicit check; calculatedTotalPrice elvis-throw; redundant !! on lateinit dropped) |
 | F1-028 | MED | `promoteReservationToBooking` može se izvršiti ponovno (zbog F1-019) | FIXED `f30a116` (closed by F1-019 fix; Stripe retries are no-ops) |
 | F1-030 | MED | StripeWebhookController bez explicit max-size limita | OPEN |
 | F1-033 | MED | Bez virus / malware skena na file uploadima | OPEN |
@@ -95,7 +95,7 @@ Legend statusa:
 | F1-* | INFO | `ReservationController` ima ekselentne ownership guards — koristiti kao template |
 | F1-* | INFO | GDPR endpointi imaju audit logging (mature dizajn) |
 
-### FIXED (34)
+### FIXED (35)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
@@ -113,6 +113,7 @@ Legend statusa:
 | F1-067 | HIGH | PII-leak email-preview moved to /admin/inquiries/debug (paired with F1-068) | `ad5399c` |
 | F1-069 | HIGH | `/public/inquiries` POST rate limit via PublicEndpointRateLimiter (broker email-flood vector closed) | `0ec4c42` |
 | F1-070 | HIGH | Image resize OOM/DoS bound: cap 4096 on width and height with ParameterValidationException | `fd3c082` |
+| F1-026 | MED | initiatePayment chained-!! cleanup: reservationFlowId extracted; calculatedTotalPrice elvis-throw; redundant !! on lateinit dropped | `c105c0b` |
 | F1-028 | MED | `promoteReservationToBooking` re-fire on Stripe retry closed by F1-019 fix | `f30a116` |
 | F1-002 | HIGH | (yml-side) Disable swagger by default in prod profile | `2e451cc` |
 | F1-036 | HIGH | DB credentials required (no literal default) | `ab5a210` |
@@ -285,9 +286,9 @@ Legend statusa:
 | F3-019 | LOW | `MmkYachtOfferIntegrationServiceAsync.syncOffersForAgencyYachtsOld` deprecated ali aktivan `@Async` + 90 linija duplicirane impl | WAITING-DECISION (grep + delete) |
 | F3-028 | LOW | `toCentsLong()` koristi `RoundingMode.UP` → slight customer overcharge per payment phase | WAITING-DECISION (Mario business choice) |
 | F3-032 | LOW | `helper.setTo` multi-recipient pokazuje sve adresarima; admin notification leak ako se ikad pojavi multi-recipient flow | OPEN — Faza 5 (defensive design) |
-| F3-038 | LOW | `ExternalSyncService.syncYachtOffers` chained `!!` on `yacht.agency!!.primarySource!!.externalSystem!!` — NPE fragility (F1-026 family) | WAITING-DECISION (trivijalan, group s F1-026) |
+| F3-038 | LOW | `ExternalSyncService.syncYachtOffers` chained `!!` on `yacht.agency!!.primarySource!!.externalSystem!!` — NPE fragility (F1-026 family) | FIXED `c105c0b` (elvis chain + structured WARN log + early return@withYachtLock) |
 
-### FIXED (12)
+### FIXED (14)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
@@ -304,6 +305,7 @@ Legend statusa:
 | F3-008 | MED | NauSys getReservation noRetryFor=ExternalSystemException — 9× amplification capped at 3 calls for "not found" | `0426162` |
 | F3-014 | LOW | Stale "Nausys only one call at the time" TODO closed by ShedLock cron axis + YachtSyncMutex per-yacht axis (no partner-side global semaphore introduced) | `ff30c4e` |
 | F3-015 | LOW | Partner IDs out of `error()` message; structured `log.error("...", id)` instead — NauSys + MMK ReservationIntegrationService | `83c8770` |
+| F3-038 | LOW | `yacht.agency!!.primarySource!!.externalSystem!!` chain replaced with elvis + structured WARN + early return@withYachtLock | `c105c0b` |
 
 ---
 
@@ -335,7 +337,7 @@ Legend statusa:
 |---|---|---|---|
 | F4-006 | LOW | `runCatalogueSync` + `runCatalogueBackupSync` 95% duplication — drift risk | WAITING-DECISION (trivial refactor) |
 | F4-007 | LOW | `GenerateInvoiceJob` bez `shouldRunScheduledSync` check; missing backup-sync pattern | WAITING-DECISION (verify InvoiceService idempotency prvo) |
-| F4-012 | LOW | `CharterAgreementService.renderToPdf` chained `!!` na flow.user/yacht/dateFrom — F2-041 fictitious reservation edge case | WAITING-DECISION (verify if fictitious reaches PDF render) |
+| F4-012 | LOW | `CharterAgreementService.renderToPdf` chained `!!` na flow.user/yacht/dateFrom — F2-041 fictitious reservation edge case | FIXED `c105c0b` (explicit guards at top of buildVariables; dateFrom/dateTo `!!` left, separate entity-ergonomics concern) |
 | F4-013 | LOW | `ImageUtils.IllegalArgumentException("Could not load image from path: $imagePath")` curi file path; F1-055/F4-010 family | FIXED `83c8770` (path to parameterised log.error; exception message generic) |
 
 ### INFO (2)
@@ -345,7 +347,7 @@ Legend statusa:
 | F4-008 | Positive: backup-sync pattern + explicit cron offset comments + Mario decision history u job-ovima |
 | F4-014 | Positive: ImageUtils releases primary Mats, CharterAgreement runCatching currency, lazy signatureDataUrl, defensive fallback chains |
 
-### FIXED (4)
+### FIXED (5)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
@@ -353,6 +355,7 @@ Legend statusa:
 | F4-002 | HIGH | ShedLock 5.16 + V1_92 migration + @SchedulerLock na svih 24 @Scheduled metoda (2-VM safe) | `75e8002` + `c969067` |
 | F4-009 | HIGH | `Mat.use{}` extension closes intermediate Mat/MatOfByte leak; dead resizeImage(ByteArray) overload removed | `b2d3695` |
 | F4-013 | LOW | File path out of IllegalArgumentException message; logged via `log.error("...", path)` | `83c8770` |
+| F4-012 | LOW | CharterAgreementService.buildVariables top-of-function guards on flow/yacht/user with structured IllegalStateException | `c105c0b` |
 
 ---
 
@@ -453,14 +456,14 @@ Legend statusa:
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 0 | 1 | 0 | 0 | 0 | 0 | — | **1** |
 | HIGH | 2 | 1 | 2 | 0 | 0 | 2 | — | **7** |
-| MED | 17 | 15 | 9 | 5 | 1 | 2 | — | **49** |
-| LOW | 8 | 22 | 8 | 3 | 1 | 4 | — | **46** |
+| MED | 16 | 15 | 9 | 5 | 1 | 2 | — | **48** |
+| LOW | 8 | 22 | 7 | 2 | 1 | 4 | — | **44** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 35 | 14 | 13 | 4 | 15 | 3 | — | **84** |
+| FIXED | 36 | 14 | 14 | 5 | 15 | 3 | — | **87** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **27** | **38** | **19** | **8** | **2** | **8** | — | **102** |
+| **OPEN** | **26** | **38** | **18** | **7** | **2** | **8** | — | **99** |
 
 ---
 
