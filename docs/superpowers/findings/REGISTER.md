@@ -254,8 +254,8 @@ Legend statusa:
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
 | F3-004 | MED | `MmkRestClientConfig` interceptor logira FULL request body + headers; Reservation payload PII u log-u | OPEN — Faza 5 (cross-cutting log audit) ili profile-gate |
-| F3-005 | MED | `@Retryable` Backoff bez jitter — thundering herd risk pri partner outage burst-u | WAITING-DECISION (group s F3-002 retry fix) |
-| F3-008 | MED | `NauSysRetryableClient.getReservation` 3 serial endpoint-a × @Retryable = do 9 partner calls po lookup-u | OPEN — paralelno s F3-001/002 fix |
+| F3-005 | MED | `@Retryable` Backoff bez jitter — thundering herd risk pri partner outage burst-u | FIXED `0426162` (random=true on all read-only @Retryable methods, NauSys + MMK) |
+| F3-008 | MED | `NauSysRetryableClient.getReservation` 3 serial endpoint-a × @Retryable = do 9 partner calls po lookup-u | FIXED `0426162` (noRetryFor=ExternalSystemException caps "not found" at 3 calls; transient retry preserved) |
 | F3-010 | MED | `ReservationResponseWrapper.responseBody` čuva cijeli NauSys response JSON; PII u DB bez scrubbing layer-a | OPEN — eskalacija (data minimization decision) |
 | F3-011 | MED | Per-agency forEach + try/catch swallow bez rate-limit / circuit breaker; cascade failure pri partner outage | OPEN — Faza 5 (resilience) ili Faza 6 |
 | F3-012 | MED | `NauSysYachtIntegrationService.yachtSync` re-sync path nikad ne discoveruje nove yachte na partner-side | OPEN — MED bug fix (ne blocker) |
@@ -283,7 +283,7 @@ Legend statusa:
 | F3-032 | LOW | `helper.setTo` multi-recipient pokazuje sve adresarima; admin notification leak ako se ikad pojavi multi-recipient flow | OPEN — Faza 5 (defensive design) |
 | F3-038 | LOW | `ExternalSyncService.syncYachtOffers` chained `!!` on `yacht.agency!!.primarySource!!.externalSystem!!` — NPE fragility (F1-026 family) | WAITING-DECISION (trivijalan, group s F1-026) |
 
-### FIXED (10)
+### FIXED (12)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
@@ -296,6 +296,8 @@ Legend statusa:
 | F3-025 | MED | Defensive null checks on Stripe webhook payload + logged early-returns (no `!!` left in handleWebhookEvent) | `f30a116` |
 | F3-026 | MED | `setSessionIdOnPaymentPhases` selects among UNPAID phases only; `initiatePayment` rejects already-paid `paymentPhaseId` up-front | `d6138b3` |
 | F3-037 | MED | YachtSyncMutex via `pg_try_advisory_lock`; replaces JVM-local Set for cross-VM per-yacht serialization | `ff30c4e` |
+| F3-005 | MED | Backoff jitter (random=true) na svim read-only @Retryable methods — NauSys + MMK | `0426162` |
+| F3-008 | MED | NauSys getReservation noRetryFor=ExternalSystemException — 9× amplification capped at 3 calls for "not found" | `0426162` |
 | F3-014 | LOW | Stale "Nausys only one call at the time" TODO closed by ShedLock cron axis + YachtSyncMutex per-yacht axis (no partner-side global semaphore introduced) | `ff30c4e` |
 
 ---
@@ -445,14 +447,14 @@ Legend statusa:
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 0 | 1 | 0 | 0 | 0 | 0 | — | **1** |
 | HIGH | 2 | 1 | 2 | 0 | 0 | 2 | — | **7** |
-| MED | 17 | 16 | 11 | 5 | 2 | 2 | — | **53** |
+| MED | 17 | 16 | 9 | 5 | 2 | 2 | — | **51** |
 | LOW | 8 | 24 | 9 | 4 | 1 | 4 | — | **50** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 35 | 10 | 10 | 3 | 14 | 3 | — | **75** |
+| FIXED | 35 | 10 | 12 | 3 | 14 | 3 | — | **77** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **27** | **42** | **22** | **9** | **3** | **8** | — | **111** |
+| **OPEN** | **27** | **42** | **20** | **9** | **3** | **8** | — | **109** |
 
 ---
 
