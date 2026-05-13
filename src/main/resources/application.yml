@@ -136,6 +136,14 @@ application:
       expiration: 86400000 # a day
       refresh-token:
         expiration: 259200000 # 3 days (reduced from 7 on 23.4.2026 per security audit)
+      # F1-005: bind every token to a known issuer + audience so a JWT
+      # signed with this key for a different Workspace.hr service (or
+      # an old environment using the same secret) cannot be replayed
+      # against this API. `issuer` identifies the WS, `audience` the
+      # intended consumer (frontend SPA). Plain strings — env-tunable
+      # if Mario ever splits prod/staging signing keys.
+      issuer: ${JWT_ISSUER:boat4you-ws}
+      audience: ${JWT_AUDIENCE:boat4you-web}
   external:
     sync:
       offer-max-years: 2

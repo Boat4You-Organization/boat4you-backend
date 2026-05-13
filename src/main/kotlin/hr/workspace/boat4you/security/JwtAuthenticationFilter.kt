@@ -62,11 +62,6 @@ class JwtAuthenticationFilter(
     ) {
         val claims = jwtService.extractAllClaims(token)
         val userEmail = claims[ClaimsConstants.USER_EMAIL] as String?
-        val authorities =
-            claims[ClaimsConstants.USER_ROLES]
-                ?.let { it as List<*> }
-                ?.map { SimpleGrantedAuthority(it.toString()) }
-                ?: emptyList()
 
         if (userEmail == null) {
             throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, "unknown email")
@@ -78,11 +73,18 @@ class JwtAuthenticationFilter(
         val isTokenValid = !(dbToken == null || dbToken.isExpired || dbToken.isRevoked)
 
         if (isTokenValid && jwtService.isTokenValid(token, userDomainEntity)) {
+            // F1-005: authorities come from `userDomainEntity` (built
+            // from the freshly-loaded `dbUser.roleAssignments`), NOT
+            // from the JWT claims. The previous claim-sourced version
+            // meant a user whose role was revoked still had effective
+            // admin until their token expired. Re-fetching keeps the
+            // role assignment authoritative on the server side; the
+            // claims are now informational only.
             getContext().authentication =
                 UsernamePasswordAuthenticationToken(
                     userDomainEntity,
                     null,
-                    authorities,
+                    userDomainEntity.authorities,
                 )
         }
 
