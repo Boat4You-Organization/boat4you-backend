@@ -21,7 +21,7 @@ Legend statusa:
 | ID | Severity | Naslov | Status |
 |---|---|---|---|
 | F1-019 | CRIT | Stripe webhook nije idempotent; double-processing pri Stripe retry-ju | FIXED `f815e1e` + `f30a116` (concretized via F3-022) |
-| F1-068 | CRIT | `/public/inquiries/{id}/send-test` email-bombing endpoint anonimno | OPEN — blocker before go-live (autor priznaje) |
+| F1-068 | CRIT | `/public/inquiries/{id}/send-test` email-bombing endpoint anonimno | FIXED `ad5399c` (moved to /admin/inquiries/debug + @Profile("dev") + @PreAuthorize SYSTEM_ADMIN) |
 
 ### HIGH (15)
 
@@ -39,7 +39,7 @@ Legend statusa:
 | F1-056 | HIGH | `cancelReservation` non-atomic external delete + DB cancel; razdvojeno stanje moguće | OPEN |
 | F1-057 | HIGH | `setPasswordForReservation` bez rate limita; reservationId enumeration | OPEN |
 | F1-064 | HIGH | Public yacht search trigger-a synkroni external sync prema NauSys/MMK iz request thread-a | OPEN |
-| F1-067 | HIGH | `/public/inquiries/{id}/email-preview` curi PII (autor: "before go-live") | OPEN — blocker before go-live |
+| F1-067 | HIGH | `/public/inquiries/{id}/email-preview` curi PII (autor: "before go-live") | FIXED `ad5399c` (paired with F1-068 closeout — same triple-defense move) |
 | F1-069 | HIGH | `/public/inquiries` POST nema rate limita | OPEN |
 | F1-070 | HIGH | `/public/image/{imageId}` resize bez validacije width/height (OOM/DoS) | OPEN — kandidat blocker |
 
@@ -95,14 +95,16 @@ Legend statusa:
 | F1-* | INFO | `ReservationController` ima ekselentne ownership guards — koristiti kao template |
 | F1-* | INFO | GDPR endpointi imaju audit logging (mature dizajn) |
 
-### FIXED (24)
+### FIXED (26)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
 | F1-019 | CRIT | Stripe webhook idempotency via `processed_stripe_events` claim (concretized as F3-022) | `f815e1e` + `f30a116` |
 | F1-049 | CRIT | Java app slušao na `*:8080`, izložen na public IP — bind na 127.0.0.1 | `02532a9` |
+| F1-068 | CRIT | Anonymous email-bombing endpoint moved to /admin/inquiries/debug + @Profile("dev") + @PreAuthorize SYSTEM_ADMIN | `ad5399c` |
 | F1-024 | HIGH | Stripe webhook payload null-safety (concretized as F3-025) | `f30a116` |
 | F1-041 | HIGH | DevEquipmentSyncController triple-defense: /admin/dev + @PreAuthorize SYSTEM_ADMIN + POST | `4caa8a9` |
+| F1-067 | HIGH | PII-leak email-preview moved to /admin/inquiries/debug (paired with F1-068) | `ad5399c` |
 | F1-028 | MED | `promoteReservationToBooking` re-fire on Stripe retry closed by F1-019 fix | `f30a116` |
 | F1-002 | HIGH | (yml-side) Disable swagger by default in prod profile | `2e451cc` |
 | F1-036 | HIGH | DB credentials required (no literal default) | `ab5a210` |
@@ -423,16 +425,16 @@ Legend statusa:
 
 | Severity | Faza 1 | Faza 2 | Faza 3 | Faza 4 | Faza 5 | Faza 6 | Faza 7 | TOTAL |
 |---|---|---|---|---|---|---|---|---|
-| CRIT | 1 | 1 | 0 | 0 | 0 | 0 | — | **2** |
-| HIGH | 11 | 1 | 2 | 0 | 0 | 2 | — | **16** |
+| CRIT | 0 | 1 | 0 | 0 | 0 | 0 | — | **1** |
+| HIGH | 10 | 1 | 2 | 0 | 0 | 2 | — | **15** |
 | MED | 17 | 17 | 11 | 5 | 2 | 2 | — | **54** |
 | LOW | 8 | 23 | 9 | 4 | 2 | 4 | — | **50** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 25 | 5 | 10 | 3 | 13 | 3 | — | **59** |
+| FIXED | 27 | 5 | 10 | 3 | 13 | 3 | — | **61** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **37** | **42** | **22** | **9** | **4** | **8** | — | **122** |
+| **OPEN** | **35** | **42** | **22** | **9** | **4** | **8** | — | **120** |
 
 ---
 
