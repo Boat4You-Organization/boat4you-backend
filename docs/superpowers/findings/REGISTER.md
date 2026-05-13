@@ -139,7 +139,7 @@ Legend statusa:
 
 ## Faza 2 — Data layer (persistence, entities, migrations)
 
-**Status:** CLOSED 2026-05-11 (read-pass kroz 7 batch-eva + 3 fixes + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 entity contract fixes; updated 2026-05-13 s 5 yacht-search-view nalaza). 55 findings: 5 FIXED, 47 OPEN (1 CRIT + 1 HIGH + 19 MED + 26 LOW), 3 INFO. **Gate: zero regression** (compileKotlin clean, detekt 291 baseline, test 29/103 baseline — sve F1-074). Pending user action: F2-043 (`FLYWAY_TARGET_VERSION` env var verify), F2-044 (V1_24 Mario commentary), arhitektonska odluka za audit-trail batch. **New yacht-search-view findings (F2-050 → F2-054)**: date-less search coverage gap (external yachts without offers invisible), `total_locations` SUM-not-COUNT, no DISTINCT-by-yacht in pagination, custom-yacht NULL location, JOIN+Pageable workaround.
+**Status:** CLOSED 2026-05-11 (read-pass kroz 7 batch-eva + 3 fixes + closure summary + phase gate at baseline; updated 2026-05-11 with Phase B1 entity contract fixes; updated 2026-05-13 s 5 yacht-search-view nalaza + Phase E search-perf indexes). 55 findings: 10 FIXED, 42 OPEN (1 CRIT + 1 HIGH + 16 MED + 24 LOW), 3 INFO. **Gate: zero regression**. **Phase E (V1_93)** zatvorila trigram-search cluster: F2-023/024/033/034/040 — leading-wildcard LOWER+LIKE više nije seq-scan. Pending user action: F2-043 (`FLYWAY_TARGET_VERSION` env var verify), F2-044 (V1_24 Mario commentary), F2-050/052 yacht-search semantics decision, arhitektonska odluka za audit-trail batch.
 
 ### CRIT (1)
 
@@ -164,12 +164,12 @@ Legend statusa:
 | F2-014 | MED | `findAllValidTokenByUserId` koristi OR umjesto AND — "valid" semantika netočna | WAITING-DECISION |
 | F2-016 | MED | `RoleAssignmentEntity` ima EAGER user i role @ManyToOne → auth path N+1 | OPEN — Faza 5 |
 | F2-021 | MED | `findForReplacementSearch` vs `countForReplacementSearch` divergentne WHERE klauzule | OPEN — Faza 5 (test coverage) ili tracking-only |
-| F2-023 | MED | `InquiryRepository.findAllByParamsForAdmin` triple leading-wildcard LIKE = full table scan (F1-068 DoS multiplier) | OPEN — Faza 6 (index migracije) |
-| F2-024 | MED | `countByEmailIgnoreCaseAndIdNot` poziva se per inquiry create, bez funkcionalnog `LOWER(email)` indeksa | OPEN — Faza 6 (vezano za F2-023) |
+| F2-023 | MED | `InquiryRepository.findAllByParamsForAdmin` triple leading-wildcard LIKE = full table scan (F1-068 DoS multiplier) | FIXED `eea9554` (V1_93: trigram GINs na inquiry.email/name/surname) |
+| F2-024 | MED | `countByEmailIgnoreCaseAndIdNot` poziva se per inquiry create, bez funkcionalnog `LOWER(email)` indeksa | FIXED `eea9554` (V1_93: B-tree LOWER(email) na inquiry) |
 | F2-026 | MED | `OfferPaymentPlan.equals/hashCode` na mutable poljima u `MutableSet` na Offer-u → broken Set invariant | FIXED `42c260e` (id-based equals/hashCode) |
 | F2-030 | MED | `AgencyRepository`: 3× JOIN FETCH na kolekciju bez DISTINCT (cartesian product preko žice) + 4. ima F2-023/F2-029 pattern | WAITING-DECISION (3× DISTINCT trivijalno) |
 | F2-031 | MED | `Agency.agencySources` EAGER OneToMany + `Page<Agency>` admin = N+1 per page | OPEN — Faza 5 (perf + runtime verify) |
-| F2-033 | MED | Public location autocomplete (`LocationViewRepository.findByNameAndIdsNotIn`) LOWER+leading-wildcard LIKE = seq scan na svaki public search | OPEN — Faza 6 (vezano za F2-023/F2-024/F2-034) |
+| F2-033 | MED | Public location autocomplete (`LocationViewRepository.findByNameAndIdsNotIn`) LOWER+leading-wildcard LIKE = seq scan na svaki public search | FIXED `eea9554` (V1_93: functional trigram GIN na `location (LOWER(name||' '||city))` + region/country name trigrams) |
 | F2-036 | MED | `ReservationPaymentPhase.equals` null-bug + mutable Set anti-pattern (F2-026 sibling); F1-019 multiplier za payment double-capture | FIXED `42c260e` (id-based equals/hashCode; null-bug closed) |
 | F2-037 | MED | `calculateTotalPaid` JPQL SUM null → Kotlin `BigDecimal` non-null NPE risk | WAITING-DECISION (trivial COALESCE) |
 | F2-038 | MED | `ReservationDocument` audit gap — signed contracts + internal admin docs nemaju tamper-evidence trail | OPEN — eskalacija (F2-001/F2-004 dependency + legal compliance) |
@@ -200,9 +200,9 @@ Legend statusa:
 | F2-028 | LOW | Offer/OfferExtra/OfferPaymentPlan/Inquiry/CustomYachtDetail/CustomOffer/ReservationOption ne extendaju AbstractEntity (proširenje F2-017) | OPEN — eskalacija (architectural decision) |
 | F2-029 | LOW | `STR(:search)` JPQL funkcija redundantna u `findAllByParamsForAdmin` | WAITING-DECISION |
 | F2-032 | LOW | `LocationViewRepository` declares `JpaRepository<_, Long>` ali `LocationView.id` je String | WAITING-DECISION |
-| F2-034 | LOW | LOWER+LIKE familija u Manufacturer/Model/Agency admin/Location (low-frequency siblings F2-023/F2-033) | OPEN — Faza 6 (jedna index migracija) |
+| F2-034 | LOW | LOWER+LIKE familija u Manufacturer/Model/Agency admin/Location (low-frequency siblings F2-023/F2-033) | FIXED `eea9554` (V1_93: trigram GINs na manufacturer.name + model.name + agency.name) |
 | F2-039 | LOW | `ReservationFlowRepository.findIdsInReservationFlowChain` recursive CTE bez cycle detection — corruption loop diverges | OPEN — Faza 6 (defensive coding) ili tracking-only |
-| F2-040 | LOW | `ReservationViewRepository.findAllReservationsByParams` 6-column LOWER+LIKE admin search (F2-023 family) | OPEN — Faza 6 (vezano s F2-023/F2-024/F2-033/F2-034) |
+| F2-040 | LOW | `ReservationViewRepository.findAllReservationsByParams` 6-column LOWER+LIKE admin search (F2-023 family) | FIXED `eea9554` (V1_93: trigram GINs na reservation.reservation_number + reservation_flow.{email,name,surname} + fullname concat functional index; agency.name iz F2-034) |
 | F2-041 | LOW | `ReservationFlow.status` TODO + ReservationFlow/Document/ExternalReservationPaymentPlan ne extendaju AbstractEntity (F2-028 family) | OPEN — eskalacija (F2-028 architectural decision) |
 | F2-048 | LOW | `V1_54`/`V1_60`/`V1_67` recreate yacht_search_view s hardkodiranim `o.status <> 4` (superseded by V1_90+R__1_03) | OPEN — tracking-only / convention note |
 | F2-049 | LOW | `V1_88` dedup regex normalization drift s `ManufacturerAliasResolver.kt` Kotlin ekvivalentom | OPEN — Faza 6 (drift-prevention pattern) |
@@ -210,15 +210,20 @@ Legend statusa:
 | F2-053 | LOW | `yacht_search_view` branch 2 `LEFT JOIN location l ON l.id = y.location_id` — ako je custom `yacht.location_id` NULL, view emitira NULL `locationFromName`/`locationFullName`. Yacht se i dalje pojavljuje u search-u, ali bez prikaza marine. Frontend mora biti null-safe ili admin form mora forsirati location selector. | OPEN — defensive coding / form validation |
 | F2-054 | LOW | `YachtQueryingService.buildYachtSearchPredicates` koristi `RIGHT(locationFullName, 2)` umjesto JOIN-a na country.code za country-code filter. Inline komentar priznaje: "sidesteps the JOIN + Pageable bug" — workaround za Hibernate's pagination duplicate-row issue. Funkcionalno radi ali fragile: ako `location_full_name` format (`id-Name-CC`) ikad promijeni, filter pucati će tiho. | OPEN — track underlying JOIN+Pageable issue; document format invariant or refactor s window-function approach |
 
-### FIXED (5)
+### FIXED (10)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
 | F2-022 | HIGH | Scheduled cleanup native/JPQL queryji koriste PostgreSQL `CURRENT_DATE - INTERVAL` + `:cutoff` parameter | `0dc514f` |
 | F2-018 | MED | Migracija svih `@Enumerated` ORDINAL → STRING (18 enum kolona, 22 entity polja, V1_90 + R__ views) | `0d1242a` |
 | F2-019 | MED | Native queryji u `YachtRepository` + service callers prelaze na enum.name() string literale | `0d1242a` |
+| F2-023 | MED | V1_93 trigram GINs na inquiry.email/name/surname zatvaraju admin Inquiry search seq-scan | `eea9554` |
+| F2-024 | MED | V1_93 B-tree LOWER(email) na inquiry — equality countByEmailIgnoreCaseAndIdNot više nije scan | `eea9554` |
 | F2-026 | MED | `OfferPaymentPlan` id-based equals/hashCode (mutable-set invariant fix) | `42c260e` |
+| F2-033 | MED | V1_93 functional trigram na `location (LOWER(name\|\|' '\|\|city))` + region/country name trigrams — public location autocomplete | `eea9554` |
 | F2-036 | MED | `ReservationPaymentPhase` id-based equals/hashCode + null-bug closed | `42c260e` |
+| F2-034 | LOW | V1_93 trigram GINs na manufacturer.name + model.name + agency.name — admin catalog search family | `eea9554` |
+| F2-040 | LOW | V1_93 trigram GINs na reservation + reservation_flow (email/name/surname + fullname concat) — admin Reservation list | `eea9554` |
 
 ---
 
@@ -440,14 +445,14 @@ Legend statusa:
 |---|---|---|---|---|---|---|---|---|
 | CRIT | 0 | 1 | 0 | 0 | 0 | 0 | — | **1** |
 | HIGH | 2 | 1 | 2 | 0 | 0 | 2 | — | **7** |
-| MED | 17 | 19 | 11 | 5 | 2 | 2 | — | **56** |
-| LOW | 8 | 26 | 9 | 4 | 1 | 4 | — | **52** |
+| MED | 17 | 16 | 11 | 5 | 2 | 2 | — | **53** |
+| LOW | 8 | 24 | 9 | 4 | 1 | 4 | — | **50** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 35 | 5 | 10 | 3 | 14 | 3 | — | **70** |
+| FIXED | 35 | 10 | 10 | 3 | 14 | 3 | — | **75** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **27** | **47** | **22** | **9** | **3** | **8** | — | **116** |
+| **OPEN** | **27** | **42** | **22** | **9** | **3** | **8** | — | **111** |
 
 ---
 
