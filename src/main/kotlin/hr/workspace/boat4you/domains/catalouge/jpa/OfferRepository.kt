@@ -34,9 +34,20 @@ interface OfferRepository : JpaRepository<Offer, Long> {
     ): List<Offer>
 
     /**
-     * This can be cached because sequential requests should change on data for different time periods, ie no update of the same data
+     * Cacheable: sequential requests for the same (yacht, statuses)
+     * combo over a single TTL window can reuse the prior result —
+     * the offer table changes via NauSys/MMK sync which @CacheEvicts.
+     *
+     * F2-025: explicit SpEL key. Default Spring behaviour wraps the
+     * args in a SimpleKey whose hashCode is computed from
+     * `yacht.hashCode()` and `statuses.hashCode()`. Yacht has no
+     * id-based equals (F2-017 family) so its hashCode is reference
+     * identity — every request loads a fresh instance and the cache
+     * never hits. The SpEL key composes yacht.id with the structural
+     * Set.hashCode of the statuses so two requests with the same
+     * yacht and same status set land on the same cache entry.
      */
-    @Cacheable("offersByYachtAndStatusCache")
+    @Cacheable("offersByYachtAndStatusCache", key = "#yacht.id + ':' + #statuses.hashCode()")
     @Query(
         """
         SELECT o FROM Offer o
