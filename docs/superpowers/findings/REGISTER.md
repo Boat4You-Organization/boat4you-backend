@@ -186,17 +186,17 @@ Legend statusa:
 |---|---|---|---|
 | F2-002 | LOW | `@Audited` na `AbstractEntity` + `store_data_at_delete:true` → `_revisions` rastu za sve | OPEN — Faza 2 follow-up |
 | F2-003 | LOW | `entity_status` soft-delete pattern nije dokumentiran ni centraliziran | OPEN — Faza 5 (cross-cutting modeling) |
-| F2-005 | LOW | `dataSyncCacheManagerCustomizer` nije profile-gated | WAITING-DECISION |
-| F2-006 | LOW | Single-entry cache thrashing kandidati (`usedVesselTypesCache` itd.) | OPEN — verify u Batch 3 |
-| F2-007 | LOW | `yachtExtrasCache` deklariran s key `Yacht::class.java` umjesto `Long` | OPEN — verify callers |
-| F2-008 | LOW | Većina config cache-eva ima 10h TTL bez explicit `@CacheEvict` na admin mutaciji | OPEN — verify admin mutation servisa |
+| F2-005 | LOW | `dataSyncCacheManagerCustomizer` nije profile-gated | FIXED `7e7fa9a` (verified cross-profile usage; stale commented `@Profile` removed + docstring explains why bean stays unconditional) |
+| F2-006 | LOW | Single-entry cache thrashing kandidati (`usedVesselTypesCache` itd.) | VERIFIED `7e7fa9a` (10 single-entry caches all paired with zero-arg @Cacheable methods — one canonical key, no thrashing) |
+| F2-007 | LOW | `yachtExtrasCache` deklariran s key `Yacht::class.java` umjesto `Long` | FIXED `7e7fa9a` (SpEL `key = "#yacht.id"` + key type Long) |
+| F2-008 | LOW | Većina config cache-eva ima 10h TTL bez explicit `@CacheEvict` na admin mutaciji | VERIFIED `7e7fa9a` (no admin controllers exist for these read-only catalogue entities; sync jobs which populate them already @CacheEvict — 10h TTL je safety-net) |
 | F2-009 | LOW | `UserEntity.@Formula("concat(name,' ',surname)")` se loada u svaki SELECT (deprecated) | WAITING-DECISION |
 | F2-010 | LOW | `UserRepository.findByEmail` JOIN FETCH bez DISTINCT | FIXED `24375da` (SELECT DISTINCT u) |
 | F2-012 | LOW | `findAllByBirthdayMonthDay` native query bez funkcionalnog indeksa | OPEN — defer Faza 6 |
 | F2-015 | LOW | `revokeAllUserTokens` N+1 update umjesto bulk UPDATE | OPEN — Faza 5 (perf + audit decision) |
 | F2-017 | LOW | `Yacht`/`YachtImage`/`YachtTranslation` ne extendaju `AbstractEntity` — nema auditа | OPEN — eskalacija (velik refactor + migracija) |
 | F2-020 | LOW | `findWithReservationOptionsByAgency` JOIN FETCH bez DISTINCT | FIXED `24375da` (SELECT DISTINCT y) |
-| F2-025 | LOW | `offersByYachtAndStatusCache` key tip `Yacht` entity (sibling F2-007) — cache praktički nije korišten | OPEN — fix paralelno s F2-007 |
+| F2-025 | LOW | `offersByYachtAndStatusCache` key tip `Yacht` entity (sibling F2-007) — cache praktički nije korišten | FIXED `7e7fa9a` (SpEL `key = "#yacht.id + ':' + #statuses.hashCode()"` + key type String) |
 | F2-027 | LOW | JPA `orphanRemoval=true` vs DB `OnDelete SET_NULL` na istom FK → orphan rows pri direct SQL delete-u | OPEN — Faza 6 (data integrity sweep) |
 | F2-028 | LOW | Offer/OfferExtra/OfferPaymentPlan/Inquiry/CustomYachtDetail/CustomOffer/ReservationOption ne extendaju AbstractEntity (proširenje F2-017) | OPEN — eskalacija (architectural decision) |
 | F2-029 | LOW | `STR(:search)` JPQL funkcija redundantna u `findAllByParamsForAdmin` | FIXED `24375da` (uklonjen u Inquiry + Agency repositoryjima) |
@@ -211,7 +211,7 @@ Legend statusa:
 | F2-053 | LOW | `yacht_search_view` branch 2 `LEFT JOIN location l ON l.id = y.location_id` — ako je custom `yacht.location_id` NULL, view emitira NULL `locationFromName`/`locationFullName`. Yacht se i dalje pojavljuje u search-u, ali bez prikaza marine. Frontend mora biti null-safe ili admin form mora forsirati location selector. | OPEN — defensive coding / form validation |
 | F2-054 | LOW | `YachtQueryingService.buildYachtSearchPredicates` koristi `RIGHT(locationFullName, 2)` umjesto JOIN-a na country.code za country-code filter. Inline komentar priznaje: "sidesteps the JOIN + Pageable bug" — workaround za Hibernate's pagination duplicate-row issue. Funkcionalno radi ali fragile: ako `location_full_name` format (`id-Name-CC`) ikad promijeni, filter pucati će tiho. | OPEN — track underlying JOIN+Pageable issue; document format invariant or refactor s window-function approach |
 
-### FIXED (14)
+### FIXED (19)
 
 | ID | Severity | Naslov | Commit |
 |---|---|---|---|
@@ -229,6 +229,11 @@ Legend statusa:
 | F2-029 | LOW | Redundant `STR(:search)` removed from Inquiry + Agency repositoryja | `24375da` |
 | F2-034 | LOW | V1_93 trigram GINs na manufacturer.name + model.name + agency.name — admin catalog search family | `eea9554` |
 | F2-040 | LOW | V1_93 trigram GINs na reservation + reservation_flow (email/name/surname + fullname concat) — admin Reservation list | `eea9554` |
+| F2-005 | LOW | `dataSyncCacheManagerCustomizer` cross-profile usage verified; stale `@Profile` comment removed | `7e7fa9a` |
+| F2-006 | LOW | Single-entry pools verified — all paired with zero-arg `@Cacheable` methods | `7e7fa9a` |
+| F2-007 | LOW | `yachtExtrasCache` SpEL `key = "#yacht.id"` + Long key type — fixes Yacht reference-equality miss | `7e7fa9a` |
+| F2-008 | LOW | 10h TTL verified — sync-side `@CacheEvict` handles writes; no admin mutation paths exist | `7e7fa9a` |
+| F2-025 | LOW | `offersByYachtAndStatusCache` SpEL `key = "#yacht.id + ':' + #statuses.hashCode()"` + String key type | `7e7fa9a` |
 
 ---
 
@@ -457,13 +462,13 @@ Legend statusa:
 | CRIT | 0 | 1 | 0 | 0 | 0 | 0 | — | **1** |
 | HIGH | 2 | 1 | 2 | 0 | 0 | 2 | — | **7** |
 | MED | 16 | 15 | 9 | 5 | 1 | 2 | — | **48** |
-| LOW | 8 | 22 | 7 | 2 | 1 | 4 | — | **44** |
+| LOW | 8 | 17 | 7 | 2 | 1 | 4 | — | **39** |
 | INFO | 4 | 3 | 8 | 2 | 4 | 1 | — | **22** |
-| FIXED | 36 | 14 | 14 | 5 | 15 | 3 | — | **87** |
+| FIXED | 36 | 19 | 14 | 5 | 15 | 3 | — | **92** |
 | DEFERRED-Faza7 (nginx batch) | 6 | 0 | 0 | 0 | 0 | 0 | — | **6** |
 | DEFERRED-other | 3 | 0 | 0 | 0 | 0 | 0 | — | **3** |
 | BLOCKED | 0 | 0 | 0 | 0 | 0 | 0 | — | **0** |
-| **OPEN** | **26** | **38** | **18** | **7** | **2** | **8** | — | **99** |
+| **OPEN** | **26** | **33** | **18** | **7** | **2** | **8** | — | **94** |
 
 ---
 
