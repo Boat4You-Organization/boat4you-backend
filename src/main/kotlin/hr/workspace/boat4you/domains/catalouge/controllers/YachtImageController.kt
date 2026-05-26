@@ -4,7 +4,9 @@ import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.catalouge.services.YachtImageService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
+import java.time.Duration
 import org.springframework.core.io.Resource
+import org.springframework.http.CacheControl
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
@@ -37,8 +39,13 @@ class YachtImageController(
         height?.let { requireDimensionInRange("height", it) }
 
         val image = yachtImageService.resizeImage(imageId, width, height)
+        // Image bytes are immutable per (id, width, height), so they are long-lived
+        // cacheable. Set Cache-Control explicitly here: Spring Security's default
+        // `no-store` otherwise reaches the CDN/browser and defeats edge caching, so
+        // every request re-runs the OpenCV resize on the backend.
         return ResponseEntity
             .ok()
+            .cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePublic().immutable())
             .contentType(MediaType.parseMediaType("image/webp"))
             .body(image)
     }
