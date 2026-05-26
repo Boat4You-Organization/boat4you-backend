@@ -19,7 +19,11 @@
       "Bash(docker-compose --env-file .env up --build -d)",
       "Bash(docker-compose logs:*)",
       "Bash(docker compose:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(mv migration/V9_00__insert_test_data.sql testdata/)",
+      "Bash(mv migration/V9_02__nausys_test_agency.sql testdata/)",
+      "Bash(mv migration/V9_03__mmk_test_agency.sql testdata/)"
     ]
   }
 }

@@ -48,6 +48,7 @@ spring:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:boat4you_db}
     user: ${FLYWAY_USER:boat4you_owner}
     password: ${FLYWAY_PASSWORD:boat4you_owner}
+    locations: classpath:db/migration,classpath:db/testdata
     out-of-order: true
   jpa:
     # Local-dev override: root yml `ddl-auto: validate` is strict and fails
