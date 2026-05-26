@@ -31,7 +31,7 @@ spring:
     encoding: UTF-8
     fallback-to-system-locale: false
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:boat4you_db}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:boat4you_db}
     # Fail fast at startup if DB credentials are missing (instead of falling
     # back to literal "postgres"/"postgres" placeholders that mask config
     # mistakes). Profile-specific yml (application-dev / application-prod)

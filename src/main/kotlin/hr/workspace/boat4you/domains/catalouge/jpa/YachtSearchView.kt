@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.catalouge.jpa
 
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
+import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import jakarta.persistence.Column
@@ -84,14 +85,20 @@ open class YachtSearchView protected constructor() {
     open var modelId: Long? = null
         protected set
 
+    // Sibling of F2-018: V1_90 migrated underlying columns to VARCHAR
+    // (STRING enums). Each enum field needs @Enumerated(STRING) so
+    // Hibernate matches the column type.
+    @Enumerated(EnumType.STRING)
     @Column(name = "charter_type")
     open var charterType: CharterType? = null
         protected set
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "vessel_type")
     open var vesselType: VesselType? = null
         protected set
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "mainsail_type")
     open var mainSailType: SailTypeEnum? = null
         protected set
@@ -173,12 +180,19 @@ open class YachtSearchView protected constructor() {
         protected set
 
     /**
-     * Raw per-offer status (OfferStatus.value). UI groups these into
-     * Available / Pre-reserved / Unavailable badges. See [OfferStatus].
-     * Custom yachts (entry_type=2) are forced to 1 (FREE) by the view.
+     * Per-offer status. UI groups these into Available / Pre-reserved /
+     * Unavailable badges. Custom yachts are forced to FREE by the view's
+     * second UNION branch.
+     *
+     * V1_90 migrated `offer.status` from smallint(ORDINAL) to varchar(STRING),
+     * so this column carries the enum *name* now. @Enumerated(STRING) is
+     * required — declaring `Int?` (the pre-V1_90 shape) breaks any criteria
+     * predicate like `offer_status <> 4` with a Postgres
+     * `operator does not exist: character varying = integer` at runtime.
      */
+    @Enumerated(EnumType.STRING)
     @Column(name = "offer_status")
-    open var offerStatus: Int? = null
+    open var offerStatus: OfferStatus? = null
         protected set
 
     /**

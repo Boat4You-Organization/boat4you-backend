@@ -1,4 +1,9 @@
-CREATE OR REPLACE VIEW reservation_view AS
+-- Local-dev fix (2026-05-14): switched from `CREATE OR REPLACE` to
+-- `DROP + CREATE` so we can insert the rejected_at/rejected_reason
+-- cols in the middle of the SELECT list — matching V1_86's view
+-- shape. CREATE OR REPLACE forbids column reordering.
+DROP VIEW IF EXISTS reservation_view;
+CREATE VIEW reservation_view AS
 SELECT r.id                        AS reservation_id,
        r.reservation_flow_id       as reservation_flow_id,
        r.status                    AS reservation_status,
@@ -56,6 +61,8 @@ SELECT r.id                        AS reservation_id,
        a.country                   AS agency_country,
        rf.cancelation_request_at   AS reservation_cancelation_request_at,
        rf.cancelation_request      AS reservation_cancelation_request,
+       rf.cancelation_rejected_at  AS reservation_cancelation_rejected_at,
+       rf.cancelation_rejected_reason AS reservation_cancelation_rejected_reason,
        rf.calculated_total_price   AS calculated_total_price,
        o.client_price              AS offer_client_price,
        a.vat_code                  AS agency_vat_code,
@@ -79,3 +86,4 @@ FROM reservation_flow rf
          JOIN agency a ON y.agency_id = a.id
          JOIN agency_source ags ON ags.agency_id = a.id AND ags.primary = true
 ;
+GRANT SELECT ON reservation_view TO boat4you_app;

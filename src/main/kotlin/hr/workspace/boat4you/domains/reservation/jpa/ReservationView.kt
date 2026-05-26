@@ -125,8 +125,10 @@ open class ReservationView protected constructor() {
     open var offerId: Long? = null
         protected set
 
+    // Sibling of F2-018: V1_90 migrirao `reservation_flow.status` iz
+    // smallint (ORDINAL) u varchar (STRING). Tip ovdje moras prati DB.
     @Column(name = "reservation_flow_status")
-    open var reservationFlowStatus: Short? = null
+    open var reservationFlowStatus: String? = null
         protected set
 
     @Column(name = "offer_date_from")

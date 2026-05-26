@@ -87,6 +87,7 @@ open class Offer {
     @Column(name = "total_discount")
     open var totalDiscount: BigDecimal? = null
 
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "status", nullable = false)
     open var status: OfferStatus? = null

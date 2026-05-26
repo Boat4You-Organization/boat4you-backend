@@ -12,7 +12,7 @@
 First run the Postgres database in Docker:
 
 ```
-docker run --rm --name=boat4you_postgres --env=POSTGRES_USER=boat4you_owner --env=POSTGRES_PASSWORD=boat4you_owner --env=POSTGRES_DB=boat4you_db --env=LANG=en_US.utf8 -p 5433:5432 postgres:17-alpine
+docker run --rm --name=boat4you_postgres --env=POSTGRES_USER=boat4you_owner --env=POSTGRES_PASSWORD=boat4you_owner --env=POSTGRES_DB=boat4you_db --env=LANG=en_US.utf8 -p 5434:5432 postgres:17-alpine
 ```
 or use docker compose
 ```

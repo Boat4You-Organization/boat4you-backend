@@ -126,19 +126,46 @@ class YachtQueryingService(
         val cq = cb.createQuery(YachtSearchSelectResult::class.java)
         val root = cq.from(YachtSearchView::class.java)
 
-        val offerStatusRaw = root.get<Int>("offerStatus")
+        // V1_90 migrated offer.status from smallint(ORDINAL) to varchar(STRING),
+        // so the view column emits enum names. Path the column as OfferStatus
+        // so Hibernate compares enum-vs-enum and Postgres doesn't blow up with
+        // `operator does not exist: character varying = integer` like the
+        // pre-fix `root.get<Int>("offerStatus")` produced.
+        val offerStatusRaw = root.get<OfferStatus>("offerStatus")
 
-        // Pre-reserved states (OPTION=2, OPTION_WAITING=3, RESERVED=5, SERVICE=7) stay
-        // as-is; everything else (FREE, OPTION_EXPIRED, CANCELLED, INFO, UNKNOWN —
-        // all rendered "Available" on the card) collapses to FREE=1. UNAVAILABLE=4
-        // is already filtered out at the view level. MAX over matching offers then
-        // surfaces the most-restrictive state: if ANY matching offer is under
-        // option, the yacht shows the "Pre-reserved" badge / SPECIAL PROMOTION
-        // ribbon instead of being masked by a FREE offer for another week.
+        // Pre-reserved states (OPTION, OPTION_WAITING, RESERVED, SERVICE) project
+        // to their OfferStatus.value Int codes (2/3/5/7); everything else (FREE,
+        // OPTION_EXPIRED, CANCELLED, INFO, UNKNOWN — all rendered "Available" on
+        // the card) collapses to FREE=1. UNAVAILABLE=4 is already filtered out
+        // earlier in this query. If ANY matching offer is under option, the
+        // yacht shows the "Pre-reserved" badge / SPECIAL PROMOTION ribbon
+        // instead of being masked by a FREE offer for another week.
+        //
+        // Per-status MAX(CASE) wrapped in GREATEST instead of one multi-branch
+        // CASE: Hibernate 6.6 SQM folded chained `WHEN status=X THEN X.value`
+        // branches into `WHEN status IN (...) THEN status ELSE 1`, mixing the
+        // varchar column (THEN) with an int literal (ELSE) and tripping
+        // Postgres' `operator does not exist: character varying = integer`.
+        // Single-WHEN CASEs aren't subject to that merge optimization; GREATEST
+        // picks the highest priority value, preserving the original semantics
+        // (SERVICE=7 > RESERVED=5 > OPTION_WAITING=3 > OPTION=2 > FREE=1).
+        val maxIfStatusEquals: (OfferStatus) -> Expression<Int> = { status ->
+            cb.max(
+                cb.selectCase<Int>()
+                    .`when`(cb.equal(offerStatusRaw, status), cb.literal(status.value))
+                    .otherwise(cb.nullLiteral(Int::class.java)),
+            )
+        }
         val prioritizedStatus: Expression<Int> =
-            cb.selectCase<Int>()
-                .`when`(offerStatusRaw.`in`(listOf(2, 3, 5, 7)), offerStatusRaw)
-                .otherwise(cb.literal(1))
+            cb.function(
+                "greatest",
+                Int::class.java,
+                maxIfStatusEquals(OfferStatus.SERVICE),
+                maxIfStatusEquals(OfferStatus.RESERVED),
+                maxIfStatusEquals(OfferStatus.OPTION_WAITING),
+                maxIfStatusEquals(OfferStatus.OPTION),
+                cb.literal(OfferStatus.FREE.value),
+            )
 
         cq.multiselect(
             root.get<Long>("id"),
@@ -169,7 +196,9 @@ class YachtQueryingService(
             // so the UI shows consistent commission next to the listed price.
             cb.min(root.get<BigDecimal>("brokerCommission")),
             cb.min(root.get<Int>("numberOfDays")),
-            cb.max(prioritizedStatus),
+            // `prioritizedStatus` already aggregates per status via MAX(CASE);
+            // GREATEST combines them, so no outer cb.max wrap.
+            prioritizedStatus,
             // Prefer offer dates that exactly match the user's requested range,
             // so yachts with both a spot-on Sat-Sat offer AND a neighbouring
             // Thu-Thu one render as "Available" instead of "Closest day". If no
@@ -583,7 +612,9 @@ class YachtQueryingService(
         // asks for them. The view used to hard-code this filter; it's moved
         // here so the admin wizard can bypass it.
         if (!searchParams.includeUnavailable) {
-            predicates.add(cb.notEqual(root.get<Int>("offerStatus"), 4))
+            // offer_status is varchar (STRING enum) since V1_90 — compare against
+            // the enum value, not the legacy ordinal `4`.
+            predicates.add(cb.notEqual(root.get<OfferStatus>("offerStatus"), OfferStatus.UNAVAILABLE))
         }
 
         if (!searchParams.charterTypes.isNullOrEmpty()) {

@@ -43,7 +43,11 @@ import org.springframework.web.bind.annotation.RestController
  * rows didn't exist.
  */
 @RestController
-@Profile("dev")
+// Requires both `dev` AND `data-sync` profiles — controller depends on
+// NauSysCatalogueIntegrationService, MmkCatalogueIntegrationService,
+// NausysSyncJob etc. which are all `@Profile("data-sync")`. Without
+// data-sync the bean wiring fails at startup.
+@Profile("dev & data-sync")
 @RequestMapping("/admin/dev")
 @PreAuthorize("hasAuthority('SYSTEM_ADMIN')")
 class DevEquipmentSyncController(

@@ -31,7 +31,12 @@ data class YachtSearchSelectResult(
     /** Broker commission per day, min over matching offers (same shape as client/list). */
     val brokerCommission: BigDecimal?,
     val numberOfDays: Int?,
-    /** Raw OfferStatus.value (0..9). UI maps to Available / Pre-reserved badges. */
+    /**
+     * Post-CASE offer status as Int code (OfferStatus.value): FREE=1, OPTION=2,
+     * OPTION_WAITING=3, RESERVED=5, SERVICE=7 — everything else collapses to
+     * FREE. Not the raw column (which is varchar/STRING since V1_90) but the
+     * projection emitted by [YachtQueryingService.getYachts]'s CASE expression.
+     */
     val offerStatus: Int?,
     /** Earliest matching offer's period — lets the card show a "Closest day"
      * badge when the offer doesn't sit on the exact dates the user searched. */
