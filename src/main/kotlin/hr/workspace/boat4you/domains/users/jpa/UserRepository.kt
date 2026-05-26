@@ -9,9 +9,17 @@ import org.springframework.stereotype.Repository
 interface UserRepository :
     JpaRepository<UserEntity, Long>,
     JpaSpecificationExecutor<UserEntity> {
+    /**
+     * F2-010: `LEFT JOIN FETCH u.roleAssignments` multiplies the user
+     * row by the number of role-assignment rows over the wire (and
+     * before Hibernate de-dupes in memory). `DISTINCT` collapses it
+     * to one row per user — same end result, less wire traffic. Hit
+     * once per authenticated request (every JWT filter pass), so a
+     * small saving multiplied across the whole admin workload.
+     */
     @Query(
         """
-        SELECT u FROM UserEntity u
+        SELECT DISTINCT u FROM UserEntity u
         LEFT JOIN FETCH u.roleAssignments
         WHERE u.email = :email AND u.entityStatus = 'ACTIVE'
         """,
@@ -47,4 +55,23 @@ interface UserRepository :
         """,
     )
     fun findByIdIn(ids: List<Long>): List<UserEntity>
+
+    /**
+     * Used by `BirthdayEmailJob` to fan out the daily birthday-greeting
+     * batch. Filters by month + day so the year of birth doesn't matter.
+     * Excludes soft-deleted accounts (anonymized email is undeliverable
+     * and we shouldn't be sending mail to a deleted user anyway).
+     */
+    @Query(
+        value = """
+        SELECT * FROM users
+        WHERE birthday IS NOT NULL
+        AND EXTRACT(MONTH FROM birthday) = :month
+        AND EXTRACT(DAY FROM birthday) = :day
+        AND deleted_at IS NULL
+        AND entity_status = 'ACTIVE'
+        """,
+        nativeQuery = true,
+    )
+    fun findAllByBirthdayMonthDay(month: Int, day: Int): List<UserEntity>
 }

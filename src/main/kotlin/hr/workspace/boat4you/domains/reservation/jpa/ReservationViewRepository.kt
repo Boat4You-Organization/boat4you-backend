@@ -52,4 +52,51 @@ interface ReservationViewRepository :
     fun findByReservationFlowId(reservationFlowId: Long): ReservationView?
 
     fun findByReservationNumber(reservationNumber: String): ReservationView?
+
+    // ─── Dashboard metrics ────────────────────────────────────────────
+    // All counts/sums use `reservationCreatedAt` (when the broker booked it)
+    // rather than `reservationDateFrom` (charter start date) because the
+    // dashboard answers "how is the agency doing right now", not "how full
+    // is the calendar". Cancellations are included in counts (admin sees them
+    // in the bookings list) but excluded from revenue (no money earned).
+
+    @Query(
+        """
+        SELECT COUNT(rv) FROM ReservationView rv
+        WHERE rv.reservationCreatedAt >= :from AND rv.reservationCreatedAt < :to
+        """,
+    )
+    fun countByCreatedAtBetween(from: LocalDateTime, to: LocalDateTime): Long
+
+    @Query(
+        """
+        SELECT COUNT(rv) FROM ReservationView rv
+        WHERE rv.reservationSysStatus = :status
+        """,
+    )
+    fun countBySysStatus(status: ReservationStatus): Long
+
+    @Query(
+        """
+        SELECT COALESCE(SUM(rv.reservationCommission), 0) FROM ReservationView rv
+        WHERE rv.reservationCreatedAt >= :from AND rv.reservationCreatedAt < :to
+          AND rv.reservationSysStatus <> hr.workspace.boat4you.domains.reservation.enums.ReservationStatus.CANCELLED
+        """,
+    )
+    fun sumCommissionByCreatedAtBetween(from: LocalDateTime, to: LocalDateTime): java.math.BigDecimal
+
+    /**
+     * Per-day count for the rolling 7-day window. Returns rows of
+     * (yyyy-mm-dd date, count). Used to drive the dashboard bar chart.
+     */
+    @Query(
+        """
+        SELECT CAST(rv.reservationCreatedAt AS LocalDate) AS day, COUNT(rv) AS cnt
+        FROM ReservationView rv
+        WHERE rv.reservationCreatedAt >= :from AND rv.reservationCreatedAt < :to
+        GROUP BY CAST(rv.reservationCreatedAt AS LocalDate)
+        ORDER BY day
+        """,
+    )
+    fun countPerDayBetween(from: LocalDateTime, to: LocalDateTime): List<Array<Any>>
 }

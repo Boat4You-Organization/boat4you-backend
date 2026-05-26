@@ -58,4 +58,32 @@ open class CustomYachtDetail {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "country_id")
     open var country: Country? = null
+
+    /**
+     * Free-text "Saloon and Cabins" block — admin pastes a multi-line list
+     * from the boat owner. Each non-empty line renders as a checkmark item
+     * in the public Amenities tab. Replaces the equipment dropdown for
+     * custom yachts because the predefined catalog can't capture
+     * one-off entries like specific bed sizes or named appliance brands.
+     */
+    @Column(name = "amenities_text", columnDefinition = "TEXT")
+    open var amenitiesText: String? = null
+
+    /**
+     * Free-text "Entertainment" block — toys, water sports gear, board
+     * games, etc. Same multi-line format as amenitiesText.
+     */
+    @Column(name = "toys_text", columnDefinition = "TEXT")
+    open var toysText: String? = null
+
+    /**
+     * Descriptive engine string admin types verbatim ("2x Volvo IPS 1050",
+     * "560 HP MAN"). Replaces the kW-only Yacht.enginePower for custom
+     * yachts where owners mix units, brands and twin-engine notation.
+     * Yacht.engine_power stays NULL for new custom listings so the
+     * numeric engine-power range filter on /search skips them — Mario
+     * doesn't want custom yachts to compete in that filter at all.
+     */
+    @Column(name = "engine_text", columnDefinition = "TEXT")
+    open var engineText: String? = null
 }

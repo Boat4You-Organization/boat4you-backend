@@ -13,6 +13,7 @@ import org.hibernate.annotations.Formula
 import org.openapitools.model.CurrencyEnum
 import org.openapitools.model.LanguageEnum
 import java.time.Instant
+import java.time.LocalDate
 
 @Entity
 @Table(name = "users")
@@ -55,6 +56,16 @@ class UserEntity : AbstractEntity<Long>() {
     @Column(name = "password_reset_code", columnDefinition = "VARCHAR(255)", nullable = true)
     var passwordResetCode: String? = null
 
+    /**
+     * Timestamp when the current `passwordResetCode` was generated. Used
+     * by `UserAuthService.checkPasswordResetValidity` to enforce a TTL on
+     * reset tokens (OWASP Forgot Password cheatsheet — tokens must
+     * expire). Cleared along with `passwordResetCode` on successful
+     * reset. Null when there is no active reset request.
+     */
+    @Column(name = "password_reset_code_issued_at", columnDefinition = "TIMESTAMP", nullable = true)
+    var passwordResetCodeIssuedAt: Instant? = null
+
     @Column(name = "last_unsuccessful_login", columnDefinition = "TIMESTAMP")
     var lastUnsuccessfulLogin: Instant? = null
 
@@ -77,6 +88,35 @@ class UserEntity : AbstractEntity<Long>() {
 
     @Column(name = "invite_time", columnDefinition = "TIMESTAMP", nullable = true)
     var inviteTime: Instant? = null
+
+    /**
+     * Date of birth — used for the annual birthday-greeting cron + shown on
+     * /my-profile as a date picker. We store only the date (no time/zone)
+     * because the cron matches month + day; year is informational.
+     */
+    @Column(name = "birthday", columnDefinition = "DATE", nullable = true)
+    var birthday: LocalDate? = null
+
+    /**
+     * Timestamp of the most recent successful login. Surfaced on
+     * /my-profile as "Last login" so the customer can spot unfamiliar
+     * sessions without reading server logs. Set from `UserAuthService.login`
+     * on every successful authentication.
+     */
+    @Column(name = "last_login_at", columnDefinition = "TIMESTAMP", nullable = true)
+    var lastLoginAt: Instant? = null
+
+    /**
+     * GDPR right-to-erasure tombstone. When set, the user is anonymized
+     * (PII wiped, password rotated, tokens revoked, roles dropped) but the
+     * row stays so we can keep `reservation_flow.user_id` FK satisfied —
+     * past bookings remain visible to admin for partner-agency
+     * reconciliation + accounting obligations. Admin lists filter
+     * `WHERE deleted_at IS NULL` for active users; mappers render
+     * "[Deleted user]" for the deleted ones.
+     */
+    @Column(name = "deleted_at", columnDefinition = "TIMESTAMP", nullable = true)
+    var deletedAt: Instant? = null
 
     @OneToMany(mappedBy = "user")
     var roleAssignments: MutableSet<RoleAssignmentEntity> = mutableSetOf()

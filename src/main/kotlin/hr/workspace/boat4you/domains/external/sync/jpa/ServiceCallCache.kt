@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.external.sync.jpa
 import hr.workspace.boat4you.domains.external.enums.MethodCacheEnum
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
@@ -21,7 +22,7 @@ open class ServiceCallCache {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     open var id: Long? = null
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "method", nullable = false)
     open var method: MethodCacheEnum? = null

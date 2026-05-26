@@ -23,7 +23,10 @@ INSERT INTO booking_sequence (charter_year, last_sequence) VALUES
 -- column, so we must drop the view before ALTER; Flyway will recreate it on
 -- the next boot automatically because R__ migrations re-apply on checksum
 -- change. No manual recreate needed.
-DROP VIEW reservation_view;
+-- IF EXISTS guards a fresh deploy: on first install the R__ migrations
+-- haven't run yet so reservation_view doesn't exist when this V_ migration
+-- runs. Without IF EXISTS the entire app fails to start.
+DROP VIEW IF EXISTS reservation_view;
 
 ALTER TABLE reservation
     ALTER COLUMN reservation_number TYPE VARCHAR(32);

@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.catalouge.jpa
 import hr.workspace.boat4you.domains.catalouge.enums.CategoryEnum
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
@@ -30,7 +31,7 @@ open class Equipment {
     open var labelCode: String? = null
 
     @NotNull
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "category", nullable = false)
     open var category: CategoryEnum? = null
 

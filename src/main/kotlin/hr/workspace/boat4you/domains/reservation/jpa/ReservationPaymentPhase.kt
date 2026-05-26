@@ -36,29 +36,25 @@ class ReservationPaymentPhase : AbstractEntity<Long>() {
     @JoinColumn(name = "reservation_flow_id", referencedColumnName = "id", nullable = false)
     lateinit var reservationFlow: ReservationFlow
 
+    // Id-based equals/hashCode. F2-036 — earlier the structural comparison
+    // used mutable fields (deadline, amount, paidOn, stripeSessionId,
+    // stripePaymentIntentId) as equality key, which:
+    //   1. Broke `MutableSet<ReservationPaymentPhase>` semantics on
+    //      `ReservationFlow.paymentPhases` once any field was reassigned
+    //      (notably `paidOn = Instant.now()` on Stripe webhook completion):
+    //      the hashCode migrated buckets, leaving the entity unreachable.
+    //   2. The `paidOn?.equals(other.paidOn) != true` expression evaluated
+    //      to `true` (i.e. NOT equal) when both sides were null — making two
+    //      structurally-identical unpaid phases compare unequal.
+    //
+    // Now id-based: unpersisted entities (id == null) compare by reference
+    // identity; persisted entities by id. Standard JPA recommendation that
+    // avoids both bugs above.
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (javaClass != other?.javaClass) return false
-
-        other as ReservationPaymentPhase
-
-        if (!deadline.isEqual(other.deadline)) return false
-        if (amount != other.amount) return false
-        if (paidOn?.equals(other.paidOn) != true) return false
-        if (stripeSessionId != other.stripeSessionId) return false
-        if (stripePaymentIntentId != other.stripePaymentIntentId) return false
-        if (reservationFlow.id != other.reservationFlow.id) return false
-
-        return true
+        if (other !is ReservationPaymentPhase) return false
+        return id != null && id == other.id
     }
 
-    override fun hashCode(): Int {
-        var result = deadline.hashCode()
-        result = 31 * result + amount.hashCode()
-        result = 31 * result + (paidOn?.hashCode() ?: 0)
-        result = 31 * result + (stripeSessionId?.hashCode() ?: 0)
-        result = 31 * result + (stripePaymentIntentId?.hashCode() ?: 0)
-        result = 31 * result + reservationFlow.id.hashCode()
-        return result
-    }
+    override fun hashCode(): Int = id?.hashCode() ?: javaClass.hashCode()
 }

@@ -13,6 +13,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Region
 import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
+import hr.workspace.boat4you.domains.catalouge.services.ManufacturerAliasResolver
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import org.openapitools.client.mmk.model.Base
@@ -35,6 +36,7 @@ class MmkCatalogueSyncService(
     private val locationQueryingService: LocationQueryingService,
     private val locationRepository: LocationRepository,
     private val externalEquipmentRepository: ExternalEquipmentRepository,
+    private val manufacturerAliasResolver: ManufacturerAliasResolver,
 ) {
     private val log = LoggerFactory.getLogger(this::class.java)
 
@@ -199,12 +201,16 @@ class MmkCatalogueSyncService(
         mmkManufacturers.forEach { mmkManufacturer ->
             val mapping = allMappings.find { mapping -> mapping.externalId == mmkManufacturer.id }
 
+            // Canonicalise partner name first so aliases like "Lagoon-Bénéteau"
+            // (MMK) collapse to existing "Lagoon" record instead of forking a
+            // duplicate every sync. Mario rule (May 2026): one brand = one row.
+            val canonicalName = manufacturerAliasResolver.canonicalName(mmkManufacturer.name)
             val manufacturer =
                 if (mapping != null) {
                     allManufacturers.find { manufacturer -> manufacturer.id == mapping!!.systemId!! }!!
                 } else {
-                    allManufacturers.find { manufacturer -> manufacturer.name!!.lowercase() == mmkManufacturer.name.lowercase() }
-                        ?: Manufacturer().apply { name = mmkManufacturer.name }
+                    allManufacturers.find { manufacturer -> manufacturer.name!!.lowercase() == canonicalName.lowercase() }
+                        ?: Manufacturer().apply { name = canonicalName }
                 }
 
             manufacturerRepository.saveAndFlush(manufacturer)
@@ -220,6 +226,13 @@ class MmkCatalogueSyncService(
         }
     }
 
+    // Evict the externalEquipmentCache so the very next yacht sync rereads
+    // the freshly populated/upserted external_equipment rows. Without this
+    // eviction the 10-minute cache TTL kept yacht sync calling
+    // getCachedByExternalSystemId() with a stale snapshot — and any equipment
+    // ID added in this run silently fell into "external equipment not found"
+    // until the cache expired.
+    @org.springframework.cache.annotation.CacheEvict(value = ["externalEquipmentCache"], allEntries = true)
     @Transactional
     fun equipmentSync(mmkEquipment: List<org.openapitools.client.mmk.model.Equipment>) {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())

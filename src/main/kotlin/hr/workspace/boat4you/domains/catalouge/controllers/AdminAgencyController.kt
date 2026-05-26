@@ -96,4 +96,12 @@ internal class AdminAgencyController(
         agencyMutationService.updateYachtsDiscount(id, yachts)
         return ResponseEntity.ok(agencyQueryingService.getYachtsByAgencyId(id))
     }
+
+    @PostMapping("/{id}/recalculate-prices")
+    fun recalculatePrices(
+        @PathVariable id: Long,
+    ): ResponseEntity<Map<String, Any>> {
+        val updated = agencyMutationService.recalculatePricesForAgency(id)
+        return ResponseEntity.ok(mapOf("updatedOffers" to updated))
+    }
 }

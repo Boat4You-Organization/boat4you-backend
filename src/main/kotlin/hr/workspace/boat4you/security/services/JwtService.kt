@@ -24,6 +24,18 @@ class JwtService {
     @Value("\${application.security.jwt.refresh-token.expiration}")
     private val refreshExpiration: Long = 0
 
+    // F1-005: bind issued tokens to a known issuer + audience and reject
+    // anything that fails to match on parse. A token signed with the
+    // same secret for a different service (or an older environment that
+    // reused the key) will land here and be rejected with
+    // `MissingClaimException` / `IncorrectClaimException`, both
+    // subclasses of `JwtException` already caught upstream.
+    @Value("\${application.security.jwt.issuer}")
+    private val issuer: String? = null
+
+    @Value("\${application.security.jwt.audience}")
+    private val audience: String? = null
+
     private val signingKey: SecretKey by lazy {
         val keyBytes: ByteArray = Decoders.BASE64.decode(secretKey)
         Keys.hmacShaKeyFor(keyBytes)
@@ -33,6 +45,8 @@ class JwtService {
         Jwts
             .parser()
             .verifyWith(signingKey)
+            .requireIssuer(issuer)
+            .requireAudience(audience)
             .build()
     }
 
@@ -95,6 +109,10 @@ class JwtService {
             .claims()
             .add(extraClaims)
             .subject(user.email)
+            .issuer(issuer)
+            .audience()
+            .add(audience)
+            .and()
             .issuedAt(Date())
             .expiration(expiresAt)
             .and()

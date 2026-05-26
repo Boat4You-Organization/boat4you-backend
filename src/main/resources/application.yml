@@ -1,12 +1,18 @@
 server:
   host: ${SERVER_HOST:https://localhost:8443}
-  host-public: ${SERVER_HOST_PUBLIC:http://localhost:5173}
+  # host-public is interpolated into password-reset / invite / booking
+  # confirmation links. A localhost default would silently ship into
+  # production mail if the env var were forgotten. Require it.
+  host-public: ${SERVER_HOST_PUBLIC:?SERVER_HOST_PUBLIC required}
   host-admin-public: ${SERVER_HOST_ADMIN_PUBLIC:http://localhost:5173}
   ssl:
     enabled: true
     key-store-type: PKCS12
     key-store: classpath:boat4you_selfsigned.p12
-    key-store-password: ${SSL_KEYSTORE_PASSWORD:}
+    # PKCS12 keystore password must come from env. PKCS12 with an empty
+    # password is openable by anyone, so silently defaulting to "" hides
+    # what should be a hard config requirement.
+    key-store-password: ${SSL_KEYSTORE_PASSWORD:?SSL_KEYSTORE_PASSWORD required}
     key-alias: boat4you
   port: 8443
   tomcat:
@@ -15,10 +21,23 @@ server:
 spring:
   application:
     name: boat4you-ws
+  messages:
+    # Email + general copy resource bundles. Each
+    # `messages/email_<locale>.properties` file holds the per-language
+    # strings used by Thymeleaf via `th:text="#{key}"` and resolved in
+    # Kotlin via `MessageSource.getMessage(...)`. Locale is determined
+    # per-call (user.language → fallback EN; admin invite forces EN).
+    basename: messages/email
+    encoding: UTF-8
+    fallback-to-system-locale: false
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:boat4you_db}
-    username: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:postgres}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:boat4you_db}
+    # Fail fast at startup if DB credentials are missing (instead of falling
+    # back to literal "postgres"/"postgres" placeholders that mask config
+    # mistakes). Profile-specific yml (application-dev / application-prod)
+    # may still supply its own defaults for the local dev workflow.
+    username: ${DB_USER:?DB_USER required}
+    password: ${DB_PASSWORD:?DB_PASSWORD required}
     driverClassName: org.postgresql.Driver
     generate-unique-name: false
     hikari:
@@ -51,10 +70,10 @@ spring:
     # boat4you SMTP (`mail.boat4you.com:465`, SMTPS) can flip via env vars
     # without touching the prod profile. Defaults still target Gmail SMTP
     # for any setup that hasn't been migrated yet.
-    host: ${MAIL_HOST:smtp.gmail.com}
+    host: ${MAIL_HOST:?MAIL_HOST required}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:your@gmail.com}
-    password: ${MAIL_PASSWORD:your-app-password}
+    username: ${MAIL_USERNAME:?MAIL_USERNAME required}
+    password: ${MAIL_PASSWORD:?MAIL_PASSWORD required}
     properties:
       mail:
         smtp:
@@ -79,6 +98,15 @@ spring:
     type: jcache
     jcache:
       provider: org.ehcache.jsr107.EhcacheCachingProvider
+  # Pool size for @Scheduled tasks. Default Spring Boot value is 1 thread,
+  # which makes long-running sync jobs (NauSys/MMK chains) block every other
+  # cron until they return. 8 gives headroom for ~20 @Scheduled methods on
+  # VM3 (data-sync profile) without queueing.
+  task:
+    scheduling:
+      pool:
+        size: ${SCHEDULING_POOL_SIZE:8}
+      thread-name-prefix: b4y-sched-
 springdoc:
   api-docs:
     enabled: ${SWAGGER_ENDPOINT_ENABLED:true}
@@ -104,10 +132,18 @@ application:
     allowed-origins: ${APPLICATION_CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   security:
     jwt:
-      secret-key: ${JWT_SECRET_KEY}
+      secret-key: ${JWT_SECRET_KEY:?JWT_SECRET_KEY required (32+ bytes recommended for HS256)}
       expiration: 86400000 # a day
       refresh-token:
         expiration: 259200000 # 3 days (reduced from 7 on 23.4.2026 per security audit)
+      # F1-005: bind every token to a known issuer + audience so a JWT
+      # signed with this key for a different Workspace.hr service (or
+      # an old environment using the same secret) cannot be replayed
+      # against this API. `issuer` identifies the WS, `audience` the
+      # intended consumer (frontend SPA). Plain strings — env-tunable
+      # if Mario ever splits prod/staging signing keys.
+      issuer: ${JWT_ISSUER:boat4you-ws}
+      audience: ${JWT_AUDIENCE:boat4you-web}
   external:
     sync:
       offer-max-years: 2
@@ -116,7 +152,10 @@ application:
       image-sync-batch: 10
       audit:
         enabled: true
-        response-body: true
+        # Default to false so PII (NauSys/MMK responses contain customer
+        # names, emails, phones) doesn't end up in audit storage by accident.
+        # Profile-specific yml (e.g. dev) can flip this on for debugging.
+        response-body: false
   email:
     enabled: ${EMAIL_ENABLED:false}
     # From-address shown in the recipient inbox. SMTP auth happens with
@@ -126,11 +165,23 @@ application:
     # win for the Reply button — see InquiryEmailService for the
     # inquiry-specific override that points back at the lead. Fully
     # env-overridable (`EMAIL_FROM_ADDRESS`).
-    from-address: ${EMAIL_FROM_ADDRESS:Boat4You | Endless blue. Boats 4 you <info@boat4you.com>}
+    from-address: ${EMAIL_FROM_ADDRESS:Boat4You | Endless blue. Boats 4 you <no-reply@boat4you.com>}
+    # Reply-To header for customer-bound transactional mail (booking confirmed,
+    # cancellation, reminders). When the customer hits Reply on an automated
+    # email their response should reach a human inbox, not the no-reply alias.
+    # Admin-bound paths (inquiry notification, cancellation request notice)
+    # override this per-call with the lead/customer's own email so a "Reply"
+    # click from the admin lands directly on the customer.
+    reply-to-address: ${EMAIL_REPLY_TO_ADDRESS:info@boat4you.com}
   invites:
     user:
       expiration: 7d
       allow-uninvited-login: true
+  password-reset:
+    # OWASP Forgot Password cheatsheet recommends short-lived reset
+    # tokens (typically not more than ~1h). 60 minutes balances the
+    # security posture with users who don't open their inbox immediately.
+    expiration: 60m
   stripe:
     enabled: true
     # Fail fast at startup if the Stripe credentials are missing instead of

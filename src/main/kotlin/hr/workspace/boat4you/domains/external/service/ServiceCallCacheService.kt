@@ -68,7 +68,7 @@ class ServiceCallCacheService(
         locations: List<String>,
     ) {
         val serviceCallCache = ServiceCallCache()
-        serviceCallCache.method = MethodCacheEnum.OFFER
+        serviceCallCache.method = MethodCacheEnum.YACHT_SEARCH
         serviceCallCache.hashCode = createSyncYachtOffersHashSorted(startDate, endDate, locations)
         serviceCallCache.createdAt = Instant.now()
         serviceCallCacheRepository.save(serviceCallCache)

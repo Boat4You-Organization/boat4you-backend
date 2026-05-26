@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.reservation.enums.ReservationFlowStatus
 import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -59,7 +60,7 @@ open class ReservationFlow {
     open var createdAt: Instant? = null
 
     // TODO should we remove this?
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "status")
     open var status: ReservationFlowStatus? = null
 
@@ -117,6 +118,18 @@ open class ReservationFlow {
 
     @Column(name = "cancelation_request_at")
     open var cancelationRequestAt: LocalDateTime? = null
+
+    /** Set by the admin when a cancellation request is refused — typically because
+     *  the charter agency's policy doesn't allow cancellation, or the partner
+     *  reservation status doesn't support it. Stamping these fields does NOT
+     *  flip the reservation to CANCELLED — the booking stays in BOOKING/CONFIRMED.
+     *  Original `cancelationRequest` + `cancelationRequestAt` are preserved as
+     *  history. */
+    @Column(name = "cancelation_rejected_at")
+    open var cancelationRejectedAt: LocalDateTime? = null
+
+    @Column(name = "cancelation_rejected_reason", columnDefinition = "TEXT")
+    open var cancelationRejectedReason: String? = null
 
     @ManyToOne(fetch = FetchType.LAZY)
     @OnDelete(action = OnDeleteAction.RESTRICT)

@@ -2,7 +2,7 @@ package hr.workspace.boat4you.common.models
 
 import java.io.Serializable
 
-data class AddressInfoJsonb(
+data class Addres11sInfoJsonb(
     var countryCode: String = "HR",
     var streetName: String? = null,
     var streetNumber: String? = null,

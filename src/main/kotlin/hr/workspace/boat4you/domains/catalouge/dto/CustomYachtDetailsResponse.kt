@@ -23,6 +23,11 @@ data class CustomYachtDetailsResponse(
     val defaultCheckout: String? = null,
     val vesselType: VesselType? = null,
     val countryId: String,
+    /** Marina-tier location id in `l-{N}` format. May be null for legacy
+     * yachts created before the marina selector was wired up — those
+     * default to empty in the admin form so the user is forced to pick one
+     * on next save. */
+    val locationId: String?,
     val lowPrice: BigDecimal,
     val descriptions: Map<String, String>? = null,
     val videoUrl: String? = null,
@@ -31,5 +36,11 @@ data class CustomYachtDetailsResponse(
     val hasBrochure: Boolean,
     val crewNumber: Short? = null,
     val priceDescription: String? = null,
+    /** Free-text amenities the public Amenities tab parses line-by-line. */
+    val amenitiesText: String? = null,
+    val toysText: String? = null,
+    /** Free-text engine descriptor — admin types verbatim, public detail
+     *  renders as-is in the Specifications row. */
+    val engineText: String? = null,
     val slug: String,
 )

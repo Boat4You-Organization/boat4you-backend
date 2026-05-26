@@ -38,13 +38,22 @@ class FileSystemService {
         subpath: String,
     ): Result<String> {
         try {
-            val imageType = validateImageFile(file)
+            // F1-020: materialize bytes once and validate against magic
+            // bytes, not against the client-supplied Content-Type
+            // header. The previous code trusted `file.contentType` —
+            // anyone uploading `evil.php` with `Content-Type: image/jpeg`
+            // would have passed the check and the file would have been
+            // written under uploads/ as-is.
+            validateFile(file)
+            val bytes = file.bytes
+            val imageType = detectImageType(bytes)
+                ?: throw IllegalArgumentException("Invalid file type. Only images are allowed")
             val uniqueFilename = "${UUID.randomUUID()}.webp"
             val webpBytes =
                 if (imageType == "image/webp") {
-                    file.bytes
+                    bytes
                 } else {
-                    ImageUtils.convertToWebP(file.inputStream, null, true)
+                    ImageUtils.convertToWebP(ByteArrayInputStream(bytes), null, true)
                 }
             if (webpBytes == null || webpBytes.isEmpty()) {
                 throw IllegalArgumentException("Failed to convert image to WebP format")
@@ -82,10 +91,17 @@ class FileSystemService {
         subpath: String,
     ): Result<String> {
         try {
-            validatePdfFile(file)
+            // F1-020: magic-byte validation. `Content-Type` header is
+            // attacker-controlled; the on-disk artefact's leading four
+            // bytes `%PDF` are what we actually rely on.
+            validateFile(file)
+            val bytes = file.bytes
+            if (!isPdfMagic(bytes)) {
+                throw IllegalArgumentException("Invalid file type. Only PDF files are allowed")
+            }
             val uniqueFilename = "${UUID.randomUUID()}.pdf"
 
-            return saveFile(file, subpath, uniqueFilename)
+            return saveFile(bytes, subpath, uniqueFilename)
         } catch (e: Exception) {
             return Result.failure(e)
         }
@@ -135,28 +151,6 @@ class FileSystemService {
         }
     }
 
-    private fun validateImageFile(file: MultipartFile): String {
-        validateFile(file)
-
-        // Check content type
-        val contentType = file.contentType
-        if (contentType == null || !allowedImageTypes.contains(contentType)) {
-            throw IllegalArgumentException("Invalid file type. Only images are allowed")
-        }
-
-        return contentType
-    }
-
-    private fun validatePdfFile(file: MultipartFile) {
-        validateFile(file)
-
-        // Check content type
-        val contentType = file.contentType
-        if (contentType == null || contentType != "application/pdf") {
-            throw IllegalArgumentException("Invalid file type. Only PDF files are allowed")
-        }
-    }
-
     private fun validateFile(file: MultipartFile) {
         if (file.isEmpty) {
             throw IllegalArgumentException("File is empty")
@@ -167,40 +161,50 @@ class FileSystemService {
         }
     }
 
-    // You'll also need a validation method for byte arrays:
     private fun validateImageBytes(imageBytes: ByteArray): String {
         if (imageBytes.isEmpty()) {
             throw IllegalArgumentException("Image byte array is empty")
         }
 
-        // Optional: Check file size (example: max 15MB)
-        if (imageBytes.size > 15 * 1024 * 1024) {
+        // Match the same configurable size cap that validateFile() applies to
+        // MultipartFile uploads so internal byte-array uploads don't quietly
+        // accept larger images than HTTP-bound ones.
+        val maxBytes = maxFileSizeMb * 1024 * 1024
+        if (imageBytes.size > maxBytes) {
             val sizeInMb = (imageBytes.size / 1024) / 1024
-            throw IllegalArgumentException("Image size $sizeInMb MB exceeds maximum allowed size")
+            throw IllegalArgumentException("Image size $sizeInMb MB exceeds maximum allowed size of $maxFileSizeMb MB")
         }
 
-        // Optional: Basic image format validation by checking magic bytes
-        val contentType =
-            when {
-                imageBytes.size >= 2 && imageBytes[0] == 0xFF.toByte() && imageBytes[1] == 0xD8.toByte() -> "image/jpeg" // JPEG
-                imageBytes.size >= 8 && imageBytes.sliceArray(0..7).contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) -> "image/png" // PNG
-                imageBytes.size >= 12 &&
-                    imageBytes.sliceArray(0..3).contentEquals("RIFF".toByteArray()) &&
-                    imageBytes.sliceArray(8..11).contentEquals("WEBP".toByteArray())
-                -> "image/webp" // WebP
-                else -> null
-            }
-
-        if (contentType == null || !allowedImageTypes.contains(contentType)) {
-            throw IllegalArgumentException("Invalid image format")
-        }
-
-        return contentType
+        return detectImageType(imageBytes)
+            ?: throw IllegalArgumentException("Invalid image format")
     }
 
-    private fun getFileExtension(filename: String): String {
-        return filename.substringAfterLast('.', "jpg")
-    }
+    /**
+     * Magic-byte sniff for the three image formats we accept. Returns
+     * the canonical content-type string if one matches, otherwise null.
+     * F1-020: this is the single source of truth — both the HTTP
+     * MultipartFile path and the internal ByteArray path route through
+     * here, so a client cannot bypass the check by sending a lying
+     * Content-Type header.
+     */
+    private fun detectImageType(bytes: ByteArray): String? =
+        when {
+            bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() -> "image/jpeg"
+            bytes.size >= 8 && bytes.sliceArray(0..7)
+                .contentEquals(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)) -> "image/png"
+            bytes.size >= 12 &&
+                bytes.sliceArray(0..3).contentEquals("RIFF".toByteArray()) &&
+                bytes.sliceArray(8..11).contentEquals("WEBP".toByteArray()) -> "image/webp"
+            else -> null
+        }?.takeIf { it in allowedImageTypes }
+
+    /** PDF files always start with `%PDF` (0x25 0x50 0x44 0x46). */
+    private fun isPdfMagic(bytes: ByteArray): Boolean =
+        bytes.size >= 4 &&
+            bytes[0] == 0x25.toByte() &&
+            bytes[1] == 0x50.toByte() &&
+            bytes[2] == 0x44.toByte() &&
+            bytes[3] == 0x46.toByte()
 
     fun deleteFile(filename: String): Boolean {
         return try {

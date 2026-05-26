@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
+import hr.workspace.boat4you.domains.branding.BrandResolver
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryDto
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryUpdateDto
 import hr.workspace.boat4you.domains.catalouge.enums.InquiryStatus
@@ -7,6 +8,8 @@ import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistExcep
 import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
+import jakarta.servlet.http.HttpServletRequest
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -15,9 +18,16 @@ import java.time.LocalDateTime
 class InquiryMutationService(
     private val inquiryRepository: InquiryRepository,
     private val yachtRepository: YachtRepository,
+    private val inquiryEmailService: InquiryEmailService,
+    private val brandResolver: BrandResolver,
 ) {
+    private val log = LoggerFactory.getLogger(InquiryMutationService::class.java)
+
     @Transactional
-    fun createNewInquiry(inquiryDto: InquiryDto) {
+    fun createNewInquiry(
+        inquiryDto: InquiryDto,
+        request: HttpServletRequest? = null,
+    ) {
         val inquiry = Inquiry()
         inquiry.createdAt = LocalDateTime.now()
 
@@ -36,6 +46,17 @@ class InquiryMutationService(
         inquiry.status = InquiryStatus.NEW
 
         inquiryRepository.saveAndFlush(inquiry)
+
+        // Send broker notification immediately. Brand drives the recipient
+        // mailbox + From line + logo — every catamaran-* / europe-yachts
+        // brand currently routes through info@boat4you.com via the registry
+        // placeholders, so leads land in the master inbox until per-brand
+        // mailboxes are provisioned. Failure to send must NOT roll the
+        // inquiry back — the lead is already saved, email is best-effort.
+        runCatching {
+            val brand = request?.let(brandResolver::resolve)
+            inquiryEmailService.sendNewInquiryNotification(inquiry, brand)
+        }.onFailure { log.error("Failed to dispatch new-inquiry notification for id=${inquiry.id}", it) }
     }
 
     @Transactional

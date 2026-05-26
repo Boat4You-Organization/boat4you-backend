@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.catalouge.jpa
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -38,7 +39,7 @@ open class YachtCharterType {
     @JoinColumn(name = "yacht_id", nullable = false)
     open var yacht: Yacht? = null
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "type", nullable = false)
     open var type: CharterType? = null

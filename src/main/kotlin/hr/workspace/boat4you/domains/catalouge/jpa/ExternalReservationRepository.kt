@@ -11,8 +11,8 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
     fun findAllByYacht(yacht: Yacht): List<ExternalReservation>
 
     @Modifying
-    @Query("DELETE FROM ExternalReservation r WHERE r.dateTo < DATEADD(day, -30, CURRENT_DATE)")
-    fun deleteExpiredReservations()
+    @Query("DELETE FROM ExternalReservation r WHERE r.dateTo < :cutoff")
+    fun deleteExpiredReservations(@Param("cutoff") cutoff: LocalDate)
 
     @Query(
         """

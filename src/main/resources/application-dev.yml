@@ -16,11 +16,15 @@ application:
         response-body: false
     nausys:
       base-url: ${NAUSYS_URL:http://ws.nausys.com}
-      username: ${NAUSYS_USERNAME}
-      password: ${NAUSYS_PASSWORD}
+      username: ${NAUSYS_USERNAME:}
+      password: ${NAUSYS_PASSWORD:}
+      connect-timeout-ms: ${NAUSYS_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${NAUSYS_READ_TIMEOUT_MS:60000}
     mmk:
       base-url: ${MMK_URL:https://www.booking-manager.com/api/v2}
-      bearer: ${MMK_TOKEN}
+      bearer: ${MMK_TOKEN:}
+      connect-timeout-ms: ${MMK_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${MMK_READ_TIMEOUT_MS:60000}
   upload:
     max-file-size: 10MB
     max-request-size: 50MB
@@ -46,6 +50,14 @@ spring:
     password: ${FLYWAY_PASSWORD:boat4you_owner}
     out-of-order: true
   jpa:
+    # Local-dev override: root yml `ddl-auto: validate` is strict and fails
+    # on the latent V1_90 (ORDINAL→STRING) post-migration mismatches
+    # between entity field declarations and view-mapped columns. Prod
+    # presumably uses `none` so it doesn't surface there. `none` here
+    # lets backend start; queries that hit mismatched columns may still
+    # fail at runtime, but Swagger / auth / most endpoints work.
+    hibernate:
+      ddl-auto: none
     properties:
       format_sql: false
     show-sql: false

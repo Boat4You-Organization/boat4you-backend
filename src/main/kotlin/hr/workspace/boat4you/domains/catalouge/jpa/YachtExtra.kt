@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.ExtrasType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -55,7 +56,7 @@ open class YachtExtra {
     @Column(name = "payable_in_base", nullable = false)
     open var payableInBase: Boolean? = false
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "unit", nullable = false)
     open var unit: ExtrasUnitType? = null
@@ -79,7 +80,7 @@ open class YachtExtra {
     @Column(name = "valid_to")
     open var validTo: LocalDate? = null
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "type", nullable = false)
     open var type: ExtrasType? = null
@@ -101,9 +102,23 @@ open class YachtExtra {
      * Refined payment classification — see ExtraPaymentType for semantics.
      * Backfilled by V1_57 + populated by sync mappers via classify().
      */
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "payment_type")
     open var paymentType: ExtraPaymentType? = null
+
+    /**
+     * True when this extras row's `validFrom..validTo` window overlaps the
+     * `[bookingFrom, bookingTo]` charter dates. Treats either bound being
+     * null as "always valid on that side". Used by reservation mappers to
+     * hide partner price rows that belong to a different season/year so
+     * customers don't see a mix of 2026/2027/2028 prices on a single
+     * booking. Mario rule (3.5.2026): partner mijenja cijene po periodu.
+     */
+    fun appliesToPeriod(bookingFrom: java.time.LocalDate, bookingTo: java.time.LocalDate): Boolean {
+        val fromOk = validFrom?.let { !it.isAfter(bookingTo) } ?: true
+        val toOk = validTo?.let { !it.isBefore(bookingFrom) } ?: true
+        return fromOk && toOk
+    }
 
     fun shouldDisplay(): Boolean {
         // Show ANY extras the partner sent — old filter required either

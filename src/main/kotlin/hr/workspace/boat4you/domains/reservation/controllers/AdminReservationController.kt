@@ -2,15 +2,22 @@ package hr.workspace.boat4you.domains.reservation.controllers
 
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
+import hr.workspace.boat4you.domains.catalouge.services.CharterAgreementService
+import hr.workspace.boat4you.domains.reservation.dto.DashboardMetricsDto
+import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.dto.PaymentPhaseDto
+import hr.workspace.boat4you.domains.reservation.dto.ReservationDocumentDto
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.ReservationViewDetailsDto
 import hr.workspace.boat4you.domains.reservation.dto.ReservationViewDto
 import hr.workspace.boat4you.domains.reservation.enums.PaymentType
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
+import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.dto.AdminCreateReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.CreateFictitiousReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.YachtSwapInfoDto
+import hr.workspace.boat4you.domains.reservation.mapper.ReservationMappers
+import hr.workspace.boat4you.domains.reservation.service.ReservationDocumentService
 import hr.workspace.boat4you.domains.reservation.service.ReservationEmailService
 import hr.workspace.boat4you.domains.reservation.service.ReservationFlowMutationService
 import hr.workspace.boat4you.domains.reservation.service.ReservationFlowQueryingService
@@ -25,12 +32,16 @@ import hr.workspace.boat4you.security.getAuthenticatedUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.data.web.PageableDefault
 import org.springframework.data.web.PagedModel
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -57,7 +68,19 @@ internal class AdminReservationController(
     private val paymentPhasesService: ReservationPaymentPhasesService,
     private val userRepository: UserRepository,
     private val reservationSyncService: ReservationSyncService,
+    private val charterAgreementService: CharterAgreementService,
+    private val reservationRepository: ReservationRepository,
+    private val reservationDocumentService: ReservationDocumentService,
+    private val reservationMappers: ReservationMappers,
 ) {
+    private val log = LoggerFactory.getLogger(AdminReservationController::class.java)
+
+    @Operation(summary = "Aggregates for the admin dashboard (KPI cards + weekly chart).")
+    @GetMapping("/dashboard-metrics")
+    fun getDashboardMetrics(): ResponseEntity<DashboardMetricsDto> {
+        return ResponseEntity.ok(reservationFlowQueryingService.getDashboardMetrics())
+    }
+
     @Operation(summary = "Get all reservations")
     @GetMapping()
     fun getReservations(
@@ -146,6 +169,19 @@ internal class AdminReservationController(
         return ResponseEntity.ok(reservationMutationService.updateAdminNotes(id, body.notes))
     }
 
+    @Operation(
+        summary = "Set/clear the crew-list URL on a reservation",
+        description = "Admin enters the partner-supplied crew-list link (or null to clear). " +
+            "Customer renders it as 'Open crew list' CTA in /my-bookings/{id}.",
+    )
+    @PatchMapping("/{id}/crewListUrl")
+    fun updateCrewListUrl(
+        @PathVariable id: Long,
+        @RequestBody body: CrewListUrlBody,
+    ): ResponseEntity<ReservationDto> {
+        return ResponseEntity.ok(reservationMutationService.updateCrewListUrl(id, body.crewListUrl))
+    }
+
     @Operation(description = "Refresh reservation status from external service")
     @PostMapping("/{id}/refresh")
     fun refreshReservation(
@@ -176,6 +212,88 @@ internal class AdminReservationController(
         return ResponseEntity.ok(reservationResponse)
     }
 
+    @Operation(
+        summary = "Download the charter agreement PDF",
+        description = "Generates the per-reservation charter agreement on the fly (Page 1 = " +
+            "booking data, Page 2+ = T&C with country-specific jurisdiction text) and returns " +
+            "it as `application/pdf`. Same artefact that ships as an attachment on the " +
+            "confirmation email — exposed here so admin can download / re-download from the " +
+            "Bookings detail screen without resending the email.",
+    )
+    @GetMapping("/{id}/charter-agreement.pdf", produces = [MediaType.APPLICATION_PDF_VALUE])
+    @Transactional(readOnly = true)
+    fun downloadCharterAgreement(
+        @PathVariable id: Long,
+    ): ResponseEntity<ByteArray> {
+        val reservation = reservationRepository.findById(id).orElseThrow { ReservationNotExistException() }
+        // PDF rendering walks lazy associations (reservationFlow → user / yacht
+        // / model / paymentPhases / extras / location → country). Without
+        // `@Transactional` the Hibernate session closes after `findById` and
+        // every lazy proxy dereference inside the renderer throws
+        // LazyInitializationException. Read-only is enough — we don't mutate.
+        val pdfBytes = charterAgreementService.renderToPdf(reservation)
+        val ref = reservation.reservationNumber ?: id.toString()
+        val filename = "charter-agreement-${ref.replace('/', '-')}.pdf"
+        // `inline` = browser opens it in the built-in PDF viewer; the user
+        // can still hit the browser's download button. `attachment` would
+        // force a save dialog. Mario asked "moze se skinut" — inline + the
+        // viewer's download button covers both flows in one click.
+        val headers = HttpHeaders().apply {
+            contentType = MediaType.APPLICATION_PDF
+            set(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"$filename\"")
+            contentLength = pdfBytes.size.toLong()
+        }
+        return ResponseEntity.ok().headers(headers).body(pdfBytes)
+    }
+
+    @Operation(summary = "List documents attached to the reservation")
+    @GetMapping("/{id}/documents")
+    fun listDocuments(
+        @PathVariable id: Long,
+    ): ResponseEntity<List<ReservationDocumentDto>> =
+        ResponseEntity.ok(reservationDocumentService.list(id))
+
+    @Operation(
+        summary = "Upload a PDF/DOC/DOCX document to the reservation",
+        description = "Pass `internal=true` to mark the doc admin-only (hidden from " +
+            "customer my-bookings sidebar). Default is customer-visible.",
+    )
+    @PostMapping("/{id}/documents", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
+    fun uploadDocument(
+        @PathVariable id: Long,
+        @org.springframework.web.bind.annotation.RequestParam("file") file: org.springframework.web.multipart.MultipartFile,
+        @org.springframework.web.bind.annotation.RequestParam("internal", required = false, defaultValue = "false") internal: Boolean,
+    ): ResponseEntity<ReservationDocumentDto> {
+        val uploadedBy = getAuthenticatedUserId().takeIf { it != ANONYMOUS_USER_ID }
+        return ResponseEntity.ok(reservationDocumentService.upload(id, file, uploadedBy, internal))
+    }
+
+    @Operation(summary = "Download a single attached document")
+    @GetMapping("/{id}/documents/{documentId}")
+    fun downloadDocument(
+        @PathVariable id: Long,
+        @PathVariable documentId: Long,
+    ): ResponseEntity<ByteArray> {
+        val doc = reservationDocumentService.download(documentId)
+        val safeName = doc.filename.replace("\"", "")
+        val headers = HttpHeaders().apply {
+            contentType = MediaType.parseMediaType(doc.contentType)
+            set(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"$safeName\"")
+            contentLength = doc.data.size.toLong()
+        }
+        return ResponseEntity.ok().headers(headers).body(doc.data)
+    }
+
+    @Operation(summary = "Remove an attached document")
+    @DeleteMapping("/{id}/documents/{documentId}")
+    fun deleteDocument(
+        @PathVariable id: Long,
+        @PathVariable documentId: Long,
+    ): ResponseEntity<Unit> {
+        reservationDocumentService.delete(documentId)
+        return ResponseEntity.noContent().build()
+    }
+
     @Operation(description = "Mark payment phase(s) as paid. Does not promote a reservation to booking")
     @PostMapping("/{id}/markPaymentPhasePaid/{paymentPhaseIds}")
     fun markPaymentPhasePaid(
@@ -203,9 +321,8 @@ internal class AdminReservationController(
         val flowId = reservationFlowMutationService.createAdminReservationFlow(body)
 
         // Step 2: go through the same external-reservation path the customer
-        // flow uses — this respects DEV BYPASS (test.enabled=true => synthetic
-        // mock response) and in prod it actually hits MMK/NauSys to hold the
-        // option on the partner side.
+        // flow uses — actually hits MMK/NauSys to hold the option on the
+        // partner side.
         val externalReservation = reservationIntegrationService.createExternalReservation(flowId)
 
         // Step 3: persist the Reservation entity with admin's price override
@@ -221,10 +338,12 @@ internal class AdminReservationController(
 
         // Step 4: optional option-created email to the customer. Default off
         // so admin controls the moment the customer is notified (e.g. they
-        // want to call first before an email drops in their inbox).
+        // want to call first before an email drops in their inbox). Email
+        // failure must not roll back the reservation, but it MUST be logged
+        // so support can chase it up.
         if (body.sendOptionEmail) {
             runCatching { reservationEmailService.sendOptionCreatedEmail(reservation.id!!) }
-                .onFailure { /* email failure must not roll back the reservation */ }
+                .onFailure { e -> log.error("Failed to send option-created email for reservation ${reservation.id}", e) }
         }
 
         return ResponseEntity.ok(reservation)
@@ -255,9 +374,65 @@ internal class AdminReservationController(
         // why the booking was cancelled without needing a follow-up call.
         @RequestBody(required = false) body: CancelBody? = null,
     ): ResponseEntity<ReservationDto> {
-        val externalReservation = reservationIntegrationService.deleteExternalReservation(id)
-        val reservationResponse = reservationMutationService.cancelReservation(id, externalReservation, body?.reason)
+        // F1-056: stamp `cancelationRequest` / `cancelationRequestAt` on
+        // reservation_flow BEFORE we call the partner. This commits in
+        // its own REQUIRES_NEW tx so a partner-success / local-fail
+        // drift leaves a visible "[AGENT] cancel initiated at T" trail
+        // for ops reconciliation. The post-partner step
+        // (`reservationMutationService.cancelReservation`) then flips
+        // sysStatus to CANCELLED and is idempotent if retried.
+        reservationMutationService.markCancellationInitiated(id, body?.reason)
+        val externalReservation =
+            try {
+                reservationIntegrationService.deleteExternalReservation(id)
+            } catch (e: Exception) {
+                // Partner cancel failed before any side-effect we know
+                // of. cancelationRequest stays set so admin can see the
+                // pending state and retry; partner side has no booking
+                // change yet (assuming partner is idempotent on retry).
+                log.warn("F1-056: partner cancel failed for reservation $id; cancellation request marker stays set for retry", e)
+                throw e
+            }
+        val reservationResponse =
+            try {
+                reservationMutationService.cancelReservation(id, externalReservation)
+            } catch (e: Exception) {
+                // F1-056 drift window: partner cancel SUCCEEDED but the
+                // local CANCELLED flip failed. The cancelationRequest
+                // marker from the pre-step is the breadcrumb ops uses
+                // to find this. Logged at ERROR so the alerting picks
+                // it up.
+                log.error(
+                    "F1-056 drift: partner cancel succeeded for reservation {} but local CANCELLED commit failed — needs manual reconciliation",
+                    id, e,
+                )
+                throw e
+            }
+        // Mario rule (May 2026): every cancellation decision triggers an
+        // email to the customer — rejected has its own send, approved goes
+        // here. Wrapped in runCatching so a mail-side hiccup doesn't fail
+        // the API response after the booking is already cancelled in DB.
+        // onFailure logs so support can spot mail-side regressions.
+        runCatching { reservationEmailService.sendCancellationApproved(id) }
+            .onFailure { e -> log.error("Failed to send cancellation-approved email for reservation $id", e) }
         return ResponseEntity.ok(reservationResponse)
+    }
+
+    @Operation(
+        summary = "Reject the customer's cancellation request",
+        description = "Used when the partner agency refuses the cancellation. Stamps " +
+            "`cancelationRejectedAt` + `cancelationRejectedReason` on the flow, leaves " +
+            "the reservation in BOOKING/CONFIRMED, and emails the customer with the " +
+            "admin's explanation. The original `cancelationRequest` is preserved as history.",
+    )
+    @PostMapping("/{id}/cancellation/reject")
+    fun rejectCancellationRequest(
+        @PathVariable id: Long,
+        @RequestBody dto: RejectCancellationRequestDto,
+    ): ResponseEntity<ReservationDto> {
+        val reservation = reservationMutationService.rejectCancellationRequest(id, dto.reason)
+        reservationEmailService.sendCancellationRejected(id)
+        return ResponseEntity.ok(reservationMappers.toReservationDto(reservation))
     }
 
 }
@@ -265,5 +440,12 @@ internal class AdminReservationController(
 /** Body for PATCH /{id}/adminNotes — null/empty string clears the notes. */
 data class AdminNotesBody(val notes: String?)
 
+/** Body for PATCH /{id}/crewListUrl — null/empty clears the URL. */
+data class CrewListUrlBody(val crewListUrl: String?)
+
 /** Optional body for DELETE /{id} — admin-provided reason shown to the customer. */
 data class CancelBody(val reason: String?)
+
+/** Body for POST /{id}/cancellation/reject — admin's explanation of why the
+ *  cancellation cannot be approved (typically: agency policy doesn't allow it). */
+data class RejectCancellationRequestDto(val reason: String)

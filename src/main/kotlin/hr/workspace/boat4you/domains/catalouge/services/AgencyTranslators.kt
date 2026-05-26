@@ -22,10 +22,15 @@ fun Agency.toDto(): AgencyDto =
         discount = discount,
         director = director,
         skipExternalSystem = skipExternalSystem,
+        recommended = recommended,
         primarySource = ExternalSystemEnum.fromValue(agencySources.firstOrNull { it.primary == true }?.externalSystem?.id),
+        sources = agencySources.mapNotNull { ExternalSystemEnum.fromValue(it.externalSystem?.id) },
     )
 
 fun Agency.updateBlockWithModel(model: AgencyDto) {
     discount = model.discount
     skipExternalSystem = model.skipExternalSystem
+    // Null-coalesce so a payload that omits the field (older clients, partial
+    // forms) doesn't accidentally clear the flag. Treat absence as "no change".
+    model.recommended?.let { recommended = it }
 }

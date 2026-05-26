@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.job
 
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateService
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
@@ -19,6 +20,7 @@ class ExchangeRateSyncJob(
      * Triggers at 17:00 PM every day.
      */
     @Scheduled(cron = "0 0 17 * * *", zone = "UTC")
+    @SchedulerLock(name = "exchangeRateSync", lockAtMostFor = "PT30M")
     fun updateExchangeRates() {
         log.info("Updating exchange rates")
         exchangeRateService.updateExchangeRates()

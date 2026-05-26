@@ -1,0 +1,325 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
+  xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:th="http://www.thymeleaf.org" lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="supported-color-schemes" content="light" />
+  <!--[if !mso]><!-->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <!--<![endif]-->
+  <title th:text="#{preCharterReminder.subject(${reservationId})}">Tomorrow you sail</title>
+
+  <!--[if gte mso 9]>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:AllowPNG />
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  <![endif]-->
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"
+    rel="stylesheet" type="text/css" />
+
+  <style type="text/css">
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; background-color: #f4f6fb; }
+    a { color: #2856ff; text-decoration: none; }
+    a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; }
+
+    @media only screen and (max-width: 620px) {
+      .container { width: 100% !important; max-width: 100% !important; }
+      .sheet { padding: 24px 20px !important; }
+      .gutter { padding-left: 12px !important; padding-right: 12px !important; }
+      .hero { padding: 18px !important; }
+      .footer { padding: 24px 20px !important; }
+      .footer-line { font-size: 11px !important; }
+      .stack-cell { display: block !important; width: 100% !important; padding: 0 0 12px 0 !important; }
+    }
+  </style>
+</head>
+
+<body style="margin:0; padding:0; background-color:#f4f6fb; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; color:#0f172a;">
+
+  <!-- Preheader (hidden inbox preview text) -->
+  <div th:text="#{preCharterReminder.preheader}"
+    style="display:none; font-size:0; line-height:0; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+    Last few details before you head to the marina tomorrow.
+  </div>
+
+  <!-- Outer wrapper -->
+  <table role="presentation" align="center" border="0" cellpadding="0" cellspacing="0" width="100%"
+    style="background-color:#f4f6fb;">
+    <tr>
+      <td align="center" style="padding:0 0 28px 0;">
+
+        <!-- Container 600px -->
+        <table role="presentation" class="container" border="0" cellpadding="0" cellspacing="0" width="600"
+          style="width:600px; max-width:600px;">
+
+          <!-- HEADER BAND (navy) — official Boat4You SVG logo + decision timestamp -->
+          <tr>
+            <td bgcolor="#141857" style="background-color:#141857; padding:18px 28px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td valign="middle" align="left">
+                    <img src="cid:boat4youLogoFull" alt="Boat4You" width="138" height="35" style="display:block; border:0; outline:none; text-decoration:none;" />
+                    </td>
+                  <!-- Right: decision timestamp (when admin rejected the cancel-request) -->
+                  <td valign="middle" align="right">
+                    <div th:text="#{preCharterReminder.headerSent(${sentAt})}"
+                      style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:11px; color:#a3a8c2; line-height:1.3;">
+                      Decided May 2, 2026 &#183; 11:12 (GMT+2)
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Spacer -->
+          <tr><td style="height:16px; line-height:16px; font-size:0;">&#160;</td></tr>
+
+          <!-- WHITE SHEET -->
+          <tr>
+            <td class="gutter" style="padding:0 16px 0 16px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                style="background-color:#ffffff; border-radius:12px;">
+                <tr>
+                  <td class="sheet" style="padding:28px 32px;">
+
+                    <!-- HERO (dark navy) — "tomorrow you sail" + booking ref pill -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="background-color:#141857; border-radius:12px;">
+                      <tr>
+                        <td class="hero" style="padding:22px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td align="left" valign="middle" th:text="#{preCharterReminder.heroLabel}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:1.4px; color:#34d399; text-transform:uppercase;">
+                                Tomorrow you sail
+                              </td>
+                              <td align="right" valign="middle">
+                                <span
+                                  style="display:inline-block; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:11px; color:#34d399; background-color:rgba(52,211,153,0.14); padding:5px 10px; border-radius:999px; letter-spacing:0.04em;">
+                                  #<span th:text="${reservationId}">100194/2026</span>
+                                </span>
+                              </td>
+                            </tr>
+                          </table>
+                          <div th:text="#{preCharterReminder.heroTitle(${fullName})}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:22px; font-weight:700; color:#ffffff; line-height:1.3; letter-spacing:-0.3px; margin:12px 0 0 0;">
+                            See you tomorrow, Mario Kuzmanic 🌊
+                          </div>
+                          <div th:text="#{preCharterReminder.heroSub}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:14px; color:#ffffff; opacity:0.75; line-height:1.5; margin:8px 0 0 0;">
+                            Last few details before you head to the marina. Fair winds and calm seas!
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:22px; font-size:0; line-height:22px;">&#160;</td></tr></table>
+
+                    <!-- YACHT CARD -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:14px 16px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td valign="middle" width="92" style="padding-right:14px;">
+                                <a th:if="${yachtImageUrl}" th:href="${viewBoatUrl}" target="_blank">
+                                  <img th:src="${yachtImageUrl}" th:alt="${yachtFullLabel}" width="84" height="64"
+                                    style="display:block; border-radius:8px; width:84px; height:64px; object-fit:cover; border:0; outline:none;" />
+                                </a>
+                                <table th:unless="${yachtImageUrl}" role="presentation">
+                                  <tr>
+                                    <td valign="middle" align="center"
+                                      style="width:84px; height:64px; background-color:#eef3ff; border-radius:8px; font-size:20px; color:#94a3b8;">
+                                      &#9981;
+                                    </td>
+                                  </tr>
+                                </table>
+                              </td>
+                              <td valign="middle" align="left">
+                                <div th:text="#{fewMoreDetails.yourYacht}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:4px;">
+                                  Your yacht
+                                </div>
+                                <div th:text="${yachtFullLabel}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:15px; color:#0f172a; line-height:1.25;">
+                                  Beneteau Oceanis 46.1 Tria
+                                </div>
+                                <div style="padding-top:4px;">
+                                  <span style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#64748b;">
+                                    &#128205; <span th:text="${pickupLocation}">Port Dubrovnik</span>
+                                  </span>
+                                </div>
+                              </td>
+                              <td valign="middle" align="right">
+                                <a th:href="${viewBoatUrl}" th:text="#{fewMoreDetails.openPage}" target="_blank"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:13px; color:#2856ff; text-decoration:none; white-space:nowrap;">Open page &#8594;</a>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:14px; font-size:0; line-height:14px;">&#160;</td></tr></table>
+
+                    <!-- CHARTER DATES — pickup + drop-off; no Total column (the booking is still on, no pricing change to communicate) -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td class="stack-cell" valign="top" width="50%" style="padding-right:10px;">
+                                <div th:text="#{fewMoreDetails.fieldPickup}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:4px;">
+                                  Pickup
+                                </div>
+                                <div th:utext="${pickupDateHour}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:14px; color:#0f172a; line-height:1.4;">
+                                  20 June 2026<br/>17:00
+                                </div>
+                                <div th:text="${pickupLocation}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#64748b; line-height:1.4; padding-top:2px;">
+                                  ACI Marina Split
+                                </div>
+                              </td>
+                              <td class="stack-cell" valign="top" width="50%">
+                                <div th:text="#{fewMoreDetails.fieldDropOff}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:4px;">
+                                  Drop-off
+                                </div>
+                                <div th:utext="${dropOffDateHourPeriod}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:14px; color:#0f172a; line-height:1.4;">
+                                  27 June 2026<br/>08:00-09:00
+                                </div>
+                                <div th:text="${pickupLocation}"
+                                  style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#64748b; line-height:1.4; padding-top:2px;">
+                                  ACI Marina Split
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:14px; font-size:0; line-height:14px;">&#160;</td></tr></table>
+
+                    <!-- WHAT'S NEXT BLOCK (light green tint) — refund + next steps go via direct
+                         conversation with the agency, never automated copy. Mario rule: no amounts
+                         in this email; everything financial is settled in person/by phone. -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#d1fae5; border:1px solid #6ee7b7; border-left:4px solid #059669; border-radius:10px;">
+                      <tr>
+                        <td style="padding:16px 20px;">
+                          <div th:text="#{preCharterReminder.whatsNextLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#065f46; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:10px;">
+                            What is next
+                          </div>
+                          <ul style="margin:0; padding:0 0 0 18px; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#065f46; line-height:1.7;">
+                            <li th:text="#{preCharterReminder.whatsNext1}">Bring your passport / ID for every guest on board.</li>
+                            <li th:text="#{preCharterReminder.whatsNext2}">Don&#39;t forget your sailing licence and VHF certificate (skipper) — required at check-in.</li>
+                            <li th:text="#{preCharterReminder.whatsNext3}">Pack light layers, swimwear, soft-soled shoes, sunscreen, and any medication you may need.</li>
+                            <li th:text="#{preCharterReminder.whatsNext4}">Need help? Reply to this email or call +385 91 3000 009.</li>
+                          </ul>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:18px; font-size:0; line-height:18px;">&#160;</td></tr></table>
+
+                    <!-- CTA -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td align="center" style="padding:0 0 8px 0;">
+                          <!--[if mso]>
+                            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                              th:href="${reservationUrl}" style="height:46px; v-text-anchor:middle; width:220px;"
+                              arcsize="22%" stroke="f" fillcolor="#2856ff">
+                              <w:anchorlock/>
+                              <center style="color:#ffffff; font-family:Arial,sans-serif; font-size:15px; font-weight:bold;">
+                                View my booking
+                              </center>
+                            </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a th:href="${reservationUrl}" th:text="#{preCharterReminder.cta}" target="_blank"
+                            style="display:inline-block; padding:13px 26px; border-radius:10px; background-color:#2856ff; color:#ffffff; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; font-weight:600; line-height:1; text-decoration:none; box-shadow:0 1px 0 rgba(20,24,87,0.2);">
+                            View my booking
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                    </table>
+
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- FOOTER (outside white sheet) -->
+          <tr>
+            <td class="footer" align="center" style="padding:28px 32px 0 32px;">
+
+              
+
+              <!-- Footer logo — navy badge wrapping the cid:logo PNG used in the header. -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center"
+                style="margin:0 auto 12px auto;">
+                <tr>
+                  <td bgcolor="#141857" style="background-color:#141857; padding:8px 14px; border-radius:8px;">
+                    <img src="cid:boat4youLogoFull" alt="Boat4You" width="100" height="25"
+                      style="display:block; border:0; outline:none; text-decoration:none;" />
+                  </td>
+                </tr>
+              </table>
+
+              <div class="footer-line"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#64748b; margin:0 0 8px 0;">
+                <a href="https://www.boat4you.com" target="_blank"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">www.boat4you.com</a>
+                <span style="color:#94a3b8;">&#160;&#183;&#160;</span>
+                <a href="mailto:info@boat4you.com"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">info@boat4you.com</a>
+                <span style="color:#94a3b8;">&#160;&#183;&#160;</span>
+                <a href="tel:+385913000009" style="color:#2856ff; font-weight:700; text-decoration:none;; white-space: nowrap;">+385&nbsp;91&nbsp;3000&nbsp;009</a>
+              </div>
+
+              <div class="footer-line" th:text="#{email.footer.legal(${currentYear})}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                &#169; 2026 Boat4You &#183; Cusmanich d.o.o., Split, Croatia
+              </div>
+              <div class="footer-line" th:text="#{email.footer.notice}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                You are receiving this because of activity on your Boat4You account.
+              </div>
+
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+
+</html>

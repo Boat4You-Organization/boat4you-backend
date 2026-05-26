@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.job
 
 import hr.workspace.boat4you.domains.reservation.service.ReservationSyncService
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
@@ -21,6 +22,7 @@ class ReservationSyncJob(
      * availability sync (3:20 / 12:20).
      */
     @Scheduled(cron = "0 15 * * * *")
+    @SchedulerLock(name = "reservationYachtSwapSync", lockAtMostFor = "PT45M")
     fun runYachtSwapSync() {
         log.info("Starting reservation yacht-swap sync")
         val start = System.currentTimeMillis()

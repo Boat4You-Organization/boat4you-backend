@@ -1,6 +1,8 @@
 package hr.workspace.boat4you.domains.reservation.service
 
 import hr.workspace.boat4you.common.models.UserDomainEntity
+import hr.workspace.boat4you.common.services.toLanguageEnum
+import org.springframework.context.i18n.LocaleContextHolder
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
@@ -159,11 +161,14 @@ class ReservationFlowMutationService(
             reservationFlow.reservationExtras.add(extra)
         }
 
+        // Prefer partner-side payment plan from the offer (each agency configures
+        // its own 1/2/3-instalment schedule); fall back to B4Y A/B/C rules when
+        // partner sync didn't ship one. See ReservationPaymentPhasesService kdoc.
         val paymentPhases =
             paymentPhasesService
                 .calculatePaymentPhases(
-                    reservationStartDate = offer.dateFrom!!,
-                    totalPrice = reservationFlow.calculatedTotalPrice!!,
+                    offer = offer,
+                    clientTotalPrice = reservationFlow.calculatedTotalPrice!!.toDouble(),
                 ).map {
                     ReservationPaymentPhase().apply {
                         deadline = it.first
@@ -223,6 +228,15 @@ class ReservationFlowMutationService(
                 .findById(newUserEntity.id!!)
                 .orElseThrow { UserDoesNotExistException() }
         guestUser.registrationStatus = UserRegistrationStatusEnum.STARTED
+        // Stamp the front-end locale (resolved by `next-intl` and forwarded as
+        // Accept-Language by the booking action) onto the user record. This
+        // drives the language for every transactional email that follows —
+        // user invite, booking confirmed, payment pending, option expiry, etc.
+        // Mario rule (3.5.2026): "ako je klijent iz DE i bio je na DE stranici,
+        // onda mu svi emailovi idu u tom jeziku".
+        if (guestUser.language == null) {
+            guestUser.language = LocaleContextHolder.getLocale().toLanguageEnum()
+        }
         userRepository.save(guestUser)
 
         inviteService.inviteUsers(listOf(newUserEntity.id!!))

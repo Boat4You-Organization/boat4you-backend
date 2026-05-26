@@ -7,7 +7,16 @@ import org.springframework.data.jpa.repository.Query
 import java.time.LocalDate
 
 interface YachtExtraRepository : JpaRepository<YachtExtra, Long> {
-    @Cacheable("yachtExtrasCache")
+    /**
+     * F2-007: explicit `key = "#yacht.id"` because `Yacht` has no
+     * id-based `equals`/`hashCode` (does not extend AbstractEntity,
+     * see F2-017). Without this SpEL key Spring falls back to the
+     * arg itself as the key, and `Yacht.hashCode()` is reference
+     * identity — every request loads a fresh Yacht instance so the
+     * cache effectively never hits. With `#yacht.id` the cache key
+     * is the persisted Long id, which is stable across requests.
+     */
+    @Cacheable("yachtExtrasCache", key = "#yacht.id")
     @EntityGraph(attributePaths = ["extras"])
     fun findAllByYacht(yacht: Yacht): List<YachtExtra>
 

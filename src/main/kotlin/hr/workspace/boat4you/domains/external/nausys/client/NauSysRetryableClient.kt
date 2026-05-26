@@ -40,7 +40,10 @@ class NauSysRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
+        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER, random = true),
     )
     fun getFreeYachts(request: RestFreeYachtsRequest): RestFreeYachtList {
         val response =
@@ -60,7 +63,7 @@ class NauSysRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
+        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER, random = true),
     )
     fun getFreeYachtsSearchForAsync(request: RestFreeYachtsSearchRequest): RestFreeYachtsSearchResponse {
         val response =
@@ -80,9 +83,20 @@ class NauSysRetryableClient(
     }
 
     @Retryable(
-        value = [Exception::class],
+        retryFor = [Exception::class],
+        // F3-008: the method makes THREE serial partner calls
+        // (getAllOptions, stornos, getAllReservations). Default
+        // @Retryable on Exception means a clean "not found" outcome
+        // — all three calls returned OK but with no results, so we
+        // throw ExternalSystemException at the end — would be retried
+        // up to 3 times, fanning 3 calls × 3 attempts = 9 partner
+        // hits for a single lookup that will deterministically fail.
+        // Excluding ExternalSystemException keeps the retry on
+        // transient HTTP / partner 5xx errors while letting the
+        // "not found" path fail fast after 3 calls.
+        noRetryFor = [hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
+        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER, random = true),
     )
     fun getReservation(request: RestYachtReservationsRequest): RestYachtReservation {
         // there is no API for fetching reservation status by ID, so we need to call endpoint for each status
@@ -128,11 +142,14 @@ class NauSysRetryableClient(
         )
     }
 
-    @Retryable(
-        value = [Exception::class],
-        maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
-    )
+    // F3-002: NO @Retryable on state-changing partner calls. NauSys
+    // `createInfo` allocates a new partner-side row that is assigned a
+    // stable `id` in the response — retrying on a transient network
+    // error (e.g. socket reset after the server already processed the
+    // request) would create a duplicate partner row and leave the
+    // first as an orphan we never reference. The bounded read timeout
+    // from F3-001 makes the failure mode "fail fast, surface to
+    // caller" instead of "wedge thread for minutes".
     fun createInfo(request: RestYachtReservationInfoRequest): RestYachtReservation {
         val nausysReservationInfo = runCatching { nauSysClient.defaultApi.createInfo(request) }
         serviceCallAuditService.serviceCallAudit(
@@ -151,11 +168,10 @@ class NauSysRetryableClient(
         return infoResponse
     }
 
-    @Retryable(
-        value = [Exception::class],
-        maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
-    )
+    // F3-002: NO @Retryable. Same rationale as createInfo — every retry
+    // is a duplicate partner option (yacht hold) creation. The caller
+    // sees only the second response, the first option is orphaned and
+    // continues to block the yacht for its hold window.
     fun createOption(request: RestYachtReservationOptionRequest): RestYachtReservation {
         val nausysReservationResponse = runCatching { nauSysClient.defaultApi.createOption(request) }
         serviceCallAuditService.serviceCallAudit(
@@ -172,11 +188,12 @@ class NauSysRetryableClient(
         return reservationResponse
     }
 
-    @Retryable(
-        value = [Exception::class],
-        maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
-    )
+    // F3-002: NO @Retryable. Confirming an option flips a yacht from
+    // optioned to firmly booked partner-side — a duplicate confirm on
+    // retry triggers a duplicate booking + duplicate customer charge
+    // (Stripe is already captured by the time we reach this call,
+    // F3-022 chain). Mario-side reconciliation if the network fails
+    // here is far cheaper than a silent double-booking.
     fun confirmReservation(request: RestYachtReservationBookingRequest): RestYachtReservation {
         val nausysReservationResponse = runCatching { nauSysClient.defaultApi.createBooking(request) }
         serviceCallAuditService.serviceCallAudit(
@@ -193,11 +210,12 @@ class NauSysRetryableClient(
         return reservationResponse
     }
 
-    @Retryable(
-        value = [Exception::class],
-        maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER),
-    )
+    // F3-002: NO @Retryable. Storno is a destructive state-change; a
+    // duplicate cancel on retry would fail with "not found" (already
+    // cancelled) but waste partner-side rate budget and our own
+    // failure logs become misleading. Better: surface the first
+    // failure and let the caller decide whether the storno succeeded
+    // (the next get-reservation read will reveal partner state).
     fun stornoOption(request: RestYachtReservationRequest): RestYachtReservation {
         val nausysReservationResponse = runCatching { nauSysClient.defaultApi.stornoOption(request) }
         serviceCallAuditService.serviceCallAudit(

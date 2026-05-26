@@ -24,6 +24,7 @@ fun UserEntity.toUserModel(): User =
         address = address,
         city = city,
         country = country,
+        birthday = birthday,
         language = language,
         currency = currency,
         userStatus = entityStatus.toStatusModel(),

@@ -26,6 +26,7 @@ class ReservationMappers(
     private val extrasMapper: YachtExtrasMapper,
     private val paymentPhasesService: ReservationPaymentPhasesService,
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
+    private val reservationDocumentService: hr.workspace.boat4you.domains.reservation.service.ReservationDocumentService,
 ) {
     fun toReservationDto(reservation: Reservation): ReservationDto {
         return ReservationDto(
@@ -88,6 +89,7 @@ class ReservationMappers(
                     reservationView.yachtId!!,
                 ),
             cancellationRequestAt = reservationView.reservationCancelationRequestAt,
+            cancellationRejectedAt = reservationView.reservationCancelationRejectedAt,
             reservationNumber = reservationView.reservationNumber,
             agencyEmail = reservationView.agencyEmail,
             agencyPhone = reservationView.agencyPhone,
@@ -164,6 +166,8 @@ class ReservationMappers(
             depositCurrency = yacht.depositCurrency,
             cancellationRequestAt = reservationView.reservationCancelationRequestAt,
             cancellationRequest = reservationView.reservationCancelationRequest,
+            cancellationRejectedAt = reservationView.reservationCancelationRejectedAt,
+            cancellationRejectedReason = reservationView.reservationCancelationRejectedReason,
             reservationNumber = reservationView.reservationNumber,
             agencyEmail = reservationView.agencyEmail,
             agencyPhone = reservationView.agencyPhone,
@@ -190,6 +194,33 @@ class ReservationMappers(
             manufacturerName = reservationView.manufacturerName,
             amenities = yacht.yachtEquipments.distinctBy { it.equipmentId }.map { it.toDto() },
             specialRequest = reservationView.reservationFlowRequest,
+            // Yacht-catalogue extras (same source as boat-detail page ExtrasTab)
+            // so my-bookings can render obligatory extras + virtual security
+            // deposit row even when reservation_extras is empty (fictitious
+            // bookings, partner sync gaps, legacy bookings).
+            // Date-overlap filter: charters spanning May 2026 must NOT see
+            // 2027/2028 price rows. valid_from <= dateTo AND valid_to >=
+            // dateFrom (null = always-valid). Mario rule (3.5.2026): partner
+            // mijenja cijene po periodu — prikazujemo samo applicable rows.
+            services =
+                yacht.yachtExtras
+                    .filter { it.shouldDisplay() }
+                    .filter { it.appliesToPeriod(reservationView.reservationDateFrom!!.toLocalDate(), reservationView.reservationDateTo!!.toLocalDate()) }
+                    // Partner sometimes returns multiple price rows for the same
+                    // logical extra within a single booking period (e.g. "Preparation
+                    // fee" 425 + 450, "Tourist tax" 0.90 + 1.33). Without finer
+                    // sailing-window info we group by (name, payableInBase, unit)
+                    // and pick the highest-priced row — worst-case for the customer
+                    // so they never get a surprise bill at the marina. Mario rule
+                    // (3.5.2026): no duplicates in customer-facing extras list.
+                    .groupBy { Triple(it.name?.trim()?.lowercase().orEmpty(), it.payableInBase ?: false, it.unit) }
+                    .map { (_, rows) -> rows.maxBy { it.price ?: java.math.BigDecimal.ZERO } }
+                    .map { extrasMapper.toDto(it, currency) },
+            // Admin-curated docs (crew list pdf/docx, pickup info, contract
+            // scans). Customer downloads via /secured/reservations/my-reservations/{id}/documents/{docId}.
+            crewListUrl = reservationView.reservationCrewListUrl,
+            // Customer-visible only — internal admin uploads stay hidden.
+            documents = reservationDocumentService.listCustomerVisible(reservationView.reservationId!!),
             // NOTE: adminNotes intentionally NOT exposed here — this is the
             // customer-facing MyReservationDetailsDto. Only the admin DTO
             // (toDetailsDto below) carries it.
@@ -235,6 +266,7 @@ class ReservationMappers(
             agencyId = reservationView.agencyId!!,
             agencyName = reservationView.agencyName!!,
             cancellationRequestAt = reservationView.reservationCancelationRequestAt,
+            cancellationRejectedAt = reservationView.reservationCancelationRejectedAt,
             reservationAgencyPrice = reservationView.reservationAgencyPrice,
             reservationCommission = reservationView.reservationCommission,
             reservationAdminNotes = reservationView.reservationAdminNotes,
@@ -305,6 +337,8 @@ class ReservationMappers(
             agencyPhone = reservationView.agencyPhone,
             cancellationRequestAt = reservationView.reservationCancelationRequestAt,
             cancellationRequest = reservationView.reservationCancelationRequest,
+            cancellationRejectedAt = reservationView.reservationCancelationRejectedAt,
+            cancellationRejectedReason = reservationView.reservationCancelationRejectedReason,
             securityDeposit = yacht.deposit,
             insuredSecurityDeposit = yacht.insuredDeposit,
             depositCurrency = yacht.depositCurrency,
@@ -317,6 +351,20 @@ class ReservationMappers(
             amenities = yacht.yachtEquipments.distinctBy { it.equipmentId }.map { it.toDto() },
             specialRequest = reservationView.reservationFlowRequest,
             adminNotes = reservationView.reservationAdminNotes,
+            services =
+                yacht.yachtExtras
+                    .filter { it.shouldDisplay() }
+                    .filter { it.appliesToPeriod(reservationView.reservationDateFrom!!.toLocalDate(), reservationView.reservationDateTo!!.toLocalDate()) }
+                    // Partner sometimes returns multiple price rows for the same
+                    // logical extra within a single booking period (e.g. "Preparation
+                    // fee" 425 + 450, "Tourist tax" 0.90 + 1.33). Without finer
+                    // sailing-window info we group by (name, payableInBase, unit)
+                    // and pick the highest-priced row — worst-case for the customer
+                    // so they never get a surprise bill at the marina. Mario rule
+                    // (3.5.2026): no duplicates in customer-facing extras list.
+                    .groupBy { Triple(it.name?.trim()?.lowercase().orEmpty(), it.payableInBase ?: false, it.unit) }
+                    .map { (_, rows) -> rows.maxBy { it.price ?: java.math.BigDecimal.ZERO } }
+                    .map { extrasMapper.toDto(it, currency) },
         )
     }
 }

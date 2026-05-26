@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.external.nausys.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
+import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.model.ReservationData
@@ -49,7 +50,11 @@ class NausysReservationIntegrationService(
         return toResponseWrapper(reservationResponse)
     }
 
-    fun createOption(reservationData: ReservationData): ReservationResponseWrapper {
+    fun createOption(
+        reservationData: ReservationData,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
+    ): ReservationResponseWrapper {
         log.info("Creating Nausys reservation for yachtId: ${reservationData.externalYachtId}")
         val nausysInfoRequest =
             RestYachtReservationInfoRequest(
@@ -81,12 +86,14 @@ class NausysReservationIntegrationService(
             )
         val reservationResponse = nauSysRetryableClient.createOption(optionRequest)
 
-        return toResponseWrapper(reservationResponse)
+        return toResponseWrapper(reservationResponse, fallbackLocationFrom, fallbackLocationTo)
     }
 
     fun confirmReservation(
         nausysReservationId: Long,
         nausysReservationUUID: String,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
     ): ReservationResponseWrapper {
         val bookingRequest =
             RestYachtReservationBookingRequest(
@@ -95,12 +102,14 @@ class NausysReservationIntegrationService(
                 uuid = nausysReservationUUID,
             )
         val reservationResponse = nauSysRetryableClient.confirmReservation(bookingRequest)
-        return toResponseWrapper(reservationResponse)
+        return toResponseWrapper(reservationResponse, fallbackLocationFrom, fallbackLocationTo)
     }
 
     fun cancelOption(
         nausysReservationId: Long,
         nausysReservationUUID: String,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
     ): ReservationResponseWrapper {
         val stornoRequest =
             RestYachtReservationRequest(
@@ -109,20 +118,41 @@ class NausysReservationIntegrationService(
                 uuid = nausysReservationUUID,
             )
         val reservationResponse = nauSysRetryableClient.stornoOption(stornoRequest)
-        return toResponseWrapper(reservationResponse)
+        return toResponseWrapper(reservationResponse, fallbackLocationFrom, fallbackLocationTo)
     }
 
-    private fun toResponseWrapper(reservationResponse: RestYachtReservation): ReservationResponseWrapper {
+    private fun toResponseWrapper(
+        reservationResponse: RestYachtReservation,
+        fallbackLocationFrom: Location? = null,
+        fallbackLocationTo: Location? = null,
+    ): ReservationResponseWrapper {
+        // Orphan external_mapping rows (e.g. after a Location dedup) leave the
+        // partner→our-location lookup returning null even though a live Location
+        // exists for the yacht. Fall back to the offer's persisted location so
+        // booking flow doesn't NPE on the response wrapper.
+        // F3-015: partner internal IDs go to the log via parameterised
+        // SLF4J only, never into the exception message itself. The
+        // exception message stays generic so even an unanticipated
+        // bypass of the catch-all sanitiser (F1-055/F5-002) cannot
+        // surface partner IDs to the customer.
         val locationFrom =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.locationFromId!!,
                 ExternalSystemEnum.NAUSYS.value.toLong(),
-            )!!
+            ) ?: fallbackLocationFrom
+                ?: run {
+                    log.error("No Location for NauSys locationFromId={} and no fallback supplied", reservationResponse.locationFromId)
+                    throw IllegalStateException("Unmapped partner location on reservation response")
+                }
         val locationTo =
             locationQueryingService.getLocationByExternalIdAndExternalSystemId(
                 reservationResponse.locationToId!!,
                 ExternalSystemEnum.NAUSYS.value.toLong(),
-            )!!
+            ) ?: fallbackLocationTo
+                ?: run {
+                    log.error("No Location for NauSys locationToId={} and no fallback supplied", reservationResponse.locationToId)
+                    throw IllegalStateException("Unmapped partner location on reservation response")
+                }
 
         val totalDiscount = reservationResponse.discounts?.sumOf { it.amount!!.toBigDecimal() } ?: BigDecimal.ZERO
         val agencyCommission =

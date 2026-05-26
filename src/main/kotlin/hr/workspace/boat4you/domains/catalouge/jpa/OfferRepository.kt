@@ -23,10 +23,31 @@ interface OfferRepository : JpaRepository<Offer, Long> {
 
     fun findAllByYacht(yacht: Yacht): List<Offer>
 
+    @Query(
+        """
+        SELECT o FROM Offer o
+        WHERE o.yacht.agency.id = :agencyId
+    """,
+    )
+    fun findAllByYachtAgencyId(
+        @Param("agencyId") agencyId: Long,
+    ): List<Offer>
+
     /**
-     * This can be cached because sequential requests should change on data for different time periods, ie no update of the same data
+     * Cacheable: sequential requests for the same (yacht, statuses)
+     * combo over a single TTL window can reuse the prior result —
+     * the offer table changes via NauSys/MMK sync which @CacheEvicts.
+     *
+     * F2-025: explicit SpEL key. Default Spring behaviour wraps the
+     * args in a SimpleKey whose hashCode is computed from
+     * `yacht.hashCode()` and `statuses.hashCode()`. Yacht has no
+     * id-based equals (F2-017 family) so its hashCode is reference
+     * identity — every request loads a fresh instance and the cache
+     * never hits. The SpEL key composes yacht.id with the structural
+     * Set.hashCode of the statuses so two requests with the same
+     * yacht and same status set land on the same cache entry.
      */
-    @Cacheable("offersByYachtAndStatusCache")
+    @Cacheable("offersByYachtAndStatusCache", key = "#yacht.id + ':' + #statuses.hashCode()")
     @Query(
         """
         SELECT o FROM Offer o
@@ -79,11 +100,27 @@ interface OfferRepository : JpaRepository<Offer, Long> {
         @Param("offerType") offerType: OfferType,
     ): List<Offer>
 
+    @Query(
+        """
+        SELECT o FROM Offer o
+        LEFT JOIN FETCH o.offerPaymentPlans
+        WHERE o.yacht.id = :yachtId
+        AND o.dateFrom = :dateFrom
+        AND o.dateTo = :dateTo
+        ORDER BY o.id ASC
+    """,
+    )
+    fun findByYachtIdAndDatesWithPaymentPlans(
+        @Param("yachtId") yachtId: Long,
+        @Param("dateFrom") dateFrom: LocalDate,
+        @Param("dateTo") dateTo: LocalDate,
+    ): List<Offer>
+
     @Modifying
     @Query(
         """
-        DELETE FROM Offer o 
-        WHERE o.date_to < DATE_ADD(CURRENT_DATE, '-30 day'::interval)
+        DELETE FROM offer o
+        WHERE o.date_to < CURRENT_DATE - INTERVAL '30 days'
         AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = o.id)
         """,
         nativeQuery = true,

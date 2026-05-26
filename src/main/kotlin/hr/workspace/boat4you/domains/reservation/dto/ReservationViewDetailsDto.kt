@@ -5,6 +5,7 @@ import hr.workspace.boat4you.common.services.TwoDecimalSerializer
 import hr.workspace.boat4you.domains.catalouge.dto.ExtrasPriceDto
 import hr.workspace.boat4you.domains.catalouge.dto.MeasurementUnitDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtEquipmentDto
+import hr.workspace.boat4you.domains.catalouge.dto.YachtExtrasDto
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
@@ -66,6 +67,8 @@ data class ReservationViewDetailsDto(
     val agencyPhone: String?,
     val cancellationRequestAt: LocalDateTime?,
     val cancellationRequest: String?,
+    val cancellationRejectedAt: LocalDateTime? = null,
+    val cancellationRejectedReason: String? = null,
     @field:JsonSerialize(using = TwoDecimalSerializer::class)
     val securityDeposit: BigDecimal?,
     @field:JsonSerialize(using = TwoDecimalSerializer::class)
@@ -82,4 +85,6 @@ data class ReservationViewDetailsDto(
     // Free-form admin notes (internal). Admin-only — not exposed in customer
     // reservation endpoints.
     val adminNotes: String?,
+    val services: List<YachtExtrasDto> = emptyList(),
+    val obligatoryExtrasKeys: List<String> = emptyList(),
 ) : Serializable

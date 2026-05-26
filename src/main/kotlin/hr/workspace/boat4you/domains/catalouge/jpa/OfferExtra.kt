@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -55,7 +56,7 @@ open class OfferExtra {
     @Column(name = "name", length = Integer.MAX_VALUE)
     open var name: String? = null
 
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "unit", nullable = false)
     open var unit: ExtrasUnitType? = null
@@ -82,7 +83,7 @@ open class OfferExtra {
      * boolean for customer-facing display. Backfilled by V1_57 + populated by
      * sync mappers via `ExtraPaymentType.classify(...)`.
      */
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "payment_type")
     open var paymentType: ExtraPaymentType? = null
 

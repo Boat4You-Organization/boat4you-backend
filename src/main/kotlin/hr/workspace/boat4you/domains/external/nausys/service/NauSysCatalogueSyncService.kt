@@ -27,6 +27,8 @@ import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
+import hr.workspace.boat4you.domains.catalouge.services.ManufacturerAliasResolver
+import hr.workspace.boat4you.domains.catalouge.services.ModelNameNormaliser
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import org.openapitools.client.nausys.model.RestCharterBaseList
@@ -63,6 +65,8 @@ class NauSysCatalogueSyncService(
     private val externalSeasonRepository: ExternalSeasonRepository,
     private val externalBaseRepository: ExternalBaseRepository,
     private val yachtRepository: YachtRepository,
+    private val manufacturerAliasResolver: ManufacturerAliasResolver,
+    private val modelNameNormaliser: ModelNameNormaliser,
 ) {
     private val log = LoggerFactory.getLogger(this::class.java)
 
@@ -316,12 +320,15 @@ class NauSysCatalogueSyncService(
         nausysManufacturers.builders?.forEach {
             val mapping = allMappings.find { mapping -> mapping.externalId == it.id!! }
 
+            // Canonicalise partner-supplied name first — see MmkCatalogueSyncService
+            // for full rationale (Lagoon vs Lagoon-Bénéteau dedupe, Mario rule).
+            val canonicalName = manufacturerAliasResolver.canonicalName(it.name!!)
             val manufacturer =
                 if (mapping != null) {
                     allManufacturers.find { manufacturer -> manufacturer.id == mapping!!.systemId!! }!!
                 } else {
-                    allManufacturers.find { manufacturer -> manufacturer.name!!.lowercase() == it.name!!.lowercase() }
-                        ?: Manufacturer().apply { name = it.name }
+                    allManufacturers.find { manufacturer -> manufacturer.name!!.lowercase() == canonicalName.lowercase() }
+                        ?: Manufacturer().apply { name = canonicalName }
                 }
 
             manufacturerRepository.saveAndFlush(manufacturer)
@@ -349,18 +356,20 @@ class NauSysCatalogueSyncService(
         nausysModels.models?.forEach {
             val mapping = allMappings.find { mapping -> mapping.externalId == it.id!!.toLong() }
 
+            // Strip noisy cabin-config suffix ("- 4 + 1 cab.*" etc.) before
+            // lookup/create so partner cannot fork "Bali 4.4" into N variants.
+            val canonicalModelName = modelNameNormaliser.canonicalName(it.name!!)
             val model =
                 if (mapping != null) {
                     allModels.find { model -> model.id == mapping.systemId!! }!!
                 } else {
-                    // its possible we get duplicate models in a single sync
                     val m =
                         modelRepository.findByNameIgnoreCaseAndExternalManufacturerId(
-                            it.name!!,
+                            canonicalModelName,
                             it.yachtBuilderId?.toLong() ?: -1L,
                             ExternalSystemEnum.NAUSYS.value,
                         )
-                    m ?: Model().apply { name = it.name }
+                    m ?: Model().apply { name = canonicalModelName }
                 }
 
             val manufacturerMapping =
@@ -391,6 +400,12 @@ class NauSysCatalogueSyncService(
         }
     }
 
+    // See MmkCatalogueSyncService.equipmentSync for the rationale —
+    // externalEquipmentCache stays around for 10 min, so any yacht sync
+    // running in that window would see a stale snapshot of external_equipment.
+    // Evicting on each sync ensures yacht-level matchers always read the
+    // current set.
+    @org.springframework.cache.annotation.CacheEvict(value = ["externalEquipmentCache"], allEntries = true)
     @Transactional
     fun equipmentSync(nausysEquipment: RestEquipmentList) {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())

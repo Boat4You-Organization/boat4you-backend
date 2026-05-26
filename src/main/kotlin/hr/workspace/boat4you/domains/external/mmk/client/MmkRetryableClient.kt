@@ -31,10 +31,14 @@ class MmkRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
         backoff =
             Backoff(
                 delay = DEFAULT_DELAY,
                 multiplier = DEFAULT_MULTIPLIER,
+                random = true,
             ),
     )
     fun getOffers(
@@ -109,10 +113,14 @@ class MmkRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
         backoff =
             Backoff(
                 delay = DEFAULT_DELAY,
                 multiplier = DEFAULT_MULTIPLIER,
+                random = true,
             ),
     )
     fun getOffersForAsync(
@@ -189,10 +197,14 @@ class MmkRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
         backoff =
             Backoff(
                 delay = DEFAULT_DELAY,
                 multiplier = DEFAULT_MULTIPLIER,
+                random = true,
             ),
     )
     fun getReservation(reservationId: Long): ReservationResponse {
@@ -208,15 +220,12 @@ class MmkRetryableClient(
         return response.getOrThrow()
     }
 
-    @Retryable(
-        value = [Exception::class],
-        maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff =
-            Backoff(
-                delay = DEFAULT_DELAY,
-                multiplier = DEFAULT_MULTIPLIER,
-            ),
-    )
+    // F3-002: NO @Retryable on state-changing MMK calls. `createReservation`
+    // allocates a new partner-side row — a retry on transient network
+    // failure (server processed, response lost) creates a duplicate
+    // reservation that blocks the yacht. The F3-001 bounded read
+    // timeout makes the failure mode "fail fast" instead of "wedge
+    // thread for minutes".
     fun createOption(request: Reservation): ReservationResponse {
         val reservationResponse = runCatching { mmkClient.bookingApi.createReservation(request) }
         serviceCallAuditService.serviceCallAudit(
@@ -229,15 +238,10 @@ class MmkRetryableClient(
         return reservationResponse.getOrThrow()
     }
 
-    @Retryable(
-        value = [Exception::class],
-        maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff =
-            Backoff(
-                delay = DEFAULT_DELAY,
-                multiplier = DEFAULT_MULTIPLIER,
-            ),
-    )
+    // F3-002: NO @Retryable. Confirm transitions a reservation to
+    // firmly booked partner-side — duplicate confirm = duplicate
+    // booking after Stripe has already captured (F3-022 chain). Fail
+    // visible, reconcile by hand.
     fun confirmReservation(reservationId: Long): ReservationResponse {
         val reservationResponse = runCatching { mmkClient.bookingApi.confirmReservation(reservationId) }
         serviceCallAuditService.serviceCallAudit(
@@ -253,10 +257,14 @@ class MmkRetryableClient(
     @Retryable(
         value = [Exception::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
+        // F3-005: random=true jitters backoff between `delay` and
+        // `delay * multiplier`, breaking lockstep retries when many
+        // callers fail on the same partner outage burst.
         backoff =
             Backoff(
                 delay = DEFAULT_DELAY,
                 multiplier = DEFAULT_MULTIPLIER,
+                random = true,
             ),
     )
     fun crewListLink(reservationId: Long): CrewListLink {
@@ -272,15 +280,10 @@ class MmkRetryableClient(
         return crewListLinkResponse.getOrThrow()
     }
 
-    @Retryable(
-        value = [Exception::class],
-        maxAttempts = DEFAULT_MAX_RETRIES,
-        backoff =
-            Backoff(
-                delay = DEFAULT_DELAY,
-                multiplier = DEFAULT_MULTIPLIER,
-            ),
-    )
+    // F3-002: NO @Retryable. Cancel is destructive — a duplicate
+    // cancel on retry would just 4xx "already cancelled", waste rate
+    // budget, and pollute failure logs. Surface the first failure;
+    // the next get-reservation read will reveal actual partner state.
     fun cancelOption(reservationId: Long): ReservationResponse {
         val reservationResponse = runCatching { mmkClient.bookingApi.cancelReservation(reservationId) }
         serviceCallAuditService.serviceCallAudit(

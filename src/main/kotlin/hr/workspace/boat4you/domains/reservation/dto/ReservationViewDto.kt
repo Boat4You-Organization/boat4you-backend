@@ -50,6 +50,7 @@ data class ReservationViewDto(
     val agencyId: Long,
     val agencyName: String,
     val cancellationRequestAt: LocalDateTime?,
+    val cancellationRejectedAt: LocalDateTime? = null,
     // Admin-only: what we owe the charter agency. Nullable for DEV mock and
     // legacy pre-V1_46 rows.
     val reservationAgencyPrice: BigDecimal?,

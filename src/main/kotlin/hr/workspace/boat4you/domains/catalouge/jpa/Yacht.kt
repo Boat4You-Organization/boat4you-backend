@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
@@ -129,7 +130,7 @@ open class Yacht {
     /**
      * Sail type
      */
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "mainsail_type")
     open var mainsailType: SailTypeEnum? = null
 
@@ -139,7 +140,7 @@ open class Yacht {
     /**
      * Sail type
      */
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "genoa_type", length = 50)
     open var genoaType: SailTypeEnum? = null
 
@@ -227,7 +228,7 @@ open class Yacht {
      * Yacht type. MMK - Kind can be - Sail boat , Motor boat, Catamaran, Power Catamaran, Gulet, Motorsailer, Motoryacht, Trimaran, Other. Nausys - ???
      */
     @NotNull
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "vessel_type", nullable = false)
     open var vesselType: VesselType? = null
 
@@ -235,7 +236,7 @@ open class Yacht {
      * custom or external
      */
     @NotNull
-    @Enumerated
+    @Enumerated(EnumType.STRING)
     @Column(name = "entry_type", nullable = false)
     open var entryType: EntryType? = null
 

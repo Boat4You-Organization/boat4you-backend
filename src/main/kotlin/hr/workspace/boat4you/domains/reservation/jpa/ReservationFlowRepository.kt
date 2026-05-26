@@ -39,4 +39,11 @@ interface ReservationFlowRepository : JpaRepository<ReservationFlow, Long> {
     fun findIdsInReservationFlowChain(reservationFlowId: Long): Set<Long>
 
     fun findByIdIn(ids: Set<Long>): Set<ReservationFlow>
+
+    /**
+     * GDPR data export — pulls every booking the user owns. Used by
+     * `DataExportService.exportForUser`. Returns ReservationFlow chains
+     * including swapped/cancelled rows so the export is complete.
+     */
+    fun findAllByUserId(userId: Long): List<ReservationFlow>
 }

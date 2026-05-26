@@ -2,12 +2,14 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import com.google.i18n.phonenumbers.NumberParseException
 import com.google.i18n.phonenumbers.PhoneNumberUtil
+import hr.workspace.boat4you.common.services.toLocale
 import hr.workspace.boat4you.domains.branding.Brand
 import hr.workspace.boat4you.domains.branding.BrandRegistry
 import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import org.slf4j.LoggerFactory
+import org.springframework.context.MessageSource
 import org.springframework.core.io.ClassPathResource
 import org.springframework.core.io.Resource
 import org.springframework.stereotype.Service
@@ -40,6 +42,7 @@ class InquiryEmailService(
     private val emailService: EmailService,
     private val inquiryRepository: InquiryRepository,
     private val brandRegistry: BrandRegistry,
+    private val messageSource: MessageSource,
 ) {
     private val log = LoggerFactory.getLogger(InquiryEmailService::class.java)
 
@@ -51,10 +54,15 @@ class InquiryEmailService(
      *  CET/CEST (+1/+2) automatically. */
     private val displayZone: ZoneId = ZoneId.of("Europe/Zagreb")
 
-    private val receivedFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm", Locale.ENGLISH)
-    private val longDateFormatter = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.ENGLISH)
-    private val shortDateFormatter = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
-    private val shortDateNoYearFormatter = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
+    // Date formatters resolved per-locale so day-of-week / month names
+    // render in the brand's admin language (HR brand → "Sub, 20 lis 2026"
+    // not "Sat, 20 Jun 2026"). EN fallback kept as the baseline used by
+    // tests + the formatInquiryNumber path that doesn't carry a Locale.
+    private val receivedFormatterEn = DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm", Locale.ENGLISH)
+    private fun receivedFormatter(locale: Locale) = DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm", locale)
+    private fun longDateFormatter(locale: Locale) = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", locale)
+    private fun shortDateFormatter(locale: Locale) = DateTimeFormatter.ofPattern("d MMM yyyy", locale)
+    private fun shortDateNoYearFormatter(locale: Locale) = DateTimeFormatter.ofPattern("d MMM", locale)
 
     /** Cache of `data:image/png;base64,…` URLs keyed by classpath path —
      *  preview rendering reuses these instead of re-reading the PNG off
@@ -75,10 +83,15 @@ class InquiryEmailService(
         // bound to the proxy, producing NPE on the dependency. Resolve
         // inside the body instead.
         val resolvedBrand = brand ?: brandRegistry.default
-        val variables = buildVariables(inquiry, resolvedBrand, logoSrc = "cid:$BRAND_LOGO_CID")
+        // Brand drives the language for inquiry email — admin/team reading
+        // the inquiry sees their preferred language. Customer-facing emails
+        // use user.language instead. Mario rule (3.5.2026): inquiry email
+        // localised so per-brand admins can read in their own language.
+        val locale = resolvedBrand.defaultLanguage.toLocale()
+        val variables = buildVariables(inquiry, resolvedBrand, locale, logoSrc = "cid:$BRAND_LOGO_CID")
         emailService.sendEmail(
             recipients = listOf(resolvedBrand.recipientAddress),
-            subject = buildSubject(inquiry, resolvedBrand),
+            subject = buildSubject(inquiry, resolvedBrand, locale),
             templateName = TEMPLATE,
             variables = variables,
             // Reply-To = the lead's email so hitting "Reply" in Mario's
@@ -87,6 +100,7 @@ class InquiryEmailService(
             force = force,
             extraInlineImages = mapOf(BRAND_LOGO_CID to loadBrandLogo(resolvedBrand)),
             fromOverride = "${resolvedBrand.displayName} <${resolvedBrand.fromAddress}>",
+            locale = locale,
         )
         log.info(
             "Queued new-inquiry notification email for inquiry id={} brand={} to {} (force={})",
@@ -126,26 +140,32 @@ class InquiryEmailService(
         // Browser previews can't resolve `cid:*` inline attachments, so we
         // inline the logo as a data URL instead. Real SMTP sends keep using
         // `cid:` to avoid bloating each delivered message with the same PNG.
+        // NB: `renderTemplate` doesn't currently take a Locale parameter, so
+        // preview falls back to MessageSource's default (English baseline).
+        // Acceptable for the preview-in-browser dev story; live delivery
+        // honours the brand's defaultLanguage via `sendNewInquiryNotification`.
+        val locale = resolvedBrand.defaultLanguage.toLocale()
         return emailService.renderTemplate(
             TEMPLATE,
-            buildVariables(inquiry, resolvedBrand, logoSrc = brandLogoDataUrl(resolvedBrand)),
+            buildVariables(inquiry, resolvedBrand, locale, logoSrc = brandLogoDataUrl(resolvedBrand)),
         )
     }
 
-    private fun buildSubject(inquiry: Inquiry, brand: Brand): String {
+    private fun buildSubject(inquiry: Inquiry, brand: Brand, locale: Locale): String {
         val name = listOfNotNull(inquiry.name, inquiry.surname).joinToString(" ").ifBlank { "Guest" }
-        // Format Mario approved: "Yacht Inquiry ✅ {Brand} ✅ {client}".
-        // Inboxes pick up the green-check emojis as visual flags, so the
-        // subject line reads as a one-glance "new lead arrived" signal.
-        // Use the short brand label (everything before "|" / first comma)
-        // so the subject doesn't get bloated by tagline text.
+        val yachtName = inquiry.yacht?.name ?: "—"
+        // Localised pattern: `inquiry.subject = New inquiry — {0} → {1}` etc.
+        // Brand short label is used as a prefix flag so admins can filter
+        // multiple brands' inquiries in one inbox.
         val shortBrand = brand.displayName.substringBefore('|').substringBefore(',').trim()
-        return "Yacht Inquiry ✅ $shortBrand ✅ $name"
+        val core = messageSource.getMessage("inquiry.subject", arrayOf<Any>(name, yachtName), locale)
+        return "[$shortBrand] $core"
     }
 
     private fun buildVariables(
         inquiry: Inquiry,
         brand: Brand,
+        locale: Locale,
         logoSrc: String,
     ): Map<String, Any?> {
         val createdAt = inquiry.createdAt ?: LocalDateTime.now()
@@ -163,8 +183,25 @@ class InquiryEmailService(
         val countryFlag = countryCode?.let(::countryCodeToFlagEmoji)
 
         val yacht = inquiry.yacht
+        val yachtManufacturer = yacht?.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModel = yacht?.model?.name
         val yachtName = yacht?.name
+        // "Manufacturer Model" e.g. "Beneteau Oceanis 46.1" — used as the
+        // primary line in the requested-yacht card. Falls back gracefully
+        // if either piece is missing.
+        val yachtModelLabel = listOfNotNull(yachtManufacturer, yachtModel)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .ifBlank { yachtModel ?: "—" }
+        // Full identifier "Manufacturer Model Name" e.g. "Beneteau Oceanis
+        // 46.1 Tria" — used in the hero title so the recipient sees the
+        // exact yacht class + name, not just the brand-given moniker.
+        // Mario rule (3.5.2026): emails always show model + name, never
+        // bare name on its own.
+        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModel, yachtName)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .ifBlank { yachtName ?: "—" }
         val yachtLocationName = yacht?.location?.name
         // `Location.countryCode` is already an ISO-2 string (e.g. "HR") in
         // our schema — no need to map from partner ids.
@@ -197,13 +234,19 @@ class InquiryEmailService(
         }
 
         val nights = nightsBetween(inquiry.dateFrom, inquiry.dateTo)
-        val setSailDate = inquiry.dateFrom?.format(longDateFormatter)
-        val returnDate = inquiry.dateTo?.format(longDateFormatter)
+        // Pre-render the localised "{n} night(s)" label so the template
+        // doesn't have to do plural choice in EL — keeps the .properties
+        // bundles authoritative for grammar (HR/PL use distinct plural
+        // forms; the simple ternary in the old template would mis-render).
+        val nightsKey = if (nights == 1L) "inquiry.nightsOne" else "inquiry.nightsOther"
+        val nightsLabel = messageSource.getMessage(nightsKey, arrayOf<Any>(nights), locale)
+        val setSailDate = inquiry.dateFrom?.format(longDateFormatter(locale))
+        val returnDate = inquiry.dateTo?.format(longDateFormatter(locale))
         val dateRangeShort = if (inquiry.dateFrom != null && inquiry.dateTo != null) {
             val sameYear = inquiry.dateFrom!!.year == inquiry.dateTo!!.year
-            val left = if (sameYear) inquiry.dateFrom!!.format(shortDateNoYearFormatter)
-            else inquiry.dateFrom!!.format(shortDateFormatter)
-            "$left – ${inquiry.dateTo!!.format(shortDateFormatter)}"
+            val left = if (sameYear) inquiry.dateFrom!!.format(shortDateNoYearFormatter(locale))
+            else inquiry.dateFrom!!.format(shortDateFormatter(locale))
+            "$left – ${inquiry.dateTo!!.format(shortDateFormatter(locale))}"
         } else null
 
         // "New client" pill — true when no earlier inquiry from this email
@@ -235,7 +278,8 @@ class InquiryEmailService(
             "brandSupportPhone" to brand.supportPhone,
             "brandAccentColor" to brand.accentColor,
             "inquiryNumber" to formatInquiryNumber(inquiry.id, createdAt),
-            "receivedAt" to formatReceivedAt(createdAt),
+            "receivedAt" to formatReceivedAt(createdAt, locale),
+            "currentYear" to createdAt.year.toString(),
             "clientFullName" to fullName,
             "clientFirstName" to firstName.ifBlank { "—" },
             "clientLastName" to lastName.ifBlank { "—" },
@@ -245,6 +289,8 @@ class InquiryEmailService(
             "clientPhone" to inquiry.phone,
             "isNewClient" to isNewClient,
             "yachtModel" to (yachtModel ?: "—"),
+            "yachtModelLabel" to yachtModelLabel,
+            "yachtFullLabel" to yachtFullLabel,
             "yachtName" to (yachtName ?: "—"),
             "yachtImageUrl" to yachtImageUrl,
             "yachtPageUrl" to yachtPageUrl,
@@ -253,6 +299,7 @@ class InquiryEmailService(
             "setSailDate" to (setSailDate ?: "—"),
             "returnDate" to (returnDate ?: "—"),
             "nightsCount" to nights,
+            "nightsLabel" to nightsLabel,
             "dateRangeShort" to dateRangeShort,
             "clientMessage" to inquiry.message,
             "clientMessageHtml" to inquiry.message?.let(::escapeAndLinebreak),
@@ -328,12 +375,12 @@ class InquiryEmailService(
      *  GMT offset (CET = "GMT+1", CEST = "GMT+2"). Inquiry.createdAt is
      *  stored as a naive `LocalDateTime` already on the JVM's local TZ,
      *  so we attach the zone before formatting — no double conversion. */
-    private fun formatReceivedAt(createdAt: LocalDateTime): String {
+    private fun formatReceivedAt(createdAt: LocalDateTime, locale: Locale = Locale.ENGLISH): String {
         val zoned = createdAt.atZone(displayZone)
         val offsetHours = zoned.offset.totalSeconds / 3600
         val sign = if (offsetHours >= 0) "+" else "-"
         val gmt = "GMT$sign${kotlin.math.abs(offsetHours)}"
-        return "${zoned.format(receivedFormatter)} ($gmt)"
+        return "${zoned.format(receivedFormatter(locale))} ($gmt)"
     }
 
     private fun escapeAndLinebreak(raw: String): String {

@@ -57,6 +57,7 @@ class ReservationController(
     private val userRepository: UserRepository,
     private val reservationRepository: ReservationRepository,
     private val reservationSyncService: ReservationSyncService,
+    private val reservationDocumentService: hr.workspace.boat4you.domains.reservation.service.ReservationDocumentService,
 ) {
     @Operation(summary = "Get reservations for the authenticated user")
     @GetMapping("/my-reservations")
@@ -98,6 +99,41 @@ class ReservationController(
 
         val reservations = reservationFlowQueryingService.getMyReservationDetails(id, user.id!!, language, currency)
         return ResponseEntity.ok(reservations)
+    }
+
+    @Operation(summary = "Download a document attached to MY reservation. Authorisation: customer must own the reservation.")
+    @GetMapping("/my-reservations/{id}/documents/{documentId}")
+    @Transactional(readOnly = true)
+    fun downloadMyReservationDocument(
+        @PathVariable id: Long,
+        @PathVariable documentId: Long,
+    ): ResponseEntity<ByteArray> {
+        val userId = getAuthenticatedUserId().takeIf { it != ANONYMOUS_USER_ID }
+            ?: throw AccessDeniedException("User is not authenticated")
+
+        // Ownership guard — only the booking's user can download.
+        val reservation = reservationRepository.findById(id).getOrElse { throw ReservationNotExistException() }
+        if (reservation.reservationFlow?.user?.id != userId) {
+            throw AccessDeniedException("Reservation $id does not belong to user $userId")
+        }
+
+        val doc = reservationDocumentService.download(documentId)
+        if (doc.reservationId != id) {
+            throw AccessDeniedException("Document $documentId does not belong to reservation $id")
+        }
+        // Internal admin uploads (handover notes, agency back-office scans)
+        // must NEVER reach the customer — even if they guess the document id.
+        if (doc.isInternal) {
+            throw AccessDeniedException("Document $documentId is internal-only")
+        }
+
+        val safeName = doc.filename.replace("\"", "")
+        val headers = org.springframework.http.HttpHeaders().apply {
+            contentType = org.springframework.http.MediaType.parseMediaType(doc.contentType)
+            set(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"$safeName\"")
+            contentLength = doc.data.size.toLong()
+        }
+        return ResponseEntity.ok().headers(headers).body(doc.data)
     }
 
     @Operation(description = "Create a new reservation as a user or administrator")

@@ -33,6 +33,7 @@ class StripePaymentService(
     private val reservationMutationService: ReservationMutationService,
     private val reservationIntegrationService: ReservationIntegrationService,
     private val reservationEmailService: ReservationEmailService,
+    private val stripeEventIdempotencyService: StripeEventIdempotencyService,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${application.stripe.enabled}") private val stripeEnabled: Boolean,
     // 3-letter ISO 4217. Stripe wants lowercase. EUR is the product default;
@@ -53,6 +54,14 @@ class StripePaymentService(
         checkIfStripeIsEnabled()
         val dbReservation = reservationRepository.findById(reservationId).getOrElse { throw ReservationNotExistException() }
         val reservationFlow = dbReservation.reservationFlow ?: throw ReservationNotExistException()
+        // F1-026: extract the reservation-flow id once with an explicit
+        // null check so the metadata calls below do not need `!!`. A
+        // persisted reservation flow loaded via repository always has
+        // an id, but the type is `Long?` on AbstractEntity — making
+        // the assumption explicit fails fast with a clear message
+        // instead of an NPE somewhere in the Stripe SDK.
+        val reservationFlowId = reservationFlow.id
+            ?: throw ReservationNotExistException()
 
         if (payFullAmount == null && paymentPhaseId == null) {
             throw ParameterValidationException(mapOf("payFullAmount" to "Provide either payFullAmount or paymentPhaseId parameter"))
@@ -70,26 +79,43 @@ class StripePaymentService(
             when {
                 // A specific phase was pinned from the UI (next-due or later
                 // installment). Wins over `payFullAmount` if both are present.
+                // F3-026: reject already-paid phases here, before any
+                // Stripe Session.create call, so we never have to abandon
+                // a created Stripe session because the local state was
+                // wrong.
                 paymentPhaseId != null -> {
-                    reservationFlow.paymentPhases.find { it.id == paymentPhaseId }?.amount
+                    val phase = reservationFlow.paymentPhases.find { it.id == paymentPhaseId }
                         ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase not found"))
+                    if (phase.paidOn != null) {
+                        throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase is already paid"))
+                    }
+                    phase.amount
                 }
                 // "Pay full remaining" — sum of unpaid phases (NOT the full
                 // reservation total, otherwise customers with a partially-paid
                 // reservation would be overcharged).
                 payFullAmount == true -> {
                     val remaining = unpaidPhases.sumOf { it.amount }
-                    if (remaining > BigDecimal.ZERO) remaining
-                    // Legacy fallback: if we have no phase rows at all yet
-                    // (brand-new reservation, phases generated later), use
-                    // the reservation total. This keeps the pre-installment
-                    // flow intact for initial guest bookings.
-                    else reservationFlow.calculatedTotalPrice!!
+                    if (remaining > BigDecimal.ZERO) {
+                        remaining
+                    } else {
+                        // Legacy fallback: no phase rows yet (brand-new
+                        // reservation, phases generated later). Use the
+                        // reservation total. F1-026: explicit exception
+                        // when even calculatedTotalPrice is missing
+                        // instead of `!!` → NPE → 500.
+                        reservationFlow.calculatedTotalPrice
+                            ?: throw ParameterValidationException(
+                                mapOf("calculatedTotalPrice" to "Reservation has no total price and no payment phases"),
+                            )
+                    }
                 }
                 // "Pay first installment" — next DUE unpaid phase, not the
                 // historically-oldest one which might already be paid.
+                // F1-026: `it.deadline` is a `lateinit var` (non-null in
+                // Kotlin type) so the previous `!!` was redundant noise.
                 payFullAmount == false -> {
-                    unpaidPhases.minByOrNull { it.deadline!! }?.amount
+                    unpaidPhases.minByOrNull { it.deadline }?.amount
                         ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "No unpaid payment phases remain"))
                 }
                 else -> throw ParameterValidationException(mapOf("payFullAmount" to "Provide either payFullAmount or paymentPhaseId parameter"))
@@ -106,7 +132,11 @@ class StripePaymentService(
         // in Stripe Dashboard search; `payment_intent_data.description`
         // pushes it onto the customer's bank card statement. Fallback to
         // reservation id for the (historical) case where no number was set.
-        val paymentReference = dbReservation.reservationNumber ?: reservationId.toString()
+        // Sanitize to alphanumeric + slash/dash/underscore so admin-entered
+        // junk never lands on a customer's bank statement or in Stripe's
+        // dashboard search index.
+        val paymentReference = (dbReservation.reservationNumber ?: reservationId.toString())
+            .replace(Regex("[^A-Za-z0-9/_-]"), "")
 
         val params =
             SessionCreateParams
@@ -120,11 +150,11 @@ class StripePaymentService(
                         .builder()
                         .setDescription("Boat4you reservation #$paymentReference")
                         .putMetadata("reservationId", reservationId.toString())
-                        .putMetadata("reservationFlowId", reservationFlow.id!!.toString())
+                        .putMetadata("reservationFlowId", reservationFlowId.toString())
                         .build(),
                 )
                 .putMetadata("reservationId", reservationId.toString())
-                .putMetadata("reservationFlowId", reservationFlow.id!!.toString())
+                .putMetadata("reservationFlowId", reservationFlowId.toString())
                 .apply {
                     payFullAmount?.let { putMetadata("payFullAmount", it.toString()) }
                     paymentPhaseId?.let { putMetadata("paymentPhaseId", it.toString()) }
@@ -165,34 +195,101 @@ class StripePaymentService(
     @Transactional(readOnly = false)
     fun handleWebhookEvent(event: Event) {
         checkIfStripeIsEnabled()
+
+        // F3-022: event-level idempotency. Stripe webhook delivery is
+        // at-least-once with automatic retries (~3 day window). Without
+        // this claim, every redelivery of `checkout.session.completed`
+        // re-fires the full promoteReservationToBooking chain (partner
+        // confirm + DB save + customer email), causing duplicate partner
+        // bookings and duplicate customer emails. The claim commits in
+        // REQUIRES_NEW so it survives a rollback of the outer handler —
+        // subsequent retries become no-ops at the cost of needing manual
+        // reconciliation for partial failures (V1_91 migration comment).
+        //
+        // F3-024 note: the partner confirm → DB save → email chain
+        // inside promoteReservationToBooking is not atomic across the
+        // external partner call. A successful partner confirm followed
+        // by a local rollback would normally leave the partner with a
+        // booking we do not know about; the idempotency claim above
+        // turns that into a manual-reconciliation case instead of a
+        // duplicate-booking case on Stripe retry.
+        if (!stripeEventIdempotencyService.claimEventIfNew(event.id, event.type)) {
+            logger.info("Stripe event ${event.id} (${event.type}) already processed — skipping")
+            return
+        }
+
+        // F3-025: webhook payloads are external input, so defensively
+        // null-check every step instead of `!!`-asserting. Any malformed
+        // event is logged at error and skipped — the claim above means
+        // Stripe will not retry it, so an operator alert is the right
+        // outcome rather than a crash loop.
         val session = event.dataObjectDeserializer.`object`.orElse(null) as? Session
+        if (session == null) {
+            logger.error("Stripe event ${event.id} (${event.type}) has no Session payload — skipping")
+            return
+        }
 
-        if (event.type == "checkout.session.completed") {
-            // Session object always exists on a successful payment?
-            logger.debug("Payment for Stripe sessionId ${session!!.id} successful")
+        if (event.type != "checkout.session.completed") {
+            logger.error(
+                "Stripe event ${event.id} (${event.type}) for sessionId ${session.id} is not a completion event — skipping",
+            )
+            return
+        }
 
-            val paymentIntentId = session.paymentIntent
+        logger.debug("Payment for Stripe sessionId ${session.id} successful")
 
-            val reservationId = session.metadata["reservationId"]!!.toLong()
-            val payFullAmount = session.metadata["payFullAmount"]?.toBoolean()
-            val paymentPhaseId = session.metadata["paymentPhaseId"]?.toLong()
+        val paymentIntentId = session.paymentIntent
+        val metadata = session.metadata ?: emptyMap()
 
-            val dbPaymentPhases = paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc(session.id)
+        val reservationId = metadata["reservationId"]?.toLongOrNull()
+        if (reservationId == null) {
+            logger.error(
+                "Stripe event ${event.id}: session ${session.id} missing or invalid reservationId metadata",
+            )
+            return
+        }
+        val payFullAmount = metadata["payFullAmount"]?.toBoolean()
+        val paymentPhaseId = metadata["paymentPhaseId"]?.toLongOrNull()
 
-            if (payFullAmount != null && payFullAmount) {
-                dbPaymentPhases.forEach(setPaymentMetadata(paymentIntentId))
-            } else if (payFullAmount != null && !payFullAmount) {
-                dbPaymentPhases.first().apply(setPaymentMetadata(paymentIntentId))
-            } else if (paymentPhaseId != null) {
-                dbPaymentPhases.find { it.id == paymentPhaseId }!!.apply(setPaymentMetadata(paymentIntentId))
+        val dbPaymentPhases = paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc(session.id)
+
+        when {
+            // payFullAmount=true tolerates an empty list — the legacy
+            // "first payment, no installment plan rows yet" flow runs
+            // through here with zero matched phases, and the booking
+            // promotion below is what completes the reservation.
+            payFullAmount == true -> dbPaymentPhases.forEach(setPaymentMetadata(paymentIntentId))
+            payFullAmount == false -> {
+                val phase = dbPaymentPhases.firstOrNull()
+                if (phase == null) {
+                    logger.error(
+                        "Stripe event ${event.id}: payFullAmount=false but no phases match sessionId ${session.id}",
+                    )
+                    return
+                }
+                phase.apply(setPaymentMetadata(paymentIntentId))
             }
-
-            // Reservation is created for the first time
-            if (paymentPhaseId == null) {
-                promoteReservationToBooking(reservationId)
+            paymentPhaseId != null -> {
+                val phase = dbPaymentPhases.find { it.id == paymentPhaseId }
+                if (phase == null) {
+                    logger.error(
+                        "Stripe event ${event.id}: paymentPhaseId=$paymentPhaseId not present among phases for sessionId ${session.id}",
+                    )
+                    return
+                }
+                phase.apply(setPaymentMetadata(paymentIntentId))
             }
-        } else {
-            logger.error("Payment for Stripe sessionId ${session?.id} failed. Stripe event id: ${event.id}")
+            else -> {
+                logger.error(
+                    "Stripe event ${event.id}: session ${session.id} has neither payFullAmount nor paymentPhaseId metadata",
+                )
+                return
+            }
+        }
+
+        // Reservation is created for the first time
+        if (paymentPhaseId == null) {
+            promoteReservationToBooking(reservationId)
         }
     }
 
@@ -216,12 +313,58 @@ class StripePaymentService(
         reservationFlow: ReservationFlow,
         sessionId: String,
     ) {
-        if (payFullAmount != null && payFullAmount) {
-            reservationFlow.paymentPhases.forEach { it.stripeSessionId = sessionId }
-        } else if (payFullAmount != null && !payFullAmount) {
-            reservationFlow.paymentPhases.oldest().stripeSessionId = sessionId
-        } else if (paymentPhaseId != null) {
-            reservationFlow.paymentPhases.find { it.id == paymentPhaseId }!!.stripeSessionId = sessionId
+        // F3-026: every branch must select among UNPAID phases. The
+        // previous `oldest()` returned the historically-earliest phase
+        // regardless of paidOn — on admin-replacement reservations that
+        // carry over a paid first installment, that meant stamping the
+        // new sessionId onto an already-paid phase, and the webhook
+        // would later overwrite its paidOn/stripePaymentIntentId on
+        // completion (and the customer would have paid the wrong row).
+        val targets: List<ReservationPaymentPhase> =
+            when {
+                payFullAmount == true -> reservationFlow.paymentPhases.filter { it.paidOn == null }
+                payFullAmount == false -> listOfNotNull(reservationFlow.paymentPhases.oldestUnpaid())
+                paymentPhaseId != null -> {
+                    val phase = reservationFlow.paymentPhases.find { it.id == paymentPhaseId }
+                        ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase not found"))
+                    if (phase.paidOn != null) {
+                        throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase is already paid"))
+                    }
+                    listOf(phase)
+                }
+                else -> emptyList()
+            }
+
+        targets.forEach { phase ->
+            // F3-023: if the phase already has a live Stripe session
+            // (user reopened the payment page → fresh Session.create on
+            // this call), expire the old one before overwriting so the
+            // funds cannot be captured against both sessions in the gap
+            // between issuing the new one and the user paying.
+            phase.stripeSessionId?.let { expireStripeSessionSafely(it) }
+            phase.stripeSessionId = sessionId
+        }
+    }
+
+    /**
+     * Best-effort expire of a previously-issued Stripe Checkout Session.
+     *
+     * Stripe rejects `expire` on terminal sessions (status `complete` or
+     * `expired`); we retrieve first and only call expire while still
+     * `open`. Network or API errors are logged but swallowed — the
+     * caller already has a new sessionId to stamp on the phase and
+     * blocking that on a Stripe API hiccup would be worse than the rare
+     * orphan-open-session it leaves behind.
+     */
+    private fun expireStripeSessionSafely(oldSessionId: String) {
+        try {
+            val oldSession = Session.retrieve(oldSessionId)
+            if (oldSession.status == "open") {
+                oldSession.expire()
+                logger.info("Expired prior open Stripe session $oldSessionId after reissue")
+            }
+        } catch (e: Exception) {
+            logger.warn("Could not expire prior Stripe session $oldSessionId: ${e.message}")
         }
     }
 
@@ -246,5 +389,6 @@ class StripePaymentService(
         }
     }
 
-    private fun Set<ReservationPaymentPhase>.oldest(): ReservationPaymentPhase = this.minBy { it.deadline }
+    private fun Set<ReservationPaymentPhase>.oldestUnpaid(): ReservationPaymentPhase? =
+        this.filter { it.paidOn == null }.minByOrNull { it.deadline }
 }

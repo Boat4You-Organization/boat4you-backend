@@ -76,6 +76,7 @@ class MmkYachtSyncService(
     private val languageRepository: LanguageRepository,
     private val yachtTranslationRepository: YachtTranslationRepository,
     private val agencyRepository: AgencyRepository,
+    private val modelNameNormaliser: hr.workspace.boat4you.domains.catalouge.services.ModelNameNormaliser,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -149,7 +150,19 @@ class MmkYachtSyncService(
                 updatedYacht
             )
             yacht.mainImageId = getMainImage(updatedYacht)?.id
-            syncEquipment(updatedYacht, mmkYacht.equipment?.toSet())
+            // Prefer the raw equipment list when MMK populates it (inventory=raw
+            // request param). Raw entries carry the full name + parentId, where
+            // parentId points at the generic Equipment in our external_equipment
+            // table; the slim list dropped to ~8-10 items per yacht and was the
+            // root cause of why our amenities looked thin next to Boataround.
+            // Fall through to the slim list if raw is empty so older sync paths
+            // (and any partner endpoint that doesn't honor inventory=raw) still
+            // produce something.
+            syncEquipment(
+                yacht = updatedYacht,
+                rawEquipment = mmkYacht.equipmentRaw?.toSet(),
+                slimEquipment = mmkYacht.equipment?.toSet(),
+            )
             syncExtras(updatedYacht, filteredProducts)
             syncReservationOptions(updatedYacht, mmkYacht)
 
@@ -279,23 +292,25 @@ class MmkYachtSyncService(
             if (modelById != null) {
                 modelById
             } else {
-                val mmkModelName = mmkYacht.model ?: "Unknown"
+                // Strip cabin-config suffix before lookup/create — see
+                // ModelNameNormaliser. Mario rule (3.5.2026): partner cannot
+                // fork "Bali 4.4" into a dozen "- N + M cab.*" variants.
+                val canonicalModelName = modelNameNormaliser.canonicalName(mmkYacht.model ?: "Unknown")
                 val modelByName =
                     try {
                         modelQueryingService.findByNameIgnoreCaseAndExternalManufacturerId(
-                            mmkModelName,
+                            canonicalModelName,
                             mmkYacht.shipyardId ?: -1L,
                             ExternalSystemEnum.MMK.value,
                         )
                     } catch (e: Exception) {
                         log.error(
-                            "Error finding model for mmkModelId: ${mmkYacht.modelId} mmkModelName: $mmkModelName mmkManufacturerId ${mmkYacht.shipyardId}",
+                            "Error finding model for mmkModelId: ${mmkYacht.modelId} mmkModelName: $canonicalModelName mmkManufacturerId ${mmkYacht.shipyardId}",
                             e,
                         )
                         throw e
                     }
                 return if (modelByName != null) {
-                    // sync metadata for future use
                     externalMappingService.saveMapping(
                         mmkYacht.modelId!!,
                         modelByName.id!!,
@@ -304,7 +319,7 @@ class MmkYachtSyncService(
                     )
                     modelByName
                 } else {
-                    syncModel(externalSystem, mmkYacht.modelId!!, mmkModelName, mmkYacht.shipyardId)
+                    syncModel(externalSystem, mmkYacht.modelId!!, canonicalModelName, mmkYacht.shipyardId)
                 }
             }
         }
@@ -435,11 +450,56 @@ class MmkYachtSyncService(
         return yacht.yachtImages.firstOrNull { it.mainImage == true } ?: yacht.yachtImages.firstOrNull()
     }
 
+    /**
+     * Normalised equipment row used for both MMK paths (raw + slim). Lets
+     * the matcher work on a single shape and keeps the fallback logic in
+     * one place. `partnerEquipmentId` is the generic catalog id (equals
+     * external_equipment.externalId), `partnerName` is the descriptive
+     * label MMK shipped (raw populates it; slim doesn't).
+     */
+    private data class MmkEquipmentRow(
+        val partnerEquipmentId: Long,
+        val partnerName: String?,
+        // MMK ships a per-item `value` (raw) or absent (slim) — analogous to
+        // NauSys `comment` for free-text qualifiers like "130 L", "7,6 kw",
+        // "only in cabins". Persist into yacht_equipment.comment for parity.
+        val partnerComment: String?,
+    )
+
     private fun syncEquipment(
         yacht: Yacht,
-        mmkYachtEquipment: Set<YachtEquipmentInner>?,
+        rawEquipment: Set<org.openapitools.client.mmk.model.EquipmentItemRaw>?,
+        slimEquipment: Set<YachtEquipmentInner>?,
     ) {
-        if (mmkYachtEquipment.isNullOrEmpty()) {
+        // raw is the canonical source when present (inventory=raw response).
+        // EquipmentItemRaw.parentId points at the generic Equipment record;
+        // EquipmentItemRaw.id is per-yacht and useless for catalog matching.
+        val rows: List<MmkEquipmentRow> =
+            when {
+                !rawEquipment.isNullOrEmpty() ->
+                    rawEquipment.map {
+                        MmkEquipmentRow(
+                            partnerEquipmentId = it.parentId,
+                            partnerName = it.name,
+                            partnerComment = it.value.takeIf { v -> v.isNotBlank() },
+                        )
+                    }
+                !slimEquipment.isNullOrEmpty() ->
+                    // Slim payload merges name and value into a single `value` string;
+                    // there's no separate comment to persist, leave it null.
+                    slimEquipment.mapNotNull { item ->
+                        item.id?.toLong()?.let {
+                            MmkEquipmentRow(
+                                partnerEquipmentId = it,
+                                partnerName = item.value,
+                                partnerComment = null,
+                            )
+                        }
+                    }
+                else -> emptyList()
+            }
+
+        if (rows.isEmpty()) {
             return
         }
 
@@ -448,40 +508,52 @@ class MmkYachtSyncService(
         val allExternalEquipment = externalEquipmentRepository.getCachedByExternalSystemId(ExternalSystemEnum.MMK.value)
         val matchedIds = mutableSetOf<Long>()
 
-        mmkYachtEquipment.forEach { mmkEquipment ->
-            // for each mmk equipment, find the external MMK equipment and try to match it with our equipment
-            // we are using the name of the external equipment because name can be empty in /yacht endpoint response
+        rows.forEach { row ->
+            // Resolve the generic catalog row (external_equipment) by id, but
+            // fall back to the partner-supplied name when the catalog entry
+            // is missing — that way raw items still land in yacht_equipment
+            // (the public Amenities tab will render their `name` even
+            // without a labelCode-translated row).
             val externalEquipmentMatch =
-                allExternalEquipment.firstOrNull { eq -> eq.externalId == mmkEquipment.id!!.toLong() }
-            if (externalEquipmentMatch == null) {
-                log.trace("MMK equipment not found in MMK external equipment: {}", mmkEquipment)
+                allExternalEquipment.firstOrNull { eq -> eq.externalId == row.partnerEquipmentId }
+            val displayName = externalEquipmentMatch?.name ?: row.partnerName
+            if (externalEquipmentMatch == null && displayName.isNullOrBlank()) {
+                log.trace("MMK equipment not found and no name fallback: {}", row)
                 return@forEach
             }
             val boat4youEquipmentMatch =
                 allEquipment.firstOrNull { eq ->
-                    Matchers.extrasNameMatch(eq.getMatchKeysList(), externalEquipmentMatch.name)
+                    val key = externalEquipmentMatch?.name ?: displayName ?: ""
+                    Matchers.extrasNameMatch(eq.getMatchKeysList(), key)
                 }
 
+            // Dedup on partner equipmentId (row.partnerEquipmentId, stored on
+            // yacht_equipment.external_id) — the prior `eq.equipment?.id ==
+            // boat4youEquipmentMatch?.id` clause silently collapsed every
+            // unmatched partner item onto a single pre-existing unmatched
+            // yacht_equipment row because `null == null` returned true.
             val equipmentAlreadyOnYacht =
                 allYachtEquipment.find { eq ->
-                    eq.equipment?.id == boat4youEquipmentMatch?.id || eq.name == externalEquipmentMatch.name
+                    eq.externalId == row.partnerEquipmentId || eq.name == displayName
                 }
 
             if (equipmentAlreadyOnYacht != null) {
-                // change equipment match
                 if (equipmentAlreadyOnYacht.equipment == null && boat4youEquipmentMatch != null) {
                     equipmentAlreadyOnYacht.equipment = boat4youEquipmentMatch
-                    yachtEquipmentRepository.save(equipmentAlreadyOnYacht)
                 }
+                // MMK has no highlight flag; comment refreshes from value.
+                equipmentAlreadyOnYacht.comment = row.partnerComment
+                yachtEquipmentRepository.save(equipmentAlreadyOnYacht)
                 matchedIds.add(equipmentAlreadyOnYacht.id!!)
                 return@forEach
             }
 
             val yachtEquipment = YachtEquipment()
             yachtEquipment.equipment = boat4youEquipmentMatch
-            yachtEquipment.name = externalEquipmentMatch.name
-            yachtEquipment.externalId = externalEquipmentMatch.externalId!!
+            yachtEquipment.name = displayName
+            yachtEquipment.externalId = row.partnerEquipmentId
             yachtEquipment.yacht = yacht
+            yachtEquipment.comment = row.partnerComment
             yachtEquipmentRepository.save(yachtEquipment)
 
             yacht.yachtEquipments.add(yachtEquipment)

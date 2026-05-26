@@ -12,4 +12,5 @@ interface ManufacturerRepository : JpaRepository<Manufacturer, Long> {
         @Param("name") name: String,
         pageable: Pageable,
     ): Page<Manufacturer>
+
 }

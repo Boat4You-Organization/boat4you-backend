@@ -27,11 +27,25 @@ class AsyncConfig(
         executor.maxPoolSize = 15
         executor.queueCapacity = 200
         executor.setThreadNamePrefix("AsyncThread-")
-        executor.setRejectedExecutionHandler { r, exec ->
-            log.warn("Task rejected, thread pool is full. Executing in caller's thread.")
-            if (!exec.isShutdown) {
-                r.run()
-            }
+        // F1-064: do NOT fall back to caller-runs here. Every consumer
+        // of `taskExecutor` is a best-effort partner cache-warm
+        // (`ExternalSyncService.syncYachtOffers`, `NauSys`/`MMK`
+        // YachtOfferIntegrationServiceAsync — all triggered from the
+        // public yacht search endpoints in YachtController). Each call
+        // costs up to ~1 minute of wall-clock (F3-001 partner read
+        // timeout), so "execute on the caller's thread" under
+        // saturation cascades a partner slowdown into request-thread
+        // starvation on every Tomcat worker that hit the search
+        // endpoint. Dropping the task is cheap — ServiceCallCacheService
+        // dedupes via TTL and the next public miss re-triggers the
+        // sync naturally.
+        executor.setRejectedExecutionHandler { _, exec ->
+            log.warn(
+                "taskExecutor saturated (active={}, pool={}, queue={}); dropping task — partner sync will retry on next cache miss (F1-064)",
+                exec.activeCount,
+                exec.poolSize,
+                exec.queue.size,
+            )
         }
         executor.initialize()
         return executor

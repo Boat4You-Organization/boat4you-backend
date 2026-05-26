@@ -6,7 +6,9 @@ import hr.workspace.boat4you.domains.catalouge.dto.ExtrasPriceDto
 import hr.workspace.boat4you.domains.catalouge.dto.MeasurementUnitDto
 import hr.workspace.boat4you.domains.catalouge.dto.PriceInfoDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtEquipmentDto
+import hr.workspace.boat4you.domains.catalouge.dto.YachtExtrasDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtImageDto
+import hr.workspace.boat4you.domains.reservation.dto.ReservationDocumentDto
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
@@ -57,6 +59,8 @@ data class MyReservationDetailsDto(
     val depositCurrency: String?,
     val cancellationRequestAt: LocalDateTime?,
     val cancellationRequest: String?,
+    val cancellationRejectedAt: LocalDateTime? = null,
+    val cancellationRejectedReason: String? = null,
     val reservationNumber: String?,
     val agencyEmail: String?,
     val agencyPhone: String?,
@@ -76,4 +80,15 @@ data class MyReservationDetailsDto(
     val manufacturerName: String?,
     val amenities: List<YachtEquipmentDto> = emptyList(),
     val specialRequest: String?,
+    val services: List<YachtExtrasDto> = emptyList(),
+    val obligatoryExtrasKeys: List<String> = emptyList(),
+    // Crew list link from partner (Nausys/MMK at confirmation) OR manually
+    // entered by admin in /admin/bookings/{id} when partner doesn't auto-fill
+    // (fictitious bookings, manual confirmation flow). Customer renders as
+    // "Open crew list" CTA in /my-bookings/{id}.
+    val crewListUrl: String? = null,
+    // Admin-uploaded files attached to the booking — pickup directions,
+    // crew list docx, contract scans, anything PDF/DOC/DOCX. Mario rule
+    // (3.5.2026): visible to customer in /my-bookings/{id}.
+    val documents: List<ReservationDocumentDto> = emptyList(),
 )

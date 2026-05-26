@@ -12,7 +12,7 @@
 First run the Postgres database in Docker:
 
 ```
-docker run --rm --name=boat4you_postgres --env=POSTGRES_USER=boat4you_owner --env=POSTGRES_PASSWORD=boat4you_owner --env=POSTGRES_DB=boat4you_db --env=LANG=en_US.utf8 -p 5433:5432 postgres:17-alpine
+docker run --rm --name=boat4you_postgres --env=POSTGRES_USER=boat4you_owner --env=POSTGRES_PASSWORD=boat4you_owner --env=POSTGRES_DB=boat4you_db --env=LANG=en_US.utf8 -p 5434:5432 postgres:17-alpine
 ```
 or use docker compose
 ```
@@ -76,37 +76,38 @@ and turn on 2-Step Verification under "Signing in to Google" section.
 
 Swagger UI is available at https://localhost:8443/swagger
 
-## Hardcoded test users:
+## Test users
 
-|          email           | password |       roles       |
-|:------------------------:|:--------:|:-----------------:|
-| pskvorcevic@workspace.hr |  123456  |      MANAGER      |
-|    that@workspace.hr     |  123456  |   SYSTEM_ADMIN    |
-|   bhokman@workspace.hr   |  123456  |       USER        |
-|   vcutic@workspace.hr    |  123456  |      MANAGER      |
-|   astekl@workspace.hr    |  123456  |   SYSTEM_ADMIN    |
-|   eolcar@workspace.hr    |  123456  |       USER        |
-| lbardundjek@workspace.hr |  123456  |      MANAGER      |
-|   gjanjik@workspace.hr   |  123456  |   SYSTEM_ADMIN    |
-|   avaljan@workspace.hr   |  123456  |       USER        |
-|   pilanic@workspace.hr   |  123456  |      MANAGER      |
-|   vcupin@workspace.hr    |  123456  |   SYSTEM_ADMIN    |
-|   asimat@workspace.hr    |  123456  |       USER        |
-|   lspruk@workspace.hr    |  123456  |      MANAGER      |
-| kmarasovic@workspace.hr  |  123456  |   SYSTEM_ADMIN    |
-|  egalijan@workspace.hr   |  123456  | no roles assigned |
+Test users are seeded by `src/main/resources/db/migration/V9_00__insert_test_data.sql`
+and only run on environments that include V9_* in their Flyway target. Production
+deploys must set `FLYWAY_TARGET_VERSION=1.90` (or the latest V1.xx) so V9_* are
+skipped — see `README_PROD.md`.
 
+Local-dev passwords + seeded SYSTEM_ADMIN accounts are kept out-of-tree (operator's
+password manager) — the README is public and previously listed shared dev
+credentials.
 
 ## Data sync in development
 
-For development purposes we have exposed following GET endpoints to sync data from MMK and NauSYS:
-Nausys:
- - https://localhost:8443/nausys/agencies
- - https://localhost:8443/nausys/sync
- - https://localhost:8443/nausys/yachts
- - https://localhost:8443/nausys/offer
+Admin sync triggers require the `SYSTEM_ADMIN` role and the `data-sync` Spring
+profile. All endpoints are **POST** (state-changing — fetched-by-browser-or-proxy
+would otherwise re-trigger heavyweight syncs):
+
+NauSys:
+- `POST /admin/nausys/sync`
+- `POST /admin/nausys/agencies`
+- `POST /admin/nausys/yachts`
+- `POST /admin/nausys/offer`
+- `POST /admin/nausys/availability`
 
 MMK:
- - https://localhost:8443/mmk/sync
- - https://localhost:8443/mmk/yachts
- - https://localhost:8443/mmk/offer
+- `POST /admin/mmk/sync`
+- `POST /admin/mmk/yachts`
+- `POST /admin/mmk/yachts-lang`
+- `POST /admin/mmk/offer`
+- `POST /admin/mmk/availability`
+
+Example:
+```
+curl -X POST -H "Authorization: Bearer $JWT" https://localhost:8443/admin/mmk/sync
+```

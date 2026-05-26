@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.external.nausys.service.NauSysCatalogueInte
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationService
 import hr.workspace.boat4you.domains.external.service.ServiceCallCacheService
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
@@ -27,6 +28,7 @@ class NausysSyncJob(
      * Syncs all NauSYS catalogue data, including agencies, countries, regions, locations, vessel types, manufacturers, models.
      */
     @Scheduled(cron = "0 0 1 * * ?")
+    @SchedulerLock(name = "nausysCatalogueSync", lockAtMostFor = "PT2H")
     fun runCatalogueSync() {
         nauSysCatalogueIntegrationService.countriesSync()
         nauSysCatalogueIntegrationService.regionsSync()
@@ -51,7 +53,8 @@ class NausysSyncJob(
     /**
      * Backup sync in case main sync fails.
      */
-//    @Scheduled(cron = "0 0 6,10,15 * * ?")
+    @Scheduled(cron = "0 0 6,10,15 * * ?")
+    @SchedulerLock(name = "nausysCatalogueBackupSync", lockAtMostFor = "PT1H")
     fun runCatalogueBackupSync() {
         if (!serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_CATALOGUE_SYNC)) {
             return
@@ -74,6 +77,7 @@ class NausysSyncJob(
      * Syncs all NauSYS yachts data.
      */
     @Scheduled(cron = "0 30 1 * * ?")
+    @SchedulerLock(name = "nausysYachtSync", lockAtMostFor = "PT2H")
     fun runYachtSync() {
         log.info("Syncing NauSYS yachts")
         val startTimeYachts = System.currentTimeMillis()
@@ -91,7 +95,8 @@ class NausysSyncJob(
     /**
      * Backup sync in case main sync fails.
      */
-//    @Scheduled(cron = "0 15 6,10,15 * * ?")
+    @Scheduled(cron = "0 15 6,10,15 * * ?")
+    @SchedulerLock(name = "nausysYachtBackupSync", lockAtMostFor = "PT2H")
     fun runYachtBackupSync() {
         if (serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_YACHT_SYNC)) {
             log.info("Syncing NauSYS yachts")
@@ -115,6 +120,7 @@ class NausysSyncJob(
      * 20 minutes past the hour is chosen to avoid overlapping with the catalogue sync at 3:00 AM.
      */
     @Scheduled(cron = "0 20 3,12 * * *")
+    @SchedulerLock(name = "nausysAvailabilitySync", lockAtMostFor = "PT1H")
     fun availabilitySync() {
         log.info("Starting NauSYS availability sync")
         nauSysAvailabilityIntegrationService.syncYachtAvailability()

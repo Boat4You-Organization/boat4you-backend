@@ -2,6 +2,11 @@ server:
   ssl:
     enabled: false
   port: 8080
+  # Bind to loopback only — nginx (running on the same VM) reaches us via
+  # 127.0.0.1:8080. Without this, the JVM listens on 0.0.0.0:8080 and the
+  # public IP exposes plaintext HTTP on 8080, allowing anyone to bypass the
+  # nginx TLS terminator and rate limiter (F1-049, prod review 2026-05-07).
+  address: 127.0.0.1
 application:
   external:
     sync:
@@ -11,11 +16,18 @@ application:
         response-body: false
     nausys:
       base-url: ${NAUSYS_URL:http://ws.nausys.com}
-      username: ${NAUSYS_USERNAME}
-      password: ${NAUSYS_PASSWORD}
+      username: ${NAUSYS_USERNAME:?NAUSYS_USERNAME required}
+      password: ${NAUSYS_PASSWORD:?NAUSYS_PASSWORD required}
+      # F3-001: bounded partner timeouts. NauSys catalogue calls can be
+      # slow (large payloads), so read is generous; connect stays tight
+      # because TCP/TLS handshake should not need 5+ seconds.
+      connect-timeout-ms: ${NAUSYS_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${NAUSYS_READ_TIMEOUT_MS:60000}
     mmk:
       base-url: ${MMK_URL:https://www.booking-manager.com/api/v2}
-      bearer: ${MMK_TOKEN}
+      bearer: ${MMK_TOKEN:?MMK_TOKEN required}
+      connect-timeout-ms: ${MMK_CONNECT_TIMEOUT_MS:5000}
+      read-timeout-ms: ${MMK_READ_TIMEOUT_MS:60000}
   email:
     # Customer-visible From. Falls through to the env var first so we can
     # rotate without a redeploy; default keeps the boat4you mailbox.
@@ -23,17 +35,28 @@ application:
   invites:
     user:
       allow-uninvited-login: false
-  test:
-    enabled: false
   security:
     jwt:
-      secret-key: ${JWT_SECRET_KEY}
+      secret-key: ${JWT_SECRET_KEY:?JWT_SECRET_KEY required (32+ bytes recommended for HS256)}
+# Swagger / OpenAPI must be disabled by default in prod. Root yml defaults
+# to ON (springdoc.api-docs.enabled / swagger-ui.enabled fall back to true
+# unless SWAGGER_ENDPOINT_ENABLED=false). If the env var is forgotten on a
+# new VM, swagger ships live. Lock it off here; flip via env if you really
+# need it on a prod box (F1-002, prod review 2026-05-07).
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENDPOINT_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENDPOINT_ENABLED:false}
 spring:
+  web:
+    resources:
+      add-mappings: ${SWAGGER_ENDPOINT_ENABLED:false}
   mail:
-    host: ${MAIL_SERVER_HOST}
-    port: ${MAIL_SERVER_PORT}
-    username: ${MAIL_SERVER_USERNAME}
-    password: ${MAIL_SERVER_PASSWORD}
+    host: ${MAIL_SERVER_HOST:?MAIL_SERVER_HOST required}
+    port: ${MAIL_SERVER_PORT:?MAIL_SERVER_PORT required}
+    username: ${MAIL_SERVER_USERNAME:?MAIL_SERVER_USERNAME required}
+    password: ${MAIL_SERVER_PASSWORD:?MAIL_SERVER_PASSWORD required}
     properties:
       mail:
         test-connection: ${application.email.enabled}
@@ -45,12 +68,13 @@ spring:
             enable: false
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:boat4you_db}
-    username: ${DB_USER:boat4you_app}
-    password: ${DB_PASSWORD:boat4you_app}
+    # Production must supply DB credentials via env. No literal default.
+    username: ${DB_USER:?DB_USER required}
+    password: ${DB_PASSWORD:?DB_PASSWORD required}
   flyway:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:boat4you_db}
-    user: ${FLYWAY_USER:boat4you_owner}
-    password: ${FLYWAY_PASSWORD:boat4you_owner}
+    user: ${FLYWAY_USER:?FLYWAY_USER required}
+    password: ${FLYWAY_PASSWORD:?FLYWAY_PASSWORD required}
     out-of-order: ${FLYWAY_OUT_OF_ORDER:false}
   jpa:
     properties:

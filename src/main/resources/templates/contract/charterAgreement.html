@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>Charter Agreement</title>
+    <style type="text/css">
+        @page {
+            size: A4;
+            margin: 22mm 20mm 18mm 20mm;
+        }
+
+        /* Type system: serif for body and figures (formal, contract-grade);
+           sans-serif for eyebrow labels, brand text and meta lines. Only the
+           two PDF Type 1 built-in families are referenced here so glyphs
+           never fall back to a missing font. */
+        body {
+            font-family: serif;
+            font-size: 10.5pt;
+            color: #1a1a1a;
+            line-height: 1.5;
+            background: #ffffff;
+        }
+        h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: normal; }
+        p { margin: 0; }
+
+        /* ==== Page 1: brand mark ==== */
+        .brand-mark {
+            text-align: center;
+            margin-bottom: 14pt;
+        }
+
+        /* ==== Page 1: document meta strip ====
+           Quiet, formal title treatment. Eyebrow + serif title + booking
+           reference + agreement date, then a hairline rule. Replaces the
+           previous heavy navy band with lime accent which read as marketing
+           collateral, not a legal document. */
+        .doc-meta {
+            margin-bottom: 18pt;
+        }
+        .doc-meta .doc-eyebrow {
+            font-family: sans-serif;
+            font-size: 8pt;
+            font-weight: bold;
+            letter-spacing: 2.4pt;
+            color: #6b7280;
+            text-transform: uppercase;
+        }
+        .doc-meta .doc-title {
+            font-family: serif;
+            font-size: 22pt;
+            font-weight: bold;
+            color: #141857;
+            letter-spacing: 0.2pt;
+            margin-top: 2pt;
+        }
+        .doc-meta .doc-meta-row {
+            font-family: sans-serif;
+            font-size: 9pt;
+            color: #6b7280;
+            margin-top: 4pt;
+        }
+        .doc-meta .doc-meta-row .meta-sep {
+            margin: 0 6pt;
+            color: #c7ccd5;
+        }
+        .doc-meta .doc-rule {
+            border-top: 0.7pt solid #141857;
+            margin-top: 8pt;
+        }
+
+        /* ==== Section heading ====
+           Quiet sans-serif eyebrow. No big boxes, no border bottom — the
+           visual weight comes from the content underneath, not the heading. */
+        h2.section {
+            font-family: sans-serif;
+            font-size: 8.5pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1.8pt;
+            color: #6b7280;
+            margin: 16pt 0 6pt 0;
+        }
+
+        /* ==== Two-column parties layout ====
+           Hairline column rule between the two parties, no fill. Reads as a
+           formal two-column ledger, not a UI card. */
+        table.parties {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0;
+        }
+        table.parties td {
+            vertical-align: top;
+            width: 50%;
+            padding: 0 14pt;
+        }
+        table.parties td.left { padding-left: 0; border-right: 0.5pt solid #d4d8df; }
+        table.parties td.right { padding-right: 0; padding-left: 16pt; }
+        .party-eyebrow {
+            font-family: sans-serif;
+            font-size: 7.5pt;
+            font-weight: bold;
+            color: #2856ff;
+            text-transform: uppercase;
+            letter-spacing: 1.6pt;
+            margin-bottom: 6pt;
+        }
+        .party-name {
+            font-family: serif;
+            font-size: 12.5pt;
+            font-weight: bold;
+            color: #141857;
+            margin-bottom: 4pt;
+            line-height: 1.25;
+        }
+        .party-line {
+            font-family: serif;
+            margin: 1pt 0;
+            font-size: 10pt;
+            color: #1a1a1a;
+        }
+        .party-line .label {
+            font-family: sans-serif;
+            color: #6b7280;
+            font-size: 9pt;
+            display: inline-block;
+            min-width: 42pt;
+        }
+
+        /* ==== Two-column lookup tables (yacht, period) ====
+           Label column gray sans-serif eyebrow; value bold serif. Only thin
+           dividers between rows — no row backgrounds. */
+        table.lookup {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0;
+        }
+        table.lookup td {
+            padding: 6pt 0;
+            border-bottom: 0.4pt solid #ececec;
+            vertical-align: top;
+        }
+        table.lookup tr:last-child td { border-bottom: none; }
+        table.lookup td.label {
+            font-family: sans-serif;
+            width: 30%;
+            color: #6b7280;
+            font-size: 8.5pt;
+            text-transform: uppercase;
+            letter-spacing: 1.2pt;
+            font-weight: bold;
+            padding-right: 12pt;
+        }
+        table.lookup td.value {
+            font-family: serif;
+            color: #141857;
+            font-weight: bold;
+            font-size: 10.5pt;
+        }
+        table.lookup td.value .muted {
+            font-family: sans-serif;
+            color: #6b7280;
+            font-size: 9pt;
+            font-weight: normal;
+        }
+        table.lookup td.value .muted .sep {
+            color: #c7ccd5;
+            margin: 0 4pt;
+        }
+
+        /* ==== Pricing block ====
+           Minimalist invoice clause. Gray label, right-aligned bold value.
+           Single thick rule above TOTAL. Discount line in a subdued green.
+           No background fill, no borders around the table. */
+        table.pricing {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0;
+        }
+        table.pricing td {
+            padding: 5pt 0;
+            border-bottom: 0.4pt solid #ececec;
+            vertical-align: baseline;
+        }
+        table.pricing tr.row-final td { border-bottom: none; }
+        table.pricing td.row-label {
+            font-family: serif;
+            color: #4a4a4a;
+            font-size: 10.5pt;
+        }
+        table.pricing td.row-value {
+            font-family: serif;
+            text-align: right;
+            color: #141857;
+            font-weight: bold;
+            font-size: 10.5pt;
+            white-space: nowrap;
+        }
+        table.pricing tr.discount td.row-value { color: #15803d; }
+        table.pricing tr.total td {
+            border-bottom: none;
+            border-top: 1.2pt solid #141857;
+            padding-top: 10pt;
+            padding-bottom: 0;
+        }
+        table.pricing tr.total td.row-label {
+            font-family: sans-serif;
+            font-size: 10pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1.6pt;
+            color: #141857;
+        }
+        table.pricing tr.total td.row-value {
+            font-size: 14pt;
+        }
+
+        /* ==== Obligatory extras ====
+           True 3-column table: Item | When payable | Amount. Settlement
+           column is wide enough that "At marina" / "In advance" never wrap.
+           Item name on first line; unit suffix (e.g. "Per booking") as a
+           muted second line so the row breathes. */
+        table.extras {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0;
+        }
+        table.extras th {
+            font-family: sans-serif;
+            font-size: 7.5pt;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1.4pt;
+            color: #6b7280;
+            text-align: left;
+            padding: 0 0 5pt 0;
+            border-bottom: 0.6pt solid #d4d8df;
+        }
+        table.extras th.col-when { width: 30%; }
+        table.extras th.col-amount { width: 22%; text-align: right; }
+        table.extras td {
+            padding: 7pt 0;
+            border-bottom: 0.4pt solid #ececec;
+            vertical-align: top;
+        }
+        table.extras tr:last-child td { border-bottom: none; }
+        table.extras td.col-item {
+            padding-right: 10pt;
+        }
+        table.extras td.col-item .item-name {
+            font-family: serif;
+            font-weight: bold;
+            color: #141857;
+            font-size: 10.5pt;
+            line-height: 1.3;
+        }
+        table.extras td.col-item .item-unit {
+            font-family: sans-serif;
+            font-size: 8.5pt;
+            color: #6b7280;
+            margin-top: 1pt;
+        }
+        table.extras td.col-when {
+            font-family: sans-serif;
+            font-size: 9.5pt;
+            color: #4a4a4a;
+            white-space: nowrap;
+        }
+        table.extras td.col-amount {
+            font-family: serif;
+            text-align: right;
+            color: #141857;
+            font-weight: bold;
+            font-size: 10.5pt;
+            white-space: nowrap;
+        }
+
+        /* ==== Payment schedule ====
+           Numbered rows with quiet dividers, PAID pill in muted green. */
+        table.payments {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0;
+        }
+        table.payments td {
+            padding: 7pt 0;
+            border-bottom: 0.4pt solid #ececec;
+            vertical-align: baseline;
+        }
+        table.payments tr:last-child td { border-bottom: none; }
+        table.payments td.col-num {
+            width: 18pt;
+            font-family: serif;
+            font-weight: bold;
+            color: #2856ff;
+            font-size: 10.5pt;
+        }
+        table.payments td.col-label {
+            font-family: serif;
+        }
+        table.payments td.col-label .phase-name {
+            font-weight: bold;
+            color: #141857;
+        }
+        table.payments td.col-label .phase-due {
+            font-family: sans-serif;
+            color: #6b7280;
+            font-size: 9pt;
+            margin-left: 6pt;
+        }
+        table.payments td.col-amount {
+            font-family: serif;
+            text-align: right;
+            color: #141857;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .paid-pill {
+            display: inline-block;
+            background: #e8f5ec;
+            color: #15803d;
+            font-family: sans-serif;
+            font-size: 7.5pt;
+            font-weight: bold;
+            padding: 1pt 6pt;
+            margin-left: 6pt;
+            letter-spacing: 1pt;
+        }
+
+        /* ==== Bank transfer details ====
+           Quiet two-column block. Subtle left rule for visual anchor without
+           the heavy gray fill of the previous design. */
+        .bank {
+            border-left: 2pt solid #2856ff;
+            padding: 2pt 0 2pt 12pt;
+            margin-top: 2pt;
+        }
+        table.bank-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table.bank-table td {
+            padding: 3pt 0;
+            vertical-align: baseline;
+        }
+        table.bank-table td.bank-label {
+            font-family: sans-serif;
+            color: #6b7280;
+            font-size: 9pt;
+            width: 30%;
+            padding-right: 10pt;
+        }
+        table.bank-table td.bank-value {
+            font-family: serif;
+            color: #141857;
+            font-weight: bold;
+            font-size: 10pt;
+        }
+        table.bank-table td.bank-value.iban {
+            font-family: monospace;
+            letter-spacing: 0.8pt;
+        }
+
+        /* ==== Signatures ====
+           Mirror layout, hairline rule, broker side has the embedded
+           signature image; charterer side leaves the line empty. */
+        table.signatures {
+            width: 100%;
+            margin-top: 24pt;
+            border-collapse: separate;
+            border-spacing: 18pt 0;
+        }
+        table.signatures td {
+            width: 50%;
+            vertical-align: top;
+            padding: 0;
+        }
+        table.signatures td.left { padding-left: 0; }
+        table.signatures td.right { padding-right: 0; }
+        .sig-eyebrow {
+            font-family: sans-serif;
+            font-size: 7.5pt;
+            font-weight: bold;
+            color: #2856ff;
+            text-transform: uppercase;
+            letter-spacing: 1.6pt;
+            margin-bottom: 4pt;
+        }
+        .sig-place {
+            font-family: sans-serif;
+            font-size: 9pt;
+            color: #6b7280;
+            margin-bottom: 4pt;
+        }
+        .signature-image {
+            display: block;
+            max-height: 36pt;
+            max-width: 130pt;
+            margin: 4pt 0 -10pt 0;
+        }
+        .sig-line {
+            border-top: 0.5pt solid #1a1a1a;
+            margin-top: 38pt;
+            padding-top: 4pt;
+        }
+        .sig-line.empty {
+            margin-top: 56pt;
+        }
+        .sig-name {
+            font-family: serif;
+            font-weight: bold;
+            font-size: 10.5pt;
+            color: #141857;
+        }
+        .sig-sub {
+            font-family: sans-serif;
+            font-size: 8.5pt;
+            color: #6b7280;
+            margin-top: 1pt;
+        }
+        .sig-note {
+            margin-top: 22pt;
+            padding-top: 8pt;
+            border-top: 0.4pt solid #ececec;
+            font-family: sans-serif;
+            font-size: 8.5pt;
+            color: #6b7280;
+            text-align: center;
+            font-style: italic;
+        }
+
+        /* ==== Page break ==== */
+        .page-break { page-break-before: always; }
+
+        /* ==== Page 2+: Terms &amp; Conditions ====
+           Calmer, more book-like setting for the legal annex. */
+        .terms { padding-top: 4pt; }
+        .terms h1.tnc-title {
+            font-family: serif;
+            font-size: 18pt;
+            color: #141857;
+            text-align: center;
+            letter-spacing: 0.4pt;
+            font-weight: bold;
+            margin: 0 0 4pt 0;
+        }
+        .terms .tnc-meta {
+            font-family: sans-serif;
+            text-align: center;
+            font-size: 8.5pt;
+            color: #6b7280;
+            font-style: italic;
+            letter-spacing: 0.4pt;
+            margin-bottom: 4pt;
+        }
+        .terms .tnc-rule {
+            border-top: 0.7pt solid #141857;
+            margin: 4pt 0 14pt 0;
+        }
+        .terms .terms-intro {
+            font-family: serif;
+            font-size: 10pt;
+            color: #1a1a1a;
+            line-height: 1.55;
+            margin-bottom: 14pt;
+            border-left: 2pt solid #2856ff;
+            padding: 2pt 0 2pt 14pt;
+        }
+        .terms h2 {
+            font-family: serif;
+            font-size: 11.5pt;
+            font-weight: bold;
+            color: #141857;
+            margin: 16pt 0 5pt 0;
+        }
+        .terms h2 .num {
+            color: #2856ff;
+            font-weight: bold;
+            margin-right: 6pt;
+        }
+        .terms p {
+            font-family: serif;
+            font-size: 10pt;
+            text-align: justify;
+            margin: 0 0 5pt 0;
+            line-height: 1.55;
+        }
+        .terms p strong { color: #141857; }
+    </style>
+</head>
+<body>
+
+<!-- =========================== PAGE 1 =========================== -->
+
+<!-- Brand mark -->
+<div class="brand-mark">
+    <svg xmlns="http://www.w3.org/2000/svg" width="140" height="36" viewBox="0 0 138 35" aria-hidden="true">
+        <path fill="#BCD0FF" fill-rule="evenodd" clip-rule="evenodd"
+              d="M.242 19.553a13.096 13.096 0 0 1 1.43-8.906A13.025 13.025 0 0 1 6.47 5.765a12.963 12.963 0 0 1 13.184.074 13.027 13.027 0 0 1 4.744 4.934A13.088 13.088 0 0 1 24.002 24l-3.796-2.399.001-.002a8.568 8.568 0 0 0-2.85-11.892 8.49 8.49 0 0 0-8.633-.048 8.531 8.531 0 0 0-3.143 3.197 8.572 8.572 0 0 0 .164 8.665l-3.823 2.356a13.078 13.078 0 0 1-1.68-4.323Z" />
+        <path fill="#2856FF" fill-rule="evenodd" clip-rule="evenodd"
+              d="m13 19 11.4 7.48c1.104.724 1.431 2.238.733 3.38-.7 1.144-2.16 1.483-3.263.76L13 24.8l-8.87 5.82c-1.103.723-2.564.384-3.263-.76-.699-1.142-.37-2.656.733-3.38L13 19Z" />
+        <path fill="#141857" fill-rule="evenodd" clip-rule="evenodd"
+              d="M34.981 8.28v18.413h2.391l.116-2.126a5.26 5.26 0 0 0 1.451 1.574c.833.579 1.807.868 2.922.868 1.187 0 2.232-.29 3.135-.868.903-.579 1.602-1.385 2.098-2.42.514-1.035.77-2.236.77-3.604 0-1.385-.256-2.587-.77-3.604-.496-1.034-1.195-1.841-2.098-2.42-.903-.579-1.948-.868-3.135-.868-1.115 0-2.09.29-2.922.868a5.268 5.268 0 0 0-1.434 1.546v-7.36h-2.524Zm2.524 11.837c0 .912.16 1.719.478 2.42.319.684.762 1.228 1.328 1.631a3.364 3.364 0 0 0 1.94.579c.796 0 1.496-.193 2.098-.579a4.096 4.096 0 0 0 1.408-1.63c.354-.702.531-1.509.531-2.42 0-.913-.168-1.71-.505-2.395-.336-.701-.806-1.245-1.408-1.63-.602-.404-1.301-.606-2.098-.606a3.38 3.38 0 0 0-1.966.605c-.566.386-1.01.93-1.328 1.631-.319.702-.478 1.5-.478 2.394Zm55.025 2.341v4.235h2.523v-4.235h3.64V20.17h-3.64V8.28h-2.709L83.95 20.433v2.025h8.58Zm0-2.288h-5.711l5.711-8.286v8.286Zm22.065 5.971c1.009.579 2.178.868 3.506.868 1.293 0 2.435-.29 3.427-.868a6.314 6.314 0 0 0 2.364-2.446c.567-1.035.85-2.227.85-3.578 0-1.35-.283-2.543-.85-3.577a6.129 6.129 0 0 0-2.364-2.42c-1.01-.597-2.17-.895-3.48-.895-1.311 0-2.47.298-3.48.895a6.129 6.129 0 0 0-2.364 2.42c-.567 1.034-.85 2.227-.85 3.577s.283 2.543.85 3.578a6.498 6.498 0 0 0 2.391 2.446Zm5.631-2c-.62.387-1.328.58-2.125.58-.815 0-1.541-.193-2.178-.58a4.155 4.155 0 0 1-1.488-1.63c-.354-.684-.531-1.482-.531-2.394 0-.912.177-1.71.531-2.394a4.038 4.038 0 0 1 1.461-1.604c.62-.404 1.337-.605 2.152-.605.797 0 1.514.201 2.152.605.637.386 1.124.92 1.461 1.604.354.684.531 1.482.531 2.394 0 .912-.177 1.71-.531 2.394a4.03 4.03 0 0 1-1.435 1.63Zm15.237.645.126 1.908h2.337V13.54h-2.497v6.84c0 1.367-.301 2.428-.903 3.182-.602.754-1.443 1.131-2.523 1.131a3.983 3.983 0 0 1-1.674-.394c-.496-.246-.885-.684-1.169-1.316-.265-.63-.398-1.534-.398-2.709V13.54h-2.524v7.392c0 1.42.204 2.578.611 3.472.425.894 1.019 1.552 1.78 1.973.779.42 1.683.631 2.71.631 1.098 0 2.027-.263 2.789-.789a4.668 4.668 0 0 0 1.335-1.434Zm-34.385 7.484c-.389 0-.823-.07-1.301-.21-.46-.14-.939-.325-1.435-.553l.93-2.051c.39.175.726.306 1.009.394.301.088.54.132.718.132.442 0 .814-.123 1.115-.369.319-.245.576-.587.771-1.026l.829-1.94-5.797-13.106h2.683l4.317 10.252 4.236-10.252h2.71l-6.296 14.784c-.336.806-.69 1.508-1.062 2.104-.372.596-.832 1.052-1.381 1.368-.532.315-1.213.473-2.046.473Zm-19.905-5.26c-1.329 0-2.356-.334-3.082-1-.726-.684-1.089-1.658-1.089-2.92v-7.392h-2.258V13.54h2.258V9.437h2.524v4.104h3.772v2.157h-3.772v7.023c0 .65.16 1.149.478 1.5.336.333.814.5 1.434.5.177 0 .372-.035.585-.106.212-.07.469-.21.77-.42l.956 1.946a5.86 5.86 0 0 1-1.328.658c-.407.14-.823.21-1.248.21Zm-9.38-2.04.08 1.724h2.337l.027-7.155c.017-1.368-.186-2.517-.611-3.447-.408-.929-1.028-1.64-1.86-2.13-.832-.491-1.877-.737-3.134-.737-.904 0-1.692.14-2.365.421a5.014 5.014 0 0 0-1.726 1.105 6.21 6.21 0 0 0-1.195 1.578l2.23.842c.337-.596.754-1.035 1.25-1.315.513-.28 1.115-.421 1.806-.421.743 0 1.337.166 1.78.5.46.333.796.824 1.009 1.473.145.41.245.884.298 1.42h-3.566c-1.629 0-2.904.36-3.825 1.079-.903.701-1.354 1.727-1.354 3.077 0 1.263.434 2.254 1.301 2.973.886.701 2.116 1.052 3.693 1.052 1.576 0 2.744-.517 3.506-1.552.114-.155.22-.317.318-.488Zm-.027-4.169h-2.922c-1.222 0-2.08.193-2.576.579-.496.368-.744.885-.744 1.552 0 .614.23 1.096.69 1.447.478.333 1.134.5 1.966.5.726 0 1.355-.15 1.886-.448a3.325 3.325 0 0 0 1.248-1.315c.302-.561.452-1.201.452-1.92V20.8ZM55.678 27.01c-1.328 0-2.496-.29-3.506-.868a6.504 6.504 0 0 1-2.39-2.446c-.567-1.035-.85-2.227-.85-3.578 0-1.35.283-2.543.85-3.577a6.125 6.125 0 0 1 2.364-2.42c1.009-.597 2.169-.895 3.48-.895 1.31 0 2.47.298 3.48.895a6.125 6.125 0 0 1 2.363 2.42c.567 1.034.85 2.227.85 3.577s-.283 2.543-.85 3.578a6.31 6.31 0 0 1-2.364 2.446c-.992.579-2.134.868-3.426.868Zm0-2.288c.797 0 1.506-.193 2.126-.58a4.025 4.025 0 0 0 1.434-1.63c.354-.684.531-1.482.531-2.394 0-.912-.177-1.71-.531-2.394a3.788 3.788 0 0 0-1.461-1.604 3.94 3.94 0 0 0-2.152-.605c-.814 0-1.532.201-2.151.605-.62.386-1.107.92-1.461 1.604-.354.684-.532 1.482-.532 2.394 0 .912.178 1.71.532 2.394.354.684.85 1.227 1.487 1.63.638.387 1.364.58 2.178.58Z" />
+    </svg>
+</div>
+
+<!-- Document meta strip: eyebrow + title + ref + agreement date -->
+<div class="doc-meta">
+    <div class="doc-eyebrow">Charter Agreement</div>
+    <div class="doc-title">Booking #<span th:text="${reservationNumber}">000000/2026</span></div>
+    <div class="doc-meta-row">
+        Issued on <span th:text="${agreementDate}">01 January 2026</span>
+        <span class="meta-sep">|</span>
+        Cusmanich d.o.o., trading as Boat4You
+        <span class="meta-sep">|</span>
+        OIB <span th:text="${brokerOib}">HR87394862517</span>
+    </div>
+    <div class="doc-rule"></div>
+</div>
+
+<!-- Parties -->
+<h2 class="section">Parties to the agreement</h2>
+<table class="parties">
+    <tr>
+        <td class="left">
+            <div class="party-eyebrow">The Broker</div>
+            <div class="party-name" th:text="${brokerName}">Cusmanich d.o.o.</div>
+            <div class="party-line">trading as <strong th:text="${brokerTradingAs}">Boat4You</strong></div>
+            <div class="party-line" th:text="${brokerAddress}">Vrboran 37, 21000 Split, Croatia</div>
+            <div class="party-line"><span class="label">OIB</span> <span th:text="${brokerOib}">HR87394862517</span></div>
+            <div class="party-line"><span class="label">Email</span> <span th:text="${brokerEmail}">info@boat4you.com</span></div>
+            <div class="party-line"><span class="label">Phone</span> <span th:text="${brokerPhone}">+385 91 3000 009</span></div>
+        </td>
+        <td class="right">
+            <div class="party-eyebrow">The Charterer</div>
+            <div class="party-name" th:text="${clientFullName}">Client Name</div>
+            <div class="party-line" th:if="${clientAddress != '&#8212;'}" th:text="${clientAddress}">Address line</div>
+            <div class="party-line" th:if="${clientCity != '&#8212;' or clientCountry != '&#8212;'}">
+                <span th:text="${clientCity}">City</span><span th:if="${clientCity != '&#8212;' and clientCountry != '&#8212;'}">, </span><span th:text="${clientCountry}">Country</span>
+            </div>
+            <div class="party-line"><span class="label">Email</span> <span th:text="${clientEmail}">client@example.com</span></div>
+            <div class="party-line" th:if="${clientPhone != '&#8212;'}"><span class="label">Phone</span> <span th:text="${clientPhone}">+385 ...</span></div>
+        </td>
+    </tr>
+</table>
+
+<!-- Yacht -->
+<h2 class="section">Yacht</h2>
+<table class="lookup">
+    <tr><td class="label">Model</td><td class="value" th:text="${yachtFullLabel}">Bavaria 46 Sea Ray</td></tr>
+    <tr><td class="label">Year built</td><td class="value" th:text="${yachtYearBuilt}">2020</td></tr>
+    <tr><td class="label">Length</td><td class="value"><span th:text="${yachtLengthMeters}">14.20</span> m</td></tr>
+    <tr><td class="label">Cabins</td><td class="value" th:text="${yachtCabins}">4</td></tr>
+    <tr><td class="label">Charter type</td><td class="value" th:text="${charterType}">Bareboat charter</td></tr>
+</table>
+
+<!-- Charter period -->
+<h2 class="section">Charter period</h2>
+<table class="lookup">
+    <tr>
+        <td class="label">Check-in</td>
+        <td class="value">
+            <span th:text="${checkInDate}">01 June 2026</span>
+            at <span th:text="${checkInTime}">17:00</span>
+            <span class="muted"><span class="sep">&#160;|&#160;</span><span th:text="${pickupLocation}">Marina Kastela</span>, <span th:text="${pickupCountry}">Croatia</span></span>
+        </td>
+    </tr>
+    <tr>
+        <td class="label">Check-out</td>
+        <td class="value">
+            <span th:text="${checkOutDate}">08 June 2026</span>
+            at <span th:text="${checkOutTime}">09:00</span>
+            <span class="muted"><span class="sep">&#160;|&#160;</span><span th:text="${pickupLocation}">Marina Kastela</span>, <span th:text="${pickupCountry}">Croatia</span></span>
+        </td>
+    </tr>
+    <tr>
+        <td class="label">Duration</td>
+        <td class="value"><span th:text="${nightsCount}">7</span> nights</td>
+    </tr>
+</table>
+
+<!-- Charter price -->
+<h2 class="section">Charter price</h2>
+<table class="pricing">
+    <tr>
+        <td class="row-label">Base price</td>
+        <td class="row-value" th:text="${basePriceLabel}">5,000.00&#8364;</td>
+    </tr>
+    <tr th:if="${hasDiscount}" class="discount">
+        <td class="row-label">Discount</td>
+        <td class="row-value">- <span th:text="${discountLabel}">250.00&#8364;</span></td>
+    </tr>
+    <tr th:if="${hasDiscount}">
+        <td class="row-label">Client price</td>
+        <td class="row-value" th:text="${clientPriceLabel}">4,750.00&#8364;</td>
+    </tr>
+    <tr class="total">
+        <td class="row-label">Total</td>
+        <td class="row-value" th:text="${totalPriceLabel}">4,750.00&#8364;</td>
+    </tr>
+</table>
+
+<!-- Obligatory extras: only when present. True 3-column layout —
+     Item | When payable | Amount — so settlement label never wraps. -->
+<div th:if="${hasObligatoryExtras}">
+    <h2 class="section">Obligatory extras</h2>
+    <table class="extras">
+        <tr>
+            <th class="col-item">Item</th>
+            <th class="col-when">When payable</th>
+            <th class="col-amount">Amount</th>
+        </tr>
+        <tr th:each="ex : ${obligatoryExtras}">
+            <td class="col-item">
+                <div class="item-name" th:text="${ex.name}">Transit log</div>
+                <div class="item-unit" th:if="${ex.unitLabel != ''}" th:text="${ex.unitLabel}">Per booking</div>
+            </td>
+            <td class="col-when" th:text="${ex.settlementLabel}">At marina</td>
+            <td class="col-amount" th:text="${ex.priceLabel}">120.00&#8364;</td>
+        </tr>
+    </table>
+</div>
+
+<!-- Payment schedule -->
+<h2 class="section">Payment schedule</h2>
+<table class="payments">
+    <tr th:each="phase, iter : ${paymentPhases}">
+        <td class="col-num" th:text="${iter.count + '.'}">1.</td>
+        <td class="col-label">
+            <span class="phase-name" th:text="${phase.label}">Deposit payment</span>
+            <span class="phase-due">due by <span th:text="${phase.deadlineLabel}">15 May 2026</span></span>
+            <span th:if="${phase.isPaid}" class="paid-pill">PAID</span>
+        </td>
+        <td class="col-amount" th:text="${phase.amountLabel}">2,375.00&#8364;</td>
+    </tr>
+</table>
+
+<!-- Bank transfer details — only when at least one phase is unpaid. -->
+<div th:if="${hasUnpaidPhase}">
+    <h2 class="section">Bank transfer details</h2>
+    <div class="bank">
+        <table class="bank-table">
+            <tr><td class="bank-label">Account name</td><td class="bank-value">Cusmanich d.o.o.</td></tr>
+            <tr><td class="bank-label">Bank</td><td class="bank-value">Erste &amp; Steierm&#228;rkische Bank d.d.</td></tr>
+            <tr><td class="bank-label">SWIFT / BIC</td><td class="bank-value">ESBCHR22</td></tr>
+            <tr><td class="bank-label">IBAN</td><td class="bank-value iban">HR3924020061101202108</td></tr>
+            <tr><td class="bank-label">Payment reference</td><td class="bank-value">#<span th:text="${reservationNumber}">000000/2026</span></td></tr>
+        </table>
+    </div>
+</div>
+
+<!-- Signatures -->
+<table class="signatures">
+    <tr>
+        <td class="left">
+            <div class="sig-eyebrow">For the Broker</div>
+            <div class="sig-place">Split, <span th:text="${agreementDate}">01 January 2026</span></div>
+            <img th:if="${signatureImageDataUrl}" th:src="${signatureImageDataUrl}"
+                 class="signature-image" alt="Mario Kuzmanic signature" />
+            <div class="sig-line">
+                <div class="sig-name">Mario Kuzmanic</div>
+                <div class="sig-sub">CEO, Cusmanich d.o.o.</div>
+            </div>
+        </td>
+        <td class="right">
+            <div class="sig-eyebrow">The Charterer</div>
+            <div class="sig-place">&#160;</div>
+            <div class="sig-line empty">
+                <div class="sig-name" th:text="${clientFullName}">Client Name</div>
+                <div class="sig-sub">Signature, place &amp; date</div>
+            </div>
+        </td>
+    </tr>
+</table>
+<div class="sig-note">
+    Signed electronically. Valid and binding without a handwritten signature or stamp.
+</div>
+
+<!-- =========================== PAGE 2+ — TERMS &amp; CONDITIONS =========================== -->
+<div class="page-break"></div>
+
+<div class="terms">
+    <h1 class="tnc-title">Terms &amp; Conditions</h1>
+    <div class="tnc-meta">Annex to Charter Agreement #<span th:text="${reservationNumber}">000000/2026</span></div>
+    <div class="tnc-rule"></div>
+
+    <p class="terms-intro">
+        These Terms and Conditions govern the charter agreement between the Broker
+        (Cusmanich d.o.o., trading as Boat4You) and the Charterer in respect of the
+        booking referenced above. By proceeding with payment, the Charterer
+        confirms acceptance of these terms in full.
+    </p>
+
+    <h2><span class="num">1.</span>Charter fee and payment</h2>
+    <p><strong>1.1</strong> The charter fee covers the use of the yacht for the
+        charter period stated on page 1, including the equipment listed in the
+        yacht's standard inventory. Optional extras (skipper, hostess, transit
+        log, end-cleaning, fuel, water-toys, pets, etc.) are charged separately
+        and listed on the booking confirmation when applicable.</p>
+    <p><strong>1.2</strong> Payment is due in the currency stated on the
+        booking confirmation, by bank transfer to the account listed on page 1
+        of this agreement (or by credit card via the secure payment link the
+        Broker provides). All bank charges are borne by the Charterer.</p>
+    <p><strong>1.3</strong> The booking is final and binding once the deposit
+        payment is received. If the final balance is not paid by the deadline
+        stated in the payment schedule, the Broker reserves the right to
+        cancel the booking and retain amounts already paid in accordance with
+        Section 12 (Cancellation by the Charterer).</p>
+
+    <h2><span class="num">2.</span>Security deposit</h2>
+    <p><strong>2.1</strong> A refundable security deposit is payable at the
+        latest at check-in, in the form and currency requested by the charter
+        agency operating the yacht. The amount of the deposit is shown on the
+        yacht specification sheet.</p>
+    <p><strong>2.2</strong> The security deposit is held by the charter agency
+        for the duration of the charter and refunded in full at check-out if
+        the yacht and all equipment are returned in the same condition as at
+        check-in, with no damage, no missing items and a full fuel tank.</p>
+    <p><strong>2.3</strong> The Charterer is liable for the full cost of any
+        damage, loss or repair up to the value of the security deposit. The
+        Broker is not a party to the deposit transaction and accepts no
+        liability for amounts retained by the charter agency.</p>
+
+    <h2><span class="num">3.</span>Check-in and check-out</h2>
+    <p><strong>3.1</strong> Check-in is at the time and location stated on
+        page 1. The Charterer must present a valid identity document, the
+        skipper licence and VHF certificate (where the charter is bareboat),
+        and a complete crew list as required by local maritime authorities.</p>
+    <p><strong>3.2</strong> The yacht is handed over after a joint inventory
+        check. The Charterer is responsible for verifying the inventory and
+        reporting any discrepancies before leaving the marina; later claims
+        cannot be entertained.</p>
+    <p><strong>3.3</strong> Check-out is at the time and location stated on
+        page 1. Late return entitles the charter agency to charge a penalty
+        equivalent to one additional charter day per started 24-hour period
+        of delay, plus any consequential losses suffered by the next charter.</p>
+
+    <h2><span class="num">4.</span>Skipper licence and competence (bareboat charters)</h2>
+    <p><strong>4.1</strong> For bareboat charters the Charterer (or a
+        nominated skipper named in the booking) must hold a valid sailing
+        licence accepted by the competent [(${countryAdjective})] maritime
+        authority, together with a VHF radio operator certificate.</p>
+    <p><strong>4.2</strong> The Charterer warrants that the skipper has the
+        practical experience to handle the booked yacht in local conditions.
+        The charter agency may refuse to release the yacht if, at check-in,
+        the skipper's competence is reasonably judged to be inadequate; in
+        that case a professional skipper may be required at the Charterer's
+        expense.</p>
+
+    <h2><span class="num">5.</span>Skippered and crewed charters</h2>
+    <p><strong>5.1</strong> When a skipper, hostess or full crew is provided,
+        their daily fee is shown on the booking confirmation. The crew's food
+        and drink is paid by the Charterer (typically the equivalent of one
+        additional crew member's provisioning per day, settled directly with
+        the crew).</p>
+    <p><strong>5.2</strong> The skipper has final authority over the
+        navigation of the yacht, route planning and crew safety. The
+        Charterer is expected to follow the skipper's reasonable
+        instructions at all times.</p>
+
+    <h2><span class="num">6.</span>Use of the yacht</h2>
+    <p><strong>6.1</strong> The yacht may be used solely for private leisure
+        cruising. Any commercial use, sub-charter, racing, instruction or
+        carriage of paying passengers is strictly prohibited and voids all
+        insurance cover.</p>
+    <p><strong>6.2</strong> The maximum number of persons on board (including
+        children and crew) must not exceed the figure stated on the yacht's
+        certificate of registry. The Charterer must keep the crew list
+        up-to-date with the local port authority at all times.</p>
+    <p><strong>6.3</strong> The Charterer must navigate within the cruising
+        area authorised by the [(${countryAdjective})] maritime authority and
+        the yacht's insurance policy. Crossing into foreign territorial
+        waters requires the prior written consent of the charter agency.</p>
+
+    <h2><span class="num">7.</span>Insurance</h2>
+    <p><strong>7.1</strong> The yacht is insured against hull damage, third
+        party liability and crew personal accident as required by local law.
+        The security deposit equals the insurance excess; losses below that
+        amount are borne by the Charterer.</p>
+    <p><strong>7.2</strong> Personal effects, electronic equipment, cash and
+        valuables of the Charterer and crew are <strong>not</strong> covered
+        by the yacht insurance. We recommend that the Charterer arranges
+        personal travel and cancellation insurance separately.</p>
+    <p><strong>7.3</strong> Damage caused by gross negligence, navigation
+        under the influence of alcohol or drugs, sailing in adverse weather
+        despite official warnings, or breach of the cruising area is not
+        covered by insurance and is fully payable by the Charterer.</p>
+
+    <h2><span class="num">8.</span>Maintenance, defects and repairs</h2>
+    <p><strong>8.1</strong> The Charterer must keep the yacht and all
+        equipment in good order during the charter, perform routine checks
+        of engine oil, coolant and bilges, and use the equipment with
+        ordinary care.</p>
+    <p><strong>8.2</strong> Any defect, damage or unusual noise must be
+        reported to the charter agency without undue delay. The agency will
+        organise repair as soon as reasonably practicable. Repairs ordered
+        by the Charterer without the agency's prior consent are not
+        reimbursable.</p>
+    <p><strong>8.3</strong> If a defect not caused by the Charterer
+        materially impairs the use of the yacht for more than 24 hours and
+        cannot be repaired locally, the Charterer is entitled to a pro-rata
+        refund of the charter fee for the affected period. Consequential
+        losses (flights, accommodation, etc.) are excluded.</p>
+
+    <h2><span class="num">9.</span>Weather and force majeure</h2>
+    <p><strong>9.1</strong> The Charterer must observe official weather
+        forecasts and follow port authority instructions. Sailing in winds
+        above the limits set by the charter agency or in waters declared
+        closed by the authorities is prohibited.</p>
+    <p><strong>9.2</strong> Time lost due to adverse weather, strikes,
+        government action, pandemics, war or other force majeure events does
+        not entitle the Charterer to a refund or extension of the charter,
+        unless the yacht itself becomes unusable for an extended period in
+        which case Section 8.3 applies.</p>
+
+    <h2><span class="num">10.</span>Pollution and environmental rules</h2>
+    <p><strong>10.1</strong> The Charterer must comply with all
+        environmental rules of [(${countryAdjective})] waters and any marine
+        protected area visited. Discharging waste, oil or chemicals into the
+        sea is strictly forbidden and subject to penalties imposed by the
+        local authorities, payable by the Charterer.</p>
+
+    <h2><span class="num">11.</span>Pets, smoking, parties</h2>
+    <p><strong>11.1</strong> Pets are allowed only on yachts explicitly
+        marked pet-friendly, with the agency's prior written consent and
+        upon payment of the applicable pet fee. Pets are the sole
+        responsibility of the Charterer; any damage they cause is deducted
+        from the security deposit.</p>
+    <p><strong>11.2</strong> Smoking is not permitted inside the yacht. Open
+        flames (candles, cigarettes) below deck are forbidden.</p>
+    <p><strong>11.3</strong> Loud parties on board, especially in marinas
+        and anchorages, are prohibited and may lead to immediate
+        termination of the charter without refund.</p>
+
+    <h2><span class="num">12.</span>Cancellation by the Charterer</h2>
+    <p><strong>12.1</strong> Cancellation must be communicated in writing to
+        the Broker. The cancellation fee depends on the timing of the
+        request, calculated against the total charter fee:</p>
+    <p>(a) more than 60 days before check-in: 30% of the charter fee.<br />
+       (b) 30&#8211;60 days before check-in: 50% of the charter fee.<br />
+       (c) 14&#8211;30 days before check-in: 80% of the charter fee.<br />
+       (d) less than 14 days before check-in: 100% of the charter fee.</p>
+    <p><strong>12.2</strong> If the cancelled charter is re-sold to another
+        client at the same price and for the same period, the Charterer is
+        refunded the difference between amounts paid and the cancellation
+        fee actually retained, less an administrative fee equal to 10% of
+        the charter fee.</p>
+    <p><strong>12.3</strong> Travel insurance covering charter cancellation
+        is strongly recommended.</p>
+
+    <h2><span class="num">13.</span>Cancellation by the Broker or the charter agency</h2>
+    <p><strong>13.1</strong> If the booked yacht becomes unavailable due to
+        loss, damage or any other reason outside the Broker's control, the
+        Broker will offer a replacement yacht of equivalent specification.
+        If no acceptable replacement is available, all amounts paid are
+        refunded in full and no further claim can be made.</p>
+
+    <h2><span class="num">14.</span>Liability</h2>
+    <p><strong>14.1</strong> The Broker acts as an intermediary between the
+        Charterer and the charter agency operating the yacht. Liability for
+        the technical condition of the yacht, the conduct of any crew
+        provided and the performance of services on the day of charter
+        rests with the charter agency. The Broker's liability is limited to
+        the charter fee actually paid by the Charterer.</p>
+    <p><strong>14.2</strong> The Broker is not liable for indirect or
+        consequential losses, including lost holiday time, missed flights,
+        accommodation costs or non-economic damage.</p>
+
+    <h2><span class="num">15.</span>Governing law and dispute resolution</h2>
+    <p><strong>15.1</strong> This agreement is governed by [(${countryAdjective})]
+        law. Any dispute arising out of or in connection with this
+        agreement that cannot be settled amicably shall be submitted to the
+        competent court in Split, Republic of Croatia, unless mandatory
+        consumer-protection rules of the Charterer's country of residence
+        require a different forum.</p>
+    <p><strong>15.2</strong> The Charterer is informed that, as a consumer
+        resident in the European Union, they may also submit complaints
+        through the European Online Dispute Resolution platform at
+        ec.europa.eu/consumers/odr.</p>
+
+    <h2><span class="num">16.</span>Electronic signature</h2>
+    <p><strong>16.1</strong> This contract is signed electronically and is
+        valid and binding without a handwritten signature or stamp. Payment
+        of the deposit constitutes acceptance of these terms in full.</p>
+</div>
+
+</body>
+</html>

@@ -32,6 +32,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
@@ -90,6 +91,13 @@ class YachtController(
          * system. See YachtSearchParamObject.includeUnavailable.
          */
         @RequestParam(name = "includeUnavailable", defaultValue = "false") includeUnavailable: Boolean,
+        /**
+         * Sitemap-only — 2-letter ISO country whitelist (e.g. BS,ES,FR).
+         * Returns only yachts whose home location ends in one of these
+         * codes. Used by /sitemap-yachts so Google indexes only countries
+         * we actively promote.
+         */
+        @RequestParam(name = "countryCodes", required = false) countryCodes: List<String>?,
         @RequestParam(name = "page", defaultValue = "0") page: Int,
         @RequestParam(name = "size", defaultValue = "10") size: Int,
         @RequestHeader(name = "Accept-Language", required = false) lang: String? = null,
@@ -118,8 +126,13 @@ class YachtController(
                 maxBerths = maxBerths,
                 minLength = minLength,
                 maxLength = maxLength,
-                minPrice = minPrice,
-                maxPrice = maxPrice,
+                // Price params arrive as weekly amounts (slider is labelled
+                // "Price per week" and uses `priceMin`/`priceMax` from the
+                // distribution endpoint, both already × 7). Divide back to
+                // per-day so the WHERE clause on `client_price` (which is
+                // per-day in `yacht_search_view`) matches the slider value.
+                minPrice = minPrice?.divide(BigDecimal(7), 2, RoundingMode.HALF_UP),
+                maxPrice = maxPrice?.divide(BigDecimal(7), 2, RoundingMode.HALF_UP),
                 startDate = startDate,
                 endDate = endDate,
                 minWc = minWc,
@@ -132,6 +145,7 @@ class YachtController(
                 yachtIds = yachtIds,
                 agencyIds = agencyIds,
                 includeUnavailable = includeUnavailable,
+                countryCodes = countryCodes,
                 language = language,
             )
 

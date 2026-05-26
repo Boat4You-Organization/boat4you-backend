@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.branding
 
+import org.openapitools.model.LanguageEnum
 import org.springframework.stereotype.Component
 
 /**
@@ -34,6 +35,7 @@ class BrandRegistry {
                 supportPhone = "+385 91 3000 009",
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png",
                 accentColor = "#ffd24a",
+                defaultLanguage = LanguageEnum.EN,
             ),
 
             // ───────── Catamaran Croatia Charter — TODO: real assets ─────────
@@ -53,6 +55,7 @@ class BrandRegistry {
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO replace with brand logo
                 accentColor = "#ffd24a",
+                defaultLanguage = LanguageEnum.HR, // Croatian-managed brand → admins read inquiry email in Croatian
             ),
 
             // ───────── Catamaran Charter Greece — TODO ─────────
@@ -67,6 +70,7 @@ class BrandRegistry {
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
+                defaultLanguage = LanguageEnum.EN, // Greek not in our locale set → admins read in EN until staff confirms preference
             ),
 
             // ───────── Catamaran Charter Italy — TODO ─────────
@@ -81,6 +85,7 @@ class BrandRegistry {
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
+                defaultLanguage = LanguageEnum.IT,
             ),
 
             // ───────── Catamaran Charter Caribbean — TODO ─────────
@@ -95,6 +100,7 @@ class BrandRegistry {
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
+                defaultLanguage = LanguageEnum.EN,
             ),
 
             // ───────── Europe Yachts — TODO ─────────
@@ -112,6 +118,7 @@ class BrandRegistry {
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
+                defaultLanguage = LanguageEnum.EN,
             ),
         ).associateBy { it.id }
 

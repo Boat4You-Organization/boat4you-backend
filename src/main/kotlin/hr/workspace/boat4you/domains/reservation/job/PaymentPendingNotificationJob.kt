@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.job
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
@@ -19,6 +20,7 @@ class PaymentPendingNotificationJob(
      * on the hour). 1-day-ahead payment reminders.
      */
     @Scheduled(cron = "0 2 12 ? * *")
+    @SchedulerLock(name = "paymentPendingNotification1Day", lockAtMostFor = "PT30M")
     fun run1DayInAdvance() {
         log.info("Running PaymentPendingNotificationJob for one day in advance")
         paymentPendingNotificationService.sendPaymentReminder(1)
@@ -30,6 +32,7 @@ class PaymentPendingNotificationJob(
      * reminders. Stays clear of NausysSyncJob 12:20 follow-up.
      */
     @Scheduled(cron = "0 12 12 ? * *")
+    @SchedulerLock(name = "paymentPendingNotification3Days", lockAtMostFor = "PT30M")
     fun run3DaysInAdvance() {
         log.info("Running PaymentPendingNotificationJob for three days in advance")
         paymentPendingNotificationService.sendPaymentReminder(3)

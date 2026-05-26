@@ -8,7 +8,12 @@ enum class ApiErrorCodes(
     BAD_CREDENTIALS(1011, "Bad credentials"),
     LOGIN_ATTEMPTS_EXCEEDED(1012, "Maximum number of login attempts exceeded"),
     PASSWORD_RESET_INVALID(1013, "Password reset request invalid"),
-    PASSWORD_INVALID_LENGTH(1014, "Password could contain at least six characters"),
+    // F1-004: generic message — does not reveal exact minimum (was
+    // "could contain at least six characters", which was both an
+    // attacker hint AND a misleading typo of "must"). Enum constant
+    // name preserved so the frontend error-code switch (1014) keeps
+    // working; only the human-readable message changes.
+    PASSWORD_INVALID_LENGTH(1014, "Password does not meet the strength requirements"),
     OLD_PASSWORD_INVALID(1015, "Old password not valid"),
     REQUEST_NOT_PARSEABLE(1101, "Request JSON not parseable"),
     INVALID_REQUEST_PARAMETERS(1102, "Invalid request parameters"),
@@ -36,8 +41,13 @@ enum class ApiErrorCodes(
     RESERVATION_STATUS_ERROR(3004, "Reservation status error"),
     RESOURCE_NOT_FOUND(4004, "Requested resource not found"),
     INVOICE_NOT_EXIST(5001, "Invoice does not exist"),
-    EXTERNAL_SYSTEM_ERROR(6001, "External system error"),
-    EXTERNAL_OPTION_ERROR(6002, "External option error"),
-    EXTERNAL_RESERVATION_ERROR(6003, "External reservation error"),
-    EXTERNAL_RESERVATION_CANCELLATION_ERROR(6004, "External reservation cancellation error"),
+    // 6xxx codes are partner-integration failures (MMK / NauSys). The
+    // messages are user-facing — they appear in toast notifications, so
+    // they're intentionally generic apologies. Technical details (raw
+    // partner response bodies, yachtIds, exception traces) stay in the
+    // backend log via ApiErrorHandler's `logger.error`.
+    EXTERNAL_SYSTEM_ERROR(6001, "We're sorry, we're experiencing technical difficulties. Please contact our support team."),
+    EXTERNAL_OPTION_ERROR(6002, "We're sorry, we're experiencing technical difficulties with this booking. Please contact our support team."),
+    EXTERNAL_RESERVATION_ERROR(6003, "We're sorry, we couldn't complete your reservation due to a technical issue. Please contact our support team."),
+    EXTERNAL_RESERVATION_CANCELLATION_ERROR(6004, "We're sorry, the cancellation couldn't be processed due to a technical issue. Please contact our support team."),
 }

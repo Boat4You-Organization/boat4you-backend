@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
+import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtRequest
 import hr.workspace.boat4you.domains.catalouge.dto.IdDto
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
@@ -122,7 +123,7 @@ class YachtMutationService(
         id: Long,
         customYachtRequest: CustomYachtRequest,
     ): CustomYachtDetailsResponse {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         val customYachtDetails =
             customYachtDetailRepository.findByYachtId(yacht.id!!)
                 ?: throw IllegalArgumentException("Custom yacht details not found for yacht with id ${yacht.id}")
@@ -192,6 +193,19 @@ class YachtMutationService(
         yacht.vesselType = customYachtRequest.vesselType
         yacht.crewNumber = customYachtRequest.crewNumber
 
+        // Bind the yacht to the marina-tier Location the admin picked. Both
+        // branches of yacht_search_view read `location_from` (= yacht.location_id
+        // for custom yachts), and the search predicate adds the parent country/
+        // region id alongside the expanded marina list — so a yacht pinned to
+        // marina id 1234 shows up under that marina, its region, and its
+        // country search pages without further work. Earlier this used the
+        // countryId, but Country.id and Location.id are independent BIGSERIAL
+        // spaces — picking 86 as a country routinely landed the yacht on a
+        // random unrelated marina (e.g. Asker Marina in Norway).
+        yacht.location = locationRepository.getReferenceById(
+            customYachtRequest.locationId.replace("l-", "", true).toLong(),
+        )
+
         return yacht
     }
 
@@ -229,6 +243,9 @@ class YachtMutationService(
         customYachtDetails.country =
             countryRepository.getReferenceById(customYachtRequest.countryId.replace("c-", "", true).toLong())
         customYachtDetails.priceDescription = customYachtRequest.priceDescription
+        customYachtDetails.amenitiesText = customYachtRequest.amenitiesText
+        customYachtDetails.toysText = customYachtRequest.toysText
+        customYachtDetails.engineText = customYachtRequest.engineText
 
         return customYachtDetails
     }
@@ -329,7 +346,7 @@ class YachtMutationService(
         id: Long,
         mainImage: MultipartFile,
     ): IdDto {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         val oldMainImage = yacht.yachtImages.firstOrNull { it.mainImage == true }
         oldMainImage?.let {
             fileSystemService.deleteFile(oldMainImage?.url!!)
@@ -346,7 +363,7 @@ class YachtMutationService(
         id: Long,
         images: List<MultipartFile>,
     ): Set<IdDto> {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         val ids = mutableSetOf<IdDto>()
         images.forEachIndexed { index, image ->
             val img = createNewYachtImage(yacht, image, index + 1, false)
@@ -359,7 +376,7 @@ class YachtMutationService(
         id: Long,
         pdfFile: MultipartFile,
     ) {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         val customYachtDetails =
             customYachtDetailRepository.findByYachtId(id)
                 ?: throw IllegalArgumentException("Custom yacht details not found for yacht with id $id")
@@ -400,7 +417,7 @@ class YachtMutationService(
         ],
     )
     fun deleteYacht(id: Long) {
-        val yacht = yachtRepository.findById(id).orElseThrow { IllegalArgumentException("Yacht not found") }
+        val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
         yachtImageRepository.deleteAll(yacht.yachtImages)
         customYachtDetailRepository.deleteByYachtId(id)
         yachtTranslationRepository.deleteByYachtId(id)

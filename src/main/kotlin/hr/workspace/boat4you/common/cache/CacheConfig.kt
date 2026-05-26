@@ -78,6 +78,19 @@ class CacheConfig {
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
                     .build()
 
+            // Per-region locations cache — keyed by `Region.id` (Long, not
+            // SimpleKey, because the @Cacheable method takes a single
+            // primitive arg). Pool sized for ~100 distinct regions across
+            // all countries we sync; in practice we have ~30 today.
+            val locationsCountByRegionCache =
+                CacheConfigurationBuilder
+                    .newCacheConfigurationBuilder(
+                        java.lang.Long::class.java,
+                        List::class.java,
+                        hundredEntryResourcePool,
+                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
+                    .build()
+
             val usedVesselTypesCache =
                 CacheConfigurationBuilder
                     .newCacheConfigurationBuilder(
@@ -114,10 +127,15 @@ class CacheConfig {
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
                     .build()
 
+            // F2-025: key type is `String` because the @Cacheable SpEL key
+            // on OfferRepository.findAllAvailableByYacht is
+            // `"#yacht.id + ':' + #statuses.hashCode()"`. Previously
+            // SimpleKey wrapping a Yacht instance — broken because
+            // Yacht has reference-identity hashCode (F2-017 family).
             val offersByYachtAndStatusCache =
                 CacheConfigurationBuilder
                     .newCacheConfigurationBuilder(
-                        SimpleKey::class.java,
+                        String::class.java,
                         List::class.java,
                         hundredEntryResourcePool,
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(10)))
@@ -194,10 +212,15 @@ class CacheConfig {
                         singleEntryResourcePool,
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
                     .build()
+            // F2-007: key type is `Long` because the @Cacheable SpEL key
+            // on YachtExtraRepository.findAllByYacht is `"#yacht.id"`.
+            // Previously `Yacht::class.java` — broken because Yacht
+            // has reference-identity hashCode (F2-017 family) so every
+            // request loaded a fresh Yacht and the cache never hit.
             val yachtExtrasCache =
                 CacheConfigurationBuilder
                     .newCacheConfigurationBuilder(
-                        Yacht::class.java,
+                        java.lang.Long::class.java,
                         List::class.java,
                         thousandEntryResourcePool,
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(2)))
@@ -245,6 +268,18 @@ class CacheConfig {
                         hundredEntryResourcePool,
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
                     .build()
+            // Same shape as regionsCache — keyed by 2-letter countryCode, holds
+            // the LocationViewDto list of marinas. 10h TTL is plenty since
+            // marinas are added to the catalogue rarely; if a new one shows up
+            // mid-day the admin form sees it after the cache rolls over.
+            val marinasByCountryCache =
+                CacheConfigurationBuilder
+                    .newCacheConfigurationBuilder(
+                        String::class.java,
+                        List::class.java,
+                        hundredEntryResourcePool,
+                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
+                    .build()
             val seasonsCache =
                 CacheConfigurationBuilder
                     .newCacheConfigurationBuilder(
@@ -266,6 +301,10 @@ class CacheConfig {
             cacheManager.createCache(
                 "locationsCountCache",
                 Eh107Configuration.fromEhcacheCacheConfiguration(locationsCountCache),
+            )
+            cacheManager.createCache(
+                "locationsCountByRegionCache",
+                Eh107Configuration.fromEhcacheCacheConfiguration(locationsCountByRegionCache),
             )
             cacheManager.createCache(
                 "usedVesselTypesCache",
@@ -321,11 +360,33 @@ class CacheConfig {
             )
             cacheManager.createCache("extrasFilter", Eh107Configuration.fromEhcacheCacheConfiguration(extrasFilter))
             cacheManager.createCache("regionsCache", Eh107Configuration.fromEhcacheCacheConfiguration(regionsCache))
+            cacheManager.createCache(
+                "marinasByCountryCache",
+                Eh107Configuration.fromEhcacheCacheConfiguration(marinasByCountryCache),
+            )
             cacheManager.createCache("seasonsCache", Eh107Configuration.fromEhcacheCacheConfiguration(seasonsCache))
         }
     }
 
-    // @Profile("data-sync")
+    /**
+     * F2-005: bean is intentionally NOT `@Profile("data-sync")` gated.
+     * The original commented `// @Profile("data-sync")` reflected a
+     * historical assumption that external-mapping caches were used
+     * only by sync jobs (which run under data-sync profile).
+     *
+     * In practice `externalMappingCache` / `externalMappingExtendedCache`
+     * are read by `ExternalSyncService.syncYachtOffers(yachtId, ...)`
+     * — the per-yacht @Async sync triggered from the public yacht
+     * search endpoints in `YachtController`. That path runs on every
+     * VM that serves public traffic, regardless of profile. Profile-
+     * gating the customizer would leave web requests without the
+     * cache definition, and Spring would throw on the first
+     * `@Cacheable("externalMappingCache")` invocation.
+     *
+     * Renamed conceptually: the "dataSync" prefix is now misleading
+     * since these caches are cross-profile. Kept the bean name for
+     * compatibility with any external reference.
+     */
     @Bean
     fun dataSyncCacheManagerCustomizer(): JCacheManagerCustomizer {
         return JCacheManagerCustomizer { cacheManager ->

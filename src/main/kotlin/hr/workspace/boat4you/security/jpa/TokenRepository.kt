@@ -15,12 +15,4 @@ interface TokenRepository : JpaRepository<TokenEntity, Long> {
     fun findAllValidTokenByUserId(id: Long): List<TokenEntity>
 
     fun findByValue(value: String): TokenEntity?
-
-    @Query(
-        """
-        SELECT t FROM TokenEntity t
-        WHERE t.value = :value AND (t.isExpired = false OR t.isRevoked = false)
-    """,
-    )
-    fun findActiveByValue(value: String): TokenEntity?
 }

@@ -5,7 +5,7 @@ import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.users.jpa.UserInviteStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRegistrationStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
-import hr.workspace.boat4you.security.exceptions.PasswordException
+import hr.workspace.boat4you.security.services.PasswordPolicy
 import hr.workspace.boat4you.security.services.PasswordService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -64,9 +64,7 @@ class PublicUserController(
             throw IllegalStateException("Account already registered")
         }
 
-        if (request.password.length < 6) {
-            throw PasswordException(PasswordException.PasswordExceptionType.PASSWORD_INVALID_LENGTH)
-        }
+        PasswordPolicy.validate(request.password)
 
         user.apply {
             password = passwordService.encodePassword(request.password)
