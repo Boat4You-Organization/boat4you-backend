@@ -163,10 +163,11 @@ class UserAuthService(
 
         val storedToken = tokenRepository.findByValue(token)
         if (storedToken != null) {
-            storedToken.isExpired = true
-            storedToken.isRevoked = true
-
-            tokenRepository.save(storedToken)
+            // Revoke ALL tokens (access + refresh) for this user, not just
+            // the current access token. Previously only the presented token
+            // was revoked, so a stolen refresh token could still obtain new
+            // access tokens after the user "logged out".
+            tokenService.revokeAllUserTokens(storedToken.user.id!!)
             SecurityContextHolder.clearContext()
         }
     }

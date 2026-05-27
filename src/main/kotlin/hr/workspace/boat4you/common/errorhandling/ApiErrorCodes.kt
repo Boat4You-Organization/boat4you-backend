@@ -23,6 +23,8 @@ enum class ApiErrorCodes(
     USER_ALREADY_REGISTERED(1210, "User already registered"),
     VERIFICATION_CODE_REQUESTED_TOO_SOON(1211, "Verification code requested too soon"),
     VERIFICATION_CODE_DOES_NOT_MATCH(1212, "Invalid verification code"),
+    VERIFICATION_CODE_EXPIRED(1213, "Verification code has expired"),
+    VERIFICATION_ATTEMPTS_EXCEEDED(1214, "Too many verification attempts"),
     USERS_INVITE_ALREADY_ACCEPTED(1220, "Users have already accepted invites"),
     USERS_INVITE_INVALID_INVITE_CODE(1221, "Invalid User invite code"),
     USERS_INVITE_EXPIRED(1222, "User invite expired"),

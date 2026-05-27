@@ -379,6 +379,8 @@ internal class ApiErrorHandler {
                 UserRegistrationException.UserRegistrationExceptionReason.USER_ALREADY_REGISTERED -> ApiErrorCodes.USER_ALREADY_REGISTERED
                 UserRegistrationException.UserRegistrationExceptionReason.VERIFICATION_CODE_REQUESTED_TOO_SOON -> ApiErrorCodes.VERIFICATION_CODE_REQUESTED_TOO_SOON
                 UserRegistrationException.UserRegistrationExceptionReason.VERIFICATION_CODE_DOES_NOT_MATCH -> ApiErrorCodes.VERIFICATION_CODE_DOES_NOT_MATCH
+                UserRegistrationException.UserRegistrationExceptionReason.VERIFICATION_CODE_EXPIRED -> ApiErrorCodes.VERIFICATION_CODE_EXPIRED
+                UserRegistrationException.UserRegistrationExceptionReason.VERIFICATION_ATTEMPTS_EXCEEDED -> ApiErrorCodes.VERIFICATION_ATTEMPTS_EXCEEDED
             }
 
         return ResponseEntity(

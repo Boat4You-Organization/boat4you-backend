@@ -27,6 +27,16 @@ import java.util.concurrent.ConcurrentHashMap
  *    guest password setup gated only by reservationId + email match
  *    (F1-057). Without a rate limit, an attacker can enumerate
  *    reservation ids and try email guesses unbounded.
+ *  - `POST /auth/login` — credential stuffing / brute-force vector.
+ *    Per-account lockout (5 attempts / 15 min) exists in UserAuthService
+ *    but does not stop cross-account spraying from a single IP.
+ *  - `POST /auth/register` — unbounded registration creates garbage
+ *    accounts and triggers verification emails (SMTP quota exhaustion).
+ *  - `POST /auth/requestPasswordReset` — each call sends a real email;
+ *    unbounded calls flood the victim's inbox and exhaust SMTP quota.
+ *  - `POST /auth/register/verifyEmail` — 6-digit code brute-force
+ *    vector. Per-user attempt counter exists but per-IP throttle adds
+ *    defense in depth.
  *
  * Implementation: token bucket keyed by (rule path, client IP). Every
  * accepted call consumes 1 token; tokens refill at
@@ -62,12 +72,29 @@ class PublicEndpointRateLimiter(
     private val setPasswordCapacity: Int,
     @Value("\${application.rate-limit.public-set-password.window-seconds:60}")
     private val setPasswordWindowSeconds: Long,
+    @Value("\${application.rate-limit.auth-login.capacity:10}")
+    private val loginCapacity: Int,
+    @Value("\${application.rate-limit.auth-login.window-seconds:60}")
+    private val loginWindowSeconds: Long,
+    @Value("\${application.rate-limit.auth-register.capacity:3}")
+    private val registerCapacity: Int,
+    @Value("\${application.rate-limit.auth-register.window-seconds:60}")
+    private val registerWindowSeconds: Long,
+    @Value("\${application.rate-limit.auth-password-reset.capacity:3}")
+    private val passwordResetCapacity: Int,
+    @Value("\${application.rate-limit.auth-password-reset.window-seconds:60}")
+    private val passwordResetWindowSeconds: Long,
+    @Value("\${application.rate-limit.auth-verify-email.capacity:5}")
+    private val verifyEmailCapacity: Int,
+    @Value("\${application.rate-limit.auth-verify-email.window-seconds:60}")
+    private val verifyEmailWindowSeconds: Long,
 ) : OncePerRequestFilter() {
     private val log = LoggerFactory.getLogger(javaClass)
 
     private data class Rule(
         val method: String,
         val path: String,
+        val prefix: Boolean = false,
         val capacity: Int,
         val windowSeconds: Long,
         val label: String,
@@ -80,9 +107,14 @@ class PublicEndpointRateLimiter(
 
     private val rules by lazy {
         listOf(
-            Rule("POST", "/public/reservations", reservationCapacity, reservationWindowSeconds, "reservations"),
-            Rule("POST", "/public/inquiries", inquiryCapacity, inquiryWindowSeconds, "inquiries"),
-            Rule("POST", "/public/users/set-password-for-reservation", setPasswordCapacity, setPasswordWindowSeconds, "set-password"),
+            Rule("POST", "/public/reservations", capacity = reservationCapacity, windowSeconds = reservationWindowSeconds, label = "reservations"),
+            Rule("POST", "/public/inquiries", capacity = inquiryCapacity, windowSeconds = inquiryWindowSeconds, label = "inquiries"),
+            Rule("POST", "/public/users/set-password-for-reservation", capacity = setPasswordCapacity, windowSeconds = setPasswordWindowSeconds, label = "set-password"),
+            Rule("POST", "/auth/login", capacity = loginCapacity, windowSeconds = loginWindowSeconds, label = "login"),
+            Rule("POST", "/auth/register/verifyEmail", capacity = verifyEmailCapacity, windowSeconds = verifyEmailWindowSeconds, label = "verify-email"),
+            Rule("POST", "/auth/register/resendVerificationCode/", prefix = true, capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "resend-verification"),
+            Rule("POST", "/auth/register", capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "register"),
+            Rule("POST", "/auth/requestPasswordReset", capacity = passwordResetCapacity, windowSeconds = passwordResetWindowSeconds, label = "password-reset"),
         )
     }
 
@@ -123,7 +155,10 @@ class PublicEndpointRateLimiter(
     }
 
     private fun matchingRule(request: HttpServletRequest): Rule? =
-        rules.firstOrNull { it.method == request.method && it.path == request.requestURI }
+        rules.firstOrNull {
+            it.method == request.method &&
+                if (it.prefix) request.requestURI.startsWith(it.path) else it.path == request.requestURI
+        }
 
     private fun acquire(rule: Rule, ip: String): Boolean {
         val key = "${rule.label}:$ip"

@@ -72,6 +72,9 @@ class UserEntity : AbstractEntity<Long>() {
     @Column(name = "email_verification_code", columnDefinition = "VARCHAR(255)", nullable = true)
     var emailVerificationCode: String? = null
 
+    @Column(name = "verification_attempts", columnDefinition = "INTEGER", nullable = false)
+    var verificationAttempts: Int = 0
+
     @Column(name = "registration_status", columnDefinition = "VARCHAR(31)", nullable = false)
     @Enumerated(EnumType.STRING)
     var registrationStatus: UserRegistrationStatusEnum = UserRegistrationStatusEnum.STARTED

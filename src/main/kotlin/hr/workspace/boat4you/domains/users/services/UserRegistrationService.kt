@@ -10,6 +10,7 @@ import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import hr.workspace.boat4you.domains.users.jpa.UserInviteStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRegistrationStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
+import hr.workspace.boat4you.security.services.PasswordPolicy
 import hr.workspace.boat4you.security.services.UserAuthService
 import jakarta.servlet.http.HttpServletRequest
 import org.openapitools.model.TokenResponse
@@ -38,6 +39,10 @@ class UserRegistrationService(
     @Value("\${server.host-public}")
     private val serverHostPublic: String,
 ) {
+    companion object {
+        const val MAX_VERIFICATION_ATTEMPTS = 5
+        const val VERIFICATION_CODE_TTL_SECONDS = 1800L // 30 minutes
+    }
     // Header "Sent {date·time (GMT±X)}" — same Europe/Zagreb wall-clock
     // pattern used by the password-reset / option-reminder emails so all
     // customer-facing transactional mail carries a consistent timestamp.
@@ -45,6 +50,7 @@ class UserRegistrationService(
 
     @Transactional(readOnly = false)
     fun registerUser(input: UserRegistrationRequest): User {
+        PasswordPolicy.validate(input.password)
         val userModel = userMutationService.createUser(input.toUserModel())
         val dbUser = userRepository.findById(userModel.id!!).get()
         dbUser.apply {
@@ -74,6 +80,7 @@ class UserRegistrationService(
         dbUser.apply {
             emailVerificationCode = getRandomNumericalString(6)
             verificationCodeIssuedAt = Instant.now()
+            verificationAttempts = 0
         }
 
         sendVerificationEmail(dbUser)
@@ -88,7 +95,17 @@ class UserRegistrationService(
         if (dbUser.registrationStatus != UserRegistrationStatusEnum.STARTED) {
             throw UserRegistrationException(UserRegistrationExceptionReason.USER_ALREADY_REGISTERED)
         }
+        if (dbUser.verificationAttempts >= MAX_VERIFICATION_ATTEMPTS) {
+            throw UserRegistrationException(UserRegistrationExceptionReason.VERIFICATION_ATTEMPTS_EXCEEDED)
+        }
+        if (dbUser.verificationCodeIssuedAt != null &&
+            dbUser.verificationCodeIssuedAt!!.plusSeconds(VERIFICATION_CODE_TTL_SECONDS).isBefore(Instant.now())
+        ) {
+            throw UserRegistrationException(UserRegistrationExceptionReason.VERIFICATION_CODE_EXPIRED)
+        }
         if (dbUser.emailVerificationCode != input.verificationCode) {
+            dbUser.verificationAttempts++
+            userRepository.save(dbUser)
             throw UserRegistrationException(UserRegistrationExceptionReason.VERIFICATION_CODE_DOES_NOT_MATCH)
         }
 
@@ -96,6 +113,7 @@ class UserRegistrationService(
             emailVerificationCode = null
             registrationStatus = UserRegistrationStatusEnum.REGISTERED
             verificationCodeIssuedAt = null
+            verificationAttempts = 0
         }
 
         return userAuthService.issueTokenAtRegistration(dbUser, httpRequest)

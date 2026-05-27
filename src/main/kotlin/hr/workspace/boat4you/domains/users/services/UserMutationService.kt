@@ -287,6 +287,14 @@ class UserMutationService(
     private fun validateUserInput(user: User) {
         val badOrMissingParameters = mutableMapOf<String, String>()
 
+        if (user.name.isNullOrBlank() || user.name.trim().length < 2) {
+            badOrMissingParameters["name"] = "Name is required and must be at least 2 characters"
+        }
+
+        if (user.surname.isNullOrBlank() || user.surname.trim().length < 2) {
+            badOrMissingParameters["surname"] = "Surname is required and must be at least 2 characters"
+        }
+
         val emailValidator: EmailValidator = EmailValidator.getInstance()
         if (!emailValidator.isValid(user.email)) {
             badOrMissingParameters["email"] = "Email not valid"
