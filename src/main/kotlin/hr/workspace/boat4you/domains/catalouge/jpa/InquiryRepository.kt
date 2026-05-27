@@ -8,18 +8,20 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
 interface InquiryRepository : JpaRepository<Inquiry, Long> {
-    // F2-029: drop redundant `STR(:search)` — the parameter is already
-    // a Kotlin String (and bound as String through @Param), so the
-    // JPQL `STR(...)` function call is a no-op. Removing it lets the
-    // Hibernate query parser skip an extra type-conversion node and
-    // makes the query body marginally easier to grep.
+    // `CAST(:search AS string)` is REQUIRED, not cosmetic. When :search is
+    // null the `:search IS NULL OR ...` branch short-circuits logically, but
+    // PostgreSQL still TYPES the `'%'||?||'%'` expression at plan time; an
+    // untyped null param is inferred as `bytea`, so `lower(bytea)` throws
+    // "function lower(bytea) does not exist" (seen on PG18) and the whole
+    // admin list query 500s. The cast pins the param to varchar. (This is the
+    // bug a previous "F2-029 drop redundant STR()" change introduced.)
     @Query(
         """
         SELECT i FROM Inquiry i
         WHERE 1 = 1
-        AND (:search IS NULL OR LOWER(i.email) LIKE LOWER(CONCAT('%', :search, '%'))
-            OR LOWER(i.name) LIKE LOWER(CONCAT('%', :search, '%'))
-            OR LOWER(i.surname) LIKE LOWER(CONCAT('%', :search, '%')))
+        AND (:search IS NULL OR LOWER(i.email) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
+            OR LOWER(i.name) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
+            OR LOWER(i.surname) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%')))
         AND (:statuses IS NULL OR i.status IN :statuses)
         """,
     )

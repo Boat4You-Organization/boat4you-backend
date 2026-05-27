@@ -12,7 +12,7 @@ interface ModelRepository : JpaRepository<Model, Long> {
         SELECT m
         FROM Model m
         WHERE m.manufacturer.id IN :manufacturerIds
-        AND (:name IS NULL OR :name = '' OR LOWER(m.name) LIKE LOWER(CONCAT('%', :name, '%')))
+        AND (:name IS NULL OR :name = '' OR LOWER(m.name) LIKE LOWER(CONCAT('%', CAST(:name AS string), '%')))
     """,
     )
     fun findAllByManufacturerIdAndNameIgnoreCase(

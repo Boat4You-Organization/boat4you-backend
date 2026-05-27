@@ -91,14 +91,16 @@ interface AgencyRepository : JpaRepository<Agency, Long> {
         externalSystemId: Int,
     ): Agency?
 
-    // F2-029: same redundant-STR fix as in InquiryRepository. `:name`
-    // is bound as String, the JPQL `STR(...)` is a no-op.
+    // `CAST(:name AS string)` is REQUIRED: a null :name param is otherwise
+    // inferred as bytea by PostgreSQL, making `lower('%'||?||'%')` throw
+    // "function lower(bytea) does not exist" and 500 the admin agency list.
+    // See InquiryRepository for the full rationale.
     @Query(
         """
         SELECT a FROM Agency a
         WHERE 1 = 1
         AND (:active IS NULL OR a.active = :active)
-        AND (:name IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%', :name, '%')))
+        AND (:name IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%', CAST(:name AS string), '%')))
         AND (:countryCode IS NULL OR a.country = :countryCode)
         AND (
             :primarySource IS NULL OR EXISTS (

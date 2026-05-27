@@ -29,13 +29,13 @@ interface ReservationViewRepository :
         AND (COALESCE(:dateTo, rv.reservationDateTo) = rv.reservationDateTo OR rv.reservationDateTo <= :dateTo)
         AND (
             :search IS NULL OR :search = ''
-            OR LOWER(rv.reservationNumber) LIKE LOWER(CONCAT('%', :search, '%'))
-            OR LOWER(rv.reservationFlowName) LIKE LOWER(CONCAT('%', :search, '%'))
-            OR LOWER(rv.reservationFlowSurname) LIKE LOWER(CONCAT('%', :search, '%'))
-            OR LOWER(rv.reservationFlowEmail) LIKE LOWER(CONCAT('%', :search, '%'))
+            OR LOWER(rv.reservationNumber) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
+            OR LOWER(rv.reservationFlowName) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
+            OR LOWER(rv.reservationFlowSurname) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
+            OR LOWER(rv.reservationFlowEmail) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
             OR LOWER(CONCAT(rv.reservationFlowName, ' ', rv.reservationFlowSurname))
-               LIKE LOWER(CONCAT('%', :search, '%'))
-            OR LOWER(rv.agencyName) LIKE LOWER(CONCAT('%', :search, '%'))
+               LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
+            OR LOWER(rv.agencyName) LIKE LOWER(CONCAT('%', CAST(:search AS string), '%'))
         )
     """,
     )
