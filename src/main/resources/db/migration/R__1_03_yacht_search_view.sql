@@ -1,24 +1,44 @@
--- Repeatable: yacht_search_view definition.
--- Flyway runs every R__ migration after all V_ migrations are applied,
--- whenever its checksum changes. Keeping this file in lockstep with the
--- latest versioned view migration (currently V1_67) is required so that a
--- fresh DB ends up with the same view as a DB that ran V1_60 / V1_67
--- incrementally — without it, R__ would silently revert those versioned
--- patches on first boot.
+-- Repeatable: yacht_search_view as a MATERIALIZED VIEW.
 --
--- Latest tracked patches:
---   V1_60 — drop `o.status != 4` UNAVAILABLE filter (admin replacement flow opt-in)
---          and switch the custom-yacht branch from a `yacht_locations` join
---          to reading `y.location_id` directly (the per-yacht link table was
---          retired around the same time)
---   V1_67 — append `agency_recommended` (0/1 INT) for the Recommended sort
---   7.5.2026 — append `location_to_full_name` (mirror of location_full_name
---           but for the drop-off location) so listing endpoint can show
---           "Pickup » Drop-off" labels for one-way charters without an
---           extra round-trip.
-DROP VIEW IF EXISTS public.yacht_search_view;
-CREATE OR REPLACE VIEW public.yacht_search_view AS
-  SELECT y.id,
+-- WHY MATERIALIZED (28.5.2026): yacht_search_view is a heavy UNION join over
+-- ~475k offer rows (offer⋈yacht⋈agency⋈location×2⋈model⋈manufacturer⋈charter).
+-- getYachts() runs GROUP BY ~20 cols + aggregates + sort + count over it on
+-- EVERY /public/yachts request, which on prod took >60s per query. Under
+-- concurrent traffic the Hikari pool (25) filled with these long-held
+-- connections (leak detector fired at 60s, pool exhausted at 20s timeout) →
+-- site-wide freezes + starved every other endpoint (e.g. empty admin agency
+-- list). Materializing precomputes the joins; the same query now runs in ~3.6s
+-- against the flat indexed matview (validated on prod data), so connections are
+-- released fast and the pool never exhausts. Freshness is kept by a background
+-- REFRESH MATERIALIZED VIEW CONCURRENTLY job (see SearchViewRefreshJob) run on
+-- a short interval + after each catalogue/offer sync.
+--
+-- row_uid: a STABLE unique key per logical row, required by REFRESH ...
+-- CONCURRENTLY. EXTERNAL rows are keyed by (offer.id, charter-type row id),
+-- CUSTOM rows by (yacht.id, charter-type row id); the 'o-'/'c-' prefixes keep
+-- the two branches disjoint. yacht_charter_type.id is a surrogate PK so the
+-- key is collision-free even when a yacht has multiple charter types.
+--
+-- Repeatable migrations re-run only when this file's checksum changes, so the
+-- matview is rebuilt on a deploy that edits this file and otherwise persists
+-- untouched. The DO block drops whichever relation kind currently exists
+-- (plain view on first cutover, matview on later re-runs).
+--
+-- Tracked patches: V1_60 (drop UNAVAILABLE filter + custom branch reads
+-- y.location_id), V1_67 (agency_recommended 0/1), 7.5.2026 (location_to_full_name).
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'yacht_search_view' AND relkind = 'v') THEN
+        DROP VIEW public.yacht_search_view;
+    ELSIF EXISTS (SELECT 1 FROM pg_class WHERE relname = 'yacht_search_view' AND relkind = 'm') THEN
+        DROP MATERIALIZED VIEW public.yacht_search_view;
+    END IF;
+END $$;
+
+CREATE MATERIALIZED VIEW public.yacht_search_view AS
+  SELECT ('o-' || o.id || '-' || COALESCE(yct.id::text, '0')) AS row_uid,
+         y.id,
          y.name AS yacht_name,
          o.location_from,
          ((((lfrom.id || '-'::text) || (lfrom.name)::text) || '-'::text) || (lfrom.country_code)::text) AS location_full_name,
@@ -69,7 +89,8 @@ CREATE OR REPLACE VIEW public.yacht_search_view AS
   WHERE  y.entry_type = 'EXTERNAL'
     AND  y.sys_active = true
 UNION ALL
-  SELECT y.id,
+  SELECT ('c-' || y.id || '-' || COALESCE(yct.id::text, '0')) AS row_uid,
+         y.id,
          y.name AS yacht_name,
          y.location_id AS location_from,
          ((((l.id || '-'::text) || (l.name)::text) || '-'::text) || (l.country_code)::text) AS location_full_name,
@@ -115,5 +136,18 @@ UNION ALL
          JOIN custom_yacht_details cyd ON cyd.yacht_id = y.id
   WHERE  y.entry_type = 'CUSTOM'
     AND  y.sys_active = true;
+
+-- Unique key for REFRESH ... CONCURRENTLY (non-blocking refresh).
+CREATE UNIQUE INDEX yacht_search_view_row_uid_uidx ON public.yacht_search_view (row_uid);
+
+-- Filter / sort indexes matching buildYachtSearchPredicates + the sort columns.
+CREATE INDEX yacht_search_view_offer_status_idx ON public.yacht_search_view (offer_status);
+CREATE INDEX yacht_search_view_vessel_type_idx  ON public.yacht_search_view (vessel_type);
+CREATE INDEX yacht_search_view_location_from_idx ON public.yacht_search_view (location_from);
+CREATE INDEX yacht_search_view_location_to_idx   ON public.yacht_search_view (location_to);
+CREATE INDEX yacht_search_view_id_idx           ON public.yacht_search_view (id);
+CREATE INDEX yacht_search_view_dates_idx        ON public.yacht_search_view (date_from, date_to);
+CREATE INDEX yacht_search_view_client_price_idx ON public.yacht_search_view (client_price);
+CREATE INDEX yacht_search_view_agency_id_idx    ON public.yacht_search_view (agency_id);
 
 GRANT SELECT ON public.yacht_search_view TO boat4you_app;
