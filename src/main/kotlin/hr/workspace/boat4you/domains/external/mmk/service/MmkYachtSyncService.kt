@@ -108,6 +108,11 @@ class MmkYachtSyncService(
         val syncedYachts = mutableSetOf<Long>()
 
         mmkYachts.forEach { mmkYacht ->
+            // Track every partner-reported id up front (before shouldSkip) —
+            // syncedYachts is the take-back baseline. If a yacht stays in
+            // the partner catalogue but we choose to skip our own update
+            // (e.g. unsupported product mix), it must NOT be deactivated.
+            mmkYacht.id?.let { syncedYachts.add(it) }
             if (shouldSkip(mmkYacht)) {
                 return@forEach
             }
@@ -179,14 +184,27 @@ class MmkYachtSyncService(
             }
         }
 
+        // Take-back: deactivate yachts in our DB that the partner no longer
+        // reports. syncedYachts holds external (MMK) ids — the previous
+        // code passed it to findAllByAgencyAndIdNotIn, which filters on
+        // yacht.id (our DB pk), so the comparison was apples-to-oranges
+        // and nothing ever got deactivated (Master Yachting White Pearl /
+        // DEEPSEA observed as stale 2026-05-28). Switch to externalId-NotIn
+        // for the correct semantics, with the same empty-list safety guard
+        // as the NauSys deactivator.
+        if (syncedYachts.isEmpty()) {
+            log.warn(
+                "MMK take-back aborted for agency ${agency.id}: empty partner response — " +
+                    "refusing to mass-deactivate.",
+            )
+            return
+        }
+        val yachtsToDeactivate =
+            yachtRepository.findAllByAgencyAndExternalIdNotIn(agency, syncedYachts.toList())
         log.warn(
-            "Deactivating yachts for agency ${agency.id}, yachts not in MMK response: ${
-                syncedYachts.joinToString(
-                    ", ",
-                )
-            }",
+            "MMK take-back for agency ${agency.id} ${agency.name}: partner returned " +
+                "${syncedYachts.size} yachts; deactivating ${yachtsToDeactivate.size} no longer in catalogue.",
         )
-        val yachtsToDeactivate = yachtRepository.findAllByAgencyAndIdNotIn(agency, syncedYachts.toList())
         yachtsToDeactivate.forEach {
             it.sysActive = false
             yachtRepository.save(it)

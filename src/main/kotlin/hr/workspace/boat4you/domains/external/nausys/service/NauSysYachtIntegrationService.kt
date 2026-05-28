@@ -31,28 +31,37 @@ class NauSysYachtIntegrationService(
                 log.error("Agency external id is null for agency: ${agency.id} ${agency.name}")
                 return@forEach
             }
-            // Some agencies have more than 100 yachts, so we need to fetch them in chunks
+            // ALWAYS fetch the current authoritative catalogue from NauSys —
+            // never our DB subset. Two bugs were buried in the old shape:
+            //   1) chunking `existingAgencyYachts` meant we only re-fetched
+            //      yachts we already knew about → newly-added yachts on the
+            //      partner side never surfaced (e.g. Istion / White Pearl,
+            //      observed 2026-05-28; boataround had it, we didn't).
+            //   2) `deactivateYachtsForAgency(agency.id, existingAgencyYachts)`
+            //      compared our DB list against itself → take-back never
+            //      fired and yachts moved off a partner agency stayed
+            //      "live" in the listing forever.
+            // The new shape fetches the live ID list, syncs each chunk, then
+            // uses that list as the deactivation baseline.
             val existingAgencyYachts =
                 externalMappingRepository.findAllExternalYachtIdsForAgency(
                     agency.id!!,
                     ExternalSystemEnum.NAUSYS.value.toLong(),
                 )
+            val partnerYachtIds = getAgencyYachtIdsFromNausys(agencyExternalId)
             if (existingAgencyYachts.isEmpty()) {
-                // first sync for this agency
-                log.info("Doing initial sync for agency: ${agency.id} ${agency.name}")
-                val yachtExternalIds = getAgencyYachtIdsFromNausys(agencyExternalId)
-                yachtExternalIds.chunked(100).forEach { chunk ->
-                    log.info("Doing sync for agency: ${agency.id} ${agency.name}, yacht chunk size: ${chunk.size}")
-                    processYachtSync(agencyExternalId, agency, chunk)
-                }
-                nauSysYachtSyncService.deactivateYachtsForAgency(agency.id!!, yachtExternalIds)
+                log.info("Doing initial sync for agency: ${agency.id} ${agency.name} (${partnerYachtIds.size} partner yachts)")
             } else {
-                existingAgencyYachts.chunked(100).forEach { chunk ->
-                    log.info("Doing sync for agency: ${agency.id} ${agency.name}, yacht chunk size: ${chunk.size}")
-                    processYachtSync(agencyExternalId, agency, chunk)
-                }
-                nauSysYachtSyncService.deactivateYachtsForAgency(agency.id!!, existingAgencyYachts)
+                log.info(
+                    "Doing daily sync for agency: ${agency.id} ${agency.name} " +
+                        "(${partnerYachtIds.size} partner yachts, ${existingAgencyYachts.size} in DB)",
+                )
             }
+            partnerYachtIds.chunked(100).forEach { chunk ->
+                log.info("Sync chunk for agency ${agency.id}: ${chunk.size} yacht ids")
+                processYachtSync(agencyExternalId, agency, chunk)
+            }
+            nauSysYachtSyncService.deactivateYachtsForAgency(agency.id!!, partnerYachtIds)
         }
     }
 

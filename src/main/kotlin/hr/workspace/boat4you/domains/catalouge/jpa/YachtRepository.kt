@@ -5,11 +5,6 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 
 interface YachtRepository : JpaRepository<Yacht, Long> {
-    fun findAllByAgencyAndIdNotIn(
-        agency: Agency,
-        ids: List<Long>,
-    ): List<Yacht>
-
     @Query(
         """
         SELECT y

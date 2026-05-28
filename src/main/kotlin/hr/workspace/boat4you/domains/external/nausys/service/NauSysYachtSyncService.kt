@@ -110,10 +110,36 @@ class NauSysYachtSyncService(
 
             val model = getModel(nausysYacht)
             if (model == null) {
-                log.warn(
-                    "NauSys yacht ${nausysYacht.id} (${nausysYacht.name}) skipped: " +
-                        "no Model row resolves yachtModelId=${nausysYacht.yachtModelId} " +
-                        "(stale external_mapping after Model dedup?)",
+                // Partner exposes the yacht but hasn't populated yachtModelId
+                // yet (Istion adds shell records before finishing metadata —
+                // 2026-05-28 observation). Track it via external_mapping +
+                // a stub Yacht row so the next sync, once the partner fills
+                // model in, can complete it in-place instead of treating it
+                // as never-seen. Keep sys_active=false so the listing
+                // doesn't surface a half-empty card; updateFromNausysModel
+                // flips it back to true on the next iteration after model
+                // resolves.
+                yacht.name = nausysYacht.name
+                yacht.agency = agency
+                yacht.entryType = EntryType.EXTERNAL
+                yacht.buildYear = nausysYacht.buildYear?.toShort()
+                yacht.sysActive = false
+                val saved = yachtRepository.saveAndFlush(yacht)
+                if (mapping == null) {
+                    externalMappingRepository.save(
+                        ExternalMapping(
+                            externalId = nausysYacht.id!!.toLong(),
+                            externalSystem = externalSystem,
+                            systemId = saved.id!!,
+                            type = Yacht::class.simpleName.toString(),
+                            extendedType = YACHT_AGENCY_EXTERNAL_MAPPING_KEY + agency.id,
+                        ),
+                    )
+                }
+                log.info(
+                    "NauSys yacht ${nausysYacht.id} (${nausysYacht.name}) tracked as shell " +
+                        "(yachtModelId=${nausysYacht.yachtModelId} unresolvable); " +
+                        "will activate once partner populates model.",
                 )
                 return@forEach
             }
@@ -151,6 +177,20 @@ class NauSysYachtSyncService(
         agencyId: Long,
         allYachts: List<Long>,
     ) {
+        // Safety guard: if the partner response was empty (transient outage,
+        // auth failure, partner-side maintenance), refuse to deactivate ALL
+        // of the agency's yachts. The catalogue almost always carries >0
+        // entries; an empty list almost always means a flaky upstream call,
+        // not a partner emptying their fleet. The next successful sync run
+        // takes care of any genuine removals.
+        if (allYachts.isEmpty()) {
+            log.warn(
+                "Deactivation aborted for agency $agencyId: partner returned 0 yachts " +
+                    "(treating as suspected upstream glitch).",
+            )
+            return
+        }
+
         val agency =
             agencyRepository
                 .findById(agencyId)
