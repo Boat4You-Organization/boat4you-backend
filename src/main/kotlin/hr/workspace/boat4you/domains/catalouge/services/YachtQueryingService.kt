@@ -878,7 +878,24 @@ class YachtQueryingService(
                 val offers = offerRepository.findAllByYachtAndDateFromAndDateTo(yacht, dateFrom!!, dateTo!!)
                 offers.map { offerMapper.toDto(it, currency) }
             } else {
-                null
+                // SEO / canonical URL with no date filter: still load the
+                // next 12 months of offers so the detail page's Product
+                // JSON-LD can populate an `offers` AggregateOffer field.
+                // Google Search Console flags Product structured data
+                // without offers / review / aggregateRating as a critical
+                // issue (2026-05-28). The controller-level partner sync
+                // trigger is intentionally NOT re-fired here (still keyed
+                // on `dateFrom != null` in YachtController) so canonical-
+                // URL hits don't initiate per-request external round-
+                // trips — we serve whatever the periodic catalogue sync
+                // has already loaded.
+                val today = LocalDate.now()
+                val offers = offerRepository.findAllByYachtAndDateFromGreaterThanEqualAndDateToLessThanEqual(
+                    yacht,
+                    today,
+                    today.plusYears(1),
+                )
+                offers.map { offerMapper.toDto(it, currency) }
             }
 
         val agencyId = yacht.agency?.id
