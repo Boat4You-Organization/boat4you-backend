@@ -18,6 +18,7 @@ class AgencyMutationService(
     private val agencyRepository: AgencyRepository,
     private val yachtRepository: YachtRepository,
     private val offerRepository: OfferRepository,
+    private val searchViewRefreshService: SearchViewRefreshService,
 ) {
     fun updateAgency(
         id: Long,
@@ -29,7 +30,11 @@ class AgencyMutationService(
             updateBlockWithModel(agency)
         }
 
-        return agencyRepository.save(dbAgency).toDto()
+        val dto = agencyRepository.save(dbAgency).toDto()
+        // Agency mutation may change discount/name/active and thus the listing
+        // matview rows for every yacht of this agency — schedule a refresh.
+        searchViewRefreshService.requestRefresh()
+        return dto
     }
 
     fun toggleActive(
@@ -40,7 +45,9 @@ class AgencyMutationService(
 
         dbAgency.active = isActive
 
-        return agencyRepository.save(dbAgency).toDto()
+        val dto = agencyRepository.save(dbAgency).toDto()
+        searchViewRefreshService.requestRefresh()
+        return dto
     }
 
     fun updateYachtsDiscount(
@@ -60,6 +67,7 @@ class AgencyMutationService(
             }
             yachtRepository.save(yacht)
         }
+        searchViewRefreshService.requestRefresh()
     }
 
     /**
@@ -91,6 +99,10 @@ class AgencyMutationService(
                 updated++
             }
         }
+        // Recalc rewrites offer.client_price for every offer of the agency —
+        // the listing matview must catch up so admins/end-users see the new
+        // prices without waiting for the 2-min cron tick.
+        searchViewRefreshService.requestRefresh()
         return updated
     }
 }

@@ -35,7 +35,12 @@ class SearchViewRefreshJob(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
-    @Scheduled(cron = "0 */10 * * * *")
+    // 2-min cron is the safety net for partner-sync mutations (NauSys/MMK
+    // batches mutate 100k+ offer rows; per-row refresh would be too chatty).
+    // Admin actions (agency discount / recalc / etc.) trigger an on-demand
+    // refresh via SearchViewRefreshService.requestRefresh() so the user sees
+    // the effect in seconds, not minutes.
+    @Scheduled(cron = "0 */2 * * * *")
     @SchedulerLock(name = "refreshYachtSearchView", lockAtMostFor = "PT8M", lockAtLeastFor = "PT30S")
     fun refresh() {
         val start = System.currentTimeMillis()
