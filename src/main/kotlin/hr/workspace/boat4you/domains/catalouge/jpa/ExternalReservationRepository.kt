@@ -40,12 +40,14 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
     ): List<ExternalReservation>
 
     /**
-     * Bulk-fetch every option (MMK + Nausys) that overlaps the given period
-     * for any of the listed yachts — used by the admin /offers search to
-     * stamp "Option expires: DD.MM.YYYY HH:mm" next to optioned results.
-     * Returns rows with non-null option_expiration so the caller never has
-     * to filter nulls. Only OPTION status is considered (RESERVATION /
-     * SERVICE don't have an expiry to show).
+     * Bulk-fetch every LIVE option (MMK + Nausys) that overlaps the given
+     * period for any of the listed yachts — used by the admin /offers search
+     * to stamp "Option expires: DD.MM.YYYY HH:mm" next to optioned results.
+     * Returns rows with non-null AND still-future option_expiration so the
+     * caller never has to filter expired ones (partner sync sometimes leaves
+     * stale OPTION offer rows behind months after the option lapsed — those
+     * must NOT surface as "under option" in the listing). Only OPTION status
+     * is considered (RESERVATION / SERVICE don't have an expiry to show).
      */
     @Query(
         """
@@ -53,6 +55,7 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
         WHERE r.yacht.id IN :yachtIds
         AND r.status = :status
         AND r.optionExpiration IS NOT NULL
+        AND r.optionExpiration > CURRENT_TIMESTAMP
         AND r.dateFrom <= :endDate AND r.dateTo >= :startDate
     """,
     )

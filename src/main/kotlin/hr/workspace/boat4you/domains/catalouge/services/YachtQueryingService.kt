@@ -348,10 +348,17 @@ class YachtQueryingService(
 
         val searchResponseDtos =
             results.map { view ->
-                // isOption is derived from the aggregated offerStatus so the two
-                // fields in the DTO can never disagree — OPTION(2) or
-                // OPTION_WAITING(3) on any matching offer row flips this true.
-                val isOption = view.offerStatus == 2 || view.offerStatus == 3
+                // isOption requires BOTH the aggregated offerStatus to flag
+                // OPTION(2) / OPTION_WAITING(3) AND a still-live external
+                // reservation backing it. Partner sync can leave offer.status
+                // stuck at OPTION months after the actual option lapsed (the
+                // sync only writes the OPTION snapshot; nothing clears it on
+                // its own). Without this gate the listing would stamp a fake
+                // "Under option" badge on yachts that are actually free —
+                // matching what /yacht/.../offers (live reads) already shows.
+                val isOption =
+                    (view.offerStatus == 2 || view.offerStatus == 3) &&
+                        optionExpiryByYachtId[view.id] != null
 
                 yachtMapper.toDto(
                     view,
