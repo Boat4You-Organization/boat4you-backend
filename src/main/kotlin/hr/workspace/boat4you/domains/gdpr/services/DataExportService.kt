@@ -1,8 +1,10 @@
 package hr.workspace.boat4you.domains.gdpr.services
 
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomOfferRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
 import hr.workspace.boat4you.domains.gdpr.dto.ExportedCustomOfferDto
 import hr.workspace.boat4you.domains.gdpr.dto.ExportedGdprActivityDto
+import hr.workspace.boat4you.domains.gdpr.dto.ExportedInquiryDto
 import hr.workspace.boat4you.domains.gdpr.dto.ExportedPaymentPhaseDto
 import hr.workspace.boat4you.domains.gdpr.dto.ExportedReservationDto
 import hr.workspace.boat4you.domains.gdpr.dto.ExportedUserDto
@@ -37,6 +39,7 @@ class DataExportService(
     private val reservationFlowRepository: ReservationFlowRepository,
     private val reservationRepository: ReservationRepository,
     private val customOfferRepository: CustomOfferRepository,
+    private val inquiryRepository: InquiryRepository,
     private val gdprAuditRepository: GdprAuditLogRepository,
 ) {
     private val logger: Logger = LoggerFactory.getLogger(this::class.java.name)
@@ -106,6 +109,21 @@ class DataExportService(
             )
         }
 
+        // GDPR Art. 15/20 — inquiry leads are keyed by email (no user FK), so
+        // match on the user's current email. An anonymised user has a tombstone
+        // email that matches nothing (their leads were purged on erasure).
+        val inquiries = inquiryRepository.findByEmailIgnoreCase(user.email).map { inq ->
+            ExportedInquiryDto(
+                id = inq.id ?: 0L,
+                createdAt = inq.createdAt,
+                dateFrom = inq.dateFrom,
+                dateTo = inq.dateTo,
+                yachtName = inq.yacht?.name,
+                message = inq.message,
+                status = inq.status?.name,
+            )
+        }
+
         return UserDataExportDto(
             exportedAt = Instant.now(),
             user = ExportedUserDto(
@@ -125,6 +143,7 @@ class DataExportService(
             ),
             reservations = reservations,
             customOffers = customOffers,
+            inquiries = inquiries,
             gdprActivityLog = gdprActivity,
         )
     }

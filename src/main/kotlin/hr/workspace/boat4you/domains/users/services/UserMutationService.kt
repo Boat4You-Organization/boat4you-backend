@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.users.services
 
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.common.exceptions.UnmodifiableFieldsException
+import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
 import hr.workspace.boat4you.domains.roles.jpa.RoleAssignmentEntity
 import hr.workspace.boat4you.domains.roles.jpa.RoleAssignmentRepository
 import hr.workspace.boat4you.domains.roles.services.RoleService
@@ -31,6 +32,7 @@ class UserMutationService(
     private val roleAssignmentRepository: RoleAssignmentRepository,
     private val passwordService: PasswordService,
     private val tokenService: TokenService,
+    private val inquiryRepository: InquiryRepository,
 ) {
     private val logger: Logger = LoggerFactory.getLogger(this::class.java.name)
 
@@ -212,6 +214,11 @@ class UserMutationService(
             return
         }
 
+        // Capture the real email BEFORE anonymisation so we can purge the user's
+        // inquiry leads (audit B3) — inquiries are keyed by email only (no user
+        // FK), so the user-row anonymisation below doesn't reach them.
+        val originalEmail = user.email
+
         // Step 1: kill auth — token revocation must happen before we change
         // the password hash so any in-flight requests holding stale tokens
         // get 401 immediately (next call) instead of completing on a
@@ -240,7 +247,17 @@ class UserMutationService(
         user.deletedAt = Instant.now()
 
         userRepository.save(user)
-        logger.info("GDPR soft-delete completed for user id={}", id)
+
+        // GDPR Art. 17 — also erase the user's inquiry leads (name/email/phone/
+        // message). Unlike reservations, inquiries carry no accounting/partner
+        // retention obligation, so they are hard-deleted rather than tombstoned.
+        val purgedInquiries = inquiryRepository.deleteByEmailIgnoreCase(originalEmail)
+
+        logger.info(
+            "GDPR soft-delete completed for user id={} (purged {} inquiry lead(s))",
+            id,
+            purgedInquiries,
+        )
     }
 
     private fun createUserRoleAssignments(

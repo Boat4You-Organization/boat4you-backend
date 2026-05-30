@@ -1,0 +1,26 @@
+# Faza 0 (DevOps modernizacija) — keep build context small and, crucially, keep
+# local secrets/ops files out of image layers. The multi-stage Dockerfile builds
+# from source inside the image, so src/, gradle/, gradlew and *.gradle.kts are
+# intentionally NOT ignored.
+
+# Build output & caches (rebuilt from source in the image)
+build/
+.gradle/
+
+# VCS / CI / IDE
+.git/
+.gitignore
+.github/
+.idea/
+*.iml
+.vscode/
+
+# Local ops files / anything secret — must never land in an image layer
+.env
+.env.*
+*.env
+local-ops/
+*.log
+
+# Docs
+*.md

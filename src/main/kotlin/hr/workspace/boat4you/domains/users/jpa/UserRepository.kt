@@ -48,6 +48,8 @@ interface UserRepository :
 
     fun findByInviteCode(inviteCode: String): UserEntity?
 
+    fun findByUnsubscribeToken(unsubscribeToken: String): UserEntity?
+
     @Query(
         """
         SELECT u FROM UserEntity u
@@ -69,6 +71,7 @@ interface UserRepository :
         AND EXTRACT(MONTH FROM birthday) = :month
         AND EXTRACT(DAY FROM birthday) = :day
         AND deleted_at IS NULL
+        AND marketing_opt_out = false
         AND entity_status = 'ACTIVE'
         """,
         nativeQuery = true,

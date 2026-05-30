@@ -258,12 +258,12 @@ paths:
             schema:
               $ref: '#/components/schemas/UserRegistrationRequest'
       responses:
-        '200':
-          description: successful operation
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
+        '204':
+          description: >-
+            Registration accepted. The response is identical whether or not the
+            email is already registered (an already-registered email receives a
+            "you already have an account" email instead of a verification code),
+            so this endpoint cannot be used as an account-existence oracle.
         '400':
           description: Bad request
           content:
@@ -305,21 +305,20 @@ paths:
           description: Not authorized
         '500':
           description: Internal server error
-  /auth/register/resendVerificationCode/{userId}:
+  /auth/register/resendVerificationCode:
     post:
       tags:
         - Auth
       summary: Resend email verification code
       description: Used when registering, when user wants the email verification code to be resent.
       operationId: resendEmailVerificationCode
-      parameters:
-        - name: userId
-          in: path
-          description: Id of the user who wants a new verification code
-          required: true
-          schema:
-            type: integer
-            format: int64
+      requestBody:
+        description: ''
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResendVerificationRequest'
       responses:
         '200':
           description: successful operation
@@ -1950,17 +1949,26 @@ components:
       type: object
       description: Used when User is verifying their email address during registration
       required:
-        - userId
+        - email
         - verificationCode
       properties:
-        userId:
-          description: Id of the User whose email is being verified
-          type: integer
-          format: int64
-          example: 10
+        email:
+          description: Email address of the User whose email is being verified
+          type: string
+          example: bsliskov@workspace.hr
         verificationCode:
           type: string
           description: Verification code in clear text
+    ResendVerificationRequest:
+      type: object
+      description: Used when a registering User asks for the email verification code to be re-sent
+      required:
+        - email
+      properties:
+        email:
+          description: Email address the verification code should be re-sent to
+          type: string
+          example: bsliskov@workspace.hr
     RequestPasswordResetBody:
       type: object
       description: Either userId can be provided (if password reset is requested by Manager or System Administrator) or email address (if the request is made by anonymous user)

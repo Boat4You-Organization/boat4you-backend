@@ -14,7 +14,6 @@ import hr.workspace.boat4you.security.services.PasswordPolicy
 import hr.workspace.boat4you.security.services.UserAuthService
 import jakarta.servlet.http.HttpServletRequest
 import org.openapitools.model.TokenResponse
-import org.openapitools.model.User
 import org.openapitools.model.UserEmailVerificationRequest
 import org.openapitools.model.UserRegistrationRequest
 import org.springframework.beans.factory.annotation.Value
@@ -49,8 +48,30 @@ class UserRegistrationService(
     private val receivedFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm")
 
     @Transactional(readOnly = false)
-    fun registerUser(input: UserRegistrationRequest): User {
+    fun registerUser(input: UserRegistrationRequest) {
         PasswordPolicy.validate(input.password)
+
+        // Enumeration-safe registration (audit A1 / OWASP A07): the endpoint
+        // returns the SAME 204 whether or not the email already has an account,
+        // so it can't be used as an account-existence oracle. A brand-new email
+        // creates a STARTED account + verification code; an already-registered
+        // email gets a "you already have an account" email instead. The
+        // throwing 1201 path stays on the admin-only `POST /users` create flow
+        // (UserController), where enumeration by an authenticated admin is not
+        // a threat.
+        //
+        // Existence is checked up-front (NOT by catching createUser's
+        // UserAlreadyExistsException) on purpose: createUser is its own
+        // @Transactional, so catching its exception here would leave the shared
+        // transaction marked rollback-only and fail at commit. The only
+        // residual case is two brand-new identical emails racing, where the
+        // loser gets a 400 — not an enumeration vector. existsByEmailIgnoreCase
+        // mirrors the exact check createUser performs internally.
+        if (userRepository.existsByEmailIgnoreCase(input.email)) {
+            sendAlreadyRegisteredEmail(input.email)
+            return
+        }
+
         val userModel = userMutationService.createUser(input.toUserModel())
         val dbUser = userRepository.findById(userModel.id!!).get()
         dbUser.apply {
@@ -63,10 +84,36 @@ class UserRegistrationService(
         userRepository.save(dbUser)
 
         sendVerificationEmail(dbUser)
-
-        return dbUser.toUserModel()
     }
 
+    /**
+     * Public, anonymous resend (AuthController `POST /auth/register/resendVerificationCode`).
+     * Enumeration-safe + anti-spam: resolve by email and silently no-op for
+     * unknown / already-registered addresses, and silently skip when a code was
+     * issued less than 60s ago. The caller always gets the same 200, so this
+     * can't be used to probe which emails have a pending registration, nor to
+     * flood a victim with verification mail.
+     */
+    @Transactional(readOnly = false)
+    fun resendEmailVerificationCode(email: String) {
+        val dbUser =
+            userRepository.findByEmail(email)
+                ?.takeIf { it.registrationStatus == UserRegistrationStatusEnum.STARTED }
+                ?: return
+
+        if (dbUser.verificationCodeIssuedAt?.plusSeconds(60)?.isAfter(Instant.now()) == true) {
+            return
+        }
+
+        reissueVerificationCode(dbUser)
+    }
+
+    /**
+     * Authenticated self-service resend (UserController `POST /users/me/resend-verification`).
+     * The caller is identified by their JWT, so there's no enumeration concern —
+     * keep the informative errors (throws if already verified, or within the 60s
+     * rate-limit window) for a better signed-in UX.
+     */
     @Transactional(readOnly = false)
     fun resendEmailVerificationCode(userId: Long) {
         val dbUser = userRepository.findById(userId).getOrElse { throw UserDoesNotExistException() }
@@ -77,6 +124,10 @@ class UserRegistrationService(
             throw UserRegistrationException(UserRegistrationExceptionReason.VERIFICATION_CODE_REQUESTED_TOO_SOON)
         }
 
+        reissueVerificationCode(dbUser)
+    }
+
+    private fun reissueVerificationCode(dbUser: UserEntity) {
         dbUser.apply {
             emailVerificationCode = getRandomNumericalString(6)
             verificationCodeIssuedAt = Instant.now()
@@ -91,10 +142,15 @@ class UserRegistrationService(
         input: UserEmailVerificationRequest,
         httpRequest: HttpServletRequest,
     ): TokenResponse {
-        val dbUser = userRepository.findById(input.userId).getOrElse { throw UserDoesNotExistException() }
-        if (dbUser.registrationStatus != UserRegistrationStatusEnum.STARTED) {
-            throw UserRegistrationException(UserRegistrationExceptionReason.USER_ALREADY_REGISTERED)
-        }
+        // Resolve by email (was userId) so the endpoint can't be used to probe
+        // which user IDs exist. A missing or already-registered account yields
+        // the SAME generic "code does not match" failure as a wrong code, so
+        // verification leaks neither account existence nor registration state.
+        val dbUser =
+            userRepository.findByEmail(input.email)
+                ?.takeIf { it.registrationStatus == UserRegistrationStatusEnum.STARTED }
+                ?: throw UserRegistrationException(UserRegistrationExceptionReason.VERIFICATION_CODE_DOES_NOT_MATCH)
+
         if (dbUser.verificationAttempts >= MAX_VERIFICATION_ATTEMPTS) {
             throw UserRegistrationException(UserRegistrationExceptionReason.VERIFICATION_ATTEMPTS_EXCEEDED)
         }
@@ -163,6 +219,42 @@ class UserRegistrationService(
             recipients = listOf(recipientAddress),
             subject = subject,
             templateName = "email/emailVerification",
+            variables = variables,
+            locale = customerLocale,
+        )
+    }
+
+    /**
+     * Render + dispatch the "you already have an account" email — the
+     * enumeration-safe counterpart to the verification email. Sent by
+     * `registerUser` when someone tries to sign up with an address that is
+     * already registered. Only the real inbox owner ever receives it, so the
+     * copy can be explicit ("you already have an account — just log in"); the
+     * party that triggered the attempt gets the same 204 either way and learns
+     * nothing about whether the account exists.
+     */
+    private fun sendAlreadyRegisteredEmail(email: String) {
+        val existing = userRepository.findByEmail(email)
+        val displayName =
+            existing?.getFullName()?.trim()?.takeIf { it.isNotBlank() } ?: "there"
+        val recipientAddress =
+            if (displayName != "there") "$displayName <$email>" else email
+
+        val customerLocale: Locale = resolveEmailLocale(existing?.language)
+        val subject = messageSource.getMessage("accountExists.subject", null, customerLocale)
+
+        val variables: Map<String, Any?> =
+            mapOf(
+                "fullName" to displayName,
+                "loginUrl" to serverHostPublic,
+                "receivedAt" to formatReceivedAt(),
+                "currentYear" to LocalDate.now().year.toString(),
+            )
+
+        emailService.sendEmail(
+            recipients = listOf(recipientAddress),
+            subject = subject,
+            templateName = "email/accountAlreadyExists",
             variables = variables,
             locale = customerLocale,
         )

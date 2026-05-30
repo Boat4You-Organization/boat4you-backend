@@ -1,0 +1,61 @@
+name: CI
+
+# Faza 0 (DevOps modernizacija) — gating CI for the backend, which previously
+# had no GitHub workflow at all. Compile (incl. OpenAPI codegen) + tests +
+# detekt/ktlint, a secret scan (gitleaks, gating) and a dependency/filesystem
+# vulnerability scan (Trivy, report-only for now). Enable branch protection on
+# `main` requiring this check so a red build blocks merge.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-scan:
+    name: Build · Test · Lint · Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      # Runs OpenAPI codegen -> compile -> detekt + ktlint -> tests
+      # (Testcontainers starts Postgres via the runner's Docker daemon) ->
+      # assemble. Tests + compile gate the build; detekt/ktlint currently have
+      # ignoreFailures=true in build.gradle.kts so they surface but don't block
+      # yet (flip that off once the existing violations are cleaned up).
+      - name: Build, test & lint
+        run: ./gradlew build --no-daemon --stacktrace
+
+      # Secret scan — GATING. Scans the commits in the PR/push (not full
+      # history), so it blocks NEW secrets from entering the repo.
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Dependency + filesystem vulnerability scan. Report-only for now
+      # (exit-code 0); flip to '1' to make HIGH/CRITICAL block merges once the
+      # current baseline has been triaged.
+      - name: Vulnerability scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
