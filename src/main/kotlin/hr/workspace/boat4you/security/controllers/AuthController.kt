@@ -5,6 +5,7 @@ import hr.workspace.boat4you.security.services.UserAuthService
 import jakarta.servlet.http.HttpServletRequest
 import org.openapitools.api.AuthApi
 import org.openapitools.model.RequestPasswordResetBody
+import org.openapitools.model.ResendVerificationRequest
 import org.openapitools.model.SetUserPasswordBody
 import org.openapitools.model.TokenResponse
 import org.openapitools.model.UpdateUserPasswordBody
@@ -75,12 +76,13 @@ internal class AuthController(
         return ResponseEntity(userAuthService.getCurrentUser(), HttpStatus.OK)
     }
 
-    override fun registerUser(userRegistrationRequest: UserRegistrationRequest): ResponseEntity<User> {
-        return ResponseEntity(userRegistrationService.registerUser(userRegistrationRequest), HttpStatus.OK)
+    override fun registerUser(userRegistrationRequest: UserRegistrationRequest): ResponseEntity<Unit> {
+        userRegistrationService.registerUser(userRegistrationRequest)
+        return ResponseEntity(HttpStatus.NO_CONTENT)
     }
 
-    override fun resendEmailVerificationCode(userId: Long): ResponseEntity<Unit> {
-        userRegistrationService.resendEmailVerificationCode(userId)
+    override fun resendEmailVerificationCode(resendVerificationRequest: ResendVerificationRequest): ResponseEntity<Unit> {
+        userRegistrationService.resendEmailVerificationCode(resendVerificationRequest.email)
         return ResponseEntity(HttpStatus.OK)
     }
 

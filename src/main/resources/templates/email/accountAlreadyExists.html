@@ -1,0 +1,215 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
+  xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:th="http://www.thymeleaf.org" lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="supported-color-schemes" content="light" />
+  <!--[if !mso]><!-->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <!--<![endif]-->
+  <title th:text="#{accountExists.subject}">You already have a Boat4You account</title>
+
+  <!--[if gte mso 9]>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:AllowPNG />
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  <![endif]-->
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@600;700&display=swap"
+    rel="stylesheet" type="text/css" />
+
+  <style type="text/css">
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; background-color: #f4f6fb; }
+    a { color: #2856ff; text-decoration: none; }
+    a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; }
+
+    @media only screen and (max-width: 620px) {
+      .container { width: 100% !important; max-width: 100% !important; }
+      .sheet { padding: 24px 20px !important; }
+      .gutter { padding-left: 12px !important; padding-right: 12px !important; }
+      .hero { padding: 18px !important; }
+      .footer { padding: 24px 20px !important; }
+      .footer-line { font-size: 11px !important; }
+    }
+  </style>
+</head>
+
+<body style="margin:0; padding:0; background-color:#f4f6fb; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; color:#0f172a;">
+
+  <!-- Preheader (hidden inbox preview text) -->
+  <div th:text="#{accountExists.preheader}"
+    style="display:none; font-size:0; line-height:0; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+    Looks like you're already registered — just log in.
+  </div>
+
+  <!-- Outer wrapper table fills viewport with page-bg color -->
+  <table role="presentation" align="center" border="0" cellpadding="0" cellspacing="0" width="100%"
+    style="background-color:#f4f6fb;">
+    <tr>
+      <td align="center" style="padding:0 0 28px 0;">
+
+        <!-- Container 600px -->
+        <table role="presentation" class="container" border="0" cellpadding="0" cellspacing="0" width="600"
+          style="width:600px; max-width:600px;">
+
+          <!-- HEADER BAND (navy) — official Boat4You SVG logo, wordmark fill
+               flipped to white so it stays readable on the navy background. -->
+          <tr>
+            <td bgcolor="#141857" align="left" style="background-color:#141857; padding:18px 28px;">
+              <img src="cid:boat4youLogoFull" alt="Boat4You" width="138" height="35" style="display:block; border:0; outline:none; text-decoration:none;" />
+                    </td>
+          </tr>
+
+          <!-- Spacer header -> sheet -->
+          <tr>
+            <td style="height:16px; line-height:16px; font-size:0;">&nbsp;</td>
+          </tr>
+
+          <!-- WHITE SHEET -->
+          <tr>
+            <td class="gutter" style="padding:0 16px 0 16px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                style="background-color:#ffffff; border-radius:12px;">
+                <tr>
+                  <td class="sheet" style="padding:28px 32px;">
+
+                    <!-- HERO (dark navy) -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="background-color:#141857; border-radius:12px;">
+                      <tr>
+                        <td class="hero" style="padding:22px;">
+                          <!-- Eyebrow -->
+                          <div th:text="#{accountExists.heroLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:1.4px; color:#fbbf24; text-transform:uppercase; margin:0 0 8px 0;">
+                            Account notice
+                          </div>
+                          <!-- Headline -->
+                          <div th:text="#{accountExists.heroTitle(${fullName})}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:22px; font-weight:700; color:#ffffff; line-height:1.25; letter-spacing:-0.3px; margin:0;">
+                            Hi Mario Kuzmanic, you already have an account
+                          </div>
+                          <!-- Sub -->
+                          <div th:text="#{accountExists.heroSub}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:14px; color:#ffffff; opacity:0.75; line-height:1.5; margin:8px 0 0 0;">
+                            Someone just tried to sign up using this email address.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer hero -> body -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="height:24px; line-height:24px; font-size:0;">&nbsp;</td>
+                      </tr>
+                    </table>
+
+                    <!-- Body paragraphs -->
+                    <p th:text="#{accountExists.body1}"
+                      style="margin:0 0 14px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; line-height:1.65; color:#334155;">
+                      Good news — there's already a Boat4You account registered to this email, so there's no need to
+                      sign up again. Just log in with your existing password.
+                    </p>
+                    <p th:text="#{accountExists.body2}"
+                      style="margin:0 0 18px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; line-height:1.65; color:#334155;">
+                      Forgotten your password? You can reset it from the login screen. If this wasn't you, you can
+                      safely ignore this email — no account was created or changed.
+                    </p>
+
+                    <!-- CTA row -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="margin:8px 0 22px 0;">
+                      <tr>
+                        <td align="center">
+                          <!--[if mso]>
+                            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                              th:href="${loginUrl}" style="height:46px; v-text-anchor:middle; width:220px;"
+                              arcsize="22%" stroke="f" fillcolor="#2856ff">
+                              <w:anchorlock/>
+                              <center style="color:#ffffff; font-family:Arial,sans-serif; font-size:15px; font-weight:bold;">
+                                Log in to Boat4You
+                              </center>
+                            </v:roundrect>
+                          <![endif]-->
+                          <!--[if !mso]><!-->
+                          <a th:href="${loginUrl}" th:text="#{accountExists.cta}" target="_blank"
+                            style="display:inline-block; padding:13px 26px; border-radius:10px; background-color:#2856ff; color:#ffffff; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; font-weight:600; line-height:1; text-decoration:none; box-shadow:0 1px 0 rgba(20,24,87,0.2);">
+                            Log in to Boat4You
+                          </a>
+                          <!--<![endif]-->
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Disclaimer -->
+                    <div th:text="#{accountExists.disclaimer}"
+                      style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b; text-align:center; line-height:1.5;">
+                      You're receiving this because someone tried to register with your email.
+                    </div>
+
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- FOOTER (outside white sheet, on page bg) -->
+          <tr>
+            <td class="footer" align="center" style="padding:28px 32px 0 32px;">
+
+              <!-- Footer logo — small navy badge wrapping the same cid:logo PNG used
+                   in the header. White-on-transparent PNG needs a navy backdrop
+                   to read on the otherwise white footer area. -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center"
+                style="margin:0 auto 12px auto;">
+                <tr>
+                  <td bgcolor="#141857" style="background-color:#141857; padding:8px 14px; border-radius:8px;">
+                    <img src="cid:boat4youLogoFull" alt="Boat4You" width="100" height="25"
+                      style="display:block; border:0; outline:none; text-decoration:none;" />
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Links + phone -->
+              <div class="footer-line"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#64748b; margin:0 0 8px 0;">
+                <a href="https://www.boat4you.com" target="_blank"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">www.boat4you.com</a>
+                <span style="color:#94a3b8;">&nbsp;·&nbsp;</span>
+                <a href="mailto:info@boat4you.com"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">info@boat4you.com</a>
+                <span style="color:#94a3b8;">&nbsp;·&nbsp;</span>
+                <a href="tel:+385913000009" style="color:#2856ff; font-weight:700; text-decoration:none;; white-space: nowrap;">+385&nbsp;91&nbsp;3000&nbsp;009</a>
+              </div>
+
+              <!-- Legal microcopy -->
+              <div class="footer-line" th:text="#{email.footer.legal(${currentYear})}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                © 2026 Boat4You · Cusmanich d.o.o., Split, Croatia
+              </div>
+              <div class="footer-line" th:text="#{email.footer.notice}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                You're receiving this because of activity on your Boat4You account.
+              </div>
+
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+
+</html>
