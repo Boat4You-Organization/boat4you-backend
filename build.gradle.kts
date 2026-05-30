@@ -34,7 +34,7 @@ val apacheCommonsValidatorVersion = "1.10.1"
 val apacheCommonsTextVersion = "1.15.0"
 val libPhoneNumberVersion = "9.0.23"
 val stripeSdkVersion = "31.1.0"
-val eCacheVersion = "3.10.9"
+val eCacheVersion = "3.12.0"
 val opencvVersion = "4.9.0-0"
 val koTestVersion = "6.0.7"
 // ShedLock — distributed lock for @Scheduled cron methods so VM2 and VM3
