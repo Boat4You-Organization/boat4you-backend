@@ -132,28 +132,13 @@
                       for being part of the crew.
                     </p>
 
-                    <!-- CTA row -->
+                    <!-- Promotional CTA removed (audit B2): the birthday email is
+                         a pure courtesy greeting under legitimate interest, not a
+                         marketing message. -->
                     <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
-                      style="margin:8px 0 22px 0;">
+                      style="margin:0 0 14px 0;">
                       <tr>
-                        <td align="center">
-                          <!--[if mso]>
-                            <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
-                              th:href="${searchUrl}" style="height:46px; v-text-anchor:middle; width:200px;"
-                              arcsize="22%" stroke="f" fillcolor="#2856ff">
-                              <w:anchorlock/>
-                              <center style="color:#ffffff; font-family:Arial,sans-serif; font-size:15px; font-weight:bold;">
-                                Browse yachts
-                              </center>
-                            </v:roundrect>
-                          <![endif]-->
-                          <!--[if !mso]><!-->
-                          <a th:href="${searchUrl}" th:text="#{birthday.cta}" target="_blank"
-                            style="display:inline-block; padding:13px 26px; border-radius:10px; background-color:#2856ff; color:#ffffff; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; font-weight:600; line-height:1; text-decoration:none; box-shadow:0 1px 0 rgba(20,24,87,0.2);">
-                            Browse yachts
-                          </a>
-                          <!--<![endif]-->
-                        </td>
+                        <td style="height:4px; line-height:4px; font-size:0;">&nbsp;</td>
                       </tr>
                     </table>
 
@@ -162,8 +147,8 @@
                       style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:12px; color:#64748b; text-align:center; line-height:1.5;">
                       <span th:text="#{birthday.disclaimer}">You're receiving this because we have your birthday on file.</span>
                       <span>&nbsp;</span>
-                      <a th:href="${publicUrl} + '/my-profile'" th:text="#{birthday.disclaimerLink}"
-                        style="color:#2856ff; font-weight:600; text-decoration:none;">Update on My Profile</a>
+                      <a th:href="${unsubscribeUrl}" th:text="#{birthday.unsubscribe}"
+                        style="color:#2856ff; font-weight:600; text-decoration:none;">Unsubscribe</a>
                     </div>
 
                   </td>

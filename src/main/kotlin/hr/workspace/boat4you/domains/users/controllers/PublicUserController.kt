@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Controller
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.validation.annotation.Validated
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -75,6 +76,25 @@ class PublicUserController(
         }
         userRepository.save(user)
 
+        return ResponseEntity.ok().build()
+    }
+
+    // One-click email unsubscribe (audit B2). The token is the proof of intent;
+    // we set marketing_opt_out=true for the matching user so the birthday cron
+    // skips them. Enumeration-safe + idempotent: always returns 200, and is a
+    // silent no-op for an unknown/garbage token so it can't be probed.
+    @Operation(summary = "Unsubscribe from courtesy/marketing emails via a one-click token")
+    @PostMapping("/unsubscribe/{token}")
+    @Transactional
+    fun unsubscribe(
+        @PathVariable token: String,
+    ): ResponseEntity<Unit> {
+        userRepository.findByUnsubscribeToken(token)?.let { user ->
+            if (!user.marketingOptOut) {
+                user.marketingOptOut = true
+                userRepository.save(user)
+            }
+        }
         return ResponseEntity.ok().build()
     }
 }

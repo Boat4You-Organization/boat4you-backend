@@ -19,12 +19,12 @@ import java.util.Locale
  * fans out a personalized "Happy birthday from Boat4You" email to every
  * user whose birthday matches today's month+day.
  *
- * No marketing-consent toggle gating because we have no marketing-vs-
- * transactional split (Mario decision 1.5.2026: "newsletter smo makli").
- * The birthday wish is a transactional courtesy from a sole controller,
- * comparable to a hotel sending a "happy stay anniversary" — falls under
- * legitimate interest, customer can opt out only by clearing the birthday
- * field on /my-profile or deleting their account.
+ * Sent by default under legitimate interest (Mario decision 1.5.2026: the
+ * birthday wish is a courtesy from a sole controller, not a newsletter). The
+ * promotional "/search" CTA was removed (audit B2) so the message is a pure
+ * greeting, and a one-click unsubscribe link (the marketing_opt_out flag) lets
+ * recipients object (GDPR Art. 21 / ePrivacy). Users with marketing_opt_out =
+ * TRUE are filtered out by findAllByBirthdayMonthDay.
  *
  * Skipped for soft-deleted users (deletedAt IS NOT NULL) — the anonymized
  * tombstone email is undeliverable and we don't want noise in the
@@ -74,7 +74,7 @@ class BirthdayEmailJob(
                     "fullName" to fullName,
                     "userName" to user.name, // legacy var kept for any caller still referencing it
                     "publicUrl" to serverHostPublic,
-                    "searchUrl" to "$serverHostPublic/search",
+                    "unsubscribeUrl" to "$serverHostPublic/unsubscribe/${user.unsubscribeToken}",
                     "currentYear" to LocalDate.now().year.toString(),
                 )
                 emailService.sendEmail(

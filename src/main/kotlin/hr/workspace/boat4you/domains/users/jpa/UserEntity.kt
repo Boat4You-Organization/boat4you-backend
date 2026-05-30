@@ -8,12 +8,14 @@ import jakarta.persistence.Entity
 import jakarta.persistence.EnumType
 import jakarta.persistence.Enumerated
 import jakarta.persistence.OneToMany
+import jakarta.persistence.PrePersist
 import jakarta.persistence.Table
 import org.hibernate.annotations.Formula
 import org.openapitools.model.CurrencyEnum
 import org.openapitools.model.LanguageEnum
 import java.time.Instant
 import java.time.LocalDate
+import java.util.UUID
 
 @Entity
 @Table(name = "users")
@@ -121,11 +123,40 @@ class UserEntity : AbstractEntity<Long>() {
     @Column(name = "deleted_at", columnDefinition = "TIMESTAMP", nullable = true)
     var deletedAt: Instant? = null
 
+    /**
+     * Marketing/courtesy email opt-out (audit B2). FALSE = still receives the
+     * birthday greeting (legitimate-interest default, Mario decision 1.5.2026);
+     * the one-click unsubscribe link flips it to TRUE and the birthday cron
+     * skips the user.
+     */
+    @Column(name = "marketing_opt_out", columnDefinition = "BOOLEAN", nullable = false)
+    var marketingOptOut: Boolean = false
+
+    /**
+     * Opaque per-user handle embedded in the email unsubscribe link. Backfilled
+     * for existing rows by V9_06; generated in @PrePersist for new users so
+     * every account has one regardless of which creation path made the row.
+     */
+    @Column(name = "unsubscribe_token", columnDefinition = "VARCHAR(36)", nullable = true)
+    var unsubscribeToken: String? = null
+
     @OneToMany(mappedBy = "user")
     var roleAssignments: MutableSet<RoleAssignmentEntity> = mutableSetOf()
 
     @OneToMany(mappedBy = "user")
     var tokens: MutableSet<TokenEntity> = mutableSetOf()
+
+    /**
+     * Ensure every newly persisted user gets an unsubscribe token, regardless
+     * of which creation path (registration, admin create, guest booking) made
+     * the row. JPA runs AbstractEntity.prePersist first, then this callback.
+     */
+    @PrePersist
+    fun assignUnsubscribeToken() {
+        if (unsubscribeToken == null) {
+            unsubscribeToken = UUID.randomUUID().toString()
+        }
+    }
 
     /**
      * Full name of the user, concatenated from name and surname.
