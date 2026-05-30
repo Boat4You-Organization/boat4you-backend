@@ -21,6 +21,7 @@ data class UserDataExportDto(
     val user: ExportedUserDto,
     val reservations: List<ExportedReservationDto>,
     val customOffers: List<ExportedCustomOfferDto>,
+    val inquiries: List<ExportedInquiryDto>,
     val gdprActivityLog: List<ExportedGdprActivityDto>,
 )
 
@@ -82,6 +83,17 @@ data class ExportedCustomOfferDto(
     val status: String?,
     val totalPrice: BigDecimal?,
     val currency: String?,
+)
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class ExportedInquiryDto(
+    val id: Long,
+    val createdAt: LocalDateTime?,
+    val dateFrom: LocalDate?,
+    val dateTo: LocalDate?,
+    val yachtName: String?,
+    val message: String?,
+    val status: String?,
 )
 
 @JsonInclude(JsonInclude.Include.NON_NULL)

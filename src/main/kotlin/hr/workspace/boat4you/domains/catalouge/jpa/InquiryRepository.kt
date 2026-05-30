@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.InquiryStatus
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 
@@ -62,4 +63,25 @@ interface InquiryRepository : JpaRepository<Inquiry, Long> {
         @Param("startOfNextYear") startOfNextYear: java.time.LocalDateTime,
         @Param("id") id: Long,
     ): Long
+
+    /** GDPR Art. 15/20 — a data subject's inquiry leads, matched by email
+     *  (inquiries have no user FK; they are anonymous-visitor leads). */
+    fun findByEmailIgnoreCase(email: String): List<Inquiry>
+
+    /** GDPR Art. 17 — purge a data subject's inquiry leads on account erasure
+     *  (called from softDeleteForGdpr with the pre-anonymisation email). Bulk
+     *  delete; no entity callbacks needed. */
+    @Modifying
+    @Query("DELETE FROM Inquiry i WHERE LOWER(i.email) = LOWER(:email)")
+    fun deleteByEmailIgnoreCase(
+        @Param("email") email: String,
+    ): Int
+
+    /** GDPR Art. 5(1)(e) retention — drop inquiry leads older than the cutoff
+     *  (InquiryRetentionJob). */
+    @Modifying
+    @Query("DELETE FROM Inquiry i WHERE i.createdAt < :cutoff")
+    fun deleteByCreatedAtBefore(
+        @Param("cutoff") cutoff: java.time.LocalDateTime,
+    ): Int
 }
