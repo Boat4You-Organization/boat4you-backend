@@ -1,0 +1,20 @@
+# Faza 0 (DevOps modernizacija) — keep backend dependencies (Gradle) and the
+# CI workflow actions themselves patched. Web repo already had Dependabot for
+# npm; this extends the same coverage to the backend.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
