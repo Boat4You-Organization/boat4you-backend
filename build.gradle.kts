@@ -36,7 +36,7 @@ val libPhoneNumberVersion = "9.0.23"
 val stripeSdkVersion = "31.1.0"
 val eCacheVersion = "3.10.9"
 val opencvVersion = "4.9.0-0"
-val koTestVersion = "6.0.7"
+val koTestVersion = "6.1.11"
 // ShedLock — distributed lock for @Scheduled cron methods so VM2 and VM3
 // (and any future replica) do not both fire the same job at once
 // (F4-002 prod-blocker for 2-VM deploy). 5.16.0 is the latest stable
