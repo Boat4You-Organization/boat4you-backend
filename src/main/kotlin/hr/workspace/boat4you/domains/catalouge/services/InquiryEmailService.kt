@@ -125,6 +125,59 @@ class InquiryEmailService(
         )
     }
 
+    /**
+     * Client-facing acknowledgement: a "we received your inquiry" email sent
+     * to the customer who submitted the form, separate from the internal broker
+     * notification above. Reuses the same `buildVariables` data (yacht full
+     * label, dates, brand contact) but renders the customer template and sends
+     * to the lead's own address.
+     *
+     * Language: English for now (the inquiry form doesn't capture the client's
+     * locale). Architected for later localisation — pass a resolved locale via
+     * [clientLocale] once inquiryAck.* keys land in the other email_*.properties
+     * bundles. From = brand; Reply-To = brand support mailbox so a customer
+     * reply reaches the team, not a void.
+     */
+    @Transactional(readOnly = true)
+    fun sendInquiryClientAcknowledgement(
+        inquiry: Inquiry,
+        brand: Brand? = null,
+        force: Boolean = false,
+        clientLocale: Locale = Locale.ENGLISH,
+    ) {
+        val resolvedBrand = brand ?: brandRegistry.default
+        val recipient = inquiry.email?.takeIf { it.isNotBlank() }
+        if (recipient == null) {
+            log.warn("Skipping inquiry acknowledgement for inquiry id={} — no client email", inquiry.id)
+            return
+        }
+        val variables = buildVariables(inquiry, resolvedBrand, clientLocale, logoSrc = "cid:$BRAND_LOGO_CID")
+        val yachtFullLabel = variables["yachtFullLabel"] as? String ?: "your yacht"
+        val subject = messageSource.getMessage("inquiryAck.subject", arrayOf<Any>(yachtFullLabel), clientLocale)
+        emailService.sendEmail(
+            recipients = listOf(recipient),
+            subject = subject,
+            templateName = ACK_TEMPLATE,
+            variables = variables,
+            // Customer reply should reach the team's support mailbox.
+            replyTo = resolvedBrand.supportEmail,
+            force = force,
+            extraInlineImages = mapOf(
+                BRAND_LOGO_CID to loadBrandLogo(resolvedBrand),
+                "boat4youLogoFull" to ClassPathResource(BOAT4YOU_LOGO_FULL_CLASSPATH),
+            ),
+            fromOverride = "${resolvedBrand.displayName} <${resolvedBrand.fromAddress}>",
+            locale = clientLocale,
+        )
+        log.info(
+            "Queued inquiry acknowledgement email for inquiry id={} brand={} to {} (force={})",
+            inquiry.id,
+            resolvedBrand.id,
+            recipient,
+            force,
+        )
+    }
+
     /** Loads inquiry by id and sends the notification with `force = true`.
      *  Lets Mario hit a real SMTP delivery from the dev profile without
      *  enabling email globally. */
