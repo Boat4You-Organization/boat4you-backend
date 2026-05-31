@@ -9,6 +9,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.MessageSource
 import org.springframework.core.io.ClassPathResource
 import org.springframework.core.io.Resource
@@ -43,6 +44,11 @@ class InquiryEmailService(
     private val inquiryRepository: InquiryRepository,
     private val brandRegistry: BrandRegistry,
     private val messageSource: MessageSource,
+    // API host that actually serves /public/image/{id} (e.g. api.boat4you.com).
+    // The yacht thumbnail must point here, NOT at brand.websiteUrl (the Next.js
+    // customer frontend, which has no /public/image route → 404). Mirrors every
+    // other email service (ReservationEmailService, OptionExpiryService, …).
+    @Value("\${server.host}") private val serverHost: String,
 ) {
     private val log = LoggerFactory.getLogger(InquiryEmailService::class.java)
 
@@ -98,7 +104,15 @@ class InquiryEmailService(
             // inbox drafts straight to the customer, no copy-paste.
             replyTo = inquiry.email,
             force = force,
-            extraInlineImages = mapOf(BRAND_LOGO_CID to loadBrandLogo(resolvedBrand)),
+            // brandLogoMark = per-brand header mark; boat4youLogoFull = the
+            // footer wordmark the template references via cid:boat4youLogoFull.
+            // EmailService only auto-attaches the shared logo when no
+            // extraInlineImages are supplied, so we MUST include it here or the
+            // footer badge renders empty (the bug Mario saw on INQ-26-007).
+            extraInlineImages = mapOf(
+                BRAND_LOGO_CID to loadBrandLogo(resolvedBrand),
+                "boat4youLogoFull" to ClassPathResource(BOAT4YOU_LOGO_FULL_CLASSPATH),
+            ),
             fromOverride = "${resolvedBrand.displayName} <${resolvedBrand.fromAddress}>",
             locale = locale,
         )
@@ -215,7 +229,7 @@ class InquiryEmailService(
         val mainImageId = yacht?.yachtImages
             ?.let { images -> images.firstOrNull { it.mainImage == true } ?: images.firstOrNull() }
             ?.id
-        val yachtImageUrl = mainImageId?.let { "${brand.websiteUrl}/public/image/$it?width=160" }
+        val yachtImageUrl = mainImageId?.let { "$serverHost/public/image/$it?width=400" }
 
         // Yacht detail page on the brand's customer site (catamaran-croatia
         // -charter.com/boat/… for that brand, boat4you.com/boat/… for
@@ -398,5 +412,9 @@ class InquiryEmailService(
         /** Content id used by the template to reference the brand logo
          *  inline image attachment (`<img src="cid:brandLogoMark">`). */
         private const val BRAND_LOGO_CID = "brandLogoMark"
+        /** Classpath of the shared Boat4You wordmark PNG used in the footer
+         *  badge (`<img src="cid:boat4youLogoFull">`). Same asset EmailService
+         *  injects for the legacy templates. */
+        private const val BOAT4YOU_LOGO_FULL_CLASSPATH = "data/images/boat4you-logo-full.png"
     }
 }
