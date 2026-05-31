@@ -462,6 +462,8 @@ class InquiryEmailService(
 
     companion object {
         private const val TEMPLATE = "email/inquiryNotification"
+        /** Customer acknowledgement template ("we received your inquiry"). */
+        private const val ACK_TEMPLATE = "email/inquiryClientAck"
         /** Content id used by the template to reference the brand logo
          *  inline image attachment (`<img src="cid:brandLogoMark">`). */
         private const val BRAND_LOGO_CID = "brandLogoMark"
