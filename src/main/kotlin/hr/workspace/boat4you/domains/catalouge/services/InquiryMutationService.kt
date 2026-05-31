@@ -53,10 +53,17 @@ class InquiryMutationService(
         // placeholders, so leads land in the master inbox until per-brand
         // mailboxes are provisioned. Failure to send must NOT roll the
         // inquiry back — the lead is already saved, email is best-effort.
+        val brand = request?.let(brandResolver::resolve)
         runCatching {
-            val brand = request?.let(brandResolver::resolve)
             inquiryEmailService.sendNewInquiryNotification(inquiry, brand)
         }.onFailure { log.error("Failed to dispatch new-inquiry notification for id=${inquiry.id}", it) }
+
+        // Courtesy acknowledgement to the client ("we received your inquiry").
+        // Separate runCatching so a failure here can't suppress the broker
+        // notification above or roll back the saved inquiry.
+        runCatching {
+            inquiryEmailService.sendInquiryClientAcknowledgement(inquiry, brand)
+        }.onFailure { log.error("Failed to dispatch inquiry acknowledgement for id=${inquiry.id}", it) }
     }
 
     @Transactional
