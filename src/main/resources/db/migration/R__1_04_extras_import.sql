@@ -1,5 +1,5 @@
 INSERT INTO extras (id, name, label_code, match_keys, filter_order)
-VALUES (1, 'Skipper', 'skipper', 'skipper, case-substring:Skipper, not:charter pack, not:transit log, not:comfort pack', 1),
+VALUES (1, 'Skipper', 'skipper', 'skipper, case-substring:Skipper, not:charter pack, not:transit log, not:comfort pack, not:additional fee', 1),
        (2, 'Hostess', 'hostess', 'hostess, not:charter pack, not:transit log, not:comfort pack', 2),
        (3, 'Cook/Chef', 'cook', 'cook, chef, not:charter pack, not:transit log, not:comfort pack', null),
        (4, 'Towels', 'towels', 'towels, not:charter pack, not:transit log, not:comfort pack', null),

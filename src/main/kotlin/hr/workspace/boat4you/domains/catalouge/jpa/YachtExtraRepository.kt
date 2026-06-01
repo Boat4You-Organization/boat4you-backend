@@ -22,25 +22,36 @@ interface YachtExtraRepository : JpaRepository<YachtExtra, Long> {
 
     @Query(
         """
-        WITH prices AS (
-            SELECT id, price,
-                   CASE
-                       WHEN extras_id IS NOT NULL THEN extras_id::varchar
-                       ELSE name
-                   END as group_key,
-                   MIN(price) OVER (
+        WITH ranked AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
                        PARTITION BY CASE
                            WHEN extras_id IS NOT NULL THEN extras_id::varchar
                            ELSE name
                        END
-                   ) as calc_price
+                       ORDER BY
+                           -- 1) prefer the row whose validity window COVERS the
+                           --    check-in date (the period actually being booked).
+                           --    Replaces the old MIN(price) pick, which collapsed
+                           --    every season / base / unit variant of a service to
+                           --    the cheapest raw number — e.g. a 50/night skipper
+                           --    surcharge winning over the real 1640/week skipper,
+                           --    and peak weeks shown at the off-season rate.
+                           CASE
+                               WHEN CAST(:dateFrom AS date) IS NULL THEN 0
+                               WHEN valid_from <= CAST(:dateFrom AS date)
+                                    AND valid_to >= CAST(:dateFrom AS date) THEN 0
+                               ELSE 1
+                           END,
+                           -- 2) no period selected (canonical hit): cheapest as "from" price
+                           CASE WHEN CAST(:dateFrom AS date) IS NULL THEN price END ASC NULLS LAST,
+                           -- 3) deterministic tie-break
+                           valid_from DESC, id
+                   ) as rn
             FROM yacht_extras
             WHERE yacht_id = :yachtId
-                -- Period overlap (not strict containment): show extras whose
-                -- sailing window intersects the user-selected range. Strict
-                -- containment used to surface period-specific APA / comfort
-                -- packs for every booking window, since MMK splits seasonal
-                -- pricing into multiple rows with disjoint sailing dates.
+                -- Sailing-window overlap with the selected range; the ORDER BY
+                -- above then picks the variant covering check-in.
                 AND (CAST(:dateFrom AS date) IS NULL OR valid_from <= CAST(:dateTo AS date))
                 AND (CAST(:dateTo AS date) IS NULL OR valid_to >= CAST(:dateFrom AS date))
                 AND CASE
@@ -50,10 +61,9 @@ interface YachtExtraRepository : JpaRepository<YachtExtra, Long> {
                     ELSE :validForExtBaseIds && valid_for_bases
                 END
         )
-        SELECT MIN(id)
-        FROM prices
-        WHERE price = calc_price
-        GROUP BY group_key
+        SELECT id
+        FROM ranked
+        WHERE rn = 1
     """,
         nativeQuery = true,
     )
@@ -84,27 +94,31 @@ interface YachtExtraRepository : JpaRepository<YachtExtra, Long> {
     // sailing range. Groups by extras_id / name to dedupe identical entries.
     @Query(
         """
-        WITH prices AS (
-            SELECT id, price,
-                   CASE
-                       WHEN extras_id IS NOT NULL THEN extras_id::varchar
-                       ELSE name
-                   END as group_key,
-                   MIN(price) OVER (
+        WITH ranked AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (
                        PARTITION BY CASE
                            WHEN extras_id IS NOT NULL THEN extras_id::varchar
                            ELSE name
                        END
-                   ) as calc_price
+                       ORDER BY
+                           CASE
+                               WHEN CAST(:dateFrom AS date) IS NULL THEN 0
+                               WHEN valid_from <= CAST(:dateFrom AS date)
+                                    AND valid_to >= CAST(:dateFrom AS date) THEN 0
+                               ELSE 1
+                           END,
+                           CASE WHEN CAST(:dateFrom AS date) IS NULL THEN price END ASC NULLS LAST,
+                           valid_from DESC, id
+                   ) as rn
             FROM yacht_extras
             WHERE yacht_id = :yachtId
                 AND (CAST(:dateFrom AS date) IS NULL OR valid_from <= CAST(:dateTo AS date))
                 AND (CAST(:dateTo AS date) IS NULL OR valid_to >= CAST(:dateFrom AS date))
         )
-        SELECT MIN(id)
-        FROM prices
-        WHERE price = calc_price
-        GROUP BY group_key
+        SELECT id
+        FROM ranked
+        WHERE rn = 1
     """,
         nativeQuery = true,
     )

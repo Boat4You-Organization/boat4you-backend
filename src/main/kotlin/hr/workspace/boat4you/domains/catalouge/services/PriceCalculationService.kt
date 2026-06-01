@@ -53,8 +53,14 @@ class PriceCalculationService(
         val allYachtExtras =
             yachtExtras
                 .filter {
-                    (it.validFrom == null || it.validFrom!!.isBefore(offer.dateFrom)) &&
-                        (it.validTo == null || it.validTo!!.isAfter(offer.dateTo))
+                    // Keep the variant whose validity window COVERS the charter
+                    // check-in date (the period being booked). Replaces strict
+                    // whole-booking containment, which dropped the period row on
+                    // bookings straddling a season boundary and — combined with a
+                    // shared extras label — let the wrong-season / surcharge price
+                    // be charged. Charters are priced off their start date.
+                    (it.validFrom == null || !it.validFrom!!.isAfter(offer.dateFrom)) &&
+                        (it.validTo == null || !it.validTo!!.isBefore(offer.dateFrom))
                 }.filter {
                     it.validForBases == null || externalBasesExternalIds.isEmpty() ||
                         it.validForBases!!.any { e ->
