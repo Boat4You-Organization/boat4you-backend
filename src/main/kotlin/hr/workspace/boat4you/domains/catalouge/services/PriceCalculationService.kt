@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.common.services.PriceCalculations
 import hr.workspace.boat4you.domains.catalouge.dto.ExtrasPriceDto
+import hr.workspace.boat4you.domains.catalouge.dto.InternalCalcDto
 import hr.workspace.boat4you.domains.catalouge.dto.PriceCalcDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
@@ -80,30 +81,35 @@ class PriceCalculationService(
                 .filter { it.first.obligatory == true || selectedExtras.contains(it.first.extrasKey()) }
                 .map { yachtExtrasMapper.toInternalCalc(it.first, it.second) }
 
-        // 2. get full list of extras by extrasId or name, where prices are taken from offer extras if they exist
-        // Dedupe by the stable partner extra id (externalId) when present, NOT by
-        // extrasKey (name/label). The same NauSys extra can carry different names in
-        // yacht_extras vs offer_extras when the partner renames it between syncs —
-        // e.g. Lagoon 39 "Gin Tonic" had one Comfort Pack (external_id 5010210436201502)
-        // surfacing as both "Comfort Pack 39/40/42" and "...38/39/40/42", so it was
-        // billed TWICE at the marina. Same externalId -> one entry (offer overrides
-        // yacht below). Extras without an externalId fall back to extrasKey.
-        val allOfferExtrasMap =
-            allOfferExtras
-                .associateBy { it.externalId?.toString() ?: it.extrasKey() }
-                .toMutableMap()
-        val allYachtExtrasMap =
-            allYachtExtras
-                .associateBy { it.externalId?.toString() ?: it.extrasKey() }
-                .toMutableMap()
-        val totalExtrasMap =
-            buildMap {
-                putAll(allYachtExtrasMap)
-                putAll(allOfferExtrasMap) // Later putAll call override earlier ones
-            }
+        // 2. Merge yacht + offer extras into ONE entry per logical extra, with the
+        // offer-level row winning (it carries the period-specific price). A logical
+        // extra must be deduped on BOTH axes, because the two sources can disagree
+        // on either one and using a single key double-counts:
+        //   • Comfort Pack: SAME externalId, DIFFERENT name (partner renamed it
+        //     between the yacht sync and the offer sync) -> dedup by externalId.
+        //     Lagoon 39 "Gin Tonic" billed it TWICE at the marina otherwise.
+        //   • Handling / Preparation fees: SAME name, DIFFERENT externalId (the
+        //     offer row carries a synthetic id, the yacht rows carry per-base
+        //     partner ids) -> dedup by extrasKey (name).
+        // Keying on externalId alone double-charged handling/prep; keying on name
+        // alone double-listed the renamed Comfort Pack. Union both lookups.
+        val flattenedList = mutableListOf<InternalCalcDto>()
+        val indexByKey = HashMap<String, Int>()
+        val indexByExternalId = HashMap<String, Int>()
+        fun mergeExtra(extra: InternalCalcDto) {
+            val key = extra.extrasKey()
+            val externalId = extra.externalId?.toString()
+            val existingIndex = indexByKey[key] ?: externalId?.let { indexByExternalId[it] }
+            val index = existingIndex ?: flattenedList.size
+            if (existingIndex == null) flattenedList.add(extra) else flattenedList[index] = extra
+            indexByKey[key] = index
+            if (externalId != null) indexByExternalId[externalId] = index
+        }
+        allYachtExtras.forEach { mergeExtra(it) } // yacht first
+        allOfferExtras.forEach { mergeExtra(it) } // offer overrides on either key
 
         // 3. split into at base and in price
-        val flattenedExtras = totalExtrasMap.values
+        val flattenedExtras: Collection<InternalCalcDto> = flattenedList
         val selectedExtrasAtBase =
             flattenedExtras
                 .filter { it.payableInBase }
