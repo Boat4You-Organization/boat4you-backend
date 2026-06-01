@@ -1,13 +1,18 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.common.services.PriceCalculations
+import hr.workspace.boat4you.domains.catalouge.dto.ExtrasPriceDto
 import hr.workspace.boat4you.domains.catalouge.dto.PriceCalcDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
+import hr.workspace.boat4you.domains.catalouge.enums.EntryType
+import hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType
+import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalBaseRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtraRepository
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
+import hr.workspace.boat4you.domains.external.nausys.service.NauSysObligatoryExtrasService
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -23,6 +28,7 @@ class PriceCalculationService(
     private val yachtExtrasMapper: YachtExtrasMapper,
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
     private val externalBaseRepository: ExternalBaseRepository,
+    private val nauSysObligatoryExtrasService: NauSysObligatoryExtrasService,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this::class.java.name)
 
@@ -145,7 +151,7 @@ class PriceCalculationService(
         val totalPrice = offer.clientPrice!! + extrasPrice
         val pricePerDayEur = offer.pricePerDayEur()
 
-        return PriceCalcDto(
+        val result = PriceCalcDto(
             offerId = offer.id!!,
             yachtId = offer.yacht!!.id!!,
             dateFrom = offer.dateFrom!!,
@@ -178,6 +184,74 @@ class PriceCalculationService(
             multipleExtrasInPriceOptionsAvailable = multipleExtrasInPriceOptionsAvailable,
             multipleExtrasInBaseOptionsAvailable = multipleExtrasInBaseOptionsAvailable,
             extrasPriceCalcInquire = potentiallyIncorrectCalc,
+        )
+
+        return mergeNausysObligatory(result, yacht, offer, currency, selectedExtras)
+    }
+
+    /**
+     * Some partners (NauSys/Navigare) promote an extra to obligatory only once
+     * another is selected — e.g. Damage Waiver becomes mandatory when a Skipper is
+     * added. That rule lives at the partner, not in our catalogue, so we replay the
+     * exact selection against NauSys (getFreeYachts + serviceIDs) and fold any newly
+     * obligatory service into the price — both the customer preview and the stored
+     * reservation total/extras, so the charged amount matches the partner. The
+     * partner call is best-effort: on any miss we return the local price unchanged.
+     */
+    private fun mergeNausysObligatory(
+        base: PriceCalcDto,
+        yacht: Yacht,
+        offer: Offer,
+        currency: CurrencyEnum?,
+        selectedExtras: Set<String>,
+    ): PriceCalcDto {
+        if (yacht.entryType != EntryType.EXTERNAL || selectedExtras.isEmpty()) return base
+        val dateFrom = offer.dateFrom ?: return base
+        val dateTo = offer.dateTo ?: return base
+
+        val obligatory =
+            nauSysObligatoryExtrasService.obligatoryWithSelectedServices(yacht, dateFrom, dateTo, selectedExtras)
+        if (obligatory.isEmpty()) return base
+
+        // Keys already in the price (base obligatory like handling/preparation, plus
+        // whatever the client explicitly selected) must not be double-counted.
+        val alreadyCounted =
+            (base.selectedExtrasInPrice + base.selectedExtrasAtBase).map { it.key }.toMutableSet()
+        alreadyCounted += selectedExtras
+
+        val yachtExtrasByName = yachtExtraRepository.findAllByYacht(yacht).associateBy { it.name }
+
+        val promoted =
+            obligatory.mapNotNull { o ->
+                val ye = yachtExtrasByName[o.name]
+                val key = ye?.extrasKey() ?: o.name
+                // add() == false -> already accounted for (base obligatory / selected) -> skip
+                if (key.isBlank() || !alreadyCounted.add(key)) return@mapNotNull null
+                ExtrasPriceDto(
+                    id = ye?.id ?: 0,
+                    name = o.name,
+                    labelCode = ye?.extras?.labelCode,
+                    priceEur = o.totalPrice,
+                    priceInfo = exchangeRateCalculationService.calculatePriceInfo(o.totalPrice, currency),
+                    obligatory = true,
+                    payableInBase = false,
+                    unit = ExtrasUnitType.PER_BOOKING,
+                    unitPriceEur = o.totalPrice,
+                    unitPriceInfo = exchangeRateCalculationService.calculatePriceInfo(o.totalPrice, currency),
+                    key = key,
+                    extrasId = ye?.extras?.id,
+                    externalId = ye?.externalId,
+                    isStartingPrice = null,
+                    paymentType = ExtraPaymentType.fromNausysCalculationType(o.calculationType, o.totalPrice),
+                )
+            }
+        if (promoted.isEmpty()) return base
+
+        val newTotal = promoted.fold(base.totalPriceEur) { acc, e -> acc + e.priceEur }
+        return base.copy(
+            selectedExtrasInPrice = base.selectedExtrasInPrice + promoted,
+            totalPriceEur = newTotal,
+            totalPriceInfo = exchangeRateCalculationService.calculatePriceInfo(newTotal, currency),
         )
     }
 }
