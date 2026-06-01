@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.security.jpa
 
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.stereotype.Repository
 
@@ -15,4 +16,10 @@ interface TokenRepository : JpaRepository<TokenEntity, Long> {
     fun findAllValidTokenByUserId(id: Long): List<TokenEntity>
 
     fun findByValue(value: String): TokenEntity?
+
+    /** Hard-delete every token row for a user. Needed before deleting the user
+     *  itself — tokens.user_id is a NO ACTION FK, so leftover rows (even the
+     *  expired/revoked ones revokeAllUserTokens only flags) block the delete. */
+    @Modifying
+    fun deleteByUserId(userId: Long)
 }

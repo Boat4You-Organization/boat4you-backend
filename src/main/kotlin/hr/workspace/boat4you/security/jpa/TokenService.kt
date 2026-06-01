@@ -16,4 +16,12 @@ class TokenService(
             tokenRepository.saveAll(validUserTokens)
         }
     }
+
+    /** Hard-delete all token rows for a user (used when deleting the user) —
+     *  revokeAllUserTokens only flags them, leaving rows that block the
+     *  user delete via the tokens.user_id FK. */
+    @org.springframework.transaction.annotation.Transactional
+    fun deleteAllUserTokens(userId: Long) {
+        tokenRepository.deleteByUserId(userId)
+    }
 }

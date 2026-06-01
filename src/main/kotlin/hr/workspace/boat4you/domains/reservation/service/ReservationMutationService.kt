@@ -13,6 +13,8 @@ import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlowRepository
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.mapper.ReservationMappers
 import hr.workspace.boat4you.domains.reservation.model.ReservationResponseWrapper
+import org.slf4j.LoggerFactory
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -27,7 +29,88 @@ class ReservationMutationService(
     private val reservationMappers: ReservationMappers,
     private val offerMutationService: OfferMutationService,
     private val bookingNumberService: BookingNumberService,
+    private val jdbcTemplate: JdbcTemplate,
 ) {
+    private val log = LoggerFactory.getLogger(this.javaClass)
+    /**
+     * HARD-DELETE a reservation + its whole reservation_flow subtree from the DB.
+     * Intended for purging spam / fake bookings (bot signups). This does NOT call
+     * the partner (MMK/NauSys) — the admin must have already cancelled the option
+     * manually (the standard Cancel action releases the partner hold). Guard rail:
+     * we only purge when the reservation is already CANCELLED, so an active /
+     * paid / option booking can never be wiped by accident.
+     *
+     * JPA has no cascade configured on the flow→children relations and the DB FKs
+     * are RESTRICT, so we delete children explicitly in FK order via native SQL
+     * inside one transaction. Every touched row is snapshotted into
+     * `_purged_reservation_backup_*` tables first (cusma4 has no DB backup), so a
+     * mistaken purge is reversible from those tables.
+     */
+    @Transactional
+    fun purgeReservation(reservationId: Long) {
+        val reservation = reservationRepository.findById(reservationId)
+            .orElseThrow { ReservationNotExistException() }
+        val flowId = reservation.reservationFlow?.id
+            ?: throw IllegalStateException("Reservation $reservationId has no reservation_flow — refusing to purge")
+
+        // Guard rail: only CANCELLED bookings may be purged. Anything live/paid
+        // stays untouchable through this endpoint.
+        if (reservation.sysStatus != ReservationStatus.CANCELLED) {
+            throw IllegalStateException(
+                "Refusing to purge reservation $reservationId — sysStatus is ${reservation.sysStatus}, " +
+                    "only CANCELLED reservations can be purged. Cancel it first.",
+            )
+        }
+
+        // Safety: never purge a flow that is the `previous_flow_id` of another
+        // flow/reservation (replacement chain) — that would orphan the survivor.
+        val chainRefs = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM reservation_flow WHERE previous_flow_id = ?",
+            Int::class.java,
+            flowId,
+        ) ?: 0
+        if (chainRefs > 0) {
+            throw IllegalStateException(
+                "Refusing to purge reservation $reservationId — its flow $flowId is referenced as " +
+                    "previous_flow_id by $chainRefs other flow(s) (replacement chain).",
+            )
+        }
+
+        val ts = System.currentTimeMillis()
+        // Snapshot each table's rows before delete (reversible). CREATE TABLE AS
+        // is transactional in Postgres, so a rollback drops these too.
+        fun backup(table: String, whereCol: String, idValue: Long) {
+            jdbcTemplate.execute(
+                "CREATE TABLE IF NOT EXISTS _purged_${table}_backup AS TABLE $table WITH NO DATA",
+            )
+            jdbcTemplate.update(
+                "INSERT INTO _purged_${table}_backup SELECT * FROM $table WHERE $whereCol = ?",
+                idValue,
+            )
+        }
+
+        // Children first (FK order), then reservation, then flow.
+        backup("external_reservation_extras", "reservation_id", reservationId)
+        backup("external_reservation_payment_plan", "reservation_id", reservationId)
+        backup("reservation_payment_phase", "reservation_flow_id", flowId)
+        backup("reservation_extras", "reservation_flow_id", flowId)
+        backup("reservation", "id", reservationId)
+        backup("reservation_flow", "id", flowId)
+
+        jdbcTemplate.update("DELETE FROM external_reservation_extras WHERE reservation_id = ?", reservationId)
+        jdbcTemplate.update("DELETE FROM external_reservation_payment_plan WHERE reservation_id = ?", reservationId)
+        // reservation_document FK is ON DELETE CASCADE → goes with reservation.
+        jdbcTemplate.update("DELETE FROM reservation_payment_phase WHERE reservation_flow_id = ?", flowId)
+        jdbcTemplate.update("DELETE FROM reservation_extras WHERE reservation_flow_id = ?", flowId)
+        jdbcTemplate.update("DELETE FROM reservation WHERE id = ?", reservationId)
+        jdbcTemplate.update("DELETE FROM reservation_flow WHERE id = ?", flowId)
+
+        log.warn(
+            "PURGED reservation id={} flow={} (was CANCELLED). Backups in _purged_*_backup (ts={}).",
+            reservationId, flowId, ts,
+        )
+    }
+
     @Transactional
     fun refreshReservation(
         reservationId: Long,

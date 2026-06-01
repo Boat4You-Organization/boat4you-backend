@@ -183,7 +183,9 @@ class UserMutationService(
             throw UserDoesNotExistException()
         }
 
-        tokenService.revokeAllUserTokens(id)
+        // Hard-delete (not just revoke) the user's tokens — tokens.user_id is a
+        // NO ACTION FK, so flagged-but-present rows would block the user delete.
+        tokenService.deleteAllUserTokens(id)
 
         roleAssignmentRepository.deleteByUserId(id)
         userRepository.deleteById(id)

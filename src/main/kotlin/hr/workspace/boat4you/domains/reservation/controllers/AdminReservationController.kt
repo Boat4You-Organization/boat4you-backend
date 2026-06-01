@@ -419,6 +419,21 @@ internal class AdminReservationController(
     }
 
     @Operation(
+        summary = "Hard-delete (purge) a cancelled reservation from the DB",
+        description = "Permanently removes a reservation + its flow subtree. Use ONLY for spam / " +
+            "fake bookings (e.g. bot signups). Does NOT call the partner — cancel the option first " +
+            "via the normal Cancel action. Guarded: only CANCELLED reservations can be purged; rows " +
+            "are snapshotted into _purged_*_backup tables before deletion.",
+    )
+    @DeleteMapping("/{id}/purge")
+    fun purgeReservation(
+        @PathVariable id: Long,
+    ): ResponseEntity<Unit> {
+        reservationMutationService.purgeReservation(id)
+        return ResponseEntity.noContent().build()
+    }
+
+    @Operation(
         summary = "Reject the customer's cancellation request",
         description = "Used when the partner agency refuses the cancellation. Stamps " +
             "`cancelationRejectedAt` + `cancelationRejectedReason` on the flow, leaves " +
