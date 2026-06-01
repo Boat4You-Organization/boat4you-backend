@@ -1,7 +1,7 @@
 package hr.workspace.boat4you.domains.external.nausys.service
 
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalEquipmentType
-import hr.workspace.boat4you.domains.catalouge.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalEquipmentRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtraRepository
