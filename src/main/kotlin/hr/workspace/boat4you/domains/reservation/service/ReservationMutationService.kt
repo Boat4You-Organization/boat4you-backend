@@ -42,9 +42,9 @@ class ReservationMutationService(
      *
      * JPA has no cascade configured on the flow→children relations and the DB FKs
      * are RESTRICT, so we delete children explicitly in FK order via native SQL
-     * inside one transaction. Every touched row is snapshotted into
-     * `_purged_reservation_backup_*` tables first (cusma4 has no DB backup), so a
-     * mistaken purge is reversible from those tables.
+     * inside one transaction. Every touched row is dumped to the app log as JSON
+     * before deletion (the app DB user lacks CREATE rights to stage backup
+     * tables), so a mistaken purge is recoverable from the log.
      */
     @Transactional
     fun purgeReservation(reservationId: Long) {
@@ -76,27 +76,23 @@ class ReservationMutationService(
             )
         }
 
-        val ts = System.currentTimeMillis()
-        // Snapshot each table's rows before delete (reversible). CREATE TABLE AS
-        // is transactional in Postgres, so a rollback drops these too.
-        fun backup(table: String, whereCol: String, idValue: Long) {
-            jdbcTemplate.execute(
-                "CREATE TABLE IF NOT EXISTS _purged_${table}_backup AS TABLE $table WITH NO DATA",
-            )
-            jdbcTemplate.update(
-                "INSERT INTO _purged_${table}_backup SELECT * FROM $table WHERE $whereCol = ?",
-                idValue,
-            )
+        // Reversible audit snapshot. The app DB user (`boat4you_app`) has no
+        // CREATE privilege on schema public, so we can't stage backup TABLES;
+        // instead we dump every row we're about to delete as JSON into the
+        // application log at WARN. If a purge ever needs undoing, the rows are
+        // recoverable from the log.
+        fun snapshot(table: String, whereCol: String, idValue: Long) {
+            val rows = jdbcTemplate.queryForList("SELECT * FROM $table WHERE $whereCol = ?", idValue)
+            log.warn("PURGE-SNAPSHOT res={} table={} rows={}", reservationId, table, rows)
         }
+        snapshot("external_reservation_extras", "reservation_id", reservationId)
+        snapshot("external_reservation_payment_plan", "reservation_id", reservationId)
+        snapshot("reservation_payment_phase", "reservation_flow_id", flowId)
+        snapshot("reservation_extras", "reservation_flow_id", flowId)
+        snapshot("reservation", "id", reservationId)
+        snapshot("reservation_flow", "id", flowId)
 
         // Children first (FK order), then reservation, then flow.
-        backup("external_reservation_extras", "reservation_id", reservationId)
-        backup("external_reservation_payment_plan", "reservation_id", reservationId)
-        backup("reservation_payment_phase", "reservation_flow_id", flowId)
-        backup("reservation_extras", "reservation_flow_id", flowId)
-        backup("reservation", "id", reservationId)
-        backup("reservation_flow", "id", flowId)
-
         jdbcTemplate.update("DELETE FROM external_reservation_extras WHERE reservation_id = ?", reservationId)
         jdbcTemplate.update("DELETE FROM external_reservation_payment_plan WHERE reservation_id = ?", reservationId)
         // reservation_document FK is ON DELETE CASCADE → goes with reservation.
@@ -105,10 +101,7 @@ class ReservationMutationService(
         jdbcTemplate.update("DELETE FROM reservation WHERE id = ?", reservationId)
         jdbcTemplate.update("DELETE FROM reservation_flow WHERE id = ?", flowId)
 
-        log.warn(
-            "PURGED reservation id={} flow={} (was CANCELLED). Backups in _purged_*_backup (ts={}).",
-            reservationId, flowId, ts,
-        )
+        log.warn("PURGED reservation id={} flow={} (was CANCELLED).", reservationId, flowId)
     }
 
     @Transactional
