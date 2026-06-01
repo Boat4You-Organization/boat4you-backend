@@ -81,13 +81,20 @@ class PriceCalculationService(
                 .map { yachtExtrasMapper.toInternalCalc(it.first, it.second) }
 
         // 2. get full list of extras by extrasId or name, where prices are taken from offer extras if they exist
+        // Dedupe by the stable partner extra id (externalId) when present, NOT by
+        // extrasKey (name/label). The same NauSys extra can carry different names in
+        // yacht_extras vs offer_extras when the partner renames it between syncs —
+        // e.g. Lagoon 39 "Gin Tonic" had one Comfort Pack (external_id 5010210436201502)
+        // surfacing as both "Comfort Pack 39/40/42" and "...38/39/40/42", so it was
+        // billed TWICE at the marina. Same externalId -> one entry (offer overrides
+        // yacht below). Extras without an externalId fall back to extrasKey.
         val allOfferExtrasMap =
             allOfferExtras
-                .associateBy { it.extrasKey() }
+                .associateBy { it.externalId?.toString() ?: it.extrasKey() }
                 .toMutableMap()
         val allYachtExtrasMap =
             allYachtExtras
-                .associateBy { it.extrasKey() }
+                .associateBy { it.externalId?.toString() ?: it.extrasKey() }
                 .toMutableMap()
         val totalExtrasMap =
             buildMap {
