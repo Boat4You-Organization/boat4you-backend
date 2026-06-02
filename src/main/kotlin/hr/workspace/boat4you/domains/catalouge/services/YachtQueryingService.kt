@@ -31,6 +31,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Manufacturer
 import hr.workspace.boat4you.domains.catalouge.jpa.Model
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtEquipment
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
@@ -74,6 +75,7 @@ class YachtQueryingService(
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
     private val yachtExtraRepository: YachtExtraRepository,
     private val externalBaseRepository: ExternalBaseRepository,
+    private val regionRepository: RegionRepository,
 ) {
     companion object {
         private const val MAX_PAGE_SIZE = 100
@@ -639,11 +641,17 @@ class YachtQueryingService(
             predicates.add(root.get<Long>("agencyId").`in`(searchParams.agencyIds))
         }
 
-        if (!searchParams.countryCodes.isNullOrEmpty()) {
-            // Sitemap whitelist — keep only yachts whose home location ends
-            // in one of the listed 2-letter codes. RIGHT() over the
-            // location_full_name string sidesteps the JOIN + Pageable bug.
-            val codeUpper = searchParams.countryCodes.map { it.uppercase() }
+        // Country scope. An explicit countryCodes whitelist (sitemap) wins; otherwise derive
+        // it from any REGION ids in `did` so a region search only returns yachts in that
+        // region's OWN country. Fixes cross-country partner regions: MMK's "Ionian" spans the
+        // whole sea (Greek + Italian + Albanian coast), so a Greece > Ionian search used to
+        // surface Taranto/Brindisi boats. RIGHT() over location_full_name sidesteps the JOIN +
+        // Pageable bug; null-country regions contribute nothing so the filter quietly no-ops.
+        val effectiveCountryCodes =
+            searchParams.countryCodes?.takeIf { it.isNotEmpty() }
+                ?: deriveRegionCountryCodes(searchParams.locationIds)
+        if (effectiveCountryCodes.isNotEmpty()) {
+            val codeUpper = effectiveCountryCodes.map { it.uppercase() }
             val countryCodeExpr = cb.function(
                 "right",
                 String::class.java,
@@ -863,6 +871,22 @@ class YachtQueryingService(
             LocationType.REGION -> locationRepository.findMarinasByRegionId(id)
         }
     }
+
+    /**
+     * Country codes of the REGION ids (`r-…`) in a `did` list. Used to scope a region search
+     * to the region's own country so cross-country partner regions don't leak foreign-country
+     * yachts (e.g. MMK's "Ionian" covering both the Greek islands and the Italian/Albanian
+     * coast). Country (`c-…`) and marina (`l-…`) ids are ignored — already single-country at
+     * the marina layer. Returns distinct non-null codes; empty when there are no region ids or
+     * their country_code is unset, in which case the caller applies no country filter.
+     */
+    private fun deriveRegionCountryCodes(locationIds: List<String>?): List<String> =
+        locationIds
+            ?.filter { it.firstOrNull() == 'r' }
+            ?.mapNotNull { it.substring(2).toLongOrNull() }
+            ?.mapNotNull { regionRepository.findById(it).orElse(null)?.countryCode }
+            ?.distinct()
+            .orEmpty()
 
     fun getYacht(
         id: Long,
