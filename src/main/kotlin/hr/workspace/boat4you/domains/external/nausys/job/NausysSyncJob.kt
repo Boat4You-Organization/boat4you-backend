@@ -116,10 +116,11 @@ class NausysSyncJob(
 
     /**
      * Syncs NauSYS availability data for all yachts coming from NauSYS agencies.
-     * Triggers at the in hourly intervals, at 20 minutes past the hour.
-     * 20 minutes past the hour is chosen to avoid overlapping with the catalogue sync at 3:00 AM.
+     * Runs 3x/day (03:20, 12:20, 18:20) so a partner-side reservation surfaces within
+     * hours instead of up to a full day. 20 minutes past the hour avoids overlapping the
+     * catalogue sync at 3:00 AM.
      */
-    @Scheduled(cron = "0 20 3,12 * * *")
+    @Scheduled(cron = "0 20 3,12,18 * * *")
     @SchedulerLock(name = "nausysAvailabilitySync", lockAtMostFor = "PT1H")
     fun availabilitySync() {
         log.info("Starting NauSYS availability sync")
