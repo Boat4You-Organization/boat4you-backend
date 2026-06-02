@@ -82,6 +82,29 @@ interface OfferRepository : JpaRepository<Offer, Long> {
         dateTo: LocalDate,
     ): List<Offer>
 
+    /**
+     * Offers whose week OVERLAPS the half-open interval [dateFrom, dateTo). Half-open so a
+     * charter that ends on the same day the next begins (Saturday turnaround) is NOT counted
+     * as a conflict. Used by availability sync to mark EVERY week a reservation touches as
+     * UNAVAILABLE — including multi-week and non-Saturday-aligned reservations that an exact
+     * dateFrom/dateTo match silently leaves bookable (the over-availability bug).
+     */
+    @Query(
+        """
+        SELECT o FROM Offer o
+        LEFT JOIN FETCH o.offerExtras oe
+        WHERE o.yacht = :yacht
+        AND o.dateFrom < :dateTo
+        AND o.dateTo > :dateFrom
+        ORDER BY o.id ASC
+    """,
+    )
+    fun findAllByYachtAndDateRangeOverlap(
+        yacht: Yacht,
+        dateFrom: LocalDate,
+        dateTo: LocalDate,
+    ): List<Offer>
+
     @Query(
         """
         SELECT o FROM Offer o

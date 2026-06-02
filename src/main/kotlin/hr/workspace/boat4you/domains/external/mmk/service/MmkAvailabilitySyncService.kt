@@ -166,13 +166,16 @@ class MmkAvailabilitySyncService(
             }
 
             ExternalReservationStatus.RESERVATION, ExternalReservationStatus.SERVICE -> {
-                matchingOffers.forEach { offer ->
+                // Overlap, NOT exact-date match: a reservation blocks EVERY week it touches —
+                // including multi-week and non-Saturday-aligned bookings that exact matching
+                // silently left bookable, the over-availability bug.
+                offersRepository.findAllByYachtAndDateRangeOverlap(yacht, dateFrom, dateTo).forEach { offer ->
                     if (offer.status != OfferStatus.UNAVAILABLE) {
                         offer.status = OfferStatus.UNAVAILABLE
                         offersRepository.save(offer)
                         log.info(
-                            "MMK offer ${offer.id} (yacht ${yacht.id} $dateFrom→$dateTo) set to UNAVAILABLE " +
-                                "(${externalReservation.status})",
+                            "MMK offer ${offer.id} (yacht ${yacht.id} ${offer.dateFrom}→${offer.dateTo}) set to " +
+                                "UNAVAILABLE (overlaps ${externalReservation.status} $dateFrom→$dateTo)",
                         )
                     }
                 }

@@ -275,7 +275,13 @@ class NauSysCatalogueSyncService(
                     l ?: Location()
                 }
 
-            location.name = it.name?.textEN
+            // Only set the name from NauSys on first creation. The sync used to overwrite the
+            // name on every run, silently reverting manual corrections (e.g.
+            // "Marina Frapa, Rogoznica" kept reverting to "Marina Frapa"). Location names
+            // rarely change in NauSys, so once set we treat them as manually curatable.
+            if (location.name.isNullOrBlank()) {
+                location.name = it.name?.textEN
+            }
             // Nausys doesn't return city
 
             val region =
