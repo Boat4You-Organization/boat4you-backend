@@ -10,7 +10,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.LocationView
 fun Location.toDto(): LocationDto =
     LocationDto(
         id = "l-$id",
-        name = name,
+        name = displayName ?: name,
         countryCode = countryCode,
     )
 
@@ -18,7 +18,7 @@ fun Location.toLocationViewDto(): LocationViewDto =
     LocationViewDto(
         id = "l-$id",
         realId = id,
-        name = name,
+        name = displayName ?: name,
         locationType = LocationType.MARINA,
         countryCode = countryCode,
     )

@@ -43,25 +43,29 @@ interface LocationRepository : JpaRepository<Location, Long> {
     fun findByNameIgnoreCase(name: String): Location?
 
     /**
-     * All marinas that are the SAME place as [name] under a spelling/diacritic variant, within
-     * the same country. The catalogue holds the same marina twice when providers spell it
+     * IDs of all marinas that are the SAME place as [name] under a spelling/diacritic variant,
+     * within the same country. The catalogue holds the same marina twice when providers spell it
      * differently — e.g. "Marina Kastela" (212 yachts) and "Marina Kaštela" (138 yachts) — so a
-     * search picking one location id silently drops the other provider's fleet. translate()
-     * folds Croatian diacritics (š ž č ć đ) without needing the unaccent extension. Always
-     * returns at least the marina itself (it folds to its own name). countryCode CAST guards
-     * the PG18 untyped-null → bytea trap on the IS NULL branch.
+     * search picking one location id silently drops the other provider's fleet. translate() folds
+     * Croatian diacritics (š ž č ć đ) without the unaccent extension. split_part strips any " | city"
+     * display suffix (names are bare now, so it's a no-op, but stays defensive). countryCode CAST
+     * guards the PG18 untyped-null → bytea trap on the IS NULL branch.
+     *
+     * Returns IDs, NOT Location entities, on purpose: Location has an @Formula `display_name` that
+     * Hibernate cannot resolve from a native `SELECT *` result set (it looks for a "displayName"
+     * column and throws). The caller re-fetches via findAllById (HQL → formula-safe).
      */
     @Query(
         value = """
-        SELECT * FROM location l
+        SELECT l.id FROM location l
         WHERE translate(lower(trim(split_part(l.name, ' | ', 1))), 'šžčćđ', 'szccd')
             = translate(lower(trim(split_part(CAST(:name AS varchar), ' | ', 1))), 'šžčćđ', 'szccd')
           AND (CAST(:countryCode AS varchar) IS NULL OR l.country_code = :countryCode)
         """,
         nativeQuery = true,
     )
-    fun findMarinasByFoldedName(
+    fun findMarinaIdsByFoldedName(
         @Param("name") name: String,
         @Param("countryCode") countryCode: String?,
-    ): List<Location>
+    ): List<Long>
 }

@@ -25,7 +25,9 @@
 -- (plain view on first cutover, matview on later re-runs).
 --
 -- Tracked patches: V1_60 (drop UNAVAILABLE filter + custom branch reads
--- y.location_id), V1_67 (agency_recommended 0/1), 7.5.2026 (location_to_full_name).
+-- y.location_id), V1_67 (agency_recommended 0/1), 7.5.2026 (location_to_full_name),
+-- 3.6.2026 (location_full_name embeds location.display_name = "name | city", a STORED
+-- generated column from V9_16, so the nightly catalogue sync can never revert the city label).
 
 DO $$
 BEGIN
@@ -41,9 +43,9 @@ CREATE MATERIALIZED VIEW public.yacht_search_view AS
          y.id,
          y.name AS yacht_name,
          o.location_from,
-         ((((lfrom.id || '-'::text) || (lfrom.name)::text) || '-'::text) || (lfrom.country_code)::text) AS location_full_name,
+         ((((lfrom.id || '-'::text) || (lfrom.display_name)::text) || '-'::text) || (lfrom.country_code)::text) AS location_full_name,
          o.location_to,
-         ((((lto.id || '-'::text) || (lto.name)::text) || '-'::text) || (lto.country_code)::text) AS location_to_full_name,
+         ((((lto.id || '-'::text) || (lto.display_name)::text) || '-'::text) || (lto.country_code)::text) AS location_to_full_name,
          (o.client_price / (COALESCE(NULLIF((o.date_to - o.date_from), 0), 1))::numeric) AS client_price,
          (o.ext_base_price / (COALESCE(NULLIF((o.date_to - o.date_from), 0), 1))::numeric) AS list_price,
          (o.broker_commission / (COALESCE(NULLIF((o.date_to - o.date_from), 0), 1))::numeric) AS broker_commission,
@@ -93,9 +95,9 @@ UNION ALL
          y.id,
          y.name AS yacht_name,
          y.location_id AS location_from,
-         ((((l.id || '-'::text) || (l.name)::text) || '-'::text) || (l.country_code)::text) AS location_full_name,
+         ((((l.id || '-'::text) || (l.display_name)::text) || '-'::text) || (l.country_code)::text) AS location_full_name,
          y.location_id AS location_to,
-         ((((l.id || '-'::text) || (l.name)::text) || '-'::text) || (l.country_code)::text) AS location_to_full_name,
+         ((((l.id || '-'::text) || (l.display_name)::text) || '-'::text) || (l.country_code)::text) AS location_to_full_name,
          (cyd.low_price / (7)::numeric) AS client_price,
          NULL::numeric AS list_price,
          NULL::numeric AS broker_commission,

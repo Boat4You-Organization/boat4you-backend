@@ -1,7 +1,7 @@
 CREATE OR REPLACE VIEW all_location_view AS
 SELECT 'l-' || l.id as id,
        l.id         as real_id,
-       l.name,
+       l.display_name AS name,
        'MARINA'     as location_type,
        country_code as country_code
 FROM location l

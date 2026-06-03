@@ -921,10 +921,12 @@ class YachtQueryingService(
                 when {
                     marina == null -> emptyList()
                     marina.name.isNullOrBlank() -> listOf(marina)
-                    else ->
-                        locationRepository
-                            .findMarinasByFoldedName(marina.name!!, marina.countryCode)
-                            .ifEmpty { listOf(marina) }
+                    else -> {
+                        // IDs first (native query can't map Location's @Formula display_name),
+                        // then re-fetch via findAllById (HQL → formula-safe).
+                        val ids = locationRepository.findMarinaIdsByFoldedName(marina.name!!, marina.countryCode)
+                        if (ids.isEmpty()) listOf(marina) else locationRepository.findAllById(ids)
+                    }
                 }
             }
             LocationType.COUNTRY -> locationRepository.findMarinasByCountryId(id)

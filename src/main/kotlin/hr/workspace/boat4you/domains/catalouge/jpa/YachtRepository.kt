@@ -159,7 +159,7 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
               a.id                                   AS agency_id,
               a.name                                 AS agency_name,
               y.location_id                          AS location_id,
-              l.name                                 AS location_name,
+              l.display_name                                 AS location_name,
               l.country_code                         AS location_country,
               avg_price.avg_per_day                  AS avg_client_price,
               (avg_price.avg_per_day IS NULL
