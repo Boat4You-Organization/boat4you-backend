@@ -54,7 +54,8 @@ interface LocationRepository : JpaRepository<Location, Long> {
     @Query(
         value = """
         SELECT * FROM location l
-        WHERE translate(lower(l.name), 'šžčćđ', 'szccd') = translate(lower(CAST(:name AS varchar)), 'šžčćđ', 'szccd')
+        WHERE translate(lower(trim(split_part(l.name, ' | ', 1))), 'šžčćđ', 'szccd')
+            = translate(lower(trim(split_part(CAST(:name AS varchar), ' | ', 1))), 'šžčćđ', 'szccd')
           AND (CAST(:countryCode AS varchar) IS NULL OR l.country_code = :countryCode)
         """,
         nativeQuery = true,

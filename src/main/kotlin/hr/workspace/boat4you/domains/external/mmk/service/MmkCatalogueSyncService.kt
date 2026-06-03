@@ -163,7 +163,13 @@ class MmkCatalogueSyncService(
                     l ?: Location()
                 }
 
-            location.name = mmkLocation.name
+            // Preserve a manually-curated name (e.g. our "Marina Name | City" display form):
+            // only take MMK's bare name on first creation. Mirrors the NauSys locationsSync fix —
+            // without this the nightly MMK catalogue sync silently reverts every renamed marina
+            // (it overwrote the whole catalogue's names back to bare and wiped the " | city" pass).
+            if (location.name.isNullOrBlank()) {
+                location.name = mmkLocation.name
+            }
             location.city = mmkLocation.city
 
             val regionMappings =
