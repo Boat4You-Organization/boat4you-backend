@@ -192,12 +192,14 @@ class YachtQueryingService(
             // common case), so the only visible cost is rare mismatched
             // labels for multi-offer one-way yachts.
             cb.least(root.get<String>("locationToFullName")),
-            cb.min(root.get<BigDecimal>("clientPrice")),
-            cb.min(root.get<BigDecimal>("listPrice")),
-            // Pair the commission with the MIN clientPrice — same offer row —
-            // so the UI shows consistent commission next to the listed price.
-            cb.min(root.get<BigDecimal>("brokerCommission")),
-            cb.min(root.get<Int>("numberOfDays")),
+            // Price columns are PER-DAY in the view and the card renders per-day × days.
+            // Source clientPrice/listPrice/commission/days all from the SAME offer — the one
+            // whose dates match the searched period (fallback: MIN across matches) — so the
+            // per-day rate and the day-count never come from different-duration offers.
+            exactPeriodOrMin(cb, root.get<BigDecimal>("clientPrice"), root.get("dateFrom"), root.get("dateTo"), searchParams.startDate, searchParams.endDate),
+            exactPeriodOrMin(cb, root.get<BigDecimal>("listPrice"), root.get("dateFrom"), root.get("dateTo"), searchParams.startDate, searchParams.endDate),
+            exactPeriodOrMin(cb, root.get<BigDecimal>("brokerCommission"), root.get("dateFrom"), root.get("dateTo"), searchParams.startDate, searchParams.endDate),
+            exactPeriodDaysOrMin(cb, root.get<Int>("numberOfDays"), root.get("dateFrom"), root.get("dateTo"), searchParams.startDate, searchParams.endDate),
             // `prioritizedStatus` already aggregates per status via MAX(CASE);
             // GREATEST combines them, so no outer cb.max wrap.
             prioritizedStatus,
@@ -450,6 +452,51 @@ class YachtQueryingService(
         // is numeric-only; cb.least is the aggregate equivalent for Comparable).
         // Coalesce with LEAST(datePath) so we always get a date.
         return cb.coalesce(cb.least(exactOnly), cb.least(datePath))
+    }
+
+    /**
+     * Aggregation helper for a per-offer numeric column (clientPrice/listPrice/commission/days):
+     * returns the value FROM the offer whose dates exactly match the searched period, falling
+     * back to MIN across all matching offers when there's no exact-period offer.
+     *
+     * Why: the matview's clientPrice/listPrice are PER-DAY and the card shows per-day × days.
+     * Taking MIN(clientPrice) (cheapest per-day = the LONGEST offer) and MIN(numberOfDays)
+     * (the SHORTEST offer) independently paired a long offer's day-rate with a short offer's
+     * day-count — e.g. a 14-day offer's 162 €/day × 7 days = 1 136 € instead of the real 7-day
+     * 2 037 €. Sourcing both from the same (exact-period) offer keeps per-day × days correct.
+     */
+    private fun exactPeriodOrMin(
+        cb: CriteriaBuilder,
+        value: Expression<BigDecimal>,
+        dateFrom: Expression<LocalDate>,
+        dateTo: Expression<LocalDate>,
+        start: LocalDate?,
+        end: LocalDate?,
+    ): Expression<BigDecimal> {
+        val minAll = cb.min(value)
+        if (start == null || end == null) return minAll
+        val exactOnly =
+            cb.selectCase<BigDecimal>()
+                .`when`(cb.and(cb.equal(dateFrom, start), cb.equal(dateTo, end)), value)
+                .otherwise(cb.nullLiteral(BigDecimal::class.java))
+        return cb.coalesce(cb.min(exactOnly), minAll)
+    }
+
+    private fun exactPeriodDaysOrMin(
+        cb: CriteriaBuilder,
+        value: Expression<Int>,
+        dateFrom: Expression<LocalDate>,
+        dateTo: Expression<LocalDate>,
+        start: LocalDate?,
+        end: LocalDate?,
+    ): Expression<Int> {
+        val minAll = cb.min(value)
+        if (start == null || end == null) return minAll
+        val exactOnly =
+            cb.selectCase<Int>()
+                .`when`(cb.and(cb.equal(dateFrom, start), cb.equal(dateTo, end)), value)
+                .otherwise(cb.nullLiteral(Int::class.javaObjectType))
+        return cb.coalesce(cb.min(exactOnly), minAll)
     }
 
     /**
