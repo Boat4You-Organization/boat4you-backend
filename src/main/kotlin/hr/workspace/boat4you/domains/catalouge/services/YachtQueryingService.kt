@@ -913,7 +913,20 @@ class YachtQueryingService(
         val id = locationId.substring(2).toIntOrNull() ?: return emptyList()
 
         return when (locationType) {
-            LocationType.MARINA -> locationRepository.findById(id.toLong()).map { listOf(it) }.orElse(emptyList())
+            // A marina can exist twice (one row per provider, spelled differently —
+            // "Marina Kastela" vs "Marina Kaštela"); pull every same-place sibling so the
+            // search returns BOTH fleets, not just the picked id's.
+            LocationType.MARINA -> {
+                val marina = locationRepository.findById(id.toLong()).orElse(null)
+                when {
+                    marina == null -> emptyList()
+                    marina.name.isNullOrBlank() -> listOf(marina)
+                    else ->
+                        locationRepository
+                            .findMarinasByFoldedName(marina.name!!, marina.countryCode)
+                            .ifEmpty { listOf(marina) }
+                }
+            }
             LocationType.COUNTRY -> locationRepository.findMarinasByCountryId(id)
             LocationType.REGION -> locationRepository.findMarinasByRegionId(id)
         }

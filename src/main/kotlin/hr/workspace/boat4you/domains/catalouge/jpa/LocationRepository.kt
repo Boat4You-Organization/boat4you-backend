@@ -41,4 +41,26 @@ interface LocationRepository : JpaRepository<Location, Long> {
     ): Location?
 
     fun findByNameIgnoreCase(name: String): Location?
+
+    /**
+     * All marinas that are the SAME place as [name] under a spelling/diacritic variant, within
+     * the same country. The catalogue holds the same marina twice when providers spell it
+     * differently — e.g. "Marina Kastela" (212 yachts) and "Marina Kaštela" (138 yachts) — so a
+     * search picking one location id silently drops the other provider's fleet. translate()
+     * folds Croatian diacritics (š ž č ć đ) without needing the unaccent extension. Always
+     * returns at least the marina itself (it folds to its own name). countryCode CAST guards
+     * the PG18 untyped-null → bytea trap on the IS NULL branch.
+     */
+    @Query(
+        value = """
+        SELECT * FROM location l
+        WHERE translate(lower(l.name), 'šžčćđ', 'szccd') = translate(lower(CAST(:name AS varchar)), 'šžčćđ', 'szccd')
+          AND (CAST(:countryCode AS varchar) IS NULL OR l.country_code = :countryCode)
+        """,
+        nativeQuery = true,
+    )
+    fun findMarinasByFoldedName(
+        @Param("name") name: String,
+        @Param("countryCode") countryCode: String?,
+    ): List<Location>
 }
