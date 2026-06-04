@@ -384,4 +384,94 @@ class UserAuthService(
     private fun generatePasswordResetLink(passwordResetCode: String): String {
         return serverHostPublic + "/forgot-password?passwordResetCode=" + URLEncoder.encode(passwordResetCode, Charsets.UTF_8)
     }
+
+    private fun generateEmailChangeLink(token: String): String {
+        return serverHostPublic + "/confirm-email-change?token=" + URLEncoder.encode(token, Charsets.UTF_8)
+    }
+
+    /**
+     * Verified email change — step 1 (authenticated). Validates the requested address (format,
+     * not the current one, not already used by another account), mints a short-lived signed
+     * token and emails a confirmation link to the NEW address. No DB write — clicking the link
+     * is what actually applies the change (see [confirmEmailChange]). Option B: no schema state.
+     */
+    @Transactional(readOnly = true)
+    fun requestEmailChange(newEmailRaw: String) {
+        val userId =
+            getAuthenticatedUserId().takeIf { it != ANONYMOUS_USER_ID }
+                ?: throw AccessDeniedException("User is not authenticated")
+        val dbUser =
+            userRepository.findById(userId).getOrNull()
+                ?: throw AccessDeniedException("User is not authenticated")
+
+        val newEmail = newEmailRaw.trim()
+
+        if (!org.apache.commons.validator.routines.EmailValidator.getInstance().isValid(newEmail)) {
+            throw ParameterValidationException(mapOf("email" to "Invalid email address"))
+        }
+        if (newEmail.equals(dbUser.email, ignoreCase = true)) {
+            throw ParameterValidationException(mapOf("email" to "This is already your email address"))
+        }
+        if (userRepository.existsByEmailIgnoreCase(newEmail)) {
+            throw ParameterValidationException(mapOf("email" to "This email address is already in use"))
+        }
+
+        val token = jwtService.generateEmailChangeToken(dbUser.id!!, dbUser.email!!, newEmail)
+        val link = generateEmailChangeLink(token)
+
+        // Confirmation goes to the NEW address — clicking the link proves the user owns it.
+        val fullName = dbUser.getFullName().trim().takeIf { it.isNotBlank() } ?: "there"
+        val recipientAddress = if (fullName != "there") "$fullName <$newEmail>" else newEmail
+        val locale = resolveEmailLocale(dbUser.language)
+        val subject = messageSource.getMessage("emailChange.subject", null, locale)
+
+        val variables =
+            mapOf(
+                "fullName" to fullName,
+                "emailChangeUrl" to link,
+                "newEmail" to newEmail,
+                "publicUrl" to serverHostPublic,
+                "currentYear" to java.time.LocalDate.now().year.toString(),
+            )
+
+        emailService.sendEmail(
+            recipients = listOf(recipientAddress),
+            subject = subject,
+            templateName = "email/emailChange",
+            variables = variables,
+            locale = locale,
+        )
+    }
+
+    /**
+     * Verified email change — step 2 (public; the signed token IS the authorization). Verifies
+     * the token, re-checks the account still holds the original email and the target is still
+     * free, applies the new email and revokes all sessions (email is the login identity).
+     */
+    @Transactional(readOnly = false)
+    fun confirmEmailChange(token: String) {
+        val claims =
+            try {
+                jwtService.verifyEmailChangeToken(token)
+            } catch (e: io.jsonwebtoken.JwtException) {
+                throw ParameterValidationException(mapOf("token" to "This confirmation link is invalid or has expired"))
+            }
+
+        val dbUser =
+            userRepository.findById(claims.userId).getOrNull()
+                ?: throw ParameterValidationException(mapOf("token" to "This confirmation link is invalid or has expired"))
+
+        // The account's email must still be the one the token was minted for, else it already changed.
+        if (!dbUser.email.equals(claims.currentEmail, ignoreCase = true)) {
+            throw ParameterValidationException(mapOf("token" to "This confirmation link is invalid or has expired"))
+        }
+        // Re-check the target isn't taken (a race since the link was issued).
+        if (userRepository.existsByEmailIgnoreCase(claims.newEmail)) {
+            throw ParameterValidationException(mapOf("email" to "This email address is already in use"))
+        }
+
+        dbUser.email = claims.newEmail
+        // Email is the login identity — force re-login everywhere (mirrors password change).
+        tokenService.revokeAllUserTokens(dbUser.id!!)
+    }
 }

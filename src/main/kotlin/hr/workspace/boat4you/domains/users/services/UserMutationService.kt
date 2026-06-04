@@ -137,13 +137,16 @@ class UserMutationService(
             ),
         )
 
-        if (!email.equals(dbUser.email, ignoreCase = true) && existsByIdNotAndEmail(id, email)) {
-            throw UserAlreadyExistsException(listOf("email"))
+        // Email is the login identity — it changes ONLY through the verified email-change flow
+        // (request → confirm via signed link), never a silent profile PATCH. A normal profile
+        // edit re-sends the unchanged email, which passes through untouched; any actual change
+        // is rejected here.
+        if (!email.equals(dbUser.email, ignoreCase = true)) {
+            throw ParameterValidationException(mapOf("email" to "Email can only be changed through verification"))
         }
 
         dbUser.name = name
         dbUser.surname = surname
-        dbUser.email = email
         dbUser.phoneNumber = phoneNumber
         dbUser.address = address?.takeIf { it.isNotBlank() }
         dbUser.city = city?.takeIf { it.isNotBlank() }
