@@ -54,6 +54,7 @@ class UserAuthService(
     private val passwordService: PasswordService,
     private val tokenService: TokenService,
     private val requestContextFactory: RequestContextFactory,
+    private val clientIpResolver: ClientIpResolver,
     private val emailService: EmailService,
     private val messageSource: MessageSource,
     @Value("\${server.host-public}")
@@ -117,8 +118,9 @@ class UserAuthService(
         val jwtToken = jwtService.generateToken(userDomainEntity)
         val refreshToken = jwtService.generateRefreshToken(userDomainEntity)
 
-        saveUserToken(dbUser, jwtToken.first, jwtToken.second)
-        saveUserToken(dbUser, refreshToken.first, refreshToken.second)
+        val sessionGroup = java.util.UUID.randomUUID().toString()
+        saveUserToken(dbUser, jwtToken.first, jwtToken.second, httpRequest, sessionGroup)
+        saveUserToken(dbUser, refreshToken.first, refreshToken.second, httpRequest, sessionGroup)
 
         return TokenResponse(
             token = jwtToken.first,
@@ -139,8 +141,9 @@ class UserAuthService(
         val jwtToken = jwtService.generateToken(userDomainEntity)
         val refreshToken = jwtService.generateRefreshToken(userDomainEntity)
 
-        saveUserToken(dbUser, jwtToken.first, jwtToken.second)
-        saveUserToken(dbUser, refreshToken.first, refreshToken.second)
+        val sessionGroup = java.util.UUID.randomUUID().toString()
+        saveUserToken(dbUser, jwtToken.first, jwtToken.second, httpRequest, sessionGroup)
+        saveUserToken(dbUser, refreshToken.first, refreshToken.second, httpRequest, sessionGroup)
 
         return TokenResponse(
             token = jwtToken.first,
@@ -213,7 +216,11 @@ class UserAuthService(
         val isTokenValid = !(dbToken == null || dbToken.isExpired || dbToken.isRevoked)
         if (isTokenValid && jwtService.isTokenValid(token, userDomainEntity)) {
             val accessToken = jwtService.generateToken(userDomainEntity)
-            saveUserToken(dbUser, accessToken.first, accessToken.second)
+            // Reuse the presented refresh token's session_group so the new access
+            // token stays grouped under the same device entry (fall back to a new
+            // group only for legacy refresh tokens minted before the column existed).
+            val sessionGroup = dbToken?.sessionGroup ?: java.util.UUID.randomUUID().toString()
+            saveUserToken(dbUser, accessToken.first, accessToken.second, httpRequest, sessionGroup)
 
             return TokenResponse(
                 token = accessToken.first,
@@ -371,12 +378,18 @@ class UserAuthService(
         dbUser: UserEntity,
         jwtToken: String,
         expiresAt: Date,
+        httpRequest: HttpServletRequest,
+        sessionGroup: String,
     ) {
         val token =
             TokenEntity().apply {
                 value = jwtToken
                 user = dbUser
                 this.expiresAt = expiresAt.toInstant()
+                this.sessionGroup = sessionGroup
+                userAgent = httpRequest.getHeader("User-Agent")?.take(512)
+                ipAddress = clientIpResolver.resolve(httpRequest)
+                lastUsedAt = Instant.now()
             }
         tokenRepository.save(token)
     }
