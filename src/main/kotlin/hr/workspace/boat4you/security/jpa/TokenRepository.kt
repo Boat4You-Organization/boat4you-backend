@@ -15,6 +15,16 @@ interface TokenRepository : JpaRepository<TokenEntity, Long> {
     )
     fun findAllValidTokenByUserId(id: Long): List<TokenEntity>
 
+    @Query(
+        """
+        SELECT t FROM TokenEntity t
+        WHERE t.user.id = :userId AND t.sessionGroup IS NOT NULL
+          AND t.isRevoked = false AND t.isExpired = false
+          AND (t.expiresAt IS NULL OR t.expiresAt > CURRENT_TIMESTAMP)
+        """,
+    )
+    fun findActiveSessionTokens(userId: Long): List<TokenEntity>
+
     fun findByValue(value: String): TokenEntity?
 
     /** Hard-delete every token row for a user. Needed before deleting the user
