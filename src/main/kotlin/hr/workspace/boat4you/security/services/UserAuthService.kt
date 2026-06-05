@@ -195,6 +195,28 @@ class UserAuthService(
         tokenService.revokeAllUserTokens(dbUser.id!!)
     }
 
+    /**
+     * First-time password set for a social account (passwordSet = false). Unlike
+     * [updateUserPassword] there is no old-password check — the account never had a
+     * chosen password — but if one is already set we refuse and steer to change-password.
+     * Sets the password and revokes all sessions (a new credential exists now).
+     */
+    @Transactional(readOnly = false)
+    fun setInitialPassword(
+        userId: Long,
+        newPassword: String,
+    ) {
+        val dbUser = userRepository.findById(userId).getOrElse { throw UserDoesNotExistException() }
+        if (dbUser.passwordSet) {
+            throw ParameterValidationException(mapOf("password" to "Password already set; use change-password"))
+        }
+        PasswordPolicy.validate(newPassword)
+        dbUser.password = passwordService.encodePassword(newPassword)
+        dbUser.passwordSet = true
+        userRepository.save(dbUser)
+        tokenService.revokeAllUserTokens(userId)
+    }
+
     @Transactional(readOnly = false)
     fun refreshToken(httpRequest: HttpServletRequest): TokenResponse {
         val token =
