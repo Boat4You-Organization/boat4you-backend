@@ -203,6 +203,8 @@ internal class UserController(
                 lastLoginAt = user.lastLoginAt,
                 totalBookings = totalBookings,
                 emailVerified = user.registrationStatus == UserRegistrationStatusEnum.REGISTERED,
+                provider = user.provider,
+                passwordSet = user.passwordSet,
             ),
         )
     }
@@ -277,4 +279,6 @@ data class MyAccountInfoResponse(
     val lastLoginAt: java.time.Instant?,
     val totalBookings: Int,
     val emailVerified: Boolean,
+    val provider: String?,
+    val passwordSet: Boolean,
 )
