@@ -29,6 +29,9 @@ class UserEntity : AbstractEntity<Long>() {
     @Column(name = "password", columnDefinition = "VARCHAR(255)", nullable = false)
     lateinit var password: String
 
+    @Column(name = "password_set", columnDefinition = "BOOLEAN", nullable = false)
+    var passwordSet: Boolean = true
+
     @Column(name = "email", columnDefinition = "VARCHAR(255)", nullable = false)
     lateinit var email: String
 

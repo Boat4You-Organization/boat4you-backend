@@ -24,6 +24,18 @@ class TokenEntity : AbstractEntity<Long>() {
     @Column(name = "expires_at", columnDefinition = "TIMESTAMP", nullable = true)
     var expiresAt: Instant? = null
 
+    @Column(name = "user_agent", columnDefinition = "VARCHAR(512)", nullable = true)
+    var userAgent: String? = null
+
+    @Column(name = "ip_address", columnDefinition = "VARCHAR(64)", nullable = true)
+    var ipAddress: String? = null
+
+    @Column(name = "last_used_at", columnDefinition = "TIMESTAMP", nullable = true)
+    var lastUsedAt: Instant? = null
+
+    @Column(name = "session_group", columnDefinition = "VARCHAR(36)", nullable = true)
+    var sessionGroup: String? = null
+
     @ManyToOne
     @JoinColumn(name = "user_id", referencedColumnName = "id", columnDefinition = "BIGINT", nullable = false)
     lateinit var user: UserEntity
