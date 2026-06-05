@@ -122,6 +122,7 @@ class OAuthService(
             emailVerificationCode = null
             verificationCodeIssuedAt = null
             lastLoginAt = Instant.now()
+            passwordSet = false
         }
         return userRepository.save(dbUser)
     }
