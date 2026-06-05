@@ -21,6 +21,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.core.context.SecurityContextHolder.getContext
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
+import java.time.Instant
 
 @Component
 class JwtAuthenticationFilter(
@@ -86,6 +87,16 @@ class JwtAuthenticationFilter(
                     null,
                     userDomainEntity.authorities,
                 )
+
+            // Throttled "touch" so the device's last-seen stays fresh for the
+            // active-sessions view without a DB write on every request. dbToken
+            // is non-null here (isTokenValid already excluded the null case).
+            val storedToken = dbToken!!
+            val fiveMinAgo = Instant.now().minusSeconds(300)
+            if (storedToken.lastUsedAt == null || storedToken.lastUsedAt!!.isBefore(fiveMinAgo)) {
+                storedToken.lastUsedAt = Instant.now()
+                tokenRepository.save(storedToken)
+            }
         }
 
         val userContext = requestContextFactory.buildRequestContext(userDomainEntity)
