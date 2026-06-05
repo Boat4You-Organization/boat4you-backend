@@ -41,6 +41,7 @@ class SecurityConfiguration(
                             pathMatcher.matcher("/auth/requestPasswordReset"),
                             pathMatcher.matcher("/auth/resetPassword"),
                             pathMatcher.matcher("/auth/register/**"),
+                            pathMatcher.matcher("/auth/oauth/**"),
                             pathMatcher.matcher("/users/invite"),
                             pathMatcher.matcher("/webhooks/stripe"),
                             pathMatcher.matcher("/swagger/**"),

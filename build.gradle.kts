@@ -47,6 +47,11 @@ dependencies {
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-security")
+    // Nimbus-backed JWT decoder used to verify Google ID tokens (social login):
+    // fetches + caches Google's JWKS and checks the RS256 signature + exp; we
+    // additionally validate iss/aud/email_verified in GoogleTokenVerifier.
+    // Version managed by the Spring Boot BOM.
+    implementation("org.springframework.security:spring-security-oauth2-jose")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")

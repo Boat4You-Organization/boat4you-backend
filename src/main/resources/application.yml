@@ -144,6 +144,14 @@ application:
       # if Mario ever splits prod/staging signing keys.
       issuer: ${JWT_ISSUER:boat4you-ws}
       audience: ${JWT_AUDIENCE:boat4you-web}
+  oauth:
+    google:
+      # Google OAuth 2.0 Web client id (…apps.googleusercontent.com). The ID
+      # token Google Identity Services returns in the browser is POSTed to
+      # /auth/oauth/google and verified server-side (signature via Google JWKS +
+      # this value as the required `aud`). Public value — also embedded in the
+      # SPA as NEXT_PUBLIC_GOOGLE_CLIENT_ID. Blank → Google login disabled.
+      client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
   external:
     sync:
       offer-max-years: 2

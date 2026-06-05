@@ -35,6 +35,22 @@ interface UserRepository :
         email: String,
     ): Boolean
 
+    /**
+     * Case-insensitive email lookup used by social login (OAuthService) to
+     * auto-link a verified provider email to an existing account. Mirrors
+     * `findByEmail` (roles fetched, ACTIVE-only) but folds case because provider
+     * emails are normalised lowercase while locally-registered emails may be
+     * mixed-case.
+     */
+    @Query(
+        """
+        SELECT DISTINCT u FROM UserEntity u
+        LEFT JOIN FETCH u.roleAssignments
+        WHERE LOWER(u.email) = LOWER(:email) AND u.entityStatus = 'ACTIVE'
+        """,
+    )
+    fun findByEmailIgnoreCaseWithRoles(email: String): UserEntity?
+
     @Query(
         """
         SELECT DISTINCT u.email
@@ -76,5 +92,8 @@ interface UserRepository :
         """,
         nativeQuery = true,
     )
-    fun findAllByBirthdayMonthDay(month: Int, day: Int): List<UserEntity>
+    fun findAllByBirthdayMonthDay(
+        month: Int,
+        day: Int,
+    ): List<UserEntity>
 }

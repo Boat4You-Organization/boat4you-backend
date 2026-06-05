@@ -140,6 +140,22 @@ class UserEntity : AbstractEntity<Long>() {
     @Column(name = "unsubscribe_token", columnDefinition = "VARCHAR(36)", nullable = true)
     var unsubscribeToken: String? = null
 
+    /**
+     * External identity provider this account is linked to ("GOOGLE"), or null
+     * for plain email/password accounts. Set on first social sign-in (new
+     * account) or when an existing verified-email account is auto-linked.
+     */
+    @Column(name = "provider", columnDefinition = "VARCHAR(31)", nullable = true)
+    var provider: String? = null
+
+    /**
+     * Stable provider-issued subject id (Google `sub`) for the linked identity.
+     * Immutable at the provider even if the user changes their email there.
+     * Null for email/password accounts.
+     */
+    @Column(name = "provider_id", columnDefinition = "VARCHAR(255)", nullable = true)
+    var providerId: String? = null
+
     @OneToMany(mappedBy = "user")
     var roleAssignments: MutableSet<RoleAssignmentEntity> = mutableSetOf()
 
