@@ -197,9 +197,21 @@ class YachtDistributionService(
             }
         val numeric = locationId.substring(2).toIntOrNull() ?: return emptyList()
         return when (type) {
-            LocationType.MARINA -> locationRepository.findById(numeric.toLong())
-                .map { listOf(it.id ?: -1L).filter { i -> i >= 0 } }
-                .orElse(emptyList())
+            // Mirror YachtQueryingService.getMarinas: a marina can exist twice (one row
+            // per provider, "Marina Kastela" vs "Marina Kaštela"). Expand to every
+            // same-place sibling so the facet counts the SAME fleets the search lists —
+            // findById alone counted only the picked provider's boats, so the facet
+            // badge ran lower than the result total (audit: facet < available).
+            LocationType.MARINA -> {
+                val marina = locationRepository.findById(numeric.toLong()).orElse(null)
+                when {
+                    marina == null -> emptyList()
+                    marina.name.isNullOrBlank() -> listOfNotNull(marina.id)
+                    else ->
+                        locationRepository.findMarinaIdsByFoldedName(marina.name!!, marina.countryCode)
+                            .ifEmpty { listOfNotNull(marina.id) }
+                }
+            }
             LocationType.COUNTRY -> locationRepository.findMarinasByCountryId(numeric).mapNotNull { it.id }
             LocationType.REGION -> locationRepository.findMarinasByRegionId(numeric).mapNotNull { it.id }
         }
