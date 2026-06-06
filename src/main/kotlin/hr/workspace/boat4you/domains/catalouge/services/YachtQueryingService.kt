@@ -57,6 +57,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 @Service
 @Transactional(readOnly = true)
@@ -1041,16 +1042,22 @@ class YachtQueryingService(
 
         val reservations =
             if (month == null) {
-                externalReservationRepository.findYachtAvailabilityByYear(id, year)
+                // HALF-OPEN (CRIT-3): [Jan-1 of year, Jan-1 of year+1).
+                val yearStart = LocalDate.of(year, 1, 1)
+                externalReservationRepository.findYachtAvailabilityByYear(id, yearStart, yearStart.plusYears(1))
             } else {
+                // endDate is EXCLUSIVE — first day of the next month — so the
+                // half-open overlap covers exactly this calendar month.
                 val startDate = LocalDate.of(year, month, 1)
-                val endDate = startDate.withDayOfMonth(startDate.lengthOfMonth())
+                val endDate = startDate.plusMonths(1)
                 externalReservationRepository.findYachtAvailabilityByAdjustedYearAndMonth(id, startDate, endDate)
             }
 
+        // Single `now` so lapsed-option demotion is consistent across the page.
+        val now = LocalDateTime.now()
         val yachtAvailability =
             reservations.map {
-                it.toYachtAvailabilityDto()
+                it.toYachtAvailabilityDto(now)
             }
 
         return yachtAvailability

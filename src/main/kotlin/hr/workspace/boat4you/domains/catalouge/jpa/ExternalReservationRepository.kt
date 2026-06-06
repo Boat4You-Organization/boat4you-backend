@@ -33,23 +33,36 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
     @Query("DELETE FROM ExternalReservation r WHERE r.dateTo < :cutoff")
     fun deleteExpiredReservations(@Param("cutoff") cutoff: LocalDate)
 
+    /**
+     * Detail-calendar feed: all reservation rows overlapping calendar [:yearStart, :yearEnd).
+     * HALF-OPEN (CRIT-3): a charter that ends on Jan 1 (dateTo == :yearStart) does not
+     * bleed into the previous year, and one starting on Jan 1 of the next year
+     * (dateFrom == :yearEnd) is excluded — so a turnaround day is never a phantom
+     * conflict. Caller computes :yearStart = Jan-1 of year, :yearEnd = Jan-1 of year+1.
+     */
     @Query(
         """
         SELECT r FROM ExternalReservation r
         WHERE r.yacht.id = :yachtId
-        AND YEAR(r.dateFrom) <= :year AND YEAR(r.dateTo) >= :year
+        AND r.dateFrom < :yearEnd AND r.dateTo > :yearStart
     """,
     )
     fun findYachtAvailabilityByYear(
         @Param("yachtId") yachtId: Long,
-        @Param("year") year: Int,
+        @Param("yearStart") yearStart: LocalDate,
+        @Param("yearEnd") yearEnd: LocalDate,
     ): List<ExternalReservation>
 
+    /**
+     * Detail-calendar feed for a single month. HALF-OPEN (CRIT-3): turnaround
+     * day (dateTo == :startDate or dateFrom == :endDate) is NOT a conflict.
+     * Caller passes :endDate as the FIRST day AFTER the month (exclusive upper).
+     */
     @Query(
         """
         SELECT r FROM ExternalReservation r
         WHERE r.yacht.id = :yachtId
-        AND r.dateFrom <= :endDate AND r.dateTo >= :startDate
+        AND r.dateFrom < :endDate AND r.dateTo > :startDate
     """,
     )
     fun findYachtAvailabilityByAdjustedYearAndMonth(
@@ -67,6 +80,9 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
      * stale OPTION offer rows behind months after the option lapsed — those
      * must NOT surface as "under option" in the listing). Only OPTION status
      * is considered (RESERVATION / SERVICE don't have an expiry to show).
+     * HALF-OPEN (CRIT-3): an option ending on the morning the searched charter
+     * begins (turnaround) must NOT count as overlapping, or a reservable yacht
+     * would be falsely badged "under option" — the inverse of the honesty goal.
      */
     @Query(
         """
@@ -75,7 +91,7 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
         AND r.status = :status
         AND r.optionExpiration IS NOT NULL
         AND r.optionExpiration > CURRENT_TIMESTAMP
-        AND r.dateFrom <= :endDate AND r.dateTo >= :startDate
+        AND r.dateFrom < :endDate AND r.dateTo > :startDate
     """,
     )
     fun findOptionsByYachtIdsAndPeriod(
