@@ -15,6 +15,11 @@ enum class ApiErrorCodes(
     // working; only the human-readable message changes.
     PASSWORD_INVALID_LENGTH(1014, "Password does not meet the strength requirements"),
     OLD_PASSWORD_INVALID(1015, "Old password not valid"),
+    // Social login (Facebook) succeeded but the provider did not share an
+    // email. Our account model is email-keyed, so we cannot find-or-create an
+    // account — actionable user-facing message, NOT the generic BAD_CREDENTIALS
+    // mask (this is not an auth failure to hide).
+    OAUTH_EMAIL_MISSING(1016, "We couldn't get an email from that account — please sign up with email instead."),
     REQUEST_NOT_PARSEABLE(1101, "Request JSON not parseable"),
     INVALID_REQUEST_PARAMETERS(1102, "Invalid request parameters"),
     USER_ALREADY_EXISTS(1201, "User already exists"),

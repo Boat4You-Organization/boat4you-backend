@@ -27,6 +27,7 @@ import hr.workspace.boat4you.domains.users.exceptions.UserInviteExceptionType
 import hr.workspace.boat4you.domains.users.exceptions.UserRegistrationException
 import hr.workspace.boat4you.domains.users.exceptions.UsersDoNotExistException
 import hr.workspace.boat4you.security.exceptions.InternalLoginException
+import hr.workspace.boat4you.security.exceptions.OAuthEmailMissingException
 import hr.workspace.boat4you.security.exceptions.PasswordException
 import jakarta.persistence.PersistenceException
 import org.openapitools.model.ErrorSchema
@@ -367,6 +368,23 @@ internal class ApiErrorHandler {
                 errorCode.message,
             ),
             HttpStatus.FORBIDDEN,
+        )
+    }
+
+    @ExceptionHandler(OAuthEmailMissingException::class)
+    fun handleOAuthEmailMissingException(e: OAuthEmailMissingException): ResponseEntity<ErrorSchema> {
+        // Distinct from InternalLoginException: this is not an auth failure to
+        // mask, it is an actionable condition — the social provider completed
+        // the flow but shared no email, and our account model is email-keyed.
+        // Tell the user clearly to sign up with email instead. Provider name
+        // stays in the log only.
+        logger.warn("OAuthEmailMissingException provider={}", e.provider)
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.OAUTH_EMAIL_MISSING.code,
+                ApiErrorCodes.OAUTH_EMAIL_MISSING.message,
+            ),
+            HttpStatus.BAD_REQUEST,
         )
     }
 
