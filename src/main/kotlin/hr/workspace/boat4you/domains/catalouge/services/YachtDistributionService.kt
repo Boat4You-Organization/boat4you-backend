@@ -201,20 +201,34 @@ class YachtDistributionService(
 
     /** Builds the additional WHERE clause that mirrors `YachtQueryingService`'s
      *  search predicates, so distribution counts always match the "Boats
-     *  available" total in the listing. Three layers, all ANDed onto the
-     *  caller's existing WHERE:
+     *  available" total in the listing. Layers, all ANDed onto the caller's
+     *  existing WHERE:
      *
-     *  1. **Availability** (always): `offer_status != 4` — hide UNAVAILABLE
-     *     offers (owner weeks, regattas, externally-booked rows). The main
-     *     search applies this whenever `includeUnavailable` is false, which
-     *     is true for every customer-facing call.
+     *  1. **Availability** (always): `offer_status <> 'UNAVAILABLE'` — hide
+     *     UNAVAILABLE offers (owner weeks, regattas, externally-booked rows).
+     *     The main search applies this whenever `includeUnavailable` is false,
+     *     which is true for every customer-facing call. STAYS as the matview
+     *     pre-filter exactly like `buildYachtSearchPredicates`.
      *  2. **Destination** (when `did` filter active): `(location_from IN
      *     (:marinaIds) OR location_to IN (:marinaIds))`. Empty resolved list
      *     short-circuits to FALSE so counts collapse to 0, matching main
      *     search behaviour.
-     *  3. **Date range** (when `startDate`/`endDate` provided): `date_from
-     *     BETWEEN startDate-FLEX AND startDate+FLEX` — same flex-by-start-day
-     *     contract as `buildYachtSearchPredicates`. */
+     *  3. **Honest date interval-overlap** (Deploy 4 — replaces the old
+     *     `date_from BETWEEN startDate±FLEX` start-day clamp). A slot qualifies
+     *     when its OWN window overlaps the request padded by [NEARBY_WINDOW_DAYS]:
+     *     `date_from < :endPlus AND date_to > :startMinus`, judged on the slot's
+     *     real `date_from`/`date_to` — never a start-day-only clamp. Custom
+     *     yachts (entry_type=CUSTOM) carry NULL `date_from`/`date_to`, so an
+     *     `OR date_from IS NULL` escape hatch keeps them counted (inquiry-only
+     *     listings always show), mirroring `buildYachtSearchPredicates`.
+     *  4. **Live hard-block** (when BOTH dates present, same as search): a
+     *     correlated `NOT EXISTS` half-open overlap against `external_reservations`
+     *     drops yachts whose REAL window is firmly blocked (status RESERVATION /
+     *     SERVICE only — never OPTION, so an agency optioning a whole marina keeps
+     *     every yacht counted, badged inquiry-only). Uses the RAW request
+     *     [startDate, endDate) (not padded), exactly like
+     *     `buildHardBlockOverlapSubquery`. Custom yachts have no reservation rows
+     *     so the NOT EXISTS is vacuously true and never drops them. */
     private fun whereClause(ctx: FilterContext): String {
         val parts = mutableListOf(" AND offer_status <> 'UNAVAILABLE'")
         when {
@@ -222,9 +236,25 @@ class YachtDistributionService(
             ctx.marinaIds.isEmpty() -> parts.add(" AND FALSE")
             else -> parts.add(" AND (location_from IN (:marinaIds) OR location_to IN (:marinaIds))")
         }
-        when {
-            ctx.startDate != null -> parts.add(" AND date_from BETWEEN :startMinusFlex AND :startPlusFlex")
-            ctx.endDate != null -> parts.add(" AND date_to BETWEEN :endMinusFlex AND :endPlusFlex")
+        if (ctx.startDate != null && ctx.endDate != null) {
+            // Slot window [date_from, date_to) overlaps padded request
+            // [startMinus, endPlus). NULL date_from = custom yacht ⇒ always kept.
+            parts.add(" AND (date_from IS NULL OR (date_from < :endPlus AND date_to > :startMinus))")
+            // Live hard-block: drop yachts firmly reserved/serviced over the RAW
+            // requested period. OPTION stays visible. Vacuously true for customs.
+            parts.add(
+                " AND NOT EXISTS (" +
+                    "SELECT 1 FROM external_reservations er " +
+                    "WHERE er.yacht_id = yacht_search_view.id " +
+                    "AND er.status IN ('RESERVATION', 'SERVICE') " +
+                    "AND er.date_from < :hardBlockEnd AND er.date_to > :hardBlockStart)",
+            )
+        } else if (ctx.startDate != null) {
+            // Open-ended start: slot's window must reach on/after the padded start.
+            parts.add(" AND (date_from IS NULL OR date_to > :startMinus)")
+        } else if (ctx.endDate != null) {
+            // Open-ended end: slot's window must start on/before the padded end.
+            parts.add(" AND (date_from IS NULL OR date_from < :endPlus)")
         }
         if (!ctx.vesselTypeNames.isNullOrEmpty()) {
             parts.add(" AND vessel_type IN (:vesselTypeNames)")
@@ -325,12 +355,17 @@ class YachtDistributionService(
 
     private fun bindFilters(q: jakarta.persistence.Query, ctx: FilterContext) {
         if (!ctx.marinaIds.isNullOrEmpty()) q.setParameter("marinaIds", ctx.marinaIds)
-        if (ctx.startDate != null) {
-            q.setParameter("startMinusFlex", ctx.startDate.minusDays(DATE_FLEX_DAYS))
-            q.setParameter("startPlusFlex", ctx.startDate.plusDays(DATE_FLEX_DAYS))
+        // Honest interval-overlap bind, matching buildYachtSearchPredicates:
+        // padded window for the slot overlap, RAW window for the live hard-block.
+        if (ctx.startDate != null && ctx.endDate != null) {
+            q.setParameter("startMinus", ctx.startDate.minusDays(NEARBY_WINDOW_DAYS))
+            q.setParameter("endPlus", ctx.endDate.plusDays(NEARBY_WINDOW_DAYS))
+            q.setParameter("hardBlockStart", ctx.startDate)
+            q.setParameter("hardBlockEnd", ctx.endDate)
+        } else if (ctx.startDate != null) {
+            q.setParameter("startMinus", ctx.startDate.minusDays(NEARBY_WINDOW_DAYS))
         } else if (ctx.endDate != null) {
-            q.setParameter("endMinusFlex", ctx.endDate.minusDays(DATE_FLEX_DAYS))
-            q.setParameter("endPlusFlex", ctx.endDate.plusDays(DATE_FLEX_DAYS))
+            q.setParameter("endPlus", ctx.endDate.plusDays(NEARBY_WINDOW_DAYS))
         }
         if (!ctx.vesselTypeNames.isNullOrEmpty()) {
             q.setParameter("vesselTypeNames", ctx.vesselTypeNames)
@@ -550,8 +585,9 @@ class YachtDistributionService(
         private const val ENGINE_MAX = 7_500
         private const val ENGINE_BUCKETS = 25
 
-        // Match `YachtQueryingService.DATE_FLEX_DAYS` — distribution and
-        // listing must use the same flex window or counts diverge.
-        private const val DATE_FLEX_DAYS = 3L
+        // Match `YachtQueryingService.NEARBY_WINDOW_DAYS` — distribution and
+        // listing must pad the honest interval-overlap window identically or
+        // facet counts diverge from the "Boats available" total (Deploy 4).
+        private const val NEARBY_WINDOW_DAYS = 3L
     }
 }
