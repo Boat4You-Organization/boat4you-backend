@@ -138,7 +138,14 @@ class CacheConfig {
                         String::class.java,
                         List::class.java,
                         hundredEntryResourcePool,
-                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(10)))
+                    )
+                    // A8: 2-min TTL (was 10). The partner offer/availability syncs
+                    // and the B2 booking flip (offer FREE->OPTION) change offer
+                    // status WITHOUT going through OfferMutationService's @CacheEvict,
+                    // so a 10-min window showed stale availability on the boat page.
+                    // 2 min bounds the display lag to the matview refresh cadence;
+                    // actual bookings are still protected by the live re-check.
+                    .withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(2)))
                     .build()
 
             val modelByExternalIdAndExternalSystem =
