@@ -42,6 +42,22 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
         expiresAt: LocalDateTime,
     ): List<Reservation>
 
+    /**
+     * Other reservations holding the SAME offer row. offer is @ManyToOne, so many
+     * reservation flows can point at one offer; auto-release uses this to avoid
+     * freeing an offer a different live reservation still holds (CRIT-1 guard).
+     */
+    @Query(
+        """
+        SELECT r FROM Reservation r
+        WHERE r.reservationFlow.offer.id = :offerId AND r.sysStatus IN (:statuses)
+        """,
+    )
+    fun findActiveByOfferId(
+        @Param("offerId") offerId: Long,
+        @Param("statuses") statuses: List<ReservationStatus>,
+    ): List<Reservation>
+
     fun findByReservationFlowIdIn(reservationFlowIds: Collection<Long>): List<Reservation>
 
     /**

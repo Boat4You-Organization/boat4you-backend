@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.services.OfferMutationService
 import hr.workspace.boat4you.domains.reservation.dto.CancelReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDto
+import hr.workspace.boat4you.domains.reservation.enums.ReservationFlowStatus
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ExternalReservationExtra
@@ -398,6 +399,50 @@ class ReservationMutationService(
         // reservation_flow even if this method never reaches commit.
 
         return reservationMappers.toReservationDto(reservation)
+    }
+
+    /**
+     * Full release of an expired option for the unattended expiry job (Mario B1).
+     * Frees the offer ONLY if no OTHER live reservation still holds it (CRIT-1
+     * shared-offer guard: offer is @ManyToOne, so several flows can point at one
+     * offer row), then closes the flow as ABANDONED. Re-reads + guards inside its
+     * own tx so it never touches a paid RESERVATION / active booking, is null-safe
+     * for fictitious/skip flows (no offer), and idempotent (caller flips the
+     * reservation to CANCELLED first; this no-ops otherwise).
+     */
+    @Transactional
+    fun releaseExpiredOption(reservationId: Long) {
+        val reservation = reservationRepository.findById(reservationId).getOrElse { return }
+        if (reservation.sysStatus != ReservationStatus.CANCELLED) return
+
+        val offerId = reservation.reservationFlow?.offer?.id
+        if (offerId != null) {
+            val others =
+                reservationRepository
+                    .findActiveByOfferId(
+                        offerId,
+                        listOf(
+                            ReservationStatus.OPTION,
+                            ReservationStatus.OPTION_WAITING,
+                            ReservationStatus.RESERVATION,
+                        ),
+                    ).filter { it.id != reservation.id }
+            val newStatus =
+                when {
+                    others.any { it.sysStatus == ReservationStatus.RESERVATION } -> OfferStatus.RESERVED
+                    others.any {
+                        it.sysStatus == ReservationStatus.OPTION || it.sysStatus == ReservationStatus.OPTION_WAITING
+                    } -> OfferStatus.OPTION
+                    else -> OfferStatus.FREE
+                }
+            offerMutationService.updateOfferStatus(offerId, newStatus)
+            log.info("Released expired option {}: offer {} -> {}", reservationId, offerId, newStatus)
+        }
+
+        reservation.reservationFlow?.let { flow ->
+            flow.status = ReservationFlowStatus.ABANDONED
+            reservationFlowRepository.save(flow)
+        }
     }
 
     @Transactional

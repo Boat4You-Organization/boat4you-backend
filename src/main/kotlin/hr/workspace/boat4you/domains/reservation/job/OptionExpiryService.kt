@@ -540,6 +540,9 @@ class OptionExpiryService(
                 if (extReservation.calculatedSysStatus != ReservationStatus.OPTION) {
                     log.info("Partner flipped reservation {} → {}", reservation.id, extReservation.calculatedSysStatus)
                     reservationMutationService.refreshReservation(reservation.id!!, extReservation)
+                    // Partner already released it; free our offer + close the flow (B1). No-op if
+                    // the partner converted it to a booking (releaseExpiredOption guards on CANCELLED).
+                    reservationMutationService.releaseExpiredOption(reservation.id!!)
                     sendExpiredEmail(reservation)
                     return@runCatching true
                 }
@@ -577,6 +580,18 @@ class OptionExpiryService(
                     flow.cancelationRequest = "[SYSTEM] Payment not received within the option deadline."
                     flow.cancelationRequestAt = now
                 }
+                // Our grace timer fired but the partner may still hold the option — release it
+                // there too (idempotent; tolerates already-cancelled / null external_id), then free
+                // our offer + close the flow so the boat becomes available again (B1).
+                runCatching { reservationIntegrationService.deleteExternalReservation(reservation.id!!) }
+                    .onFailure { e ->
+                        log.warn(
+                            "Partner cancelOption failed for reservation {} - freeing our side regardless",
+                            reservation.id,
+                            e,
+                        )
+                    }
+                reservationMutationService.releaseExpiredOption(reservation.id!!)
                 sendExpiredEmail(reservation)
             } else {
                 log.trace(

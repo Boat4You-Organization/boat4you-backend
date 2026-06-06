@@ -34,7 +34,12 @@ class ReservationFlowQueryingService(
         userId: Long,
         currency: CurrencyEnum,
     ): List<MyReservationsDto> {
-        val reservations = reservationViewRepository.findAllByReservationUserId(userId)
+        val reservations =
+            reservationViewRepository
+                .findAllByReservationUserId(userId)
+                // Hide cancelled bookings from the client account (B1: an expired unpaid
+                // option is released and removed from My Bookings once auto-cancelled).
+                .filter { it.reservationSysStatus != ReservationStatus.CANCELLED }
         return reservations.map { reservationMappers.toMyReservationsResponse(it, currency) }
     }
 
