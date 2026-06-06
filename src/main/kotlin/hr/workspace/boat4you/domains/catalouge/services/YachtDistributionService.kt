@@ -63,6 +63,12 @@ class YachtDistributionService(
         manufacturerIds: List<Long>? = null,
         modelIds: List<Long>? = null,
     ): YachtDistributionDto {
+        // Mirror the search path (YachtQueryingService.buildYachtSearchPredicates):
+        // an inverted range must fail the same way on both endpoints, so the facet
+        // counts and the result total can never silently diverge on bad input.
+        require(startDate == null || endDate == null || startDate.isBefore(endDate)) {
+            "startDate must be before endDate"
+        }
         val marinaIds = resolveMarinas(locationIds)
         val ctx = FilterContext(
             marinaIds = marinaIds,
