@@ -12,8 +12,10 @@ import hr.workspace.boat4you.domains.catalouge.dto.YachtSearchResponseDto
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
+import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
+import hr.workspace.boat4you.domains.catalouge.enums.MatchKind
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
@@ -25,6 +27,7 @@ import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveExceptio
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtDetailRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtViewRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalBaseRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservation
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
@@ -82,13 +85,15 @@ class YachtQueryingService(
         private const val MAX_PAGE_SIZE = 100
 
         /**
-         * Tolerance on each side of the user's requested period when filtering
-         * yacht offers. A search for 04.07.–11.07. (Sat–Sat) also returns
-         * Mon–Mon or Thu–Thu offers that sit within 3 days of those bounds
-         * — mirrors what larger brokers (MMK, Boataround) show as "closest
-         * day" suggestions instead of silently dropping them.
+         * Honest "shifted week" reach (Deploy 4). A published offer slot
+         * qualifies if its OWN window overlaps [from - N, to + N] — judged on
+         * the slot's real dateFrom/dateTo, NOT a start-day clamp. So a 04.07.–
+         * 11.07. (Sat–Sat) search also surfaces a genuinely-nearby Thu–Thu or
+         * Mon–Mon published week (labelled "closest week"), but never a slot
+         * whose interval doesn't actually reach the requested period. Small (3)
+         * so it stays honest.
          */
-        private const val DATE_FLEX_DAYS = 3L
+        private const val NEARBY_WINDOW_DAYS = 3L
 
         /**
          * Customer-facing amenity priority used for the search-result card's
@@ -365,6 +370,12 @@ class YachtQueryingService(
                     (view.offerStatus == 2 || view.offerStatus == 3) &&
                         optionExpiryByYachtId[view.id] != null
 
+                // Honest matched-window kind: compare the chosen slot's REAL
+                // window (offerDateFrom/offerDateTo, from exactOrEarliest) to the
+                // searched period so the card can label EXACT vs SHIFTED/SHORTER/
+                // LONGER. Null when no dated search or the slot has no window.
+                val matchKind = resolveMatchKind(view.offerDateFrom, view.offerDateTo, searchStart, searchEnd)
+
                 yachtMapper.toDto(
                     view,
                     searchParams.currency,
@@ -372,6 +383,7 @@ class YachtQueryingService(
                     isOption,
                     amenityKeysByYachtId[view.id],
                     optionExpiryByYachtId[view.id],
+                    matchKind,
                 )
             }
 
@@ -431,6 +443,29 @@ class YachtQueryingService(
                     .take(limit)
                     .map { it.first }
             }
+    }
+
+    /**
+     * Classify the matched slot's REAL window vs the searched period (Deploy 4
+     * step 5). Returns null when there's no dated search or the slot has no
+     * window (custom yacht). EXACT only when both endpoints align; otherwise
+     * SHIFTED (same duration), SHORTER, or LONGER by duration comparison.
+     */
+    private fun resolveMatchKind(
+        offerFrom: LocalDate?,
+        offerTo: LocalDate?,
+        searchStart: LocalDate?,
+        searchEnd: LocalDate?,
+    ): MatchKind? {
+        if (offerFrom == null || offerTo == null || searchStart == null || searchEnd == null) return null
+        if (offerFrom == searchStart && offerTo == searchEnd) return MatchKind.EXACT
+        val offerDays = java.time.temporal.ChronoUnit.DAYS.between(offerFrom, offerTo)
+        val searchDays = java.time.temporal.ChronoUnit.DAYS.between(searchStart, searchEnd)
+        return when {
+            offerDays < searchDays -> MatchKind.SHORTER
+            offerDays > searchDays -> MatchKind.LONGER
+            else -> MatchKind.SHIFTED
+        }
     }
 
     /**
@@ -791,52 +826,67 @@ class YachtQueryingService(
             )
         }
 
-        // Flex by start day: offer passes only if its start sits within ±DATE_FLEX_DAYS
-        // of the user's requested start. Durations past the user's end are fine
-        // (e.g. 10-day Tue→Fri that starts 07.07. still matches a 04.07.→11.07.
-        // search), but offers starting a full week later (11.07.→18.07.) are
-        // already the NEXT week and would just clutter the results.
+        // TRUE interval logic (Deploy 4, replaces the old ±DATE_FLEX_DAYS start
+        // clamp). A published slot qualifies if its OWN window overlaps
+        // [from - N, to + N] — judged on the slot's real dateFrom/dateTo, never
+        // a start-day-only clamp. So a 10-day Tue→Fri slot that genuinely covers
+        // the requested period matches, while a slot whose interval never reaches
+        // it is dropped. Half-open on the slot window vs the padded request.
+        //
+        // On top of that, a correlated NOT EXISTS half-open overlap against
+        // external_reservations drops slots whose REAL window is hard-blocked
+        // (RESERVATION / SERVICE only — NEVER OPTION, so an agency optioning a
+        // whole marina keeps every yacht visible, badged inquiry-only). The
+        // matview offer_status UNAVAILABLE pre-filter above STAYS (HIGH-6 b):
+        // owner-weeks / regatta live only on offer.status with no reservation
+        // row, so the live EXISTS only ADDS blocking, it does not replace it.
+        //
         // Custom yachts (entry_type=2 in yacht_search_view) carry NULL
         // dateFrom/dateTo because they have no offer rows — they're inquiry-
         // only listings that the admin maintains by hand. Without an OR
         // dateFrom IS NULL escape hatch, the date predicate would silently
         // exclude every custom yacht the moment a user picks a date, even
         // though the listing should always show ("contact us for this date").
-        // Sort still works naturally — branch 2 emits client_price = lowPrice/7
-        // and length = y.length, so cheapest/longest sorts pick custom yachts
-        // up alongside external offers.
+        // They have no external_reservations rows, so the NOT EXISTS is
+        // vacuously true and never drops them.
         val isCustomYacht = cb.isNull(root.get<LocalDate>("dateFrom"))
         if (searchParams.startDate != null && searchParams.endDate != null) {
             if (!searchParams.startDate.isBefore(searchParams.endDate)) {
                 throw IllegalArgumentException("Starting date must be before end date")
             }
+            val paddedFrom = searchParams.startDate.minusDays(NEARBY_WINDOW_DAYS)
+            val paddedTo = searchParams.endDate.plusDays(NEARBY_WINDOW_DAYS)
+            // Slot window [dateFrom, dateTo) overlaps padded request [paddedFrom, paddedTo).
+            val slotMatches =
+                cb.and(
+                    cb.lessThan(root.get<LocalDate>("dateFrom"), paddedTo),
+                    cb.greaterThan(root.get<LocalDate>("dateTo"), paddedFrom),
+                )
+            predicates.add(cb.or(isCustomYacht, slotMatches))
             predicates.add(
                 cb.or(
                     isCustomYacht,
-                    cb.and(
-                        cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.minusDays(DATE_FLEX_DAYS)),
-                        cb.lessThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.plusDays(DATE_FLEX_DAYS)),
+                    cb.not(
+                        cb.exists(
+                            buildHardBlockOverlapSubquery(cq, cb, root, searchParams.startDate, searchParams.endDate),
+                        ),
                     ),
                 ),
             )
         } else if (searchParams.startDate != null) {
+            // Open-ended start: slot's window must reach on/after the padded start.
             predicates.add(
                 cb.or(
                     isCustomYacht,
-                    cb.and(
-                        cb.greaterThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.minusDays(DATE_FLEX_DAYS)),
-                        cb.lessThanOrEqualTo(root.get("dateFrom"), searchParams.startDate.plusDays(DATE_FLEX_DAYS)),
-                    ),
+                    cb.greaterThan(root.get<LocalDate>("dateTo"), searchParams.startDate.minusDays(NEARBY_WINDOW_DAYS)),
                 ),
             )
         } else if (searchParams.endDate != null) {
+            // Open-ended end: slot's window must start on/before the padded end.
             predicates.add(
                 cb.or(
                     isCustomYacht,
-                    cb.and(
-                        cb.greaterThanOrEqualTo(root.get("dateTo"), searchParams.endDate.minusDays(DATE_FLEX_DAYS)),
-                        cb.lessThanOrEqualTo(root.get("dateTo"), searchParams.endDate.plusDays(DATE_FLEX_DAYS)),
-                    ),
+                    cb.lessThan(root.get<LocalDate>("dateFrom"), searchParams.endDate.plusDays(NEARBY_WINDOW_DAYS)),
                 ),
             )
         }
@@ -900,6 +950,40 @@ class YachtQueryingService(
         }
 
         return predicates
+    }
+
+    /**
+     * Correlated subquery: does this yacht have ANY hard-block reservation
+     * (status RESERVATION or SERVICE) whose REAL window overlaps the searched
+     * [start, end) period? OPTION is deliberately NOT included — optioned
+     * yachts stay visible (badged inquiry-only); only a firm reservation or a
+     * service block hides a yacht.
+     *
+     * Half-open overlap (date_from < end AND date_to > start) so a turnaround
+     * day is never a phantom conflict, matching V9_11 / CRIT-3.
+     *
+     * MED-9: the subquery is built against the CALLER's [cq] (its own
+     * CriteriaQuery), so getYachts (page) and getYachtSearchTotalCount (count)
+     * each construct it on their own query and the count stays consistent with
+     * the visible page.
+     */
+    private fun buildHardBlockOverlapSubquery(
+        cq: CriteriaQuery<*>,
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        start: LocalDate,
+        end: LocalDate,
+    ): jakarta.persistence.criteria.Subquery<Long> {
+        val sub = cq.subquery(Long::class.java)
+        val er = sub.from(ExternalReservation::class.java)
+        val statusPath = er.get<ExternalReservationStatus>("status")
+        sub.select(cb.literal(1L)).where(
+            cb.equal(er.get<Yacht>("yacht").get<Long>("id"), root.get<Long>("id")),
+            statusPath.`in`(ExternalReservationStatus.RESERVATION, ExternalReservationStatus.SERVICE),
+            cb.lessThan(er.get<LocalDate>("dateFrom"), end),
+            cb.greaterThan(er.get<LocalDate>("dateTo"), start),
+        )
+        return sub
     }
 
     private fun getMarinas(locationId: String): List<Location> {

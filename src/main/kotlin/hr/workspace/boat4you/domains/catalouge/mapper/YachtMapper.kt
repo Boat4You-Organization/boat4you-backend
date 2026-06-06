@@ -12,6 +12,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.YachtSearchResponseDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
+import hr.workspace.boat4you.domains.catalouge.enums.MatchKind
 import hr.workspace.boat4you.domains.catalouge.enums.TranslationType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtDetail
@@ -45,6 +46,7 @@ class YachtMapper(
         isOption: Boolean,
         amenityKeys: List<String>? = null,
         optionExpiresAt: java.time.LocalDateTime? = null,
+        matchKind: MatchKind? = null,
     ): YachtSearchResponseDto {
         val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName)
         // One-way charter: surface drop-off as separate DTO only when
@@ -100,6 +102,7 @@ class YachtMapper(
             amenityKeys = amenityKeys?.takeIf { it.isNotEmpty() },
             offerDateFrom = result.offerDateFrom,
             offerDateTo = result.offerDateTo,
+            matchKind = matchKind,
             optionExpiresAt = optionExpiresAt,
             custom = result.entryType == hr.workspace.boat4you.domains.catalouge.enums.EntryType.CUSTOM,
         )

@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.catalouge.dto
 import com.fasterxml.jackson.databind.annotation.JsonSerialize
 import hr.workspace.boat4you.common.services.TwoDecimalSerializer
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
+import hr.workspace.boat4you.domains.catalouge.enums.MatchKind
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import java.math.BigDecimal
@@ -66,12 +67,21 @@ data class YachtSearchResponseDto(
      */
     val amenityKeys: List<String>? = null,
     /**
-     * Start/end of the offer period that matched the user's search (within the
-     * ±3 day flex window). When these don't equal the user's requested dates
-     * the card renders a "Closest day" badge.
+     * The REAL window of the offer slot that matched the user's search — the
+     * honest matched dates, NOT the user's searched dates. When these don't
+     * equal the requested dates the card renders a "Closest week" badge showing
+     * this window. Resolved via exactOrEarliest (exact match preferred,
+     * earliest overlapping slot as fallback).
      */
     val offerDateFrom: LocalDate? = null,
     val offerDateTo: LocalDate? = null,
+    /**
+     * How offerDateFrom/offerDateTo relate to the searched period (Deploy 4):
+     * EXACT (no badge) | SHIFTED | SHORTER | LONGER (render "Closest week" +
+     * the real window). Null when the user searched without dates or the slot
+     * has no window (custom yacht).
+     */
+    val matchKind: MatchKind? = null,
     /**
      * When the yacht is under option (isOption == true) AND the partner
      * sync captured an expiry timestamp on the external_reservations row,
