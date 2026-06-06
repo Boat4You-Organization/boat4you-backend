@@ -4,10 +4,12 @@ import hr.workspace.boat4you.domains.catalouge.dto.OfferDto
 import hr.workspace.boat4you.domains.catalouge.dto.PriceCalcDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
+import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import hr.workspace.boat4you.domains.catalouge.enums.OfferType
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
@@ -27,6 +29,7 @@ class OfferQueryingService(
     private val offerMapper: OfferMapper,
     private val userRepository: UserRepository,
     private val priceCalculationService: PriceCalculationService,
+    private val externalReservationRepository: ExternalReservationRepository,
 ) {
     fun getYachtStandardOffers(
         yachtId: Long,
@@ -44,7 +47,30 @@ class OfferQueryingService(
                 OfferType.STANDARD,
             )
 
-        return offers.map { offerMapper.toDto(it, currency) }
+        // Live options (optionExpiration > now) overlapping the window — used to
+        // demote stale OPTION offer rows to FREE. The finder is half-open
+        // (date_from < end AND date_to > start) so a turnaround day never counts.
+        val liveOptions =
+            externalReservationRepository.findOptionsByYachtIdsAndPeriod(
+                listOf(yachtId),
+                ExternalReservationStatus.OPTION,
+                dateFrom,
+                dateTo,
+            )
+
+        return offers.map { offer ->
+            val hasLiveOption =
+                liveOptions.any { r ->
+                    // Half-open overlap of THIS offer's exact period with a live option row.
+                    val oFrom = offer.dateFrom
+                    val oTo = offer.dateTo
+                    val rFrom = r.dateFrom
+                    val rTo = r.dateTo
+                    oFrom != null && oTo != null && rFrom != null && rTo != null &&
+                        rFrom.isBefore(oTo) && rTo.isAfter(oFrom)
+                }
+            offerMapper.toDto(offer, currency, hasLiveOption)
+        }
     }
 
     fun getYachtOffers(
