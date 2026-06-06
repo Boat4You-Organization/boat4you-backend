@@ -11,7 +11,9 @@
 -- when searching Cyclades — otherwise the island boats are hard to find." A Cyclades
 -- search must return island offers only.
 --
--- Denylist by NAME (region/location IDs renumber on reseed). Verified against the live
+-- Match against name + city (region/location IDs renumber on reseed; some mainland ports
+-- carry a generic name like "Kalympaki Marina" with the mainland place only in `city`
+-- — e.g. Elefsina — so name-only matching missed them). Verified against the live
 -- catalogue NOT to hit any real Cyclades marina. NOTE: we deliberately do NOT match a
 -- bare 'astir' — that substring lives inside "Monastiri Bay" (Paros, a genuine Cyclades
 -- marina); "Astir Marina Vouliagmeni" is removed via the 'vouliagmeni' pattern instead.
@@ -21,27 +23,20 @@ USING location l, region r
 WHERE lr.location_id = l.id
   AND lr.region_id = r.id
   AND r.name = 'Cyclades'
-  AND (
-        -- Athens / Attica mainland + Lavrion + Piraeus departure ports
-        l.name ILIKE '%athen%'        OR l.name ILIKE '%lavrio%'        OR l.name ILIKE '%piraeus%'
-        OR l.name ILIKE '%alimos%'    OR l.name ILIKE '%vouliagmeni%'   OR l.name ILIKE '%varkiza%'
-        OR l.name ILIKE '%glyfada%'   OR l.name ILIKE '%flisvos%'       OR l.name ILIKE '%amfitheas%'
-        OR l.name ILIKE '%agios kosmas%' OR l.name ILIKE '%zea%'        OR l.name ILIKE '%anavyssos%'
-        OR l.name ILIKE '%lagonisi%'  OR l.name ILIKE '%kallithea%'     OR l.name ILIKE '%eleusis%'
-        OR l.name ILIKE '%elefsina%'  OR l.name ILIKE '%nea peramos%'   OR l.name ILIKE '%palaia fokaia%'
-        OR l.name ILIKE '%palaio faliro%' OR l.name ILIKE '%porto rafti%' OR l.name ILIKE '%pachi%'
-        OR l.name ILIKE '%megara%'    OR l.name ILIKE '%olympic marina%'
-        -- Crete
-        OR l.name ILIKE '%crete%'     OR l.name ILIKE '%chania%'        OR l.name ILIKE '%heraklion%'
-        OR l.name ILIKE '%kissamos%'  OR l.name ILIKE '%kolymvari%'     OR l.name ILIKE '%elounda%'
-        OR l.name ILIKE '%schisma%'   OR l.name ILIKE '%sitia%'         OR l.name ILIKE '%sfakia%'
-        OR l.name ILIKE '%sfakion%'   OR l.name ILIKE '%agia galini%'   OR l.name ILIKE '%linoperamata%'
-        -- Evia
-        OR l.name ILIKE '%karistos%'  OR l.name ILIKE '%khalkis%'       OR l.name ILIKE '%chalkis%'
-        OR l.name ILIKE '%eretria%'   OR l.name ILIKE '%chalkoutsi%'
-        -- Peloponnese / Saronic
-        OR l.name ILIKE '%astros%'    OR l.name ILIKE '%ermioni%'       OR l.name ILIKE '%nafplion%'
-        OR l.name ILIKE '%korfos%'    OR l.name ILIKE '%poros%'
-        -- Other island groups: Ionian (Paxos), Dodecanese (Marathi, Nimborio/Symi)
-        OR l.name ILIKE '%paxos%'     OR l.name ILIKE '%marathi%'       OR l.name ILIKE '%nimborio%'
-      );
+  AND (l.name || ' ' || COALESCE(l.city, '')) ILIKE ANY (ARRAY[
+          -- Athens / Attica mainland + Lavrion + Piraeus departure ports
+          '%athen%', '%lavrio%', '%piraeus%', '%alimos%', '%vouliagmeni%', '%varkiza%',
+          '%glyfada%', '%flisvos%', '%amfitheas%', '%agios kosmas%', '%zea%', '%anavyssos%',
+          '%lagonisi%', '%kallithea%', '%eleusis%', '%elefsina%', '%nea peramos%',
+          '%palaia fokaia%', '%palaio faliro%', '%porto rafti%', '%pachi%', '%megara%',
+          '%olympic marina%', '%salamina%', '%salamis%',
+          -- Crete
+          '%crete%', '%chania%', '%heraklion%', '%kissamos%', '%kolymvari%', '%elounda%',
+          '%schisma%', '%sitia%', '%sfakia%', '%sfakion%', '%agia galini%', '%linoperamata%',
+          -- Evia
+          '%karistos%', '%khalkis%', '%chalkis%', '%eretria%', '%chalkoutsi%',
+          -- Peloponnese / Saronic
+          '%astros%', '%ermioni%', '%nafplion%', '%korfos%', '%poros%',
+          -- Other island groups: Ionian (Paxos), Dodecanese (Marathi, Nimborio/Symi)
+          '%paxos%', '%marathi%', '%nimborio%'
+        ]);
