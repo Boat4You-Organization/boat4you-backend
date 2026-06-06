@@ -1,0 +1,41 @@
+-- V1_98: Plain btree on external_reservations (yacht_id, date_from, date_to).
+--
+-- Deploy 4 (honest search). YachtQueryingService.buildYachtSearchPredicates now
+-- runs a correlated NOT EXISTS half-open overlap probe against
+-- external_reservations (status IN RESERVATION, SERVICE; date_from < :to AND
+-- date_to > :from) for every yacht in the already-narrowed candidate set, plus
+-- OfferQueryingService / the detail-calendar feeds do per-yacht overlap reads.
+-- The table is indexed only on yacht_id today (V1_03:1438), so the planner has
+-- to scan all of a yacht's reservation rows to evaluate the date overlap.
+--
+-- A composite btree on (yacht_id, date_from, date_to) lets the probe satisfy
+-- the yacht_id equality AND the half-open range with one index: it seeks to the
+-- yacht's rows, then range-scans date_from for the < :to bound (date_to is
+-- carried in the index so the > :from filter is checked without a heap fetch).
+-- external_reservations holds busy-intervals only (small relative to the ~494k
+-- yacht_search_view rows), so this stays cheap.
+--
+-- HIGH-7: deliberately a PLAIN btree, NOT btree_gist / GiST. A GiST daterange
+-- index would need `CREATE EXTENSION btree_gist`, which requires a superuser
+-- one-off; if it isn't pre-installed the migration fails and aborts the whole
+-- Flyway boot. The plain btree needs no extension, no superuser, and benchmarks
+-- as sargable for this correlated-per-yacht overlap. Only add GiST later if
+-- EXPLAIN ANALYZE on prod-size data proves it necessary.
+--
+-- The index inherits the table owner (boat4you_owner, V1_03:199); no explicit
+-- ALTER ... OWNER needed.
+--
+-- Deploy notes for Mario (mirror V1_93):
+-- * Non-CONCURRENTLY here: Flyway wraps each migration in a transaction and
+--   CREATE INDEX CONCURRENTLY cannot run inside one. The CREATE INDEX takes a
+--   short lock on external_reservations at startup before traffic; the table is
+--   small so this is acceptable. The only writer is the partner availability
+--   sync -- if a sync overlaps boot the lock is brief.
+-- * For a HOT-PROD rebuild (avoid the table lock) run manually instead:
+--     CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ext_reservation_yacht_daterange
+--       ON public.external_reservations USING btree (yacht_id, date_from, date_to);
+--   then this Flyway statement no-ops (IF NOT EXISTS).
+
+CREATE INDEX IF NOT EXISTS idx_ext_reservation_yacht_daterange
+    ON public.external_reservations
+    USING btree (yacht_id, date_from, date_to);
