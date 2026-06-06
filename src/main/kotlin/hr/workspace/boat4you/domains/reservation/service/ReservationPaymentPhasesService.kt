@@ -194,7 +194,9 @@ class ReservationPaymentPhasesService(
         return phases.map { it.toDto() }
     }
 
-    private fun Double.roundDecimals(): Double = this.toBigDecimal().setScale(2, RoundingMode.UP).toDouble()
+    // B6: HALF_UP (standard commercial rounding) so phase amounts round to the
+    // nearest cent, not always up — UP over-collected up to a cent per phase.
+    private fun Double.roundDecimals(): Double = this.toBigDecimal().setScale(2, RoundingMode.HALF_UP).toDouble()
 
     private fun Pair<LocalDate, Double>.roundDecimals(): Pair<LocalDate, Double> = Pair(this.first, this.second.roundDecimals())
 

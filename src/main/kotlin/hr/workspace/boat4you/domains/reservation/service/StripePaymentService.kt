@@ -381,7 +381,9 @@ class StripePaymentService(
         reservationEmailService.sendConfirmationForReserved(reservationResponse, PaymentType.CARD)
     }
 
-    private fun BigDecimal.toCentsLong(): Long = this.setScale(2, RoundingMode.UP).times(100.toBigDecimal()).toLong()
+    // B6: HALF_UP so the Stripe cents amount rounds to nearest (matters for the
+    // card-surcharge path which can produce >2dp); UP always over-charged.
+    private fun BigDecimal.toCentsLong(): Long = this.setScale(2, RoundingMode.HALF_UP).times(100.toBigDecimal()).toLong()
 
     private fun checkIfStripeIsEnabled() {
         if (!stripeEnabled) {
