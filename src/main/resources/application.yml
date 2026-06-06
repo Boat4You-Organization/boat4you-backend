@@ -152,6 +152,16 @@ application:
       # this value as the required `aud`). Public value — also embedded in the
       # SPA as NEXT_PUBLIC_GOOGLE_CLIENT_ID. Blank → Google login disabled.
       client-id: ${GOOGLE_OAUTH_CLIENT_ID:}
+    facebook:
+      # Facebook Login app credentials. Facebook Login for Web (JS SDK) returns
+      # an opaque ACCESS token (not a signed JWT), POSTed to /auth/oauth/facebook
+      # and verified server-side via the Graph API: /debug_token (using the app
+      # access token "app-id|app-secret") asserts the token was minted for THIS
+      # app-id (the security linchpin), then /me reads the profile. The app-id is
+      # public (also embedded in the SPA); the app-secret is a secret and must
+      # only ever live server-side. Blank → Facebook login disabled.
+      app-id: ${FACEBOOK_OAUTH_APP_ID:}
+      app-secret: ${FACEBOOK_OAUTH_APP_SECRET:}
   external:
     sync:
       offer-max-years: 2

@@ -24,8 +24,17 @@ class OAuthController(
     fun loginWithGoogle(
         @RequestBody body: GoogleLoginBody,
     ): TokenResponse = oAuthService.loginWithGoogle(body.idToken, httpRequest)
+
+    @PostMapping("/auth/oauth/facebook")
+    fun loginWithFacebook(
+        @RequestBody body: FacebookLoginBody,
+    ): TokenResponse = oAuthService.loginWithFacebook(body.accessToken, httpRequest)
 }
 
 data class GoogleLoginBody(
     val idToken: String,
+)
+
+data class FacebookLoginBody(
+    val accessToken: String,
 )

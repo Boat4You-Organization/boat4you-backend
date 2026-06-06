@@ -23,28 +23,87 @@ import java.util.Base64
  * social login layers cleanly on top of the existing auth stack instead of
  * replacing it.
  *
- * Auto-linking policy (Mario decision): a Google-verified email is attached to
+ * Auto-linking policy (Mario decision): a provider-verified email is attached to
  * an existing local account that owns the same address. This is gated on the
- * email being **verified by Google** — without that gate, anyone able to mint a
- * token for an unverified address could take over a boat4you account.
+ * email being **verified by the provider** — without that gate, anyone able to
+ * mint a token for an unverified address could take over a boat4you account.
+ *
+ * Google and Facebook share ONE find-or-create-and-issue-token path
+ * ([loginWithProvider] + [linkExistingAccount] / [createAccount]); each provider
+ * only differs in how it verifies the token and maps it to a [ProviderIdentity].
  */
 @Service
 class OAuthService(
     private val googleTokenVerifier: GoogleTokenVerifier,
+    private val facebookTokenVerifier: FacebookTokenVerifier,
     private val userRepository: UserRepository,
     private val userMutationService: UserMutationService,
     private val userAuthService: UserAuthService,
 ) {
     private val secureRandom = SecureRandom.getInstance("SHA1PRNG")
 
+    /**
+     * Provider-agnostic verified identity. Both Google and Facebook map into
+     * this so the link/create/issue logic below is written once.
+     */
+    private data class ProviderIdentity(
+        val provider: String,
+        val providerId: String,
+        val email: String,
+        val emailVerified: Boolean,
+        val givenName: String?,
+        val familyName: String?,
+        val name: String?,
+    )
+
     @Transactional(readOnly = false)
     fun loginWithGoogle(
         idToken: String,
         httpRequest: HttpServletRequest,
     ): TokenResponse {
-        val identity = googleTokenVerifier.verify(idToken)
+        val google = googleTokenVerifier.verify(idToken)
+        val identity =
+            ProviderIdentity(
+                provider = PROVIDER_GOOGLE,
+                providerId = google.subject,
+                email = google.email,
+                emailVerified = google.emailVerified,
+                givenName = google.givenName,
+                familyName = google.familyName,
+                name = google.name,
+            )
+        return loginWithProvider(identity, httpRequest)
+    }
 
-        // Linchpin of the whole flow: only a Google-verified email may be
+    @Transactional(readOnly = false)
+    fun loginWithFacebook(
+        accessToken: String,
+        httpRequest: HttpServletRequest,
+    ): TokenResponse {
+        val facebook = facebookTokenVerifier.verify(accessToken)
+        val identity =
+            ProviderIdentity(
+                provider = PROVIDER_FACEBOOK,
+                providerId = facebook.subject,
+                email = facebook.email,
+                emailVerified = facebook.emailVerified,
+                givenName = facebook.givenName,
+                familyName = facebook.familyName,
+                name = facebook.name,
+            )
+        return loginWithProvider(identity, httpRequest)
+    }
+
+    /**
+     * The single find-or-create-and-issue-token implementation shared by every
+     * social provider. Enforces the verified-email gate, then attaches to (or
+     * creates) the local account that owns the email and issues OUR token pair.
+     */
+    private fun loginWithProvider(
+        identity: ProviderIdentity,
+        httpRequest: HttpServletRequest,
+    ): TokenResponse {
+        // Linchpin of the whole flow: only a provider-verified email may be
         // auto-linked / used to create an account. An unverified address is
         // rejected as a generic auth failure.
         if (!identity.emailVerified) {
@@ -56,20 +115,20 @@ class OAuthService(
             if (existing != null) {
                 linkExistingAccount(existing, identity)
             } else {
-                createGoogleAccount(identity)
+                createAccount(identity)
             }
 
         return userAuthService.issueTokenAtRegistration(user, httpRequest)
     }
 
     /**
-     * Attach the Google identity to an existing local account that owns the same
-     * (verified) email. Also finalises a stalled signup: a Google-verified email
-     * is proof of inbox ownership, so a STARTED account becomes REGISTERED.
+     * Attach the social identity to an existing local account that owns the same
+     * (verified) email. Also finalises a stalled signup: a provider-verified
+     * email is proof of inbox ownership, so a STARTED account becomes REGISTERED.
      */
     private fun linkExistingAccount(
         user: UserEntity,
-        identity: GoogleIdentity,
+        identity: ProviderIdentity,
     ): UserEntity {
         // A soft-deleted (GDPR-erased) account must not be silently revived via a
         // social login — refuse as a generic auth failure.
@@ -77,8 +136,8 @@ class OAuthService(
             throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, identity.email)
         }
 
-        user.provider = PROVIDER_GOOGLE
-        user.providerId = identity.subject
+        user.provider = identity.provider
+        user.providerId = identity.providerId
         if (user.registrationStatus != UserRegistrationStatusEnum.REGISTERED) {
             user.registrationStatus = UserRegistrationStatusEnum.REGISTERED
             user.emailVerificationCode = null
@@ -94,12 +153,12 @@ class OAuthService(
     }
 
     /**
-     * Create a brand-new account for a first-time Google user. The email is
-     * already verified by Google, so the account is REGISTERED immediately. A
-     * random unguessable password is set (createUser BCrypt-encodes it); the
+     * Create a brand-new account for a first-time social user. The email is
+     * already verified by the provider, so the account is REGISTERED immediately.
+     * A random unguessable password is set (createUser BCrypt-encodes it); the
      * user can run "forgot password" later to also enable email login.
      */
-    private fun createGoogleAccount(identity: GoogleIdentity): UserEntity {
+    private fun createAccount(identity: ProviderIdentity): UserEntity {
         val (firstName, lastName) = resolveName(identity)
 
         val model =
@@ -115,8 +174,8 @@ class OAuthService(
 
         val dbUser = userRepository.findById(created.id!!).get()
         dbUser.apply {
-            provider = PROVIDER_GOOGLE
-            providerId = identity.subject
+            provider = identity.provider
+            providerId = identity.providerId
             registrationStatus = UserRegistrationStatusEnum.REGISTERED
             inviteStatus = UserInviteStatusEnum.ACCEPTED
             emailVerificationCode = null
@@ -129,12 +188,12 @@ class OAuthService(
 
     /**
      * Derive a (name, surname) pair that satisfies the same validation as a
-     * manual signup (each >= 2 chars). Google usually supplies given_name +
+     * manual signup (each >= 2 chars). Providers usually supply given_name +
      * family_name; we fall back to splitting the display name, then to the email
-     * local-part, so a sparse Google profile still yields a usable account the
+     * local-part, so a sparse social profile still yields a usable account the
      * user can refine on /my-profile.
      */
-    private fun resolveName(identity: GoogleIdentity): Pair<String, String> {
+    private fun resolveName(identity: ProviderIdentity): Pair<String, String> {
         val localPart = identity.email.substringBefore('@')
         var first = identity.givenName?.trim().orEmpty()
         var last = identity.familyName?.trim().orEmpty()
@@ -160,6 +219,7 @@ class OAuthService(
 
     companion object {
         private const val PROVIDER_GOOGLE = "GOOGLE"
+        private const val PROVIDER_FACEBOOK = "FACEBOOK"
         private const val FALLBACK_NAME = "User"
     }
 }
