@@ -9,7 +9,9 @@ import hr.workspace.boat4you.domains.reservation.dto.MyReservationsDto
 import hr.workspace.boat4you.domains.reservation.dto.PaymentPhaseDto
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.YachtSwapInfoDto
+import hr.workspace.boat4you.domains.reservation.enums.PaymentType
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
+import hr.workspace.boat4you.domains.reservation.exceptions.BookingCreationException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.service.ReservationEmailService
@@ -59,6 +61,8 @@ class ReservationController(
     private val reservationSyncService: ReservationSyncService,
     private val reservationDocumentService: hr.workspace.boat4you.domains.reservation.service.ReservationDocumentService,
 ) {
+    private val log = org.slf4j.LoggerFactory.getLogger(this::class.java)
+
     @Operation(summary = "Get reservations for the authenticated user")
     @GetMapping("/my-reservations")
     fun getMyReservations(
@@ -141,22 +145,92 @@ class ReservationController(
     fun create(
         @RequestBody @Valid createReservationDto: CreateReservationDto,
     ): ResponseEntity<ReservationDto> {
+        // Step 1 — OUR DB flow (+ payment phases, user, invite email). Own
+        // @Transactional; COMMITS before we return. It also flips the offer
+        // FREE -> OPTION under the pessimistic lock (B2 double-submit guard).
         val reservationFlowId = reservationFlowMutationService.createReservationFlow(createReservationDto)
 
-        val externalReservation =
-            reservationIntegrationService.createExternalReservation(reservationFlowId)
+        // Steps 2-4 happen AFTER step 1 already committed, so any failure here
+        // would otherwise leave an orphan live IN_PROGRESS flow + the offer
+        // parked in OPTION (B2 defect 1). Wrap + compensate.
+        return runBooking(reservationFlowId)
+    }
 
-        val reservation = reservationMutationService.createReservation(reservationFlowId, externalReservation)
+    /**
+     * B2 orchestration: partner createOption -> our reservation -> email.
+     * On ANY failure, compensate (abandon the flow + revert the offer, plus a
+     * best-effort partner option release if one was already created) and rethrow
+     * a clean exception instead of leaving an orphan or surfacing a raw 500.
+     * A committed reservation is NEVER turned into a 500 by an unexpected
+     * (non-OPTION) partner status.
+     */
+    private fun runBooking(reservationFlowId: Long): ResponseEntity<ReservationDto> {
+        var reservation: ReservationDto? = null
+        try {
+            val externalReservation =
+                reservationIntegrationService.createExternalReservation(reservationFlowId)
 
-        if (externalReservation.calculatedSysStatus == ReservationStatus.OPTION) {
-            reservationEmailService.sendOptionCreatedEmail(reservation.id)
-        } else {
-            throw IllegalStateException(
-                "External reservation status is not OPTION, but ${externalReservation.calculatedSysStatus}",
-            )
+            reservation = reservationMutationService.createReservation(reservationFlowId, externalReservation)
+
+            // From here on the reservation is COMMITTED. Email dispatch is
+            // best-effort: a mail/template glitch must NOT drop into the catch
+            // below and tear down a good booking. The status is informational —
+            // we never 500 on a committed reservation (B2 defect 2).
+            val committed = reservation
+            runCatching {
+                when (externalReservation.calculatedSysStatus) {
+                    ReservationStatus.OPTION, ReservationStatus.OPTION_WAITING ->
+                        reservationEmailService.sendOptionCreatedEmail(committed.id)
+                    ReservationStatus.RESERVATION ->
+                        // Partner auto-confirmed straight to RESERVATION — this is
+                        // a SUCCESS, not a failure. Send the confirmation email
+                        // instead of the option email.
+                        reservationEmailService.sendConfirmationForReserved(committed, PaymentType.BANK_TRANSFER)
+                    else ->
+                        // CANCELLED / UNKNOWN on a freshly-created option: keep
+                        // the committed reservation, return 200, no email fits;
+                        // an admin reconciles via the booking list.
+                        log.warn(
+                            "Booking {} created with unexpected partner status {} — kept, no email sent.",
+                            committed.id,
+                            externalReservation.calculatedSysStatus,
+                        )
+                }
+            }.onFailure { log.error("Booking {} committed but post-create email failed", committed.id, it) }
+
+            return ResponseEntity.ok(reservation)
+        } catch (e: Exception) {
+            // Best-effort: release a partner option if one was actually created
+            // (reservation committed with an external_id). If step 2 threw,
+            // no reservation/external option exists yet — nothing to release.
+            reservation?.id?.let { resId ->
+                runCatching { reservationIntegrationService.deleteExternalReservation(resId) }
+                    .onFailure { log.warn("Compensation: partner option release failed for reservation {}", resId, it) }
+            }
+            // Compensate OUR side: revert offer (FREE unless another live
+            // reservation holds it) + mark the flow ABANDONED so it is not a
+            // live orphan blocking the slot. Best-effort — never mask the
+            // original failure.
+            runCatching { reservationMutationService.abandonFailedFlow(reservationFlowId) }
+                .onFailure { log.error("Compensation: abandonFailedFlow failed for flow {}", reservationFlowId, it) }
+
+            // Already-clean domain exceptions (partner option/reservation error,
+            // yacht/agency not active, flow not found, ...) keep their existing
+            // 4xx mapping. Anything else (raw IllegalState/NPE from the persist
+            // step) becomes a clean BookingCreationException instead of the
+            // catch-all 500. These are independent classes (not a hierarchy), so
+            // each must be listed explicitly.
+            throw when (e) {
+                is hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException,
+                is hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException,
+                is hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException,
+                is hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException,
+                is hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException,
+                is hr.workspace.boat4you.domains.reservation.exceptions.ReservationFlowNotExists,
+                -> e
+                else -> BookingCreationException("Booking orchestration failed for flow $reservationFlowId", e)
+            }
         }
-
-        return ResponseEntity.ok(reservation)
     }
 
     @Operation(description = "Send cancellation request")

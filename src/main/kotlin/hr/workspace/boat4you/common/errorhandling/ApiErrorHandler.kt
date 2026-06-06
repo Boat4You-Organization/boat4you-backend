@@ -15,6 +15,7 @@ import hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException
 import hr.workspace.boat4you.domains.invoice.exceptions.InvoiceNotExistException
+import hr.workspace.boat4you.domains.reservation.exceptions.BookingCreationException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationFlowNotExists
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationStatusException
@@ -245,6 +246,23 @@ internal class ApiErrorHandler {
                 "Reservation status must be ${e.requiredStatus}",
             ),
             HttpStatus.BAD_REQUEST,
+        )
+    }
+
+    @ExceptionHandler(BookingCreationException::class)
+    fun handleBookingCreationException(e: BookingCreationException): ResponseEntity<ErrorSchema> {
+        // B2: orchestration failed and was already compensated (offer freed,
+        // flow abandoned) before this was thrown. The raw cause (NPE / illegal
+        // state / partner glitch) stays in the log; the customer gets a clear
+        // generic apology with a real body instead of the catch-all 500 that
+        // would otherwise leak internal detail or look like a crash.
+        logger.error("BookingCreationException", e)
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.BOOKING_CREATION_FAILED.code,
+                ApiErrorCodes.BOOKING_CREATION_FAILED.message,
+            ),
+            HttpStatus.BAD_GATEWAY,
         )
     }
 

@@ -41,6 +41,10 @@ enum class ApiErrorCodes(
     RESERVATION_NOT_EXIST(3002, "Reservation does not exist"),
     RESERVATION_USER_NOT_EXIST(3003, "Reservation user does not exist"),
     RESERVATION_STATUS_ERROR(3004, "Reservation status error"),
+    // B2: booking orchestration failed (partner option / reservation persist)
+    // and the flow was compensated (offer freed, flow abandoned). User-facing
+    // generic apology; the real cause stays in the backend log.
+    BOOKING_CREATION_FAILED(3005, "We're sorry, we couldn't complete your booking. Please try again or contact our support team."),
     RESOURCE_NOT_FOUND(4004, "Requested resource not found"),
     INVOICE_NOT_EXIST(5001, "Invoice does not exist"),
     // 6xxx codes are partner-integration failures (MMK / NauSys). The

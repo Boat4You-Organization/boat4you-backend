@@ -115,6 +115,20 @@ class ReservationFlowMutationService(
             throw IllegalArgumentException("Yacht is not external, and is not available for reservation over external service")
         }
 
+        // B2 (double-submit idempotency): flip the offer FREE -> OPTION NOW, in
+        // the same transaction that holds the Deploy-3 pessimistic write lock.
+        // A near-simultaneous second request for the same offer blocks on
+        // `findByIdForUpdate` until THIS tx commits, then re-reads a non-FREE
+        // status and is rejected by the `offer.status != FREE` guard above —
+        // so a double-click can no longer create a 2nd flow or a 2nd partner
+        // option. The success path (createReservation) re-asserts OPTION/RESERVED
+        // afterwards (idempotent); on any failure the controller compensates via
+        // ReservationMutationService.abandonFailedFlow, and the Deploy-2 expiry
+        // job (releaseExpiredOption) reverts the offer back to FREE — so the
+        // slot is never permanently parked in OPTION by a flip-without-booking.
+        offer.status = OfferStatus.OPTION
+        offerRepository.save(offer)
+
         val reservationUser =
             getUser(
                 loggedUser = loggedUser,

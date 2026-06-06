@@ -445,6 +445,64 @@ class ReservationMutationService(
         }
     }
 
+    /**
+     * B2 compensation for a booking orchestration that failed AFTER
+     * [ReservationFlowMutationService.createReservationFlow] committed (which now
+     * flips the offer FREE -> OPTION under the pessimistic lock for idempotency)
+     * but BEFORE a reservation was successfully committed — i.e. the partner
+     * createOption call threw, or [createReservation] threw.
+     *
+     * Without this the flow stays a live IN_PROGRESS orphan (looks bookable in
+     * admin, and keeps the offer parked in OPTION so the slot is wrongly blocked).
+     * This:
+     *   1. reverts the offer to its correct status (FREE unless ANOTHER live
+     *      reservation still holds the same @ManyToOne offer row — same
+     *      shared-offer guard as [releaseExpiredOption]); and
+     *   2. closes the flow as ABANDONED.
+     *
+     * Best-effort + idempotent: own transaction, null-safe for offer-less flows
+     * (fictitious/skip), and a no-op if the flow was already closed (DONE /
+     * ABANDONED). Re-running never frees an offer a committed reservation owns.
+     */
+    @Transactional
+    fun abandonFailedFlow(reservationFlowId: Long) {
+        val flow = reservationFlowRepository.findById(reservationFlowId).getOrElse { return }
+        // Only compensate a still-open flow. If a reservation actually committed
+        // (rare non-OPTION partner status path keeps the flow IN_PROGRESS too,
+        // but the controller does NOT call this on that path), or the flow was
+        // already abandoned/done, leave it untouched.
+        if (flow.status == ReservationFlowStatus.DONE || flow.status == ReservationFlowStatus.ABANDONED) return
+
+        val offerId = flow.offer?.id
+        if (offerId != null) {
+            val others =
+                reservationRepository
+                    .findActiveByOfferId(
+                        offerId,
+                        listOf(
+                            ReservationStatus.OPTION,
+                            ReservationStatus.OPTION_WAITING,
+                            ReservationStatus.RESERVATION,
+                        ),
+                    ).filter { it.reservationFlow?.id != reservationFlowId }
+            val newStatus =
+                when {
+                    others.any { it.sysStatus == ReservationStatus.RESERVATION } -> OfferStatus.RESERVED
+                    others.any {
+                        it.sysStatus == ReservationStatus.OPTION || it.sysStatus == ReservationStatus.OPTION_WAITING
+                    } -> OfferStatus.OPTION
+                    else -> OfferStatus.FREE
+                }
+            offerMutationService.updateOfferStatus(offerId, newStatus)
+            log.warn("Abandoned failed flow {}: offer {} -> {}", reservationFlowId, offerId, newStatus)
+        } else {
+            log.warn("Abandoned failed flow {} (no offer to revert)", reservationFlowId)
+        }
+
+        flow.status = ReservationFlowStatus.ABANDONED
+        reservationFlowRepository.save(flow)
+    }
+
     @Transactional
     fun updateAdminNotes(
         id: Long,
