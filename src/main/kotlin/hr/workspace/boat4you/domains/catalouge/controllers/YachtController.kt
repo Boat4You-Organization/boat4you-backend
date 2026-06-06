@@ -155,12 +155,16 @@ class YachtController(
             }
         }
 
-        if (startDate != null && endDate != null &&
-            ChronoUnit.DAYS.between(startDate, endDate) != 7L
-        ) {
-            if (locations != null) {
-                externalSyncService.syncYachtOffers(startDate, endDate, locations)
-            }
+        // On-demand partner availability sync for ANY dated search with
+        // locations (Deploy 4: the old `!= 7L` skip starved the most common
+        // Sat-Sat query of fresh data). The 1h ServiceCallCacheService gate
+        // inside syncYachtOffers (shouldCallYachtSearch) still throttles repeat
+        // calls, and honesty no longer depends on this completing because
+        // availability is resolved live against external_reservations at query
+        // time, so an in-flight or cache-skipped sync never yields a false
+        // "available for your exact week".
+        if (startDate != null && endDate != null && locations != null) {
+            externalSyncService.syncYachtOffers(startDate, endDate, locations)
         }
 
         // Replacement flow — admin toggled "Include unavailable yachts" in
