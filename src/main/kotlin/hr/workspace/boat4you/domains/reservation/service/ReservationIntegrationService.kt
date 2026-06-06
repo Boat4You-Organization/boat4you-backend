@@ -230,6 +230,46 @@ class ReservationIntegrationService(
         }
     }
 
+    /**
+     * B2 compensation: release a partner option created in step 2 whose local
+     * reservation row never committed (step 3 threw) — so there is no
+     * reservationId for [deleteExternalReservation]. Cancels straight from the
+     * createOption wrapper's external identifiers. Best-effort; no-op when there
+     * is nothing on the partner side (skip-flow / kill-switch / null externalId).
+     */
+    fun cancelExternalOptionByWrapper(
+        reservationFlowId: Long,
+        wrapper: ReservationResponseWrapper,
+    ) {
+        val externalId = wrapper.externalId ?: return
+        val reservationFlow =
+            reservationFlowRepository
+                .findById(reservationFlowId)
+                .orElseThrow { ReservationFlowNotExists() }
+        val agency = reservationFlow.yacht!!.agency!!
+        if (partnerReservationDisabled || agency.skipExternalSystem == true) {
+            return
+        }
+        when (agency.primarySource!!.externalSystem!!.id!!) {
+            ExternalSystemEnum.MMK.value ->
+                mmkReservationIntegrationService.cancelOption(
+                    externalId,
+                    fallbackLocationFrom = wrapper.locationFrom,
+                    fallbackLocationTo = wrapper.locationTo,
+                )
+
+            ExternalSystemEnum.NAUSYS.value ->
+                nausysReservationIntegrationService.cancelOption(
+                    externalId,
+                    wrapper.externalCode!!,
+                    fallbackLocationFrom = wrapper.locationFrom,
+                    fallbackLocationTo = wrapper.locationTo,
+                )
+
+            else -> {}
+        }
+    }
+
     fun getExternalReservation(reservationId: Long): ReservationResponseWrapper {
         val reservation = reservationRepository.findById(reservationId).orElseThrow()
         val externalSystem = reservation.reservationFlow!!.yacht!!.agency!!.primarySource!!.externalSystem!!

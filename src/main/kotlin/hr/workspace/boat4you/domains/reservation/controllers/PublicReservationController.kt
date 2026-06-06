@@ -75,9 +75,14 @@ class PublicReservationController(
      */
     private fun runBooking(reservationFlowId: Long): ResponseEntity<ReservationDto> {
         var reservation: ReservationDto? = null
+        // Hoisted so the catch can release the partner option even when step 3
+        // (createReservation) throws AFTER step 2 created it — no reservation row
+        // exists in that window, so deleteExternalReservation(id) can't reach it.
+        var partnerOption: hr.workspace.boat4you.domains.reservation.model.ReservationResponseWrapper? = null
         try {
             val externalReservation =
                 reservationIntegrationService.createExternalReservation(reservationFlowId)
+            partnerOption = externalReservation
 
             reservation = reservationMutationService.createReservation(reservationFlowId, externalReservation)
 
@@ -112,9 +117,20 @@ class PublicReservationController(
             // Best-effort: release a partner option if one was actually created
             // (reservation committed with an external_id). If step 2 threw,
             // no reservation/external option exists yet — nothing to release.
-            reservation?.id?.let { resId ->
-                runCatching { reservationIntegrationService.deleteExternalReservation(resId) }
-                    .onFailure { log.warn("Compensation: partner option release failed for reservation {}", resId, it) }
+            // Release the partner option whichever way it was created:
+            //  - reservation committed (step 3 ok) → cancel by reservation id
+            //  - step 3 threw AFTER step 2 created the option → cancel straight
+            //    from the createOption wrapper (no reservation row exists), else
+            //    the partner option leaks until it auto-expires (B2 P2).
+            val committedResId = reservation?.id
+            if (committedResId != null) {
+                runCatching { reservationIntegrationService.deleteExternalReservation(committedResId) }
+                    .onFailure { log.warn("Compensation: partner option release failed for reservation {}", committedResId, it) }
+            } else {
+                partnerOption?.let { wrapper ->
+                    runCatching { reservationIntegrationService.cancelExternalOptionByWrapper(reservationFlowId, wrapper) }
+                        .onFailure { log.warn("Compensation: partner option release (by wrapper) failed for flow {}", reservationFlowId, it) }
+                }
             }
             // Compensate OUR side: revert offer (FREE unless another live
             // reservation holds it) + mark the flow ABANDONED so it is not a
