@@ -4,8 +4,10 @@ import hr.workspace.boat4you.common.models.UserDomainEntity
 import hr.workspace.boat4you.common.services.toLanguageEnum
 import org.springframework.context.i18n.LocaleContextHolder
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
+import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Extra
 import hr.workspace.boat4you.domains.catalouge.jpa.ExtraRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
@@ -47,6 +49,7 @@ class ReservationFlowMutationService(
     private val userRepository: UserRepository,
     private val yachtRepository: YachtRepository,
     private val offerRepository: OfferRepository,
+    private val externalReservationRepository: ExternalReservationRepository,
     private val reservationFlowRepository: ReservationFlowRepository,
     private val userMutationService: UserMutationService,
     private val extraRepository: ExtraRepository,
@@ -71,13 +74,31 @@ class ReservationFlowMutationService(
         val createdByUser = loggedUser?.let { userRepository.findByEmail(it.email) }
 
         val yacht = yachtRepository.findById(createReservationDto.yachtId).get()
-        val offer = offerRepository.findById(createReservationDto.offerId).get()
+        // Pessimistic-write lock (Deploy 3) serialises concurrent booking attempts on
+        // the same offer so a TOCTOU race cannot double-book a slot.
+        val offer =
+            offerRepository.findByIdForUpdate(createReservationDto.offerId)
+                ?: throw IllegalArgumentException("Offer not found")
 
         if (yacht.isInquireOnly()) {
             throw IllegalArgumentException("Yacht is inquire only, reservation cannot be created")
         }
 
         if (offer.status != OfferStatus.FREE) {
+            throw IllegalArgumentException("Offer is not available for reservation")
+        }
+
+        // Re-assert against the live partner busy intervals (Deploy 3): even if the offer
+        // row is a stale FREE (sync lag), reject when a real RESERVATION/SERVICE overlaps
+        // the offer's own window, so we never option a slot that is actually taken.
+        val hardBlocked =
+            externalReservationRepository.existsBlockingOverlap(
+                yacht.id!!,
+                listOf(ExternalReservationStatus.RESERVATION, ExternalReservationStatus.SERVICE),
+                offer.dateFrom!!,
+                offer.dateTo!!,
+            )
+        if (hardBlocked) {
             throw IllegalArgumentException("Offer is not available for reservation")
         }
 

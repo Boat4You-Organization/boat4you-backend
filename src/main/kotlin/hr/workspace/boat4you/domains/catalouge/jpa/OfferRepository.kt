@@ -2,9 +2,11 @@ package hr.workspace.boat4you.domains.catalouge.jpa
 
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.OfferType
+import jakarta.persistence.LockModeType
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.data.jpa.repository.EntityGraph
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
@@ -20,6 +22,16 @@ interface OfferRepository : JpaRepository<Offer, Long> {
     """,
     )
     fun findByIdWithEagerLoad(id: Long): Offer?
+
+    /**
+     * Pessimistic-write lock on one offer row for the booking re-check (Deploy 3):
+     * serialises concurrent reservation attempts against the same offer.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM Offer o WHERE o.id = :id")
+    fun findByIdForUpdate(
+        @Param("id") id: Long,
+    ): Offer?
 
     fun findAllByYacht(yacht: Yacht): List<Offer>
 

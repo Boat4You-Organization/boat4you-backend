@@ -10,6 +10,25 @@ import java.time.LocalDate
 interface ExternalReservationRepository : JpaRepository<ExternalReservation, Long> {
     fun findAllByYacht(yacht: Yacht): List<ExternalReservation>
 
+    /**
+     * Booking re-check (Deploy 3): is the yacht hard-blocked (RESERVATION/SERVICE)
+     * for any day overlapping [dateFrom, dateTo)? Half-open, turnaround-safe.
+     */
+    @Query(
+        """
+        SELECT CASE WHEN COUNT(r) > 0 THEN true ELSE false END FROM ExternalReservation r
+        WHERE r.yacht.id = :yachtId
+          AND r.status IN (:statuses)
+          AND r.dateFrom < :dateTo AND r.dateTo > :dateFrom
+        """,
+    )
+    fun existsBlockingOverlap(
+        @Param("yachtId") yachtId: Long,
+        @Param("statuses") statuses: List<ExternalReservationStatus>,
+        @Param("dateFrom") dateFrom: LocalDate,
+        @Param("dateTo") dateTo: LocalDate,
+    ): Boolean
+
     @Modifying
     @Query("DELETE FROM ExternalReservation r WHERE r.dateTo < :cutoff")
     fun deleteExpiredReservations(@Param("cutoff") cutoff: LocalDate)
