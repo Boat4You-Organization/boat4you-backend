@@ -126,7 +126,9 @@ class MmkSyncJob(
         log.info("Syncing MMK yachts multilingual data took ${System.currentTimeMillis() - startTime} ms")
     }
 
-    @Scheduled(cron = "0 10 8 * * ?")
+    // 3x/day (was 1x at 08:10) so partner-side bookings/options land within ~5h instead of ~24h,
+    // matching NauSys cadence - external_reservations is the honest busy source for search.
+    @Scheduled(cron = "0 40 8,13,19 * * ?")
     @SchedulerLock(name = "mmkAvailabilitySync", lockAtMostFor = "PT1H")
     fun availabilitySync() {
         log.info("Syncing MMK yacht availability")

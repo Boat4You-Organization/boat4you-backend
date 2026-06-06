@@ -145,23 +145,25 @@ class MmkAvailabilitySyncService(
         val dateFrom = externalReservation.dateFrom ?: return
         val dateTo = externalReservation.dateTo ?: return
 
-        val matchingOffers = offersRepository.findAllByYachtAndDateFromAndDateTo(yacht, dateFrom, dateTo)
-
         when (externalReservation.status) {
             ExternalReservationStatus.OPTION -> {
-                if (matchingOffers.isNotEmpty()) {
-                    matchingOffers.forEach { offer ->
-                        if (offer.status != OfferStatus.OPTION) {
-                            offer.status = OfferStatus.OPTION
-                            offersRepository.save(offer)
-                            log.info(
-                                "MMK offer ${offer.id} (yacht ${yacht.id} $dateFrom→$dateTo) flipped to OPTION " +
-                                    "from external_reservation ${externalReservation.id}",
-                            )
-                        }
-                    }
-                } else {
+                // Overlap-aware (A3): a partial-week / multi-week / non-Saturday option must flip
+                // EVERY overlapping FREE offer week to OPTION (not just an exact-date match), else a
+                // 6-day option leaves the overlapping 7-day offer falsely FREE. Only FREE offers are
+                // flipped - a harder RESERVED/UNAVAILABLE state is never downgraded by an option.
+                // Synthesize a visible OPTION row only when NO offer overlaps at all.
+                val overlapping = offersRepository.findAllByYachtAndDateRangeOverlap(yacht, dateFrom, dateTo)
+                if (overlapping.isEmpty()) {
                     synthesizeOptionOffer(yacht, externalReservation, existingYachtOffers)
+                } else {
+                    overlapping.filter { it.status == OfferStatus.FREE }.forEach { offer ->
+                        offer.status = OfferStatus.OPTION
+                        offersRepository.save(offer)
+                        log.info(
+                            "MMK offer ${offer.id} (yacht ${yacht.id} ${offer.dateFrom}→${offer.dateTo}) flipped to " +
+                                "OPTION (overlaps OPTION $dateFrom→$dateTo, external_reservation ${externalReservation.id})",
+                        )
+                    }
                 }
             }
 
