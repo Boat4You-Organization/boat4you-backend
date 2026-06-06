@@ -88,12 +88,16 @@ class AgencyMutationService(
         val offers = offerRepository.findAllByYachtAgencyId(agencyId)
         var updated = 0
         offers.forEach { offer ->
-            val extTotalPrice = offer.extTotalPrice ?: return@forEach
+            // Mirror the sync EXACTLY (NauSysYachtOfferSyncService): the agency discount
+            // applies to the boat client price (extClientPrice, after partner OWN discounts),
+            // NEVER to the total-with-extras. Using extTotalPrice here double-counted obligatory
+            // extras and inflated the client price vs what the next sync produces (audit B4).
+            val extClientPrice = offer.extClientPrice ?: return@forEach
             val applyDiscount = offer.yacht?.excludeDiscount != true
-            val newClientPrice = PriceCalculations.calculateClientPrice(extTotalPrice, discount, applyDiscount)
+            val newClientPrice = PriceCalculations.calculateClientPrice(extClientPrice, discount, applyDiscount)
             if (offer.clientPrice?.compareTo(newClientPrice) != 0) {
                 offer.clientPrice = newClientPrice
-                offer.agencyCommission = extTotalPrice.minus(newClientPrice)
+                offer.agencyCommission = extClientPrice.minus(newClientPrice)
                 offer.totalPrice = newClientPrice + (offer.obligatoryExtrasPrice ?: BigDecimal.ZERO)
                 offerRepository.save(offer)
                 updated++
