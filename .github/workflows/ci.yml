@@ -44,7 +44,7 @@ jobs:
       # Secret scan — GATING. Scans the commits in the PR/push (not full
       # history), so it blocks NEW secrets from entering the repo.
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
