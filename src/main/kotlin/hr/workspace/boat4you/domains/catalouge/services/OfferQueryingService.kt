@@ -9,7 +9,9 @@ import hr.workspace.boat4you.domains.catalouge.enums.OfferType
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservation
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
@@ -19,7 +21,10 @@ import hr.workspace.boat4you.security.ANONYMOUS_USER_ID
 import hr.workspace.boat4you.security.getAuthenticatedUserId
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
+import kotlin.math.abs
 
 @Service
 @Transactional(readOnly = true)
@@ -58,19 +63,76 @@ class OfferQueryingService(
                 dateTo,
             )
 
-        return offers.map { offer ->
-            val hasLiveOption =
-                liveOptions.any { r ->
-                    // Half-open overlap of THIS offer's exact period with a live option row.
-                    val oFrom = offer.dateFrom
-                    val oTo = offer.dateTo
-                    val rFrom = r.dateFrom
-                    val rTo = r.dateTo
-                    oFrom != null && oTo != null && rFrom != null && rTo != null &&
-                        rFrom.isBefore(oTo) && rTo.isAfter(oFrom)
+        val mappedOffers =
+            offers.map { offer ->
+                val hasLiveOption =
+                    liveOptions.any { r -> halfOpenOverlap(offer.dateFrom, offer.dateTo, r.dateFrom, r.dateTo) }
+                offerMapper.toDto(offer, currency, hasLiveOption)
+            }
+
+        // Gap-fill (7.6.2026): a reserved week that never got a priced offer row
+        // is absent from `offers`, leaving a hole in the detail calendar (a week
+        // booked before the partner ever published an offer for it — MMK /offers
+        // only returns bookable weeks). Surface each RESERVATION/SERVICE interval
+        // that NO offer overlaps as a non-clickable "booked" cell so the strip
+        // reads continuously. Uses the REAL reservation intervals (no synthetic
+        // Sat-Sat scaffold), so non-Sat-Sat fleets stay honest.
+        val offerIntervals = offers.mapNotNull { o -> o.dateFrom?.let { f -> o.dateTo?.let { t -> f to t } } }
+        val bookedGaps =
+            externalReservationRepository
+                .findYachtAvailabilityByYear(yachtId, dateFrom, dateTo)
+                .filter {
+                    it.status == ExternalReservationStatus.RESERVATION ||
+                        it.status == ExternalReservationStatus.SERVICE
                 }
-            offerMapper.toDto(offer, currency, hasLiveOption)
-        }
+                .filter { it.dateFrom != null && it.dateTo != null }
+                .filter { res ->
+                    offerIntervals.none { (oFrom, oTo) -> halfOpenOverlap(oFrom, oTo, res.dateFrom, res.dateTo) }
+                }
+                .distinctBy { it.dateFrom to it.dateTo }
+                .map { res -> toBookedReservationDto(res, offers) }
+
+        return mappedOffers + bookedGaps
+    }
+
+    /**
+     * Non-clickable "booked" cell for a reserved interval that has no priced
+     * offer row (gap-fill, 7.6.2026). Borrows the nearest offer's weekly price so
+     * it renders a greyed price like the offer-backed booked weeks rather than a
+     * "0 €"; keyed by its dates on the FE (id = null).
+     */
+    private fun toBookedReservationDto(
+        res: ExternalReservation,
+        offers: List<Offer>,
+    ): OfferDto {
+        val from = res.dateFrom!!
+        val to = res.dateTo!!
+        val nearestPrice =
+            offers
+                .filter { it.dateFrom != null && it.clientPrice != null }
+                .minByOrNull { abs(ChronoUnit.DAYS.between(it.dateFrom, from)) }
+                ?.clientPrice
+        val status =
+            if (res.status == ExternalReservationStatus.SERVICE) {
+                ExternalReservationStatus.SERVICE
+            } else {
+                ExternalReservationStatus.RESERVATION
+            }
+        return OfferDto(
+            id = null,
+            dateFrom = from,
+            dateTo = to,
+            clientPriceEur = nearestPrice,
+            status = status,
+            locationFrom = null,
+            locationTo = null,
+            checkin = null,
+            checkout = null,
+            clientPricePerDayEur = BigDecimal.ZERO,
+            clientPricePerDayInfo = null,
+            numberOfDays = ChronoUnit.DAYS.between(from, to).toShort(),
+            listPriceEur = null,
+        )
     }
 
     fun getYachtOffers(
@@ -126,3 +188,17 @@ class OfferQueryingService(
         return yacht
     }
 }
+
+/**
+ * Half-open interval overlap (turnaround-safe): does [aFrom, aTo) intersect
+ * [bFrom, bTo)? A charter ending the morning the next begins (aTo == bFrom) is
+ * NOT a conflict. Null-safe: a missing bound never overlaps.
+ */
+internal fun halfOpenOverlap(
+    aFrom: LocalDate?,
+    aTo: LocalDate?,
+    bFrom: LocalDate?,
+    bTo: LocalDate?,
+): Boolean =
+    aFrom != null && aTo != null && bFrom != null && bTo != null &&
+        aFrom.isBefore(bTo) && aTo.isAfter(bFrom)
