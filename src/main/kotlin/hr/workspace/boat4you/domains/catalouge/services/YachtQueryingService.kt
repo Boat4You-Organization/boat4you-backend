@@ -252,10 +252,33 @@ class YachtQueryingService(
         // the view exposes. Otherwise a 10-day Sunreef 60 at €4,800/day (€48,000
         // total) sits below a 7-day Lagoon 60 at €5,350/day (€37,460 total) —
         // which is wrong because the card displays totals, not day rates.
+        // Sort by the SAME total the card renders — the exact-searched-week
+        // offer's per-day rate × its day-count (exactPeriodOrMin/…Days), the very
+        // expressions selected for the displayed clientPrice/numberOfDays above.
+        // The old min(clientPrice × numberOfDays) sorted by the yacht's CHEAPEST
+        // matched week, so a yacht with a cheaper neighbouring week jumped above
+        // one whose displayed (searched-week) price was actually lower → price-asc
+        // looked broken (fix 7.6.2026). Already aggregated, so no outer cb.min.
         val totalPriceExpr =
             cb.prod(
-                root.get<BigDecimal>("clientPrice"),
-                cb.toBigDecimal(root.get<Int>("numberOfDays")),
+                exactPeriodOrMin(
+                    cb,
+                    root.get<BigDecimal>("clientPrice"),
+                    root.get("dateFrom"),
+                    root.get("dateTo"),
+                    searchParams.startDate,
+                    searchParams.endDate,
+                ),
+                cb.toBigDecimal(
+                    exactPeriodDaysOrMin(
+                        cb,
+                        root.get<Int>("numberOfDays"),
+                        root.get("dateFrom"),
+                        root.get("dateTo"),
+                        searchParams.startDate,
+                        searchParams.endDate,
+                    ),
+                ),
             )
 
         // Recommended-agency boost: only the "Recommended" tab promotes
@@ -268,11 +291,11 @@ class YachtQueryingService(
         val recommendedBoost = cb.max(root.get<Int>("agencyRecommended"))
         when (sortBy) {
             "asc" -> {
-                cq.orderBy(cb.asc(cb.min(totalPriceExpr)))
+                cq.orderBy(cb.asc(totalPriceExpr))
             }
 
             "desc" -> {
-                cq.orderBy(cb.desc(cb.min(totalPriceExpr)))
+                cq.orderBy(cb.desc(totalPriceExpr))
             }
 
             "lowestPrepayment" -> {
@@ -299,12 +322,12 @@ class YachtQueryingService(
                 // then cheapest within each bucket. The legacy
                 // `recommended_score` column is left in the view but no longer
                 // drives this sort.
-                cq.orderBy(cb.desc(recommendedBoost), cb.asc(cb.min(totalPriceExpr)))
+                cq.orderBy(cb.desc(recommendedBoost), cb.asc(totalPriceExpr))
             }
 
             else -> {
                 // Empty / unknown sortBy ⇒ same behaviour as the Recommended tab.
-                cq.orderBy(cb.desc(recommendedBoost), cb.asc(cb.min(totalPriceExpr)))
+                cq.orderBy(cb.desc(recommendedBoost), cb.asc(totalPriceExpr))
             }
         }
 
