@@ -28,6 +28,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.ManufacturerAliasResolver
+import hr.workspace.boat4you.domains.catalouge.services.applyLocationRegions
 import hr.workspace.boat4you.domains.catalouge.services.ModelNameNormaliser
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
@@ -286,7 +287,10 @@ class NauSysCatalogueSyncService(
 
             val region =
                 regionRepository.findByNausysRegionId(it.regionId!!, ExternalSystemEnum.NAUSYS.value.toLong())
-            location.regions.add(region!!)
+            // regions.add() never removes, so a partner mis-classification kept
+            // re-appearing after every manual cleanup. applyLocationRegions pins
+            // overridden locations (e.g. Marina Frapa Rogoznica -> Split only).
+            applyLocationRegions(location, listOfNotNull(region), regionRepository)
             val country =
                 countryRepository.findByNausysRegionId(it.regionId!!, ExternalSystemEnum.NAUSYS.value.toLong())
             location.countryCode = country?.code2

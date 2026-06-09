@@ -14,6 +14,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.ManufacturerAliasResolver
+import hr.workspace.boat4you.domains.catalouge.services.applyLocationRegions
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import org.openapitools.client.mmk.model.Base
@@ -177,9 +178,10 @@ class MmkCatalogueSyncService(
                     .filter { m -> mmkLocation.sailingAreas.contains(m.externalId) }
                     .map { m -> m.systemId!!.toInt() }
             val regions = allRegions.filter { r -> regionMappings.contains(r.id!!) }
-            regions.forEach { r ->
-                location.regions.add(r)
-            }
+            // regions.add() never removes; applyLocationRegions pins overridden
+            // locations (e.g. Marina Frapa Rogoznica -> Split only) so a partner
+            // mis-classification can't re-pollute them on the nightly sync.
+            applyLocationRegions(location, regions, regionRepository)
 
             val countryMapping = allCountryMappings.find { m -> m.externalId == mmkLocation.countryId }
             val country = allCountries.find { c -> c.id == countryMapping!!.systemId!!.toInt() }
