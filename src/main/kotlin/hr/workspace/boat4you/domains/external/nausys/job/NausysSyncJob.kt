@@ -115,6 +115,30 @@ class NausysSyncJob(
     }
 
     /**
+     * Intraday offer/price re-sync, 3x/day (08:00, 13:00, 18:00) — mirrors MMK's
+     * offer cadence (MmkSyncJob runs offers at 07/11/16) so NauSYS client prices
+     * stay fresh within hours of a partner-side change instead of waiting for the
+     * single 01:30 full yacht+offer pass.
+     *
+     * Mario rule 13.6.2026 ("nema zamrzavanja, nema preskakanja, sync kao MMK"):
+     * the offer fetch calls getFreeYachts with ignoreOptions=true (see
+     * NauSysYachtOfferIntegrationService), so weeks under OPTION ARE returned and
+     * repriced on every run — only truly RESERVED weeks are absent (we don't need
+     * to price those). updateOffer re-prices every returned offer regardless of
+     * status, so this run also self-heals any client_price that drifted from the
+     * current partner price (e.g. an agency adding a special discount mid-day).
+     */
+    @Scheduled(cron = "0 0 8,13,18 * * ?")
+    @SchedulerLock(name = "nausysOfferIntradaySync", lockAtMostFor = "PT2H")
+    fun runIntradayOfferSync() {
+        log.info("Starting NauSYS intraday offer sync")
+        val startTime = System.currentTimeMillis()
+        nauSysYachtOfferIntegrationService.yachtOfferSync()
+        serviceCallCacheService.saveScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_YACHT_OFFER)
+        log.info("NauSYS intraday offer sync took ${System.currentTimeMillis() - startTime} ms")
+    }
+
+    /**
      * Syncs NauSYS availability data for all yachts coming from NauSYS agencies.
      * Runs 3x/day (03:20, 12:20, 18:20) so a partner-side reservation surfaces within
      * hours instead of up to a full day. 20 minutes past the hour avoids overlapping the
