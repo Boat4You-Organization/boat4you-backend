@@ -15,11 +15,18 @@ import org.springframework.context.MessageSource
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Currency
 import java.util.Locale
+
+// Every customer-facing money string is rounded to 2 decimals (HALF_UP — same
+// convention as the Stripe charge in StripePaymentService.toCentsLong). Raw
+// BigDecimal totals can carry partner-side sub-cent artefacts (e.g. a total of
+// 974.99994 €) that must never reach a customer's eyes; 974.99994 -> "975.00".
+private fun BigDecimal.money(): String = this.setScale(2, RoundingMode.HALF_UP).toPlainString()
 
 @Service
 @Transactional(readOnly = true)
@@ -83,7 +90,7 @@ class ReservationEmailService(
             .ifBlank { yachtName ?: "—" }
 
         val currencySymbol = Currency.getInstance(reservation.currency).getSymbol(Locale.getDefault()).toString()
-        val totalPriceLabel = "${(reservation.totalPrice ?: java.math.BigDecimal.ZERO).toPlainString()}$currencySymbol"
+        val totalPriceLabel = "${(reservation.totalPrice ?: java.math.BigDecimal.ZERO).money()}$currencySymbol"
 
         // Locale must be resolved BEFORE we localise per-row payment / extras
         // labels — Customer view uses user.language, admin uses English.
@@ -140,7 +147,7 @@ class ReservationEmailService(
             }.getOrDefault("Payment ${idx + 1}")
             mapOf(
                 "label" to ordLabel,
-                "amountLabel" to "${p.amount.toPlainString()}$currencySymbol",
+                "amountLabel" to "${p.amount.money()}$currencySymbol",
                 "deadlineLabel" to p.deadline.format(dateFormatter),
                 "isPaid" to (p.paidOn != null),
             )
@@ -149,7 +156,7 @@ class ReservationEmailService(
         // Due-now = first unpaid phase. When the option email goes out the
         // customer hasn't paid anything yet, so this is normally phase #1.
         val firstUnpaid = sortedPhases.firstOrNull { it.paidOn == null }
-        val dueNowLabel = firstUnpaid?.let { "${it.amount.toPlainString()}$currencySymbol" } ?: totalPriceLabel
+        val dueNowLabel = firstUnpaid?.let { "${it.amount.money()}$currencySymbol" } ?: totalPriceLabel
         val dueNowDeadlineLabel = firstUnpaid?.deadline?.format(dateFormatter) ?: ""
 
         // Extras — split by payment timing. `payableAtBase = true` means
@@ -160,7 +167,7 @@ class ReservationEmailService(
             val priceVal = e.price ?: java.math.BigDecimal.ZERO
             return mapOf(
                 "name" to (e.name ?: "—"),
-                "priceLabel" to "${priceVal.toPlainString()}$currencySymbol",
+                "priceLabel" to "${priceVal.money()}$currencySymbol",
                 "unitLabel" to unitLabel(e.unit, customerLocale),
                 "obligatory" to (e.obligatory == true),
             )
@@ -178,7 +185,7 @@ class ReservationEmailService(
             .map { ye ->
                 mapOf(
                     "name" to (ye.name ?: "—"),
-                    "priceLabel" to "${(ye.price ?: java.math.BigDecimal.ZERO).toPlainString()}$currencySymbol",
+                    "priceLabel" to "${(ye.price ?: java.math.BigDecimal.ZERO).money()}$currencySymbol",
                     "unitLabel" to unitLabel(ye.unit, customerLocale),
                     "obligatory" to (ye.obligatory == true),
                 )
@@ -279,7 +286,7 @@ class ReservationEmailService(
                 .getInstance(reservation.currency)
                 .getSymbol(Locale.getDefault())
                 .toString()
-        val totalPriceLabel = "${(reservation.totalPrice ?: BigDecimal.ZERO).toPlainString()}$currencySymbol"
+        val totalPriceLabel = "${(reservation.totalPrice ?: BigDecimal.ZERO).money()}$currencySymbol"
 
         // Customer locale = stored user.language (set when the booking was
         // initiated). Falls back to English if missing.
@@ -335,7 +342,7 @@ class ReservationEmailService(
             }.getOrDefault("Payment ${idx + 1}")
             mapOf(
                 "label" to ordLabel,
-                "amountLabel" to "${p.amount.toPlainString()}$currencySymbol",
+                "amountLabel" to "${p.amount.money()}$currencySymbol",
                 "deadlineLabel" to p.deadline.format(dateFormatter),
                 "isPaid" to (p.paidOn != null),
             )
@@ -344,7 +351,7 @@ class ReservationEmailService(
         // "Just paid" amount = the most-recent paid phase (CARD pays them all
         // in one go = `totalPrice`; BANK_TRANSFER pays them one at a time).
         val justPaidPhase = sortedPhases.lastOrNull { it.paidOn != null }
-        val paidAmountLabel = justPaidPhase?.let { "${it.amount.toPlainString()}$currencySymbol" } ?: totalPriceLabel
+        val paidAmountLabel = justPaidPhase?.let { "${it.amount.money()}$currencySymbol" } ?: totalPriceLabel
         // Method label is rendered on the green pill — localised so e.g. DE
         // users see "Banküberweisung" / "Kreditkarte".
         val methodKey = if (paymentType == PaymentType.BANK_TRANSFER)
@@ -361,7 +368,7 @@ class ReservationEmailService(
             val priceVal = e.price ?: BigDecimal.ZERO
             return mapOf(
                 "name" to (e.name ?: "—"),
-                "priceLabel" to "${priceVal.toPlainString()}$currencySymbol",
+                "priceLabel" to "${priceVal.money()}$currencySymbol",
                 "unitLabel" to unitLabel(e.unit, customerLocale),
                 "obligatory" to (e.obligatory == true),
             )
@@ -374,7 +381,7 @@ class ReservationEmailService(
             .map { ye ->
                 mapOf(
                     "name" to (ye.name ?: "—"),
-                    "priceLabel" to "${(ye.price ?: BigDecimal.ZERO).toPlainString()}$currencySymbol",
+                    "priceLabel" to "${(ye.price ?: BigDecimal.ZERO).money()}$currencySymbol",
                     "unitLabel" to unitLabel(ye.unit, customerLocale),
                     "obligatory" to (ye.obligatory == true),
                 )
