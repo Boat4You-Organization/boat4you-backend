@@ -126,9 +126,13 @@ class MmkSyncJob(
         log.info("Syncing MMK yachts multilingual data took ${System.currentTimeMillis() - startTime} ms")
     }
 
-    // 3x/day (was 1x at 08:10) so partner-side bookings/options land within ~5h instead of ~24h,
-    // matching NauSys cadence - external_reservations is the honest busy source for search.
-    @Scheduled(cron = "0 40 8,13,19 * * ?")
+    // 4x/day (08:40, 12:40, 16:40, 20:40) so partner-side bookings/options land within
+    // ~4h — external_reservations is the honest busy source for search, so this is the
+    // primary availability-freshness engine. Bumped from 3x 2026-06-17 alongside the
+    // NauSys change (offers→1x/day, occupancy→4x/day). Daytime cadence covers the hours
+    // agencies actually book; offset from the NauSys availability slots (4/10/16/22) so
+    // the two partners' syncs don't pile onto cusma3/cusma4 at the same time.
+    @Scheduled(cron = "0 40 8,12,16,20 * * ?")
     @SchedulerLock(name = "mmkAvailabilitySync", lockAtMostFor = "PT1H")
     fun availabilitySync() {
         log.info("Syncing MMK yacht availability")
