@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.LocationType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
 import jakarta.persistence.EntityManager
+import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
@@ -34,6 +35,14 @@ class YachtRelaxSuggestionService(
     private val entityManager: EntityManager,
     private val locationRepository: LocationRepository,
 ) {
+    // Same search interactions that hit /distribution also hit /relax-suggest;
+    // cache the 4-5 COUNT(DISTINCT id) scans behind one entry on the same 3-min
+    // TTL. Key off the input ActiveFilters (marinaIds is always null at this
+    // boundary — resolved inside, after the cache check — so keys stay stable).
+    // null (no worthwhile hint) is not cached so the typed cache value never
+    // holds a NullValue marker. Annotated on the public method the controller
+    // (separate bean) invokes through the Spring proxy.
+    @Cacheable(cacheNames = ["relaxSuggestCache"], key = "#filters.toString()", unless = "#result == null")
     @Transactional(readOnly = true)
     fun suggest(filters: ActiveFilters): RelaxSuggestionDto? {
         if (!filters.hasAnyRelaxable()) return null

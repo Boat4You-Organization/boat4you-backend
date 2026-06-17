@@ -243,9 +243,19 @@ class MmkYachtOfferSyncService(
                     Matchers.extrasNameMatch(eq.getMatchKeysList(), mmkExtra.name)
                 }
 
+            // Match on the PARTNER extras id we store in externalId (set below on
+            // create), NOT the local PK ex.id. The two are different id spaces and
+            // never collided, so every MMK sync found no match here, re-inserted
+            // every obligatory extra and then deleted all the prior ones at the
+            // bottom of this method — the offer_extras 118M ins / 114M del churn
+            // (vs 4.2M live rows) that kept autovacuum busy and spiked cusma4 CPU
+            // during MMK sync windows (2026-06-17). NauSys already keys on
+            // externalId; this brings MMK in line. Null-guarded so two null ids
+            // can't false-match (a null externalId would otherwise equal a null
+            // mmkExtra.id and silently collapse unrelated rows).
             val extraAlreadyOnOffer =
                 allOfferExtras.find { ex ->
-                    ex.id == mmkExtra.id
+                    mmkExtra.id != null && ex.externalId == mmkExtra.id
                 }
 
             val mmkPrice = mmkExtra.price?.toBigDecimal()

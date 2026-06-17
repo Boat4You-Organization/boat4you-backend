@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.common.cache
 
+import hr.workspace.boat4you.domains.catalouge.dto.RelaxSuggestionDto
+import hr.workspace.boat4you.domains.catalouge.dto.YachtDistributionDto
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSeason
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
 import hr.workspace.boat4you.domains.catalouge.jpa.Location
@@ -40,6 +42,11 @@ class CacheConfig {
                 ResourcePoolsBuilder
                     .newResourcePoolsBuilder()
                     .heap(1000, EntryUnit.ENTRIES)
+                    .build()
+            val twoThousandEntryResourcePool =
+                ResourcePoolsBuilder
+                    .newResourcePoolsBuilder()
+                    .heap(2000, EntryUnit.ENTRIES)
                     .build()
 
             val countriesCache =
@@ -143,8 +150,12 @@ class CacheConfig {
                     // and the B2 booking flip (offer FREE->OPTION) change offer
                     // status WITHOUT going through OfferMutationService's @CacheEvict,
                     // so a 10-min window showed stale availability on the boat page.
-                    // 2 min bounds the display lag to the matview refresh cadence;
-                    // actual bookings are still protected by the live re-check.
+                    // Kept at 2 min: this cache reads the offer table directly, so
+                    // the boat-detail availability stays tight even though the
+                    // search matview cron was relaxed 2->5 min (2026-06-17 cusma4
+                    // CPU work, see SearchViewRefreshJob) — boat page is now the
+                    // fresher of the two surfaces. Bookings are protected
+                    // regardless by the live re-check at reservation create.
                     .withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(2)))
                     .build()
 
@@ -296,6 +307,40 @@ class CacheConfig {
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
                     .build()
 
+            // Facet sidebar distribution (histograms + per-option COUNT(DISTINCT)
+            // counts). Every /public/yachts/distribution request fires 9-11
+            // aggregate scans of the 380MB yacht_search_view; identical filter
+            // combinations recur heavily at peak (traffic clusters on a handful of
+            // destinations + Sat-Sat weeks), so a short TTL collapses the repeats
+            // into one entry. 3-min TTL bounds staleness to ~the matview refresh
+            // cadence — facet counts are advisory (grey-out badges); the bookable
+            // result total is still recomputed fresh per request in
+            // YachtQueryingService, so a booking can never ride stale facet data.
+            // String key (SpEL over all 24 filter params) — same reasoning as
+            // offersByYachtAndStatusCache (avoid reference-identity hashCode).
+            val facetDistributionCache =
+                CacheConfigurationBuilder
+                    .newCacheConfigurationBuilder(
+                        String::class.java,
+                        YachtDistributionDto::class.java,
+                        twoThousandEntryResourcePool,
+                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(3)))
+                    .build()
+
+            // AI "relax-suggest" hint strip — fires 4-5 more COUNT(DISTINCT id)
+            // scans of the same view alongside /distribution on the same search
+            // interactions. Same 3-min TTL. null (no-signal) results are NOT
+            // cached (unless="#result == null" on the method) so the typed value
+            // never has to hold Spring's NullValue marker.
+            val relaxSuggestCache =
+                CacheConfigurationBuilder
+                    .newCacheConfigurationBuilder(
+                        String::class.java,
+                        RelaxSuggestionDto::class.java,
+                        thousandEntryResourcePool,
+                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(3)))
+                    .build()
+
             cacheManager.createCache("countriesCache", Eh107Configuration.fromEhcacheCacheConfiguration(countriesCache))
             cacheManager.createCache(
                 "locationViewsCache",
@@ -372,6 +417,14 @@ class CacheConfig {
                 Eh107Configuration.fromEhcacheCacheConfiguration(marinasByCountryCache),
             )
             cacheManager.createCache("seasonsCache", Eh107Configuration.fromEhcacheCacheConfiguration(seasonsCache))
+            cacheManager.createCache(
+                "facetDistributionCache",
+                Eh107Configuration.fromEhcacheCacheConfiguration(facetDistributionCache),
+            )
+            cacheManager.createCache(
+                "relaxSuggestCache",
+                Eh107Configuration.fromEhcacheCacheConfiguration(relaxSuggestCache),
+            )
         }
     }
 

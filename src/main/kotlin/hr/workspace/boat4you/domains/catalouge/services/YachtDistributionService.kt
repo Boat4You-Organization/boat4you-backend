@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
 import jakarta.persistence.EntityManager
+import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -36,6 +37,17 @@ class YachtDistributionService(
     private val entityManager: EntityManager,
     private val locationRepository: LocationRepository,
 ) {
+    // Cache the whole facet payload (all 9-11 COUNT(DISTINCT)/histogram/percentile
+    // scans collapse into one entry) keyed on the full 24-param filter set, so
+    // identical search-sidebar requests within the TTL skip the matview entirely.
+    // The SpEL inline-list `.toString()` is a total, collision-free key across all
+    // dimensions (no hand-rolled hash). Annotated on this PUBLIC method, which the
+    // controller (separate bean) calls through the Spring proxy. See
+    // CacheConfig.facetDistributionCache for the 3-min TTL rationale.
+    @Cacheable(
+        cacheNames = ["facetDistributionCache"],
+        key = "{#locationIds,#startDate,#endDate,#vesselTypes,#charterTypes,#mainsailTypes,#minBuildYear,#maxBuildYear,#minPersons,#maxPersons,#minCabins,#maxCabins,#minBerths,#maxBerths,#minLength,#maxLength,#minWc,#maxWc,#minEnginePower,#maxEnginePower,#minPriceWeekly,#maxPriceWeekly,#manufacturerIds,#modelIds}.toString()",
+    )
     @Transactional(readOnly = true)
     fun getDistribution(
         locationIds: List<String>? = null,

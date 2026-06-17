@@ -35,12 +35,22 @@ class SearchViewRefreshJob(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
-    // 2-min cron is the safety net for partner-sync mutations (NauSys/MMK
+    // 5-min cron is the safety net for partner-sync mutations (NauSys/MMK
     // batches mutate 100k+ offer rows; per-row refresh would be too chatty).
     // Admin actions (agency discount / recalc / etc.) trigger an on-demand
     // refresh via SearchViewRefreshService.requestRefresh() so the user sees
-    // the effect in seconds, not minutes.
-    @Scheduled(cron = "0 */2 * * * *")
+    // the effect in seconds, not minutes — independent of this cron.
+    //
+    // Was */2 (2026-06-17 cusma4 CPU work): REFRESH ... CONCURRENTLY of this
+    // 380 MB / 603k-row view measured at ~20-36s (avg ~28s) per run — at a
+    // 2-min cadence that pinned ~23% of one core CONTINUOUSLY (and a 28s burst
+    // every 2 min was a big share of the load oscillation) to re-materialise
+    // data that only changes 6-10x/day via sync. */5 cuts that ~60% (refresh
+    // CPU ~9% of a core, bursts halved). Trade-off: listing/facet staleness for
+    // partner-sync changes grows from ≤2 to ≤5 min; bookings are still
+    // re-checked live at the boat/booking step and admin edits bypass this cron,
+    // so the extra few minutes is display-only lag, not a correctness change.
+    @Scheduled(cron = "0 */5 * * * *")
     @SchedulerLock(name = "refreshYachtSearchView", lockAtMostFor = "PT8M", lockAtLeastFor = "PT30S")
     fun refresh() {
         val start = System.currentTimeMillis()
