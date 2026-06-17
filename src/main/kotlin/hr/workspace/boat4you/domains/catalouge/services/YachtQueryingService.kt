@@ -123,12 +123,42 @@ class YachtQueryingService(
             )
     }
 
+    // Cache the heaviest query in the system — the search listing page. It's a
+    // criteria query over the 380MB yacht_search_view with GROUP BY + status
+    // GREATEST/CASE + a correlated NOT EXISTS availability check; at peak many
+    // users repeat the same popular searches (top destinations, Sat-Sat weeks,
+    // default sort, page 0) and each re-run contends for the 2 DB cores. A short
+    // TTL collapses the repeats. Key = full YachtSearchParamObject (data class,
+    // includes currency + language + every filter) + sortBy + language + page +
+    // size, so two requests differing in ANY of those never share an entry (no
+    // wrong-currency/-language results). The controller still fires the on-demand
+    // syncYachtOffers BEFORE calling this (cache is at the service layer), so
+    // partner availability sync is never skipped. The admin replacement flow uses
+    // getYachtsForReplacement (a different method) and stays uncached. See
+    // CacheConfig.yachtSearchListCache for the 2-min TTL / booking-safety note.
+    //
+    // SECURITY: `condition = "!#isAdmin"` — admin requests are NEVER cached.
+    // YachtMapper gates agencyName + agencyCommissionEur (broker commission) on
+    // SecurityContextHolder.isAdminUser(), so an admin's result carries sensitive
+    // figures a customer must not see. Since the cache key does NOT include the
+    // caller's role, caching an admin result and serving it to a customer (same
+    // filters) would leak commission. Bypassing the cache for admins keeps those
+    // results out of the cache entirely; only non-admin results (agencyName=null,
+    // commission=null) are ever stored, so they are safe to share across users.
+    // `isAdmin` is computed in the controller via the same SYSTEM_ADMIN authority
+    // the mapper checks. Admin search volume is tiny, so no CPU cost to skipping.
+    @Cacheable(
+        cacheNames = ["yachtSearchListCache"],
+        key = "{#searchParams, #sortBy, #language, #page, #size}.toString()",
+        condition = "!#isAdmin",
+    )
     fun getYachts(
         searchParams: YachtSearchParamObject,
         sortBy: String?,
         language: LanguageEnum,
         page: Int,
         size: Int,
+        isAdmin: Boolean,
     ): PageImpl<YachtSearchResponseDto> {
         val cb = entityManager.criteriaBuilder
         val cq = cb.createQuery(YachtSearchSelectResult::class.java)

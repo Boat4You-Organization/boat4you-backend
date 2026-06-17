@@ -35,8 +35,12 @@ class YachtMapper(
     private val yachtExtrasMapper: YachtExtrasMapper,
 ) {
     private fun isAdminUser(): Boolean {
+        // Null-safe so an anonymous request (authentication may be absent) returns
+        // false instead of NPE — and so this evaluates IDENTICALLY to the isAdmin
+        // computed in YachtController for the yachtSearchListCache bypass (both
+        // null → false). Keeps the cache's admin-gate and the field-gate in lockstep.
         val authentication = SecurityContextHolder.getContext().authentication
-        return authentication.authorities.any { it.authority == "SYSTEM_ADMIN" }
+        return authentication?.authorities?.any { it.authority == "SYSTEM_ADMIN" } ?: false
     }
 
     fun toDto(

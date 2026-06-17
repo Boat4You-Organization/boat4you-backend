@@ -18,6 +18,7 @@ import hr.workspace.boat4you.domains.external.service.ExternalSyncService
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import hr.workspace.boat4you.security.ANONYMOUS_USER_ID
 import hr.workspace.boat4you.security.getAuthenticatedUserId
+import org.springframework.security.core.context.SecurityContextHolder
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.core.io.Resource
@@ -108,6 +109,15 @@ class YachtController(
                 ?.let { userRepository.findById(it).orElse(null) }
         val language = LanguageEnum.getLanguage(lang, user)
         val currency = CurrencyEnum.getCurrency(curr, user)
+        // Drives the yachtSearchListCache bypass: admins see agencyName +
+        // agencyCommissionEur (YachtMapper.isAdminUser() gates them on this exact
+        // SYSTEM_ADMIN authority), so their results must never be cached and served
+        // to a customer. Computed with the SAME expression the mapper uses
+        // (authentication.authorities), null-safe so anonymous public searches
+        // (authentication may be absent) never NPE — absent/again non-admin → false.
+        val isAdmin =
+            SecurityContextHolder.getContext().authentication
+                ?.authorities?.any { it.authority == "SYSTEM_ADMIN" } ?: false
         val searchParams =
             YachtSearchParamObject(
                 locationIds = locations,
@@ -194,6 +204,7 @@ class YachtController(
                     language,
                     page,
                     size,
+                    isAdmin,
                 ),
             ),
         )

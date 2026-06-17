@@ -48,6 +48,11 @@ class CacheConfig {
                     .newResourcePoolsBuilder()
                     .heap(2000, EntryUnit.ENTRIES)
                     .build()
+            val fourThousandEntryResourcePool =
+                ResourcePoolsBuilder
+                    .newResourcePoolsBuilder()
+                    .heap(4000, EntryUnit.ENTRIES)
+                    .build()
 
             val countriesCache =
                 CacheConfigurationBuilder
@@ -341,6 +346,30 @@ class CacheConfig {
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(3)))
                     .build()
 
+            // Search LISTING results (the getYachts page) — the heaviest single
+            // query (criteria over the 380MB matview + GROUP BY + status
+            // GREATEST/CASE + correlated NOT EXISTS availability check). At peak,
+            // many users repeat the same popular searches (top destinations,
+            // Sat-Sat weeks, default sort, page 0) and each currently re-runs the
+            // full query, all contending for the 2 DB cores (load 4+ at 15:00
+            // 2026-06-17). A short TTL collapses the repeats and cuts that
+            // contention. 2-min TTL: tighter than the facet cache because the
+            // listing shows actual prices/availability badges; bookings are still
+            // re-checked live at reservation create (offer.status!=FREE + overlap),
+            // so the lag is display-only (on top of the matview's 5-min cadence).
+            // Page value type like locationViewsCache; per-node heap (cusma2 serves
+            // the traffic). Key includes currency + language (inside searchParams)
+            // so no wrong-currency results. Admin replacement flow uses a separate
+            // method (getYachtsForReplacement) and is NOT cached.
+            val yachtSearchListCache =
+                CacheConfigurationBuilder
+                    .newCacheConfigurationBuilder(
+                        String::class.java,
+                        Page::class.java,
+                        fourThousandEntryResourcePool,
+                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(2)))
+                    .build()
+
             cacheManager.createCache("countriesCache", Eh107Configuration.fromEhcacheCacheConfiguration(countriesCache))
             cacheManager.createCache(
                 "locationViewsCache",
@@ -424,6 +453,10 @@ class CacheConfig {
             cacheManager.createCache(
                 "relaxSuggestCache",
                 Eh107Configuration.fromEhcacheCacheConfiguration(relaxSuggestCache),
+            )
+            cacheManager.createCache(
+                "yachtSearchListCache",
+                Eh107Configuration.fromEhcacheCacheConfiguration(yachtSearchListCache),
             )
         }
     }
