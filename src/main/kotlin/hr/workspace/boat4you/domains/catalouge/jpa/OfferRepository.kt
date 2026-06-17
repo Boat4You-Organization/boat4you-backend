@@ -161,4 +161,30 @@ interface OfferRepository : JpaRepository<Offer, Long> {
         nativeQuery = true,
     )
     fun deleteExpiredOffers()
+
+    /**
+     * Drop SYNTHETIC_OPTION offers (availability sync creates these to surface a boat held under
+     * another agent's option) that are no longer backed by a LIVE option — the option expired or
+     * the partner dropped it. Set-based + guarded like deleteExpiredOffers: never touches an offer
+     * a reservation_flow points at (a booking in progress) so it can't FK-violate or delete a
+     * booked offer. A synthetic offer survives only while a non-expired OPTION external_reservations
+     * row still overlaps its week (half-open overlap).
+     */
+    @Modifying
+    @Query(
+        """
+        DELETE FROM offer o
+        WHERE o.ext_status = 'SYNTHETIC_OPTION'
+        AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = o.id)
+        AND NOT EXISTS (
+            SELECT 1 FROM external_reservations r
+            WHERE r.yacht_id = o.yacht_id
+            AND r.status = 'OPTION'
+            AND r.option_expiration > now()
+            AND r.date_from < o.date_to AND r.date_to > o.date_from
+        )
+        """,
+        nativeQuery = true,
+    )
+    fun deleteUnbackedSyntheticOptionOffers(): Int
 }

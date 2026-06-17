@@ -12,6 +12,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.service.ExternalAvailabilityReconcileService
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.RESERVATION_YACHT_EXTERNAL_MAPPING_KEY
@@ -34,6 +35,7 @@ class MmkAvailabilitySyncService(
     private val yachtRepository: YachtRepository,
     private val externalReservationRepository: ExternalReservationRepository,
     private val offersRepository: OfferRepository,
+    private val externalAvailabilityReconcileService: ExternalAvailabilityReconcileService,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -47,6 +49,7 @@ class MmkAvailabilitySyncService(
     fun syncYachtAvailability(
         agencyId: Long,
         mmkResponse: List<AvailabilityResponse>,
+        year: Int,
     ) {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
         val yachtMappings =
@@ -104,6 +107,13 @@ class MmkAvailabilitySyncService(
                 )
             }
         }
+
+        // Mirror MMK: /availability is the COMPLETE set per (agency, year), so any reservation/
+        // option we hold for this agency's yachts in this year that MMK no longer returns was
+        // cancelled/removed — drop it (+ its synthetic OPTION offer / mapping). Empty response =
+        // no-data → deletes nothing. Runs only after a successful fetch (caller try/catch).
+        val seenExternalIds = mmkResponse.mapNotNull { it.id }.toSet()
+        externalAvailabilityReconcileService.reconcileAbsent(externalSystem, agencyYachts, seenExternalIds, year)
     }
 
     private fun updateReservation(

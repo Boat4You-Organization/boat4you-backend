@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 interface ExternalReservationRepository : JpaRepository<ExternalReservation, Long> {
     fun findAllByYacht(yacht: Yacht): List<ExternalReservation>
@@ -32,6 +33,21 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
     @Modifying
     @Query("DELETE FROM ExternalReservation r WHERE r.dateTo < :cutoff")
     fun deleteExpiredReservations(@Param("cutoff") cutoff: LocalDate)
+
+    /**
+     * Bulk-purge options whose hold has lapsed at the partner (optionExpiration in the past). The
+     * partner frees the boat once the option expires but its occupancy feed may keep echoing the
+     * row with a past expiry, so we drop them to mirror the partner ("kako na njima, tako kod
+     * nas"). Set-based (not row-by-row) so the one-time backlog of ~120k expired options doesn't
+     * hammer cusma4. RESERVATION/SERVICE have null optionExpiration and are never matched. The
+     * orphaned mappings + synthetic offers are cleaned separately in the same purge pass.
+     */
+    @Modifying
+    @Query("DELETE FROM ExternalReservation r WHERE r.status = :status AND r.optionExpiration < :cutoff")
+    fun deleteExpiredOptions(
+        @Param("status") status: ExternalReservationStatus,
+        @Param("cutoff") cutoff: LocalDateTime,
+    ): Int
 
     /**
      * Detail-calendar feed: all reservation rows overlapping calendar [:yearStart, :yearEnd).

@@ -29,7 +29,7 @@ class MmkAvailabilityIntegrationService(
                     log.info("syncing $agencyExternalId for year $year")
                     try {
                         val response = mmkAuditedClient.getAvailability(year, agencyExternalId)
-                        mmkAvailabilitySyncService.syncYachtAvailability(it.id!!, response)
+                        mmkAvailabilitySyncService.syncYachtAvailability(it.id!!, response, year)
                     } catch (e: Exception) {
                         log.error("Error syncing availability for agency $agencyExternalId for year $year", e)
                     }

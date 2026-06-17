@@ -34,7 +34,7 @@ class NauSysAvailabilityIntegrationService(
                             "NauSYS availability: agency=${it.id} (${it.name}) extId=$agencyExternalId " +
                                 "year=$year reservations=$reservationCount",
                         )
-                        nauSysAvailabilitySyncService.syncYachtAvailability(it.id!!, nausysResponse)
+                        nauSysAvailabilitySyncService.syncYachtAvailability(it.id!!, nausysResponse, year)
                     } catch (ex: Exception) {
                         log.error(
                             "NauSYS availability FAILED for agency=${it.id} (${it.name}) " +

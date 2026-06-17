@@ -12,6 +12,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.service.ExternalAvailabilityReconcileService
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.RESERVATION_YACHT_EXTERNAL_MAPPING_KEY
@@ -36,6 +37,7 @@ class NauSysAvailabilitySyncService(
     private val yachtRepository: YachtRepository,
     private val externalReservationRepository: ExternalReservationRepository,
     private val offersRepository: OfferRepository,
+    private val externalAvailabilityReconcileService: ExternalAvailabilityReconcileService,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -51,6 +53,7 @@ class NauSysAvailabilitySyncService(
     fun syncYachtAvailability(
         agencyId: Long,
         nausysResponse: RestYachtReservationOccupancyList,
+        year: Int,
     ) {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
         val yachtMappings =
@@ -108,6 +111,14 @@ class NauSysAvailabilitySyncService(
                 )
             }
         }
+
+        // Mirror NauSYS: Occupancy is the COMPLETE set per (agency, year), so any reservation/
+        // option we hold for this agency's yachts in this year that NauSYS no longer returns was
+        // cancelled/removed at the partner — drop it (+ its synthetic OPTION offer / mapping).
+        // An empty response is treated as no-data and deletes nothing. This runs only after a
+        // successful fetch (the integration loop's per-(agency,year) try/catch guards failures).
+        val seenExternalIds = nausysResponse.reservations?.mapNotNull { it.id }?.toSet() ?: emptySet()
+        externalAvailabilityReconcileService.reconcileAbsent(externalSystem, agencyYachts, seenExternalIds, year)
     }
 
     private fun updateReservation(

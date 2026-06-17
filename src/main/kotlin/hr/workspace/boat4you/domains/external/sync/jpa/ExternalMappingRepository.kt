@@ -2,9 +2,25 @@ package hr.workspace.boat4you.domains.external.sync.jpa
 
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
 
 interface ExternalMappingRepository : JpaRepository<ExternalMapping, Long> {
+    /**
+     * Bulk-clean reservation mappings whose external_reservation no longer exists (orphaned by the
+     * expired-option purge / absent-reconcile). Set-based so the one-time ~120k backlog cleanup
+     * doesn't hammer cusma4. systemId holds the ExternalReservation.id (a soft reference, not a DB
+     * FK), so an orphan is one whose target row is gone.
+     */
+    @Modifying
+    @Query(
+        "DELETE FROM ExternalMapping m WHERE m.type = :type " +
+            "AND NOT EXISTS (SELECT 1 FROM ExternalReservation r WHERE r.id = m.systemId)",
+    )
+    fun deleteOrphanReservationMappings(
+        @Param("type") type: String,
+    ): Int
     fun findAllByTypeAndExternalSystem(
         type: String,
         externalSystem: ExternalSystem,
