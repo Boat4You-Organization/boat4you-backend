@@ -28,16 +28,45 @@ class MmkAvailabilityIntegrationService(
                 syncYears.forEach { year ->
                     log.info("syncing $agencyExternalId for year $year")
                     try {
-                        val response = mmkAuditedClient.getAvailability(year, agencyExternalId)
+                        // Retry only the FETCH (outside the @Transactional sync): MMK intermittently
+                        // returns 400 "Illegal access to entity" for companies it otherwise serves, so
+                        // without a retry the agency is skipped for the whole run and its availability
+                        // goes stale until a later run happens to succeed. The DB write is NOT retried.
+                        val response =
+                            withRetry(year, agencyExternalId) { mmkAuditedClient.getAvailability(year, agencyExternalId) }
                         mmkAvailabilitySyncService.syncYachtAvailability(it.id!!, response, year)
                     } catch (e: Exception) {
-                        log.error("Error syncing availability for agency $agencyExternalId for year $year", e)
+                        log.error("Error syncing availability for agency $agencyExternalId for year $year after retries", e)
                     }
                 }
             } else {
                 log.warn("Agency external id is null for agency: ${it.id} ${it.name}")
             }
         }
+    }
+
+    private fun <T> withRetry(
+        year: Int,
+        companyId: Long,
+        attempts: Int = 3,
+        block: () -> T,
+    ): T {
+        var last: Exception? = null
+        repeat(attempts) { i ->
+            try {
+                return block()
+            } catch (e: Exception) {
+                last = e
+                if (i < attempts - 1) {
+                    log.warn(
+                        "MMK availability fetch failed for company $companyId year $year " +
+                            "(attempt ${i + 1}/$attempts): ${e.message}; retrying",
+                    )
+                    Thread.sleep(800L * (i + 1))
+                }
+            }
+        }
+        throw last!!
     }
 
     private fun getSyncYears(): List<Int> {
