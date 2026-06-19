@@ -1,20 +1,31 @@
-# Faza 0 (DevOps modernizacija) — keep backend dependencies (Gradle) and the
-# CI workflow actions themselves patched. Web repo already had Dependabot for
-# npm; this extends the same coverage to the backend.
+# Faza 0 (DevOps modernizacija) — keep backend deps (Gradle) and the CI workflow
+# actions patched. Tuned 20.6: was weekly + ungrouped → 8 individual PRs piled up.
+# Now MONTHLY and GROUPED so each ecosystem opens at most one minor/patch PR per
+# month (majors still come as separate PRs so they're reviewed in isolation, e.g.
+# shedlock/stripe). Security updates are unaffected by the schedule and always fire.
 version: 2
 updates:
   - package-ecosystem: gradle
     directory: "/"
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 10
     labels:
       - dependencies
+    groups:
+      gradle-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
+      interval: monthly
+    open-pull-requests-limit: 10
     labels:
       - dependencies
+    groups:
+      github-actions:
+        patterns:
+          - "*"
