@@ -62,10 +62,24 @@ class YachtMapper(
                 ?.let { parseYachtSearchViewLocationName(it) }
 
         // Resolve the raw Int offer_status (from the view) into the enum for UI.
+        // Demote a stale OPTION/OPTION_WAITING to FREE when no live (non-expired) option backs it
+        // (isOption == false). Partner sync leaves offer.status stuck at OPTION after the hold lapses
+        // (MMK/NauSys keep echoing the option with a past expiry); the detail (/standard-offers) already
+        // demotes via hasLiveOption, so without this the LISTING stamps a fake "under option" badge on a
+        // yacht that is actually free — keeps listing == detail.
         val status =
-            result.offerStatus?.let { raw ->
-                hr.workspace.boat4you.domains.catalouge.enums.OfferStatus.entries.firstOrNull { it.value == raw }
-            }
+            result.offerStatus
+                ?.let { raw ->
+                    hr.workspace.boat4you.domains.catalouge.enums.OfferStatus.entries.firstOrNull { it.value == raw }
+                }
+                ?.let { resolved ->
+                    val stale =
+                        (
+                            resolved == hr.workspace.boat4you.domains.catalouge.enums.OfferStatus.OPTION ||
+                                resolved == hr.workspace.boat4you.domains.catalouge.enums.OfferStatus.OPTION_WAITING
+                        ) && !isOption
+                    if (stale) hr.workspace.boat4you.domains.catalouge.enums.OfferStatus.FREE else resolved
+                }
 
         return YachtSearchResponseDto(
             id = result.id,
