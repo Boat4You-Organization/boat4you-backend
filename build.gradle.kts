@@ -41,7 +41,7 @@ val koTestVersion = "6.0.7"
 // (and any future replica) do not both fire the same job at once
 // (F4-002 prod-blocker for 2-VM deploy). 5.16.0 is the latest stable
 // line, supports Spring Boot 3.x + JdbcTemplate provider.
-val shedlockVersion = "5.16.0"
+val shedlockVersion = "7.7.0"
 
 dependencies {
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")
