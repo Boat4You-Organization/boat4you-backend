@@ -27,7 +27,7 @@ repositories {
     mavenCentral()
 }
 
-val springDocVersion = "2.8.15"
+val springDocVersion = "3.0.3"
 val bouncyCastleVersion = "1.83"
 val jjwtVersion = "0.12.7"
 val apacheCommonsValidatorVersion = "1.10.1"
