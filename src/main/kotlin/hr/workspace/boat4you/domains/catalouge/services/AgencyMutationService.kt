@@ -88,16 +88,22 @@ class AgencyMutationService(
         val offers = offerRepository.findAllByYachtAgencyId(agencyId)
         var updated = 0
         offers.forEach { offer ->
-            // Mirror the sync EXACTLY (NauSysYachtOfferSyncService): the agency discount
-            // applies to the boat client price (extClientPrice, after partner OWN discounts),
-            // NEVER to the total-with-extras. Using extTotalPrice here double-counted obligatory
-            // extras and inflated the client price vs what the next sync produces (audit B4).
-            val extClientPrice = offer.extClientPrice ?: return@forEach
+            // The agency discount applies to the partner's NET charter price (after the partner's OWN
+            // discount, before obligatory extras) — exactly the base each YachtOfferSyncService feeds to
+            // calculateClientPrice(). That net lives in a DIFFERENT column per partner:
+            //  - NauSys: extClientPrice (price.clientPrice). extTotalPrice = net WITH extras → using it
+            //    double-counts obligatory extras (audit B4).
+            //  - MMK: extTotalPrice (mmkOffer.price). extClientPrice = startPrice = LIST → using it drops
+            //    the partner's own discount and inflates the price (regressed ~1.5k MMK offers whenever an
+            //    agency discount was changed, since recalc ran with the list price as the base).
+            // extDiscountPerc is populated ONLY by the MMK sync, so it cleanly tells the two partners apart.
+            val isMmk = offer.extDiscountPerc != null
+            val netBasePrice = (if (isMmk) offer.extTotalPrice else offer.extClientPrice) ?: return@forEach
             val applyDiscount = offer.yacht?.excludeDiscount != true
-            val newClientPrice = PriceCalculations.calculateClientPrice(extClientPrice, discount, applyDiscount)
+            val newClientPrice = PriceCalculations.calculateClientPrice(netBasePrice, discount, applyDiscount)
             if (offer.clientPrice?.compareTo(newClientPrice) != 0) {
                 offer.clientPrice = newClientPrice
-                offer.agencyCommission = extClientPrice.minus(newClientPrice)
+                offer.agencyCommission = netBasePrice.minus(newClientPrice)
                 offer.totalPrice = newClientPrice + (offer.obligatoryExtrasPrice ?: BigDecimal.ZERO)
                 offerRepository.save(offer)
                 updated++
