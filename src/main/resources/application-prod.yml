@@ -8,6 +8,27 @@ server:
   # nginx TLS terminator and rate limiter (F1-049, prod review 2026-05-07).
   address: 127.0.0.1
 application:
+  # PILOT (23.6.2026): canonicalize cross-source duplicates only for the
+  # "La Vita E Bella" twin group (6047 NauSys / 7576 MMK / 9431 MMK) so we can
+  # verify boat4you + sister + booking before catalog-wide rollout. To roll out
+  # to all ~934 twin groups: empty `pilot-yacht-ids` (and add the yacht twin-key
+  # index first — see migration note). Set `enabled: false` to revert instantly.
+  twin-canonical:
+    enabled: true
+    pilot-yacht-ids:
+      - 6047
+      - 7576
+      - 9431
+  # PILOT (24.6.2026): weekly 7-day offer fill for Lagoon 42 "Mayialena"
+  # (NauSys yacht id 10223446) — fills the autumn weeks NauSys prices but the
+  # reservation-options sync skips. Runs on the data-sync node (cusma3) at
+  # startup. To roll out: move to a batched scheduled job over all NauSys yachts.
+  # Set enabled:false to revert.
+  weekly-offer-fill:
+    enabled: true
+    pilot-nausys-yacht-ids:
+      - 10223446
+    horizon-months: 18
   external:
     sync:
       offer-max-years: 1

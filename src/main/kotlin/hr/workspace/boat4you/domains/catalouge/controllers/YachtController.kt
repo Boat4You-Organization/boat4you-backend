@@ -13,6 +13,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.services.OfferQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtQueryingService
+import hr.workspace.boat4you.domains.catalouge.services.YachtTwinCanonicalService
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import hr.workspace.boat4you.domains.external.service.ExternalSyncService
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
@@ -45,6 +46,7 @@ class YachtController(
     private val offerQueryingService: OfferQueryingService,
     private val externalSyncService: ExternalSyncService,
     private val userRepository: UserRepository,
+    private val yachtTwinCanonicalService: YachtTwinCanonicalService,
 ) {
     @Operation(description = "Fetch all yachts by search criteria")
     @GetMapping
@@ -219,7 +221,10 @@ class YachtController(
         @RequestParam(name = "currency", required = false) curr: String?,
         @RequestHeader(name = "Accept-Language", required = false) lang: String? = null,
     ): ResponseEntity<YachtDetailsDto> {
-        val yachtId = SlugUtils.idFromSlug(yachtSlug)
+        // Resolve cross-source duplicates to the canonical copy so the detail
+        // page (and the slug it returns → calendar, price-calc, reservation)
+        // serves the most complete / highest-margin twin. No-op when disabled.
+        val yachtId = yachtTwinCanonicalService.resolve(SlugUtils.idFromSlug(yachtSlug))
         if (yachtId == null) {
             return ResponseEntity.notFound().build()
         }
@@ -247,7 +252,7 @@ class YachtController(
         @RequestParam(required = false) month: Int?,
         @RequestParam(required = true) year: Int,
     ): ResponseEntity<List<YachtAvailabilityDto>> {
-        val yachtId = SlugUtils.idFromSlug(yachtSlug)
+        val yachtId = yachtTwinCanonicalService.resolve(SlugUtils.idFromSlug(yachtSlug))
         if (yachtId == null) {
             return ResponseEntity.notFound().build()
         }
@@ -263,7 +268,7 @@ class YachtController(
         @RequestParam(name = "dateTo", required = true) dateTo: LocalDate,
         @RequestParam(name = "currency", required = false) curr: String?,
     ): ResponseEntity<List<OfferDto>> {
-        val yachtId = SlugUtils.idFromSlug(yachtSlug)
+        val yachtId = yachtTwinCanonicalService.resolve(SlugUtils.idFromSlug(yachtSlug))
         if (yachtId == null) {
             return ResponseEntity.notFound().build()
         }
@@ -284,7 +289,7 @@ class YachtController(
         @RequestParam(name = "dateTo", required = true) dateTo: LocalDate,
         @RequestParam(name = "currency", required = false) curr: String?,
     ): ResponseEntity<List<OfferDto>> {
-        val yachtId = SlugUtils.idFromSlug(yachtSlug)
+        val yachtId = yachtTwinCanonicalService.resolve(SlugUtils.idFromSlug(yachtSlug))
         if (yachtId == null) {
             return ResponseEntity.notFound().build()
         }
