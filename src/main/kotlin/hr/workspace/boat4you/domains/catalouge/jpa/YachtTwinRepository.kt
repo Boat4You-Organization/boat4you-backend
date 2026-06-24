@@ -73,4 +73,35 @@ interface YachtTwinRepository : JpaRepository<Yacht, Long> {
         @Param("ids") ids: List<Long>,
         @Param("today") today: LocalDate,
     ): Long?
+
+    /**
+     * Canonical copy = the yacht with the MOST distinct free future weeks
+     * (coverage), margin as tie-break, then lowest id (stable). Used for manual
+     * twin groups whose copies come from different sources with different
+     * commissions: there the highest-margin copy is NOT necessarily the one with
+     * the fullest calendar (e.g. Desafinado 481@20% NauSys has fewer weeks than
+     * 13163@15% MMK), and the product goal is to show the complete calendar.
+     *
+     * Returns null when no yacht in the group has a FREE future offer.
+     */
+    @Query(
+        value = """
+            SELECT o.yacht_id
+            FROM offer o
+            JOIN yacht y ON y.id = o.yacht_id
+            WHERE o.yacht_id IN (:ids)
+              AND o.status = 'FREE'
+              AND o.date_from >= :today
+            GROUP BY o.yacht_id
+            ORDER BY COUNT(DISTINCT o.date_from) DESC,
+                     SUM(o.client_price * COALESCE(y.commision_perc / 100.0, y.commision, 0)) DESC,
+                     o.yacht_id ASC
+            LIMIT 1
+        """,
+        nativeQuery = true,
+    )
+    fun pickCanonicalYachtIdByCoverage(
+        @Param("ids") ids: List<Long>,
+        @Param("today") today: LocalDate,
+    ): Long?
 }

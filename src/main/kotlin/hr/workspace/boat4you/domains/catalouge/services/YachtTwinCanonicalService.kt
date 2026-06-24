@@ -33,11 +33,26 @@ class YachtTwinCanonicalService(
      */
     fun resolve(id: Long?): Long? {
         if (id == null || !props.enabled) return id
-        // Pilot gate: while an allow-list is set, only act for those ids — and
-        // skip the twin query entirely for every other boat (zero overhead).
-        if (props.pilotYachtIds.isNotEmpty() && id !in props.pilotYachtIds) return id
 
         return try {
+            // Hand-verified manual group takes precedence: it bypasses BOTH the
+            // pilot gate and findTwinIds (which cannot pair these copies — same
+            // marina, different source location_id), and uses coverage-first
+            // selection so the canonical is the fullest-calendar copy even when
+            // copies carry different commissions.
+            val manualGroup = props.manualGroups.firstOrNull { id in it }
+            if (manualGroup != null && manualGroup.size > 1) {
+                val canonical = yachtTwinRepository.pickCanonicalYachtIdByCoverage(manualGroup, LocalDate.now())
+                if (canonical != null && canonical != id) {
+                    log.debug("twin-canonical(manual): yacht {} -> {} (group {})", id, canonical, manualGroup)
+                }
+                return canonical ?: id
+            }
+
+            // Pilot gate: while an allow-list is set, only act for those ids — and
+            // skip the twin query entirely for every other boat (zero overhead).
+            if (props.pilotYachtIds.isNotEmpty() && id !in props.pilotYachtIds) return id
+
             val group = yachtTwinRepository.findTwinIds(id)
             if (group.size <= 1) {
                 id

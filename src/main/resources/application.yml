@@ -180,6 +180,7 @@ application:
   twin-canonical:
     enabled: false
     pilot-yacht-ids: []
+    manual-groups: []
   email:
     enabled: ${EMAIL_ENABLED:false}
     # From-address shown in the recipient inbox. SMTP auth happens with

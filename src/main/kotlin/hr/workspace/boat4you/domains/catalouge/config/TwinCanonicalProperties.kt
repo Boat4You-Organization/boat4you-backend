@@ -38,4 +38,18 @@ data class TwinCanonicalProperties
          * rollout. Empty list = canonicalize every twin group.
          */
         val pilotYachtIds: List<Long>,
+        /**
+         * Hand-verified twin groups that BYPASS both the [findTwinIds] matcher
+         * and the [pilotYachtIds] gate. Each inner list is one physical boat
+         * whose copies the matcher cannot pair automatically — e.g. the same
+         * marina mapped to different `location_id`s by two sources (NauSys vs
+         * MMK), where relaxing the matcher's location-equality would wrongly
+         * merge 1300+ same-model fleet boats worldwide. For a manual group the
+         * canonical is the copy with the MOST free future weeks (coverage-first,
+         * margin tie-break) — because cross-source copies can carry different
+         * commissions, so highest-margin would not surface the fullest calendar.
+         * Empty list = none. Always supplied by application.yml (no default —
+         * see the @ConstructorBinding note above).
+         */
+        val manualGroups: List<List<Long>>,
     )

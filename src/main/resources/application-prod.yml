@@ -19,6 +19,14 @@ application:
       - 6047
       - 7576
       - 9431
+    # Hand-verified cross-source twin groups the matcher can't pair (same
+    # physical marina mapped to different location_ids by NauSys vs MMK).
+    # [481 (Angelina/NauSys, Marina Baotic loc 57), 13163 (Ultra Sailing/MMK,
+    # Marina Baotic loc 1749)] = Fountaine Pajot Saona 47 "Desafinado", 2020,
+    # 13.94m. Coverage-first canonical -> 13163 (45 wks incl. the Mar-Jun
+    # high-season block) vs 481's 29 wks. Bypasses the pilot gate.
+    manual-groups:
+      - [481, 13163]
   external:
     sync:
       offer-max-years: 1
