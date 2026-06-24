@@ -172,7 +172,7 @@ class NauSysYachtOfferSyncService(
         }
 
         if (skippedCount > 0) {
-            log.warn("NauSys offer sync for agency ${agency.id}: skipped $skippedCount offers due to missing Location mappings")
+            log.warn("NauSys offer sync for agency ${agency.id}: skipped $skippedCount offers (missing Location mapping or unpriced FREE)")
         }
         if (skippedYachtCount > 0) {
             log.warn("NauSys offer sync for agency ${agency.id}: skipped $skippedYachtCount yachts due to missing Yacht mappings")
@@ -262,6 +262,24 @@ class NauSysYachtOfferSyncService(
         nausysOffer: RestFreeYacht,
         allLocationMappings: List<ExternalMapping>,
     ): Boolean {
+        // A bookable (FREE) offer must carry a real price. NauSys occasionally returns a
+        // free yacht with clientPrice null/0 — no price-list entry for that period, or a
+        // reseller copy that doesn't own the pricing. Persisting it surfaces an
+        // "AVAILABLE 0 €" week on the site (and the `clientPrice!!` below would NPE on
+        // null and abort the whole agency batch). Treat "free but unpriced" as "not
+        // bookable here" → skip and leave a calendar gap. OPTION/UNAVAILABLE markers may
+        // legitimately have no price, so the guard is scoped to FREE only.
+        val nausysClientPrice = nausysOffer.price?.clientPrice?.toBigDecimal()
+        if (OfferStatus.fromNausysValue(nausysOffer.status) == OfferStatus.FREE &&
+            (nausysClientPrice == null || nausysClientPrice <= BigDecimal.ZERO)
+        ) {
+            log.warn(
+                "Skipping unpriced FREE NauSys offer for yacht=${yacht.id} " +
+                    "${nausysOffer.periodFrom?.value}..${nausysOffer.periodTo?.value} (clientPrice=$nausysClientPrice)",
+            )
+            return false
+        }
+
         val locationFromMapping =
             allLocationMappings.find { location -> location.externalId == nausysOffer.locationFromId!!.toLong() }
         val locationFrom =
