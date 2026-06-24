@@ -19,17 +19,6 @@ application:
       - 6047
       - 7576
       - 9431
-  # FULL ROLLOUT (24.6.2026): weekly 7-day offer fill for ALL NauSys yachts —
-  # fills the weeks NauSys prices but the reservation-options sync skips
-  # (min-stay seasons). `enabled` runs the nightly scheduled job (02:00, data-sync
-  # node). `run-all-on-startup` does a one-off full run on boot for validation —
-  # flip to false once verified so it doesn't re-run every restart (the nightly
-  # job keeps it fresh). chunk-size = yacht ids per getFreeYachts batch call.
-  weekly-offer-fill:
-    enabled: true
-    horizon-months: 18
-    chunk-size: 300
-    run-all-on-startup: true
   external:
     sync:
       offer-max-years: 1

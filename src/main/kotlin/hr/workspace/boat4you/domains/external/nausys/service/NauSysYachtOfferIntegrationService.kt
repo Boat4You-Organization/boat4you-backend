@@ -22,10 +22,10 @@ import org.openapitools.client.nausys.model.RestFreeYachtsRequest
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import java.time.DayOfWeek
 import java.time.LocalDate
-import java.time.temporal.TemporalAdjusters
 import java.util.concurrent.CompletableFuture
+
+private const val OFFER_SYNC_HORIZON_MONTHS = 18L
 
 @Service
 class NauSysYachtOfferIntegrationService(
@@ -147,6 +147,11 @@ class NauSysYachtOfferIntegrationService(
                             allAgencyYachts,
                             interval.start,
                             interval.end,
+                            // Supplemental 7-day Sat->Sat query on a min-stay season (>7d): NauSys may
+                            // not quote a 7-day price even though the boat is free, so do NOT let the
+                            // disappearance pass flip genuinely-free weeks to pre-reserved.
+                            skipDisappearance =
+                                reservationInterval.duration == 7 && reservationOptionsGroup.key.minimalDuration > 7,
                         )
                     } catch (e: Exception) {
                         log.error(
@@ -160,14 +165,13 @@ class NauSysYachtOfferIntegrationService(
     }
 
     fun calcSyncEndDate(reservationOptionsGroup: ReservationOptionsGroup): LocalDate {
-        return if (reservationOptionsGroup.end.isAfter(
-                LocalDate.now().plusYears(syncConfigurationProperties.offerMaxYears.toLong()),
-            )
-        ) {
-            LocalDate.now().plusYears(syncConfigurationProperties.offerMaxYears.toLong())
-        } else {
-            reservationOptionsGroup.end
-        }
+        // Cap how far ahead we generate intervals — bounded by the operator's
+        // published season `end`, but extended to 18 months. The old cap
+        // (offerMaxYears = 1yr) never reached the autumn-of-next-year seasons
+        // NauSys actually publishes (e.g. Sep/Oct 2027), so the scheduled sync
+        // skipped them entirely. The season `end` remains the real upper bound.
+        val horizonCap = LocalDate.now().plusMonths(OFFER_SYNC_HORIZON_MONTHS)
+        return if (reservationOptionsGroup.end.isAfter(horizonCap)) horizonCap else reservationOptionsGroup.end
     }
 
     fun syncOffersForYachtIdAndDateRage(
@@ -198,120 +202,5 @@ class NauSysYachtOfferIntegrationService(
                 )
             }
         }
-    }
-
-    /**
-     * Weekly 7-day "fill" for a single NauSys yacht.
-     *
-     * The standard offer sync ([syncOffersForYachts]) generates intervals from the
-     * operator's reservationOptions, whose interval duration is the season's
-     * `minimalDuration`. In shoulder / autumn seasons that minimal duration is
-     * often 14 or 28 days, so NO 7-day Sat→Sat intervals are generated there — the
-     * boat then shows only ~one week per month even though it is FREE. NauSys's
-     * `freeYachts` endpoint, however, quotes a 7-day price for every free week
-     * (verified 24.6.2026 — matches competitor listings exactly).
-     *
-     * This pass asks NauSys for every Saturday→Saturday week up to [horizonEnd]
-     * and upserts the result via the normal offer sync. NauSys is the source of
-     * truth: weeks it does not return (truly unavailable / hard minimum-stay)
-     * create nothing. 7-day Sat→Sat offers are typed STANDARD by
-     * `OfferType.getFromDates`, so they surface in the calendar.
-     *
-     * @return the number of weeks for which NauSys returned an offer.
-     */
-    fun syncWeeklyOffersForYacht(
-        externalYachtId: Long,
-        horizonEnd: LocalDate,
-    ): Int {
-        var weekStart = LocalDate.now().with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY))
-        var filledWeeks = 0
-        while (weekStart.isBefore(horizonEnd)) {
-            val weekEnd = weekStart.plusDays(7)
-            try {
-                val request =
-                    RestFreeYachtsRequest(
-                        credentials = nauSysAuthProvider.auth,
-                        periodFrom = NauSysDateWrapper(weekStart.format(NauSysDateWrapper.DATE_FORMATTER)),
-                        periodTo = NauSysDateWrapper(weekEnd.format(NauSysDateWrapper.DATE_FORMATTER)),
-                        yachts = listOf(externalYachtId),
-                        extendedDataSet = "PAYMENT_PLAN,OBLIGATORY_SERVICES,ADDITIONAL_EXTRAS",
-                        ignoreOptions = true,
-                    )
-                val response = nauSysRetryableClient.getFreeYachts(request)
-                if (!response.freeYachts.isNullOrEmpty()) {
-                    nauSysYachtOfferSyncService.syncOffersForAsync(response.freeYachts!!)
-                    filledWeeks++
-                }
-            } catch (e: Exception) {
-                log.warn("weekly-offer-fill: yacht $externalYachtId week $weekStart failed: ${e.message}")
-            }
-            weekStart = weekStart.plusWeeks(1)
-        }
-        log.info("weekly-offer-fill: yacht $externalYachtId filled $filledWeeks weeks up to $horizonEnd")
-        return filledWeeks
-    }
-
-    /**
-     * Full-catalog weekly 7-day fill for ALL NauSys yachts (the scheduled rollout
-     * of [syncWeeklyOffersForYacht]). For every Saturday→Saturday week up to
-     * [horizonEnd] it asks NauSys `getFreeYachts` once per [chunkSize]-sized batch
-     * of yacht ids — so the whole fleet is covered with ~`weeks * ceil(N/chunk)`
-     * calls, not one-per-yacht-per-week. `syncOffersForAsync` maps each returned
-     * yacht back to ours, so no per-agency context is needed. STANDARD 7-day
-     * offers fill the gaps the reservation-options sync skips (operator min-stay
-     * seasons), so every free week becomes visible. Idempotent (upsert).
-     *
-     * @return number of (yacht, week) offers created/updated.
-     */
-    fun weeklyOfferFillAllNauSys(
-        horizonEnd: LocalDate,
-        chunkSize: Int,
-    ): Int {
-        val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
-        val allNausysExternalIds =
-            externalMappingService
-                .getCachedAllMappingsByType(Yacht::class.simpleName.toString(), externalSystem)
-                .mapNotNull { it.externalId }
-                .distinct()
-        if (allNausysExternalIds.isEmpty()) {
-            log.warn("weekly-offer-fill ALL: no NauSys yacht mappings, nothing to do")
-            return 0
-        }
-        log.info(
-            "weekly-offer-fill ALL: ${allNausysExternalIds.size} NauSys yachts, horizon $horizonEnd, chunkSize $chunkSize",
-        )
-        var weekStart = LocalDate.now().with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY))
-        var weekCount = 0
-        var totalOfferWeeks = 0
-        while (weekStart.isBefore(horizonEnd)) {
-            val weekEnd = weekStart.plusDays(7)
-            allNausysExternalIds.chunked(chunkSize).forEach { idsChunk ->
-                try {
-                    val request =
-                        RestFreeYachtsRequest(
-                            credentials = nauSysAuthProvider.auth,
-                            periodFrom = NauSysDateWrapper(weekStart.format(NauSysDateWrapper.DATE_FORMATTER)),
-                            periodTo = NauSysDateWrapper(weekEnd.format(NauSysDateWrapper.DATE_FORMATTER)),
-                            yachts = idsChunk,
-                            extendedDataSet = "PAYMENT_PLAN,OBLIGATORY_SERVICES,ADDITIONAL_EXTRAS",
-                            ignoreOptions = true,
-                        )
-                    val response = nauSysRetryableClient.getFreeYachts(request)
-                    if (!response.freeYachts.isNullOrEmpty()) {
-                        nauSysYachtOfferSyncService.syncOffersForAsync(response.freeYachts!!)
-                        totalOfferWeeks += response.freeYachts!!.size
-                    }
-                } catch (e: Exception) {
-                    log.warn("weekly-offer-fill ALL: week $weekStart chunk(${idsChunk.size}) failed: ${e.message}")
-                }
-            }
-            weekStart = weekStart.plusWeeks(1)
-            weekCount++
-            if (weekCount % 10 == 0) {
-                log.info("weekly-offer-fill ALL: $weekCount weeks done, $totalOfferWeeks offer-weeks so far")
-            }
-        }
-        log.info("weekly-offer-fill ALL: DONE — $weekCount weeks, $totalOfferWeeks offer-weeks up to $horizonEnd")
-        return totalOfferWeeks
     }
 }

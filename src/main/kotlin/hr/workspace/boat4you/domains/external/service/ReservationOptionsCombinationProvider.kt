@@ -5,11 +5,24 @@ import hr.workspace.boat4you.domains.external.model.ReservationOptionsGroup
 import java.time.DayOfWeek
 
 object ReservationOptionsCombinationProvider {
+    private const val WEEKLY_DURATION_DAYS = 7
+
     fun generateValidCombinations(reservationOption: ReservationOptionsGroup): List<ReservationInterval> {
-        // If everything is available, sync only saturday to saturday. Other combinations will be fetched on the fly (search or offer endpoint)
+        val combinations = mutableListOf<ReservationInterval>()
+
+        // ALWAYS sync the standard weekly 7-day Saturday->Saturday slot, even when
+        // the operator's published `minimalDuration` for this season is longer
+        // (14/28-day shoulder/min-stay seasons). NauSys still quotes a 7-day price
+        // for those free weeks (verified 24.6.2026), so this is what makes EVERY
+        // free week show up. Non-Saturday yachts just return nothing for it (no harm).
+        combinations.add(ReservationInterval(DayOfWeek.SATURDAY, DayOfWeek.SATURDAY, WEEKLY_DURATION_DAYS))
+
+        // If everything is available, sync only saturday to saturday (plus the
+        // operator's minimal-duration Saturday slot). Other combinations are
+        // fetched on the fly (search or offer endpoint).
         if (reservationOption.isCheckInInAnyDay() && reservationOption.isCheckOutInAnyDay()) {
             if (isValidCombination(DayOfWeek.SATURDAY, DayOfWeek.SATURDAY, reservationOption.minimalDuration)) {
-                return mutableListOf(
+                combinations.add(
                     ReservationInterval(
                         DayOfWeek.SATURDAY,
                         DayOfWeek.SATURDAY,
@@ -17,6 +30,7 @@ object ReservationOptionsCombinationProvider {
                     ),
                 )
             }
+            return combinations.distinct()
         }
 
         // Map boolean flags to DayOfWeek
@@ -42,9 +56,8 @@ object ReservationOptionsCombinationProvider {
                 DayOfWeek.SUNDAY to reservationOption.checkoutSun,
             ).filter { it.value == true }
 
-        // Generate combinations with validation
-        val combinations = mutableListOf<ReservationInterval>()
-
+        // Generate combinations with validation (the weekly Saturday slot is
+        // already in `combinations`).
         for (checkin in checkinDays.keys) {
             for (checkout in checkoutDays.keys) {
                 // Validate checkout is after check-in
@@ -54,7 +67,7 @@ object ReservationOptionsCombinationProvider {
             }
         }
 
-        return combinations
+        return combinations.distinct()
     }
 
     fun isValidCombination(

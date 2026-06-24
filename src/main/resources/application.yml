@@ -180,13 +180,6 @@ application:
   twin-canonical:
     enabled: false
     pilot-yacht-ids: []
-  # NauSys weekly 7-day offer fill — off by default; prod enables a pilot
-  # allow-list (data-sync node only). See WeeklyOfferFillProperties.
-  weekly-offer-fill:
-    enabled: false
-    horizon-months: 18
-    chunk-size: 300
-    run-all-on-startup: false
   email:
     enabled: ${EMAIL_ENABLED:false}
     # From-address shown in the recipient inbox. SMTP auth happens with

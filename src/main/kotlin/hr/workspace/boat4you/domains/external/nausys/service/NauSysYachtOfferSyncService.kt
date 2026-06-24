@@ -76,6 +76,12 @@ class NauSysYachtOfferSyncService(
         allAgencyYachts: List<Yacht>,
         dateFrom: LocalDate,
         dateTo: LocalDate,
+        // When true, do NOT run the SYNTHETIC_DISAPPEARANCE flip for this interval.
+        // Set for the supplemental 7-day Sat->Sat query on min-stay (minimalDuration
+        // > 7) seasons: NauSys legitimately quotes no 7-day price there, so the
+        // absence of a 7-day offer means "not 7-day bookable", NOT "no longer free".
+        // Flipping would wrongly show genuinely-free weeks as pre-reserved.
+        skipDisappearance: Boolean = false,
     ) {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
         val allMappings =
@@ -139,6 +145,8 @@ class NauSysYachtOfferSyncService(
             // For FREE offers that disappeared, we mark them as OPTION_WAITING with
             // SYNTHETIC_DISAPPEARANCE marker so they surface in search as pre-reserved instead of
             // silently vanishing (UNAVAILABLE is filtered out by yacht_search_view).
+            // Skip entirely for the supplemental 7-day min-stay query (see param doc).
+            if (skipDisappearance) return@forEach
             existingYachtOffers
                 .filter { it.dateFrom == dateFrom && it.dateTo == dateTo }
                 .filter {
