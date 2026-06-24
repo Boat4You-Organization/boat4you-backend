@@ -184,8 +184,9 @@ application:
   # allow-list (data-sync node only). See WeeklyOfferFillProperties.
   weekly-offer-fill:
     enabled: false
-    pilot-nausys-yacht-ids: []
     horizon-months: 18
+    chunk-size: 300
+    run-all-on-startup: false
   email:
     enabled: ${EMAIL_ENABLED:false}
     # From-address shown in the recipient inbox. SMTP auth happens with

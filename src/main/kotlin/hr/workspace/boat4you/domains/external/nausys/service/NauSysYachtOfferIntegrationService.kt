@@ -250,4 +250,68 @@ class NauSysYachtOfferIntegrationService(
         log.info("weekly-offer-fill: yacht $externalYachtId filled $filledWeeks weeks up to $horizonEnd")
         return filledWeeks
     }
+
+    /**
+     * Full-catalog weekly 7-day fill for ALL NauSys yachts (the scheduled rollout
+     * of [syncWeeklyOffersForYacht]). For every Saturday→Saturday week up to
+     * [horizonEnd] it asks NauSys `getFreeYachts` once per [chunkSize]-sized batch
+     * of yacht ids — so the whole fleet is covered with ~`weeks * ceil(N/chunk)`
+     * calls, not one-per-yacht-per-week. `syncOffersForAsync` maps each returned
+     * yacht back to ours, so no per-agency context is needed. STANDARD 7-day
+     * offers fill the gaps the reservation-options sync skips (operator min-stay
+     * seasons), so every free week becomes visible. Idempotent (upsert).
+     *
+     * @return number of (yacht, week) offers created/updated.
+     */
+    fun weeklyOfferFillAllNauSys(
+        horizonEnd: LocalDate,
+        chunkSize: Int,
+    ): Int {
+        val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
+        val allNausysExternalIds =
+            externalMappingService
+                .getCachedAllMappingsByType(Yacht::class.simpleName.toString(), externalSystem)
+                .mapNotNull { it.externalId }
+                .distinct()
+        if (allNausysExternalIds.isEmpty()) {
+            log.warn("weekly-offer-fill ALL: no NauSys yacht mappings, nothing to do")
+            return 0
+        }
+        log.info(
+            "weekly-offer-fill ALL: ${allNausysExternalIds.size} NauSys yachts, horizon $horizonEnd, chunkSize $chunkSize",
+        )
+        var weekStart = LocalDate.now().with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY))
+        var weekCount = 0
+        var totalOfferWeeks = 0
+        while (weekStart.isBefore(horizonEnd)) {
+            val weekEnd = weekStart.plusDays(7)
+            allNausysExternalIds.chunked(chunkSize).forEach { idsChunk ->
+                try {
+                    val request =
+                        RestFreeYachtsRequest(
+                            credentials = nauSysAuthProvider.auth,
+                            periodFrom = NauSysDateWrapper(weekStart.format(NauSysDateWrapper.DATE_FORMATTER)),
+                            periodTo = NauSysDateWrapper(weekEnd.format(NauSysDateWrapper.DATE_FORMATTER)),
+                            yachts = idsChunk,
+                            extendedDataSet = "PAYMENT_PLAN,OBLIGATORY_SERVICES,ADDITIONAL_EXTRAS",
+                            ignoreOptions = true,
+                        )
+                    val response = nauSysRetryableClient.getFreeYachts(request)
+                    if (!response.freeYachts.isNullOrEmpty()) {
+                        nauSysYachtOfferSyncService.syncOffersForAsync(response.freeYachts!!)
+                        totalOfferWeeks += response.freeYachts!!.size
+                    }
+                } catch (e: Exception) {
+                    log.warn("weekly-offer-fill ALL: week $weekStart chunk(${idsChunk.size}) failed: ${e.message}")
+                }
+            }
+            weekStart = weekStart.plusWeeks(1)
+            weekCount++
+            if (weekCount % 10 == 0) {
+                log.info("weekly-offer-fill ALL: $weekCount weeks done, $totalOfferWeeks offer-weeks so far")
+            }
+        }
+        log.info("weekly-offer-fill ALL: DONE — $weekCount weeks, $totalOfferWeeks offer-weeks up to $horizonEnd")
+        return totalOfferWeeks
+    }
 }

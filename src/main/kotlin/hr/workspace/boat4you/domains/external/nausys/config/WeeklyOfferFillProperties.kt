@@ -20,10 +20,12 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding
 data class WeeklyOfferFillProperties
     @ConstructorBinding
     constructor(
-        /** Master switch. When false the startup runner is a no-op. */
+        /** Master switch for the scheduled full-catalog NauSys weekly fill. */
         val enabled: Boolean,
-        /** NauSys external yacht ids to fill (pilot allow-list). */
-        val pilotNausysYachtIds: List<Long>,
         /** How many months ahead to ask NauSys for weekly prices. */
         val horizonMonths: Long,
+        /** Yacht ids per `getFreeYachts` batch call (the whole fleet is chunked). */
+        val chunkSize: Int,
+        /** Also run the full fill once on startup (one-off validation; off in steady state). */
+        val runAllOnStartup: Boolean,
     )

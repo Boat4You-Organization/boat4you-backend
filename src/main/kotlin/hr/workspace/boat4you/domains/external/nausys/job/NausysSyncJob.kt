@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.external.nausys.job
 
 import hr.workspace.boat4you.domains.external.enums.MethodCacheEnum
+import hr.workspace.boat4you.domains.external.nausys.config.WeeklyOfferFillProperties
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysAvailabilityIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysCatalogueIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtIntegrationService
@@ -12,6 +13,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import java.time.LocalDate
 
 @Profile("data-sync")
 @Component
@@ -21,8 +23,29 @@ class NausysSyncJob(
     private val nauSysCatalogueIntegrationService: NauSysCatalogueIntegrationService,
     private val nauSysAvailabilityIntegrationService: NauSysAvailabilityIntegrationService,
     private val serviceCallCacheService: ServiceCallCacheService,
+    private val weeklyOfferFillProperties: WeeklyOfferFillProperties,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
+    /**
+     * Full-catalog NauSys weekly 7-day offer fill (see
+     * [NauSysYachtOfferIntegrationService.weeklyOfferFillAllNauSys]). Gated by
+     * `application.weekly-offer-fill.enabled`. Runs nightly, after the catalogue
+     * (01:00) and reservation-options offer sync, so it tops up the 7-day weeks
+     * those skip in min-stay seasons.
+     */
+    @Scheduled(cron = "0 0 2 * * ?")
+    @SchedulerLock(name = "nausysWeeklyOfferFill", lockAtMostFor = "PT4H")
+    fun runWeeklyOfferFill() {
+        if (!weeklyOfferFillProperties.enabled) {
+            return
+        }
+        log.info("Starting NauSys weekly offer fill (all yachts)")
+        val start = System.currentTimeMillis()
+        val horizonEnd = LocalDate.now().plusMonths(weeklyOfferFillProperties.horizonMonths)
+        nauSysYachtOfferIntegrationService.weeklyOfferFillAllNauSys(horizonEnd, weeklyOfferFillProperties.chunkSize)
+        log.info("NauSys weekly offer fill took ${System.currentTimeMillis() - start} ms")
+    }
 
     /**
      * Syncs all NauSYS catalogue data, including agencies, countries, regions, locations, vessel types, manufacturers, models.

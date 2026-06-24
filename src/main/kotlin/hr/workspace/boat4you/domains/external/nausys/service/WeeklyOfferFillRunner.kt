@@ -25,27 +25,21 @@ class WeeklyOfferFillRunner(
 
     @EventListener(ApplicationReadyEvent::class)
     fun onReady() {
-        if (!props.enabled || props.pilotNausysYachtIds.isEmpty()) {
+        if (!props.runAllOnStartup) {
             return
         }
         val horizonEnd = LocalDate.now().plusMonths(props.horizonMonths)
-        log.info(
-            "weekly-offer-fill pilot starting for {} yacht(s), horizon {}",
-            props.pilotNausysYachtIds.size,
-            horizonEnd,
-        )
+        log.info("weekly-offer-fill ALL: startup run requested, horizon {}, chunkSize {}", horizonEnd, props.chunkSize)
         Thread(
             {
-                props.pilotNausysYachtIds.forEach { yachtId ->
-                    try {
-                        val weeks = offerIntegrationService.syncWeeklyOffersForYacht(yachtId, horizonEnd)
-                        log.info("weekly-offer-fill pilot: yacht {} -> {} weeks", yachtId, weeks)
-                    } catch (e: Exception) {
-                        log.error("weekly-offer-fill pilot failed for yacht {}: {}", yachtId, e.message, e)
-                    }
+                try {
+                    val offerWeeks = offerIntegrationService.weeklyOfferFillAllNauSys(horizonEnd, props.chunkSize)
+                    log.info("weekly-offer-fill ALL startup run: {} offer-weeks", offerWeeks)
+                } catch (e: Exception) {
+                    log.error("weekly-offer-fill ALL startup run failed: {}", e.message, e)
                 }
             },
-            "weekly-offer-fill-pilot",
+            "weekly-offer-fill-all",
         ).apply { isDaemon = true }.start()
     }
 }
