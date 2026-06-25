@@ -1,0 +1,18 @@
+-- Surface "Electric toilet" as a filterable amenity.
+--
+-- Background: electric toilet already exists as real, partner-synced equipment
+-- (label_code 'electric-toilet', id 83, added in V1_73) and the yacht search
+-- ALREADY filters on it — `/public/yachts?amenities=83` narrows results
+-- correctly (verified live: Ionian 154 -> 51, Preveza Main Port 10 -> 3).
+--
+-- The only gap: it shipped with filter_order = NULL, so the amenity catalogue
+-- endpoint never returned it. `/public/catalogue/amenities` lists ONLY rows
+-- WHERE filter_order IS NOT NULL (EquipmentRepository.findForFilters), and the
+-- admin Offers chips + public-web amenity filter are data-driven off that list
+-- — so no "Electric toilet" chip ever appeared even though the filter worked.
+--
+-- Fix: give it a filter_order. 211 places it right after the other interior /
+-- sanitary amenities (waste tank = 208, water maker = 210). No code change is
+-- needed anywhere — the chip appears automatically in admin /offers AND on the
+-- public site once the equipmentFilter cache is refreshed (app restart clears it).
+UPDATE equipment SET filter_order = 211 WHERE label_code = 'electric-toilet';
