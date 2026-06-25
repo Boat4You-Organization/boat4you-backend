@@ -114,24 +114,28 @@ class NauSysYachtOfferSyncService(
 
             if (existingYachtOffers.isEmpty()) {
                 nausysYachtOffers.forEach { nausysOffer ->
-                    if (!updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)) skippedCount++
+                    if (updateOffer(Offer(), yacht, nausysOffer, allLocationMappings) != OfferUpdateResult.UPDATED) {
+                        skippedCount++
+                    }
                 }
             } else {
                 nausysYachtOffers.forEach { nausysOffer ->
                     val existingOffer =
                         existingYachtOffers.find { it.dateFrom == nausysOffer.periodFrom!!.value && it.dateTo == nausysOffer.periodTo!!.value }
-                    // Mark existing offer alive BEFORE updateOffer so a missing-location skip
-                    // doesn't flip it to SYNTHETIC_DISAPPEARANCE below.
-                    if (existingOffer != null) {
-                        syncedOffers.add(existingOffer.id!!)
-                    }
-                    val updated =
+                    val result =
                         if (existingOffer == null) {
                             updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)
                         } else {
                             updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings)
                         }
-                    if (!updated) skippedCount++
+                    // Keep the existing row "alive" (exempt from the disappearance sweep) when the
+                    // partner refreshed it OR we skipped for OUR mapping gap. A FREE-but-unpriced
+                    // return (reseller lost pricing) is a REAL change → leave it un-marked so the
+                    // sweep flips the stale FREE row to OPTION_WAITING ("pre-reserved").
+                    if (existingOffer != null && result != OfferUpdateResult.FREE_UNPRICED) {
+                        syncedOffers.add(existingOffer.id!!)
+                    }
+                    if (result != OfferUpdateResult.UPDATED) skippedCount++
                 }
             }
 
@@ -215,13 +219,13 @@ class NauSysYachtOfferSyncService(
                         it.dateFrom == nausysOffer.periodFrom!!.value!! &&
                             it.dateTo == nausysOffer.periodTo!!.value!!
                     }
-                val updated =
+                val result =
                     if (existingOffer == null) {
                         updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)
                     } else {
                         updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings)
                     }
-                if (!updated) skippedCount++
+                if (result != OfferUpdateResult.UPDATED) skippedCount++
             }
         }
 
@@ -251,17 +255,23 @@ class NauSysYachtOfferSyncService(
         }
     }
 
+    private enum class OfferUpdateResult { UPDATED, SKIPPED_MISSING_LOCATION, FREE_UNPRICED }
+
     /**
-     * @return true if the offer was updated and saved; false if it was skipped because a required
-     * Location mapping or Location row was missing. A skipped offer must not be deactivated /
-     * flipped to SYNTHETIC_DISAPPEARANCE by the caller — the row in DB (if any) keeps its state.
+     * @return [OfferUpdateResult.UPDATED] when the offer was saved;
+     * [OfferUpdateResult.SKIPPED_MISSING_LOCATION] when a required Location mapping/row is missing
+     * (OUR mapping gap, not a partner change — the caller MUST keep the existing row alive, never
+     * deactivate it); [OfferUpdateResult.FREE_UNPRICED] when the partner returned this FREE week
+     * with no price (e.g. a reseller that lost pricing) — a REAL change the caller must propagate
+     * by NOT marking the row alive, so the disappearance pass flips the stale FREE row to
+     * "pre-reserved" (OPTION_WAITING).
      */
     private fun updateOffer(
         offer: Offer,
         yacht: Yacht,
         nausysOffer: RestFreeYacht,
         allLocationMappings: List<ExternalMapping>,
-    ): Boolean {
+    ): OfferUpdateResult {
         // A bookable (FREE) offer must carry a real price. NauSys occasionally returns a
         // free yacht with clientPrice null/0 — no price-list entry for that period, or a
         // reseller copy that doesn't own the pricing. Persisting it surfaces an
@@ -277,7 +287,7 @@ class NauSysYachtOfferSyncService(
                 "Skipping unpriced FREE NauSys offer for yacht=${yacht.id} " +
                     "${nausysOffer.periodFrom?.value}..${nausysOffer.periodTo?.value} (clientPrice=$nausysClientPrice)",
             )
-            return false
+            return OfferUpdateResult.FREE_UNPRICED
         }
 
         val locationFromMapping =
@@ -298,7 +308,7 @@ class NauSysYachtOfferSyncService(
                     "(locationFromId=${nausysOffer.locationFromId} → mapping=${locationFromMapping?.systemId}, " +
                     "locationToId=${nausysOffer.locationToId} → mapping=${locationToMapping?.systemId})",
             )
-            return false
+            return OfferUpdateResult.SKIPPED_MISSING_LOCATION
         }
 
         offer.yacht = yacht
@@ -359,7 +369,7 @@ class NauSysYachtOfferSyncService(
             offer.offerPaymentPlans.clear()
             offerRepository.save(offer)
         }
-        return true
+        return OfferUpdateResult.UPDATED
     }
 
     /**

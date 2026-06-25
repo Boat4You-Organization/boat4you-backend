@@ -88,7 +88,12 @@ class MmkYachtOfferIntegrationServiceAsync(
                     if (offersResponse.isNotEmpty()) {
                         try {
                             transactionTemplate.execute<Unit> {
-                                mmkYachtOfferSyncService.syncOffersForAgency(agency.id!!, offersResponse)
+                                mmkYachtOfferSyncService.syncOffersForAgency(
+                                    agency.id!!,
+                                    offersResponse,
+                                    windowFrom = startDate,
+                                    windowTo = endDate,
+                                )
                             }
                         } catch (e: Exception) {
                             log.error(

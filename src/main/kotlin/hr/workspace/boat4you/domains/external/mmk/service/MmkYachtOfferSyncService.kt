@@ -19,6 +19,7 @@ import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
+import hr.workspace.boat4you.domains.external.service.PartnerWithdrawalGuard
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.YACHT_AGENCY_EXTERNAL_MAPPING_KEY
 import hr.workspace.boat4you.domains.external.utils.Matchers
 import org.slf4j.Logger
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.time.LocalDate
 
 @Service
 class MmkYachtOfferSyncService(
@@ -40,10 +42,20 @@ class MmkYachtOfferSyncService(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
+    /**
+     * @param windowFrom / [windowTo] the FULL date window this response is the COMPLETE picture
+     *   for (the sat-sat year sync). When given, a withdrawn week anywhere in the window — not just
+     *   inside the returned offers' own span — becomes a deactivate candidate, so partner removals
+     *   propagate faithfully. Null ⇒ legacy narrow scope (returned-offers span) for the deprecated /
+     *   duration-filtered callers. Either way the deactivate sweep is gated by
+     *   [PartnerWithdrawalGuard] so a truncated partner response never wipes good offers.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun syncOffersForAgency(
         agencyId: Long,
         mmkOffers: List<org.openapitools.client.mmk.model.Offer>,
+        windowFrom: LocalDate? = null,
+        windowTo: LocalDate? = null,
     ) {
         val allAgencyYachts = yachtRepository.findAllByAgencyId(agencyId)
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
@@ -74,14 +86,16 @@ class MmkYachtOfferSyncService(
                 return@forEach
             }
 
-            val minDateFrom = mmkOffers.minOfOrNull { it.dateFrom.value!!.toLocalDate() }
-            val maxDateTo = mmkOffers.maxOfOrNull { it.dateTo.value!!.toLocalDate() }
+            // Deactivate scope = the full synced window when the caller knows this response is the
+            // COMPLETE set for it (sat-sat year sync); else the returned offers' own span (legacy).
+            val loadFrom = windowFrom ?: mmkOffers.minOfOrNull { it.dateFrom.value!!.toLocalDate() }!!
+            val loadTo = windowTo ?: mmkOffers.maxOfOrNull { it.dateTo.value!!.toLocalDate() }!!
 
             val existingYachtOffers =
                 offerRepository.findAllByYachtAndDateFromGreaterThanEqualAndDateToLessThanEqual(
                     yacht,
-                    minDateFrom!!,
-                    maxDateTo!!,
+                    loadFrom,
+                    loadTo,
                 )
 
             mmkOffers.forEach { mmkOffer ->
@@ -107,14 +121,25 @@ class MmkYachtOfferSyncService(
                 if (!updated) skippedCount++
             }
 
-            // deactivate all offers that are not returned by MMK
-            // we call this method only once per yacht so no need to check by dates as in Nausys
-            existingYachtOffers
-                .filter { !syncedOffers.contains(it.id!!) && it.status != OfferStatus.UNAVAILABLE }
-                .forEach { offer ->
+            // Deactivate the weeks MMK no longer returns in this window so partner withdrawals
+            // propagate — but NEVER wipe good offers on a truncated response: gate behind
+            // PartnerWithdrawalGuard (same 30% cap as the occupancy reconcile). We're inside
+            // groupBy { yachtId } so this yacht WAS returned (partnerReturnedNonEmpty = true).
+            val inScope = existingYachtOffers.filter { it.status != OfferStatus.UNAVAILABLE }
+            val toDeactivate = inScope.filter { !syncedOffers.contains(it.id!!) }
+            if (PartnerWithdrawalGuard.isSafeToWithdraw(true, inScope.size, toDeactivate.size)) {
+                toDeactivate.forEach { offer ->
                     offer.status = OfferStatus.UNAVAILABLE
                     offerRepository.save(offer)
                 }
+            } else if (toDeactivate.isNotEmpty()) {
+                log.warn(
+                    "Skip MMK offer-withdrawal yacht=${yacht.id} ($loadFrom..$loadTo): would deactivate " +
+                        "${toDeactivate.size} of ${inScope.size} in-scope offers (over cap " +
+                        "${PartnerWithdrawalGuard.maxWithdrawable(inScope.size)}) — likely a partial/truncated " +
+                        "MMK response, not real withdrawals. Deactivating nothing; self-heals next run.",
+                )
+            }
         }
 
         if (skippedCount > 0) {

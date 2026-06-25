@@ -117,7 +117,7 @@ class ExternalAvailabilityReconcileService(
         // partner returned a TRUNCATED-but-parseable (HTTP 200) response, not real removals — and
         // the empty-guard above only catches a fully-empty body. Refuse to mass-delete valid
         // reservations: skip the whole reconcile, log, and self-heal on the next complete response.
-        val maxDeletable = maxOf(10, (inScopeCount * 0.30).toInt())
+        val maxDeletable = PartnerWithdrawalGuard.maxWithdrawable(inScopeCount)
         if (toRemove.size > maxDeletable) {
             log.warn(
                 "Skip absent-reconcile (year=$year): would delete ${toRemove.size} of $inScopeCount in-scope " +
