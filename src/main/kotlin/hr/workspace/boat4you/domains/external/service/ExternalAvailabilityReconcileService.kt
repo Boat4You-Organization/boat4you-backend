@@ -52,11 +52,21 @@ class ExternalAvailabilityReconcileService(
         val syntheticRemoved = offerRepository.deleteUnbackedSyntheticOptionOffers()
         val optionsRemoved =
             externalReservationRepository.deleteExpiredOptions(ExternalReservationStatus.OPTION, LocalDateTime.now())
+        // Zombie RESERVATION rows: an expired option hold that was stored under RESERVATION status
+        // (legacy/partner-echo) carries a NON-NULL optionExpiration in the past while keeping a
+        // future dateTo. The OPTION purge above misses it (wrong status) and deleteExpiredReservations
+        // (dateTo < cutoff) misses it too (future dateTo) — so it hard-blocks a boat the partner has
+        // already freed forever. Discovered 2026-06-25: 87k such rows hid FREE weeks on 630 yachts.
+        // Same query/safety as the OPTION purge — a REAL reservation has optionExpiration = NULL and
+        // `NULL < cutoff` is false, so only the mis-statused expired holds are removed.
+        val staleReservationsRemoved =
+            externalReservationRepository.deleteExpiredOptions(ExternalReservationStatus.RESERVATION, LocalDateTime.now())
         val mappingsRemoved = externalMappingRepository.deleteOrphanReservationMappings(RESERVATION_TYPE)
-        if (syntheticRemoved > 0 || optionsRemoved > 0 || mappingsRemoved > 0) {
+        if (syntheticRemoved > 0 || optionsRemoved > 0 || staleReservationsRemoved > 0 || mappingsRemoved > 0) {
             log.info(
-                "Purge mirror: removed $optionsRemoved expired OPTION reservations, $syntheticRemoved unbacked " +
-                    "synthetic OPTION offers, $mappingsRemoved orphan reservation mappings",
+                "Purge mirror: removed $optionsRemoved expired OPTION reservations, $staleReservationsRemoved " +
+                    "stale RESERVATION rows with an expired option hold, $syntheticRemoved unbacked synthetic " +
+                    "OPTION offers, $mappingsRemoved orphan reservation mappings",
             )
         }
     }
