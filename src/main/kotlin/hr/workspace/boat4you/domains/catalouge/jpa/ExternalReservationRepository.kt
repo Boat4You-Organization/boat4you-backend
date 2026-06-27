@@ -14,6 +14,12 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
     /**
      * Booking re-check (Deploy 3): is the yacht hard-blocked (RESERVATION/SERVICE)
      * for any day overlapping [dateFrom, dateTo)? Half-open, turnaround-safe.
+     *
+     * Option-honesty (read-time, 2026-06-27): a row whose optionExpiration is set AND
+     * already in the past is an expired hold the partner has freed — it must NOT block,
+     * even if it is mis-statused as RESERVATION (a "zombie"). A genuine booking has
+     * optionExpiration = NULL, so it always blocks. This makes the block mirror the
+     * partner immediately, independent of when the periodic purge deletes the row.
      */
     @Query(
         """
@@ -21,6 +27,7 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
         WHERE r.yacht.id = :yachtId
           AND r.status IN (:statuses)
           AND r.dateFrom < :dateTo AND r.dateTo > :dateFrom
+          AND (r.optionExpiration IS NULL OR r.optionExpiration > :now)
         """,
     )
     fun existsBlockingOverlap(
@@ -28,6 +35,7 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
         @Param("statuses") statuses: List<ExternalReservationStatus>,
         @Param("dateFrom") dateFrom: LocalDate,
         @Param("dateTo") dateTo: LocalDate,
+        @Param("now") now: LocalDateTime,
     ): Boolean
 
     @Modifying

@@ -1030,11 +1030,21 @@ class YachtQueryingService(
         val sub = cq.subquery(Long::class.java)
         val er = sub.from(ExternalReservation::class.java)
         val statusPath = er.get<ExternalReservationStatus>("status")
+        val optionExpirationPath = er.get<LocalDateTime>("optionExpiration")
         sub.select(cb.literal(1L)).where(
             cb.equal(er.get<Yacht>("yacht").get<Long>("id"), root.get<Long>("id")),
             statusPath.`in`(ExternalReservationStatus.RESERVATION, ExternalReservationStatus.SERVICE),
             cb.lessThan(er.get<LocalDate>("dateFrom"), end),
             cb.greaterThan(er.get<LocalDate>("dateTo"), start),
+            // Option-honesty (2026-06-27): a row carrying a NON-NULL, already-past
+            // optionExpiration is an expired hold the partner has freed — it must not
+            // hard-block, even if mis-statused as RESERVATION ("zombie"). A genuine
+            // booking has optionExpiration = NULL and keeps blocking. Mirrors the
+            // partner at read time, regardless of when the purge deletes the row.
+            cb.or(
+                cb.isNull(optionExpirationPath),
+                cb.greaterThan(optionExpirationPath, LocalDateTime.now()),
+            ),
         )
         return sub
     }

@@ -43,6 +43,7 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.LocalDateTime
 
 @Service
 class ReservationFlowMutationService(
@@ -97,6 +98,7 @@ class ReservationFlowMutationService(
                 listOf(ExternalReservationStatus.RESERVATION, ExternalReservationStatus.SERVICE),
                 offer.dateFrom!!,
                 offer.dateTo!!,
+                LocalDateTime.now(),
             )
         if (hardBlocked) {
             throw IllegalArgumentException("Offer is not available for reservation")
