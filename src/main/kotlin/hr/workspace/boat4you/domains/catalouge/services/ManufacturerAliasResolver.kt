@@ -24,12 +24,27 @@ class ManufacturerAliasResolver {
      * → canonical brand name we persist in `manufacturer.name`.
      */
     private val aliases: Map<String, String> = mapOf(
-        // Brand-merge aliases (Lagoon-Bénéteau group, Bali post Catana
-        // acquisition). Without these the sync forks the brand again.
+        // Brand-merge aliases. Without these the sync forks the brand again.
+        // Lagoon-Bénéteau group (brand sits inside Bénéteau post 2014).
         "lagoon-beneteau" to "Lagoon",
         "lagoon beneteau" to "Lagoon",
-        "catana group" to "Bali",
-        "catana" to "Bali",
+        // Bali / Catana — both built by Catana Group; Mario rule 27.6.2026:
+        // everything lands on the existing "Bali Catamarans" row (V1_99).
+        "catana group" to "Bali Catamarans",
+        "catana" to "Bali Catamarans",
+        "bali" to "Bali Catamarans",
+        // Leopard — Robertson & Caine builds the Leopard brand; Mario rule
+        // 27.6.2026: all variants land on "Leopard Catamarans" (V1_99).
+        "leopard" to "Leopard Catamarans",
+        "leopard yachts" to "Leopard Catamarans",
+        "leopard catamarans / robertson & caine" to "Leopard Catamarans",
+        "robertson & caine" to "Leopard Catamarans",
+        "robertson and caine" to "Leopard Catamarans",
+        // Nautitech — Mario rule 27.6.2026: merge under "Nautitech Catamarans"
+        // (V1_99 renames the surviving "Catamarans Nautitech" row to match).
+        "nautitech" to "Nautitech Catamarans",
+        "nautitech rochefort" to "Nautitech Catamarans",
+        "catamarans nautitech" to "Nautitech Catamarans",
         // Mass dedup aliases — 27 groups merged 4.5.2026. Each entry maps a
         // partner-supplied variant to the canonical name (the row that
         // survived the merge based on highest yacht-count). Without these,
@@ -47,7 +62,6 @@ class ManufacturerAliasResolver {
         "filippetti yacht" to "Filippetti Yachts",
         "four winns" to "Four Winns Boats",
         "island spirit" to "Island Spirit Yachts",
-        "leopard yachts" to "Leopard",
         "luna" to "Luna Catamarans",
         "marquis" to "Marquis Yachts",
         "nautiner yachts" to "Nautiner Yacht",
