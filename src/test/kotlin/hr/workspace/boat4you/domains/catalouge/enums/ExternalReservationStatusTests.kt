@@ -1,9 +1,26 @@
 package hr.workspace.boat4you.domains.catalouge.enums
 
 import org.junit.jupiter.api.Test
+import java.time.LocalDateTime
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class ExternalReservationStatusTests {
+    @Test
+    fun `clampOptionExpiration keeps the expiry only for OPTION and nulls it for every other status`() {
+        val expiry = LocalDateTime.of(2026, 7, 1, 12, 0)
+        // An OPTION legitimately carries the lapse timestamp.
+        assertEquals(expiry, ExternalReservationStatus.OPTION.clampOptionExpiration(expiry))
+        // Zombie guard (root-cause fix): partner feeds echo a stale option expiry after an OPTION is
+        // confirmed into a RESERVATION; the sync must drop it so a RESERVATION never becomes a zombie.
+        assertNull(ExternalReservationStatus.RESERVATION.clampOptionExpiration(expiry))
+        assertNull(ExternalReservationStatus.SERVICE.clampOptionExpiration(expiry))
+        assertNull(ExternalReservationStatus.FREE.clampOptionExpiration(expiry))
+        assertNull(ExternalReservationStatus.UNKNOWN.clampOptionExpiration(expiry))
+        // No expiry to keep stays null even for an OPTION.
+        assertNull(ExternalReservationStatus.OPTION.clampOptionExpiration(null))
+    }
+
     @Test
     fun `fromMmkValue maps every MMK status code to the correct busy state`() {
         // Blocking

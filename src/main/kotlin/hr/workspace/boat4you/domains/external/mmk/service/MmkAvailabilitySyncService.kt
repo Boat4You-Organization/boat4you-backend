@@ -121,11 +121,14 @@ class MmkAvailabilitySyncService(
         mmkReservation: AvailabilityResponse,
         yacht: Yacht,
     ) {
+        val status = ExternalReservationStatus.fromMmkValue(mmkReservation.status)
         externalReservation.yacht = yacht
         externalReservation.dateFrom = mmkReservation.dateFrom?.value?.toLocalDate()
         externalReservation.dateTo = mmkReservation.dateTo?.value?.toLocalDate()
-        externalReservation.status = ExternalReservationStatus.fromMmkValue(mmkReservation.status)
-        externalReservation.optionExpiration = mmkReservation.optionExpirationDate?.value
+        externalReservation.status = status
+        // Clamp to OPTION only: MMK echoes optionExpirationDate even on confirmed reservations, so
+        // copying it unconditionally was the ROOT CAUSE of zombie RESERVATION rows (see clampOptionExpiration).
+        externalReservation.optionExpiration = status.clampOptionExpiration(mmkReservation.optionExpirationDate?.value)
         externalReservationRepository.saveAndFlush(externalReservation)
     }
 

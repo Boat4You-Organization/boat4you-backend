@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.enums
 
 import org.openapitools.client.nausys.model.RestYachtReservationOccupancy
+import java.time.LocalDateTime
 
 enum class ExternalReservationStatus(
     val value: Int,
@@ -11,6 +12,19 @@ enum class ExternalReservationStatus(
     SERVICE(3),
     FREE(4),
     ;
+
+    /**
+     * option_expiration is an attribute of an OPTION only — the timestamp at which a soft hold
+     * lapses. A RESERVATION/SERVICE/FREE/UNKNOWN row must NEVER carry one. Partner occupancy feeds
+     * echo a stale optionValidTill / optionExpirationDate when an OPTION is confirmed into a
+     * RESERVATION (the same external row flips type but keeps the old expiry), so the availability
+     * sync must clamp the value to OPTION rows here. Persisting it on a RESERVATION creates a
+     * "zombie" (status=RESERVATION + past option_expiration, future dateTo) that hard-blocks a boat
+     * the partner has already freed and is invisible to both the OPTION purge (wrong status) and
+     * read-time option-honesty (only releases OPTION). Discovered 2026-06-25: 131k zombie rows.
+     */
+    fun clampOptionExpiration(rawExpiration: LocalDateTime?): LocalDateTime? =
+        if (this == OPTION) rawExpiration else null
 
     companion object {
         fun fromNausysValue(value: RestYachtReservationOccupancy.ReservationType?): ExternalReservationStatus {

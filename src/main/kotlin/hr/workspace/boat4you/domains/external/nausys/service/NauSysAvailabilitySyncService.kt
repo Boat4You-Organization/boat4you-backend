@@ -126,11 +126,15 @@ class NauSysAvailabilitySyncService(
         nausysReservation: RestYachtReservationOccupancy,
         yacht: Yacht,
     ) {
+        val status = ExternalReservationStatus.fromNausysValue(nausysReservation.reservationType)
         externalReservation.yacht = yacht
         externalReservation.dateFrom = nausysReservation.periodFrom?.value
         externalReservation.dateTo = nausysReservation.periodTo?.value
-        externalReservation.status = ExternalReservationStatus.fromNausysValue(nausysReservation.reservationType)
-        externalReservation.optionExpiration = nausysReservation.optionValidTill?.value
+        externalReservation.status = status
+        // Clamp to OPTION only: NauSys keeps optionValidTill populated after an OPTION is confirmed
+        // into a RESERVATION, so copying it unconditionally was the ROOT CAUSE of zombie RESERVATION
+        // rows (see clampOptionExpiration).
+        externalReservation.optionExpiration = status.clampOptionExpiration(nausysReservation.optionValidTill?.value)
         externalReservationRepository.saveAndFlush(externalReservation)
     }
 
