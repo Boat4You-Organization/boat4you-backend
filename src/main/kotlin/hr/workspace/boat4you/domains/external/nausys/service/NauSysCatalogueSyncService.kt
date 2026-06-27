@@ -337,7 +337,9 @@ class NauSysCatalogueSyncService(
                 if (mapping != null) {
                     allManufacturers.find { manufacturer -> manufacturer.id == mapping!!.systemId!! }!!
                 } else {
-                    allManufacturers.find { manufacturer -> manufacturer.name!!.lowercase() == canonicalName.lowercase() }
+                    // trim() too — see MmkCatalogueSyncService (trailing-space
+                    // legacy rows would otherwise fork a duplicate manufacturer).
+                    allManufacturers.find { manufacturer -> manufacturer.name!!.trim().lowercase() == canonicalName.lowercase() }
                         ?: Manufacturer().apply { name = canonicalName }
                 }
 

@@ -75,6 +75,14 @@ class ManufacturerAliasResolver {
         "viko yachts" to "Viko",
         "voyage yachts" to "Voyage Catamaran",
         "windy yachts" to "Windy Boats",
+        // Round 3 — Mario rule 27.6.2026 (V9_21). Legal-name / whitespace
+        // variants of the same builder; canonical = cleanest existing row.
+        "northman shipyard" to "Northman",
+        "ferretti yachts group" to "Ferretti Yachts",
+        "sas - vektor" to "SAS-Vektor",
+        "sunseeker international" to "Sunseeker",
+        "dominator shipyard" to "Dominator",
+        "balt yacht" to "Balt Yachts",
     )
 
     /**

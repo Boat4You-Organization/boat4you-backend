@@ -217,7 +217,9 @@ class MmkCatalogueSyncService(
                 if (mapping != null) {
                     allManufacturers.find { manufacturer -> manufacturer.id == mapping!!.systemId!! }!!
                 } else {
-                    allManufacturers.find { manufacturer -> manufacturer.name!!.lowercase() == canonicalName.lowercase() }
+                    // trim() too: legacy rows carry trailing spaces (e.g. "Balt
+                    // Yacht ") that would otherwise fork a fresh duplicate row.
+                    allManufacturers.find { manufacturer -> manufacturer.name!!.trim().lowercase() == canonicalName.lowercase() }
                         ?: Manufacturer().apply { name = canonicalName }
                 }
 
