@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.external.config.SyncConfigurationProperties
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.mmk.client.MmkAuditedClient
+import hr.workspace.boat4you.domains.external.service.PartnerAccessGuard
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -15,32 +16,45 @@ class MmkAvailabilityIntegrationService(
     private val syncConfigurationProperties: SyncConfigurationProperties,
     private val mmkAvailabilitySyncService: MmkAvailabilitySyncService,
     private val mmkAuditedClient: MmkAuditedClient,
+    private val partnerAccessGuard: PartnerAccessGuard,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+    private val mmkSystemId = ExternalSystemEnum.MMK.value.toLong()
 
     fun syncYachtAvailability() {
-        val agencies =
-            agencyRepository.findAllActiveByPrimarySyncProviderAndHasYacht(ExternalSystemEnum.MMK.value.toLong())
+        val agencies = agencyRepository.findAllActiveByPrimarySyncProviderAndHasYacht(mmkSystemId)
         val syncYears = getSyncYears()
-        agencies.forEach {
-            val agencyExternalId = it.getExternalId()
-            if (agencyExternalId != null) {
-                syncYears.forEach { year ->
-                    log.info("syncing $agencyExternalId for year $year")
-                    try {
-                        // Retry only the FETCH (outside the @Transactional sync): MMK intermittently
-                        // returns 400 "Illegal access to entity" for companies it otherwise serves, so
-                        // without a retry the agency is skipped for the whole run and its availability
-                        // goes stale until a later run happens to succeed. The DB write is NOT retried.
-                        val response =
-                            withRetry(year, agencyExternalId) { mmkAuditedClient.getAvailability(year, agencyExternalId) }
-                        mmkAvailabilitySyncService.syncYachtAvailability(it.id!!, response, year)
-                    } catch (e: Exception) {
-                        log.error("Error syncing availability for agency $agencyExternalId for year $year after retries", e)
+        agencies.forEach { agency ->
+            val agencyExternalId = agency.getExternalId()
+            if (agencyExternalId == null) {
+                log.warn("Agency external id is null for agency: ${agency.id} ${agency.name}")
+                return@forEach
+            }
+            // Agencies the partner keeps refusing are paused (Mario rule 28.6.2026) so a
+            // removed/off-boarded agency can't flood the logs run after run.
+            if (partnerAccessGuard.shouldSkip(mmkSystemId, agencyExternalId)) return@forEach
+
+            for (year in syncYears) {
+                try {
+                    // Retry only the FETCH (outside the @Transactional sync) and only for
+                    // TRANSIENT errors — a hard "Illegal access" refusal is not retried.
+                    val response =
+                        withRetry(year, agencyExternalId) { mmkAuditedClient.getAvailability(year, agencyExternalId) }
+                    mmkAvailabilitySyncService.syncYachtAvailability(agency.id!!, response, year)
+                    partnerAccessGuard.recordSuccess(mmkSystemId, agencyExternalId)
+                } catch (e: Exception) {
+                    val strikes = partnerAccessGuard.recordFailure(mmkSystemId, agencyExternalId)
+                    if (partnerAccessGuard.isAccessDenied(e)) {
+                        val giveUp = strikes >= partnerAccessGuard.giveUpThreshold
+                        log.warn(
+                            "MMK denies access to agency $agencyExternalId (Illegal access to entity), " +
+                                "strike $strikes/${partnerAccessGuard.giveUpThreshold}" +
+                                if (giveUp) " — pausing it (re-probe in 24h)" else "",
+                        )
+                        break // every year is denied for this agency; don't probe the rest this run
                     }
+                    log.error("Error syncing availability for agency $agencyExternalId for year $year after retries", e)
                 }
-            } else {
-                log.warn("Agency external id is null for agency: ${it.id} ${it.name}")
             }
         }
     }
@@ -57,6 +71,8 @@ class MmkAvailabilityIntegrationService(
                 return block()
             } catch (e: Exception) {
                 last = e
+                // A hard refusal ("Illegal access to entity") is permanent — try once, never retry.
+                if (partnerAccessGuard.isAccessDenied(e)) throw e
                 if (i < attempts - 1) {
                     log.warn(
                         "MMK availability fetch failed for company $companyId year $year " +
