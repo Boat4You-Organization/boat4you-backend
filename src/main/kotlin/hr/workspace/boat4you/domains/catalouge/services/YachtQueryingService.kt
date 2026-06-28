@@ -1282,7 +1282,7 @@ class YachtQueryingService(
         }
 
         val agency = yacht.agency
-        if (yacht.entryType == EntryType.EXTERNAL && (agency == null || !agency.active!!)) {
+        if (yacht.entryType == EntryType.EXTERNAL && (agency == null || !agency.active!! || agency.availabilityBlocked)) {
             throw AgencyNotActiveException()
         }
 

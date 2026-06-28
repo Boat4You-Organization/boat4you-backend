@@ -109,7 +109,7 @@ class ReservationFlowMutationService(
         }
 
         val agency = yacht.agency
-        if (yacht.entryType == EntryType.EXTERNAL && (agency == null || !agency.active!!)) {
+        if (yacht.entryType == EntryType.EXTERNAL && (agency == null || !agency.active!! || agency.availabilityBlocked)) {
             throw AgencyNotActiveException()
         }
 
@@ -326,7 +326,7 @@ class ReservationFlowMutationService(
         }
 
         val agency = yacht.agency
-        if (yacht.entryType == EntryType.EXTERNAL && (agency == null || !agency.active!!)) {
+        if (yacht.entryType == EntryType.EXTERNAL && (agency == null || !agency.active!! || agency.availabilityBlocked)) {
             throw AgencyNotActiveException()
         }
         if (yacht.entryType != EntryType.EXTERNAL) {

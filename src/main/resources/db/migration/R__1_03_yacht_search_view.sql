@@ -81,7 +81,7 @@ CREATE MATERIALIZED VIEW public.yacht_search_view AS
          o.status AS offer_status,
          (CASE WHEN COALESCE(a.recommended, false) THEN 1 ELSE 0 END) AS agency_recommended
   FROM   yacht y
-         JOIN agency a              ON  y.agency_id = a.id AND a.active = true
+         JOIN agency a              ON  y.agency_id = a.id AND a.active = true AND a.availability_blocked = false
          JOIN offer o               ON  o.yacht_id = y.id
          JOIN location lfrom        ON  lfrom.id = o.location_from
          LEFT JOIN location lto     ON  lto.id = o.location_to

@@ -3,10 +3,20 @@ package hr.workspace.boat4you.domains.catalouge.jpa
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import org.springframework.transaction.annotation.Transactional
 
 interface AgencyRepository : JpaRepository<Agency, Long> {
+
+    // Toggle the "partner stopped serving us" flag without merging the whole
+    // agency graph (avoids touching agencySources). Hides/restores the agency's
+    // yachts via yacht_search_view + getValidYacht. Mario rule 29.6.2026.
+    @Transactional
+    @Modifying
+    @Query("UPDATE Agency a SET a.availabilityBlocked = :blocked WHERE a.id = :id")
+    fun setAvailabilityBlocked(@Param("id") id: Long, @Param("blocked") blocked: Boolean): Int
     // F2-030: `JOIN FETCH a.agencySources` is a collection fetch — each
     // agency row is multiplied by the number of agencySources over
     // the wire before Hibernate de-dupes in memory. `DISTINCT` on the

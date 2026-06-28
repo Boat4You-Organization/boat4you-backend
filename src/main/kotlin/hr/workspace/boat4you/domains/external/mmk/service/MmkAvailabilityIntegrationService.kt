@@ -42,14 +42,26 @@ class MmkAvailabilityIntegrationService(
                         withRetry(year, agencyExternalId) { mmkAuditedClient.getAvailability(year, agencyExternalId) }
                     mmkAvailabilitySyncService.syncYachtAvailability(agency.id!!, response, year)
                     partnerAccessGuard.recordSuccess(mmkSystemId, agencyExternalId)
+                    if (agency.availabilityBlocked) {
+                        // Access is back — un-hide the agency's yachts.
+                        agencyRepository.setAvailabilityBlocked(agency.id!!, false)
+                        agency.availabilityBlocked = false
+                        log.warn("MMK access restored for agency $agencyExternalId (${agency.name}) — un-hiding its yachts")
+                    }
                 } catch (e: Exception) {
                     val strikes = partnerAccessGuard.recordFailure(mmkSystemId, agencyExternalId)
                     if (partnerAccessGuard.isAccessDenied(e)) {
                         val giveUp = strikes >= partnerAccessGuard.giveUpThreshold
+                        if (giveUp && !agency.availabilityBlocked) {
+                            // Partner has dropped us for this agency — hide its yachts
+                            // (stale availability = booking risk) until access returns.
+                            agencyRepository.setAvailabilityBlocked(agency.id!!, true)
+                            agency.availabilityBlocked = true
+                        }
                         log.warn(
-                            "MMK denies access to agency $agencyExternalId (Illegal access to entity), " +
+                            "MMK denies access to agency $agencyExternalId (${agency.name}) (Illegal access to entity), " +
                                 "strike $strikes/${partnerAccessGuard.giveUpThreshold}" +
-                                if (giveUp) " — pausing it (re-probe in 24h)" else "",
+                                if (giveUp) " — paused + hiding its yachts (re-probe in 24h)" else "",
                         )
                         break // every year is denied for this agency; don't probe the rest this run
                     }

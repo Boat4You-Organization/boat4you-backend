@@ -70,6 +70,15 @@ open class Agency {
     @Column(name = "active", nullable = false)
     open var active: Boolean? = false
 
+    // Set true by the availability sync when the partner stops serving this
+    // agency (MMK 400 "Illegal access to entity"): its yachts are hidden from
+    // the site — stale availability is a booking risk — until access returns.
+    // Separate from `active` (manual blacklist) so the sync keeps re-probing
+    // and auto-restores. Enforced in yacht_search_view + getValidYacht +
+    // ReservationFlowMutationService. Mario rule 29.6.2026.
+    @Column(name = "availability_blocked", nullable = false)
+    open var availabilityBlocked: Boolean = false
+
     // EAGER fetch — admin AgencyDto serialises every source into a `sources`
     // array. Default LAZY would only load the collection inside the
     // @Transactional service method; some call sites (Page.map serialisation,
