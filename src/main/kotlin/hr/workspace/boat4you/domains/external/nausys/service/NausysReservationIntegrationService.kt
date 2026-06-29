@@ -74,6 +74,12 @@ class NausysReservationIntegrationService(
                     RestClient(
                         name = reservationData.name,
                         surname = reservationData.surname,
+                        // Stricter NauSys agencies (Navigare, Dream Yacht Charter) reject the option
+                        // with INSUFFICIENT_DATA unless the client record carries contact details,
+                        // not just the name. Send what the booking form collected. 30.6.2026.
+                        email = reservationData.email,
+                        phone = reservationData.phone,
+                        mobile = reservationData.phone,
                     ),
             )
         val infoResponse = nauSysRetryableClient.createInfo(nausysInfoRequest)

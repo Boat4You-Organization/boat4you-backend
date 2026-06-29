@@ -90,6 +90,8 @@ class ReservationIntegrationService(
                 externalAgencyId = agency.getExternalId()!!,
                 name = reservationFlow.name!!,
                 surname = reservationFlow.surname!!,
+                email = reservationFlow.email!!,
+                phone = reservationFlow.phoneNumber!!,
                 selectedServices = reservationExtras,
                 selectedEquipment = emptyList(),
             )
