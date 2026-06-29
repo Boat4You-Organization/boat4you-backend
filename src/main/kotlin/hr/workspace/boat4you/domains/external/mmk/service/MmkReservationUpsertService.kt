@@ -1,0 +1,240 @@
+package hr.workspace.boat4you.domains.external.mmk.service
+
+import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
+import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
+import hr.workspace.boat4you.domains.catalouge.enums.OfferType
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservation
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
+import hr.workspace.boat4you.domains.catalouge.jpa.Offer
+import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
+import hr.workspace.boat4you.domains.external.service.ExternalMappingService
+import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
+import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.RESERVATION_YACHT_EXTERNAL_MAPPING_KEY
+import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMappingRepository
+import org.openapitools.client.mmk.model.AvailabilityResponse
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.time.LocalDateTime
+import java.time.temporal.ChronoUnit
+import kotlin.math.abs
+
+/**
+ * One SHORT transaction per reservation for the MMK availability sync.
+ *
+ * Extracted from [MmkAvailabilitySyncService] so the per-(agency,year) sync no longer holds a
+ * single DB connection (and table read-locks) for many minutes. A 54-minute connection hold
+ * once blocked a deploy's `ALTER TABLE` and took the site down for 6.5 min (Mario 29.6.2026).
+ * Each reservation now commits in its own short transaction, so an `ALTER`/migration can grab
+ * its lock between two commits instead of waiting for the whole agency.
+ *
+ * Must be a SEPARATE bean: Spring `@Transactional` only applies through the proxy, so a
+ * self-call inside [MmkAvailabilitySyncService] would NOT open a new transaction.
+ *
+ * INVARIANT: the yacht is RE-LOADED here by id so it is managed inside this transaction. Never
+ * pass a detached `Yacht` across the boundary — the orchestrator runs with no open session and
+ * any lazy access on a detached entity would throw.
+ */
+@Service
+class MmkReservationUpsertService(
+    private val externalMappingRepository: ExternalMappingRepository,
+    private val externalMappingService: ExternalMappingService,
+    private val externalReservationRepository: ExternalReservationRepository,
+    private val offersRepository: OfferRepository,
+    private val yachtRepository: YachtRepository,
+) {
+    private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
+    @Transactional
+    fun upsertReservation(
+        externalSystem: ExternalSystem,
+        yachtId: Long,
+        mmkReservation: AvailabilityResponse,
+    ) {
+        val yacht = yachtRepository.findById(yachtId).orElse(null) ?: return
+
+        val yachtReservations = externalReservationRepository.findAllByYacht(yacht)
+
+        val externalReservationMappings =
+            externalMappingService.getAllMappingsByTypeAndExtendedType(
+                ExternalReservation::class.simpleName.toString(),
+                externalSystem,
+                RESERVATION_YACHT_EXTERNAL_MAPPING_KEY + yacht.id,
+            )
+        val reservationMapping =
+            externalReservationMappings.find { mapping -> mapping.externalId == mmkReservation.id!! }
+        val existingYachtOffers =
+            offersRepository.findAllAvailableByYacht(yacht, setOf(OfferStatus.FREE, OfferStatus.OPTION))
+
+        val externalReservation =
+            if (reservationMapping != null) {
+                val res = yachtReservations.find { reservation -> reservation.id == reservationMapping.systemId }
+                if (res == null && mmkReservation.dateTo?.value?.isBefore(LocalDateTime.now()) == true) {
+                    return
+                }
+                res ?: ExternalReservation()
+            } else {
+                ExternalReservation()
+            }
+
+        updateReservation(externalReservation, mmkReservation, yacht)
+        updateOffer(existingYachtOffers, externalReservation, yacht)
+
+        if (reservationMapping == null) {
+            externalMappingRepository.save(
+                ExternalMapping(
+                    externalId = mmkReservation.id!!,
+                    externalSystem = externalSystem,
+                    systemId = externalReservation.id!!,
+                    type = ExternalReservation::class.simpleName.toString(),
+                    extendedType = RESERVATION_YACHT_EXTERNAL_MAPPING_KEY + yacht.id,
+                ),
+            )
+        }
+    }
+
+    private fun updateReservation(
+        externalReservation: ExternalReservation,
+        mmkReservation: AvailabilityResponse,
+        yacht: Yacht,
+    ) {
+        val status = ExternalReservationStatus.fromMmkValue(mmkReservation.status)
+        externalReservation.yacht = yacht
+        externalReservation.dateFrom = mmkReservation.dateFrom?.value?.toLocalDate()
+        externalReservation.dateTo = mmkReservation.dateTo?.value?.toLocalDate()
+        externalReservation.status = status
+        // Clamp to OPTION only: MMK echoes optionExpirationDate even on confirmed reservations, so
+        // copying it unconditionally was the ROOT CAUSE of zombie RESERVATION rows (see clampOptionExpiration).
+        externalReservation.optionExpiration = status.clampOptionExpiration(mmkReservation.optionExpirationDate?.value)
+        externalReservationRepository.saveAndFlush(externalReservation)
+    }
+
+    /**
+     * Reconciles `offer` rows with what MMK's /availability endpoint says about this yacht.
+     * The MMK /offers endpoint (used by the offer sync) only returns weekly Sat-Sat offers,
+     * so options held by other agents on shifted weekdays (Mon-Mon, Thu-Thu, …) never get
+     * an offer row. Here we synthesise one from the closest FREE template so the listing
+     * can surface those yachts with a "pre-reserved / closest day" badge.
+     *
+     * Mirrors NauSysReservationUpsertService.updateOffer.
+     */
+    private fun updateOffer(
+        existingYachtOffers: List<Offer>,
+        externalReservation: ExternalReservation,
+        yacht: Yacht,
+    ) {
+        val dateFrom = externalReservation.dateFrom ?: return
+        val dateTo = externalReservation.dateTo ?: return
+
+        when (externalReservation.status) {
+            ExternalReservationStatus.OPTION -> {
+                // Overlap-aware (A3): a partial-week / multi-week / non-Saturday option must flip
+                // EVERY overlapping FREE offer week to OPTION (not just an exact-date match), else a
+                // 6-day option leaves the overlapping 7-day offer falsely FREE. Only FREE offers are
+                // flipped - a harder RESERVED/UNAVAILABLE state is never downgraded by an option.
+                // Synthesize a visible OPTION row only when NO offer overlaps at all.
+                val overlapping = offersRepository.findAllByYachtAndDateRangeOverlap(yacht, dateFrom, dateTo)
+                if (overlapping.isEmpty()) {
+                    synthesizeOptionOffer(yacht, externalReservation, existingYachtOffers)
+                } else {
+                    overlapping.filter { it.status == OfferStatus.FREE }.forEach { offer ->
+                        offer.status = OfferStatus.OPTION
+                        offersRepository.save(offer)
+                        log.info(
+                            "MMK offer ${offer.id} (yacht ${yacht.id} ${offer.dateFrom}→${offer.dateTo}) flipped to " +
+                                "OPTION (overlaps OPTION $dateFrom→$dateTo, external_reservation ${externalReservation.id})",
+                        )
+                    }
+                }
+            }
+
+            ExternalReservationStatus.RESERVATION, ExternalReservationStatus.SERVICE -> {
+                // Overlap, NOT exact-date match: a reservation blocks EVERY week it touches —
+                // including multi-week and non-Saturday-aligned bookings that exact matching
+                // silently left bookable, the over-availability bug.
+                offersRepository.findAllByYachtAndDateRangeOverlap(yacht, dateFrom, dateTo).forEach { offer ->
+                    if (offer.status != OfferStatus.UNAVAILABLE) {
+                        offer.status = OfferStatus.UNAVAILABLE
+                        offersRepository.save(offer)
+                        log.info(
+                            "MMK offer ${offer.id} (yacht ${yacht.id} ${offer.dateFrom}→${offer.dateTo}) set to " +
+                                "UNAVAILABLE (overlaps ${externalReservation.status} $dateFrom→$dateTo)",
+                        )
+                    }
+                }
+            }
+
+            ExternalReservationStatus.FREE, ExternalReservationStatus.UNKNOWN, null -> {
+                // no-op: offer sync owns FREE; UNKNOWN = unparseable
+            }
+        }
+    }
+
+    /**
+     * Finds the closest FREE offer on the same yacht (prefers same duration, then nearest
+     * dateFrom) and clones its price/location fields into a new OPTION offer marked with
+     * [MmkAvailabilitySyncService.SYNTHETIC_OPTION_EXT_STATUS] so the offer sync cleanup leaves it alone.
+     */
+    private fun synthesizeOptionOffer(
+        yacht: Yacht,
+        externalReservation: ExternalReservation,
+        existingYachtOffers: List<Offer>,
+    ) {
+        val dateFrom = externalReservation.dateFrom!!
+        val dateTo = externalReservation.dateTo!!
+        val targetDuration = ChronoUnit.DAYS.between(dateFrom, dateTo)
+
+        val template = existingYachtOffers
+            .filter { it.status == OfferStatus.FREE && it.dateFrom != null && it.dateTo != null }
+            .minByOrNull { offer ->
+                val offerDuration = ChronoUnit.DAYS.between(offer.dateFrom, offer.dateTo)
+                val durationPenalty = abs(offerDuration - targetDuration) * 1000
+                val datePenalty = abs(ChronoUnit.DAYS.between(offer.dateFrom, dateFrom))
+                durationPenalty + datePenalty
+            }
+
+        if (template == null) {
+            log.warn(
+                "Cannot synthesize MMK OPTION offer for yacht ${yacht.id} $dateFrom→$dateTo: " +
+                    "no FREE template offer exists. Yacht will not surface in search for this week.",
+            )
+            return
+        }
+
+        val synthetic =
+            Offer().apply {
+                this.yacht = yacht
+                this.locationFrom = template.locationFrom
+                this.locationTo = template.locationTo
+                this.dateFrom = dateFrom
+                this.dateTo = dateTo
+                this.checkin = template.checkin
+                this.checkout = template.checkout
+                this.type = OfferType.getFromDates(dateFrom, dateTo)
+                this.product = template.product
+                this.status = OfferStatus.OPTION
+                this.extStatus = MmkAvailabilitySyncService.SYNTHETIC_OPTION_EXT_STATUS
+                this.clientPrice = template.clientPrice
+                this.totalPrice = template.totalPrice
+                this.deposit = template.deposit
+                this.depositInsured = template.depositInsured
+                this.obligatoryExtrasPrice = template.obligatoryExtrasPrice
+                this.totalDiscount = template.totalDiscount
+                this.extBasePrice = template.extBasePrice
+                this.extClientPrice = template.extClientPrice
+                this.extTotalPrice = template.extTotalPrice
+                this.extTotalDiscount = template.extTotalDiscount
+                this.extDiscountPerc = template.extDiscountPerc
+                this.agencyCommission = template.agencyCommission
+            }
+        offersRepository.save(synthetic)
+        log.info(
+            "Synthesized MMK SYNTHETIC_OPTION offer for yacht ${yacht.id} $dateFrom→$dateTo " +
+                "(template offer ${template.id}, external_reservation ${externalReservation.id})",
+        )
+    }
+}
