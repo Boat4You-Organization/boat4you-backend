@@ -39,6 +39,20 @@ class NausysReservationIntegrationService(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
+    companion object {
+        // OUR agency as the NauSys option client — a COMPLETE company record. The option is only a
+        // yacht hold; strict agencies (Navigare, Dream Yacht Charter) reject it without a full
+        // client. Mirrors exactly what we enter in the NauSys UI by hand. Mario 30.6.2026.
+        private const val OPTION_CLIENT_NAME = "Cusmanich d.o.o."
+        private const val OPTION_CLIENT_VAT = "87394862517"
+        private const val OPTION_CLIENT_ADDRESS = "Hrvatske Mornarice 1i"
+        private const val OPTION_CLIENT_ZIP = "21000"
+        private const val OPTION_CLIENT_CITY = "Split"
+        private const val OPTION_CLIENT_COUNTRY_ID = 1 // NauSys country id for Croatia (HRV)
+        private const val OPTION_CLIENT_EMAIL = "info@europe-yachts.com"
+        private const val OPTION_CLIENT_MOBILE = "+38598360398"
+    }
+
     fun getReservation(nausysReservationId: Long): ReservationResponseWrapper {
         log.info("Fetching Nausys reservation with ID: $nausysReservationId")
         val request =
@@ -70,16 +84,21 @@ class NausysReservationIntegrationService(
                     NauSysDateWrapper(
                         reservationData.endDate.toLocalDate().format(NauSysDateWrapper.DATE_FORMATTER),
                     ),
+                // The option is only a yacht HOLD; NauSys (Navigare, Dream Yacht Charter) rejects it
+                // with INSUFFICIENT_DATA unless the client is a COMPLETE record. Send OUR agency as a
+                // company client (exactly what we enter by hand in the NauSys UI to make the option go
+                // through). The real guest details live on our reservation_flow. Mario 30.6.2026.
                 client =
                     RestClient(
-                        name = reservationData.name,
-                        surname = reservationData.surname,
-                        // Stricter NauSys agencies (Navigare, Dream Yacht Charter) reject the option
-                        // with INSUFFICIENT_DATA unless the client record carries contact details,
-                        // not just the name. Send what the booking form collected. 30.6.2026.
-                        email = reservationData.email,
-                        phone = reservationData.phone,
-                        mobile = reservationData.phone,
+                        company = true,
+                        name = OPTION_CLIENT_NAME,
+                        vatNr = OPTION_CLIENT_VAT,
+                        address = OPTION_CLIENT_ADDRESS,
+                        zip = OPTION_CLIENT_ZIP,
+                        city = OPTION_CLIENT_CITY,
+                        countryId = OPTION_CLIENT_COUNTRY_ID,
+                        email = OPTION_CLIENT_EMAIL,
+                        mobile = OPTION_CLIENT_MOBILE,
                     ),
             )
         val infoResponse = nauSysRetryableClient.createInfo(nausysInfoRequest)
