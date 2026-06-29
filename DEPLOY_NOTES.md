@@ -1,5 +1,37 @@
 # Backend deploy notes
 
+## 2026-06-30 — NauSys createOption INSUFFICIENT_DATA fix for strict agencies (commit 797f9bd)
+
+**Symptom:** customers could not place an option on yachts of *strict* NauSys agencies
+(Navigare = our agency 286 / NauSys companyId 122957; Dream Yacht Charter). The boat-detail
+"enter-your-details" step failed; createInfo returned OK (with a price) but `createOption`
+returned `INSUFFICIENT_DATA (201)`. Reported via Nedo (yacht 4548 / NauSys 37302180).
+
+**Root cause (proven live, not guessed):** for strict agencies NauSys `createOption` requires the
+client to carry a **COMPLETE postal address**. With only name+surname the option is rejected.
+Surprisingly, supplying a client **email** *also* triggers `INSUFFICIENT_DATA` (NauSys then tries a
+registered-client lookup that needs more fields). Live isolation matrix on 2026-06-30:
+- name+surname only → createOption INSUFFICIENT (Navigare); OK for lenient agencies.
+- name+surname + **address** (no email) → createOption **OK** for Navigare AND all 4 lenient agencies tested.
+- address + **email** → INSUFFICIENT again. So: address required, email must be omitted.
+
+**Fix:** `NausysReservationIntegrationService.createOption` now builds the createInfo `RestClient`
+with name + surname + the **broker agency's office address** (Hrvatske Mornarice 1i, 21000 Split,
+countryId=1=HRV) and **no email**. We don't collect the customer's address, and the option is a hold
+we place as the broker, so the broker address is correct. Constants live in a `private companion object`.
+
+**Scope:** API node only (`createOption` runs on the booking request path = cusma2). The scheduler
+(cusma3) never serves bookings, so this is functionally a no-op there — sync its jar to 797f9bd at the
+next idle window for consistency (preserve the `-Dreconcile.shadow-mode=false` ExecStart flag).
+
+**Deploy (DONE 2026-06-30 ~23:05 UTC):** built JDK21 bootJar, scp to cusma2 `webservice.jar.new`,
+atomic swap (rollback backup `webservice.jar.bak.c6b88c5`), `systemctl restart boat4you`. App up in
+10.5s, `/public/countries` → 200. Verified: live createOption for Nedo (37302180/122957) with the exact
+deployed recipe → OPTION created (price 7743.50 EUR), test hold stornoed. Lenient agencies unaffected
+(4 tested, both old and new recipe succeed).
+
+---
+
 ## 2026-06-29 — Permanent availability-mirror reconcile fix (natural-key + shadow + V9_23 cleanup + detector)
 
 **What:** the absent-reconcile no longer depends on `external_mapping` integrity. It now matches our
