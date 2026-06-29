@@ -157,7 +157,9 @@ class NausysSyncJob(
     @SchedulerLock(name = "nausysAvailabilitySync", lockAtMostFor = "PT1H")
     fun availabilitySync() {
         log.info("Starting NauSYS availability sync")
+        val startTime = System.currentTimeMillis()
         nauSysAvailabilityIntegrationService.syncYachtAvailability()
+        log.info("Syncing NauSYS availability took ${System.currentTimeMillis() - startTime} ms")
     }
 
     fun runOfferSync() {
