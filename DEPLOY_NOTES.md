@@ -32,9 +32,19 @@ date_to>today, overlapping one of OUR FREE offers on the same yacht):
   - every WOULD-delete line must be a real cancellation / known-stale row,
   - **zero** WOULD-delete lines on a row a live partner read confirms is still booked,
   - per-agency counts in the low tens, not thousands (a thousands spike = breaker should fire = key bug).
-- Only then set **`RECONCILE_SHADOW=false`** on cusma3 (env `boat4youscheduler_vars.env` + restart, no
-  redeploy). Live deletion of stale rows begins; the natural-key reconcile then drains the 96k
-  mapping-less + duplicate backlog over normal cycles, within the per-agency 30% breaker.
+- **DONE 29.6.2026 ~20:51 UTC** — after shadow evidence (tiny per-agency fractions, 30% breaker fired
+  correctly) + 2 live partner spot-checks (Vi La Ut on NauSys, Eleonora on MMK), flipped to LIVE via
+  the systemd ExecStart `-D` flag (NOT an env var). Live deletion drains the 96k mapping-less +
+  duplicate backlog over normal cycles, within the per-agency 30% breaker. Verified first live run.
+
+### cusma3 systemd state (server-only ops config — NOT in git; recorded here for reproducibility)
+Current live `ExecStart` in `/etc/systemd/system/boat4youscheduler.service`:
+```
+ExecStart=java -Xmx2048m -Dreconcile.shadow-mode=false -jar /home/cusma3/boat4you/webservice.jar
+```
+- `-Xmx2048m` — heap cap (from the 29.6 sync-freq deploy; was 6144m). Backup: `~/boat4youscheduler.service.bak.6144`.
+- `-Dreconcile.shadow-mode=false` — reconcile in LIVE delete mode. Backup: `~/boat4youscheduler.service.bak.shadow`.
+- REVERT reconcile to shadow (deletes nothing): drop the `-D` flag → `daemon-reload` → restart.
 
 ### Verify (post-deploy)
 - Vi La Ut (yacht 4736) week 08–15.08.2026 shows bookable on the site; DB has no res for that week.
