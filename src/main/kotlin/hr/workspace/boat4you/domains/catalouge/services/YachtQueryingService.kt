@@ -84,6 +84,10 @@ class YachtQueryingService(
     companion object {
         private const val MAX_PAGE_SIZE = 100
 
+        /** A standard charter week (Sat→Sat). Multi-week covering-sum pricing only kicks in for
+         *  requests LONGER than one week — a 7-night request has a single covering offer. */
+        private const val WEEK_NIGHTS = 7
+
         /**
          * Honest "shifted week" reach (Deploy 4). A published offer slot
          * qualifies if its OWN window overlaps [from - N, to + N] — judged on
@@ -205,6 +209,29 @@ class YachtQueryingService(
                 cb.literal(OfferStatus.FREE.value),
             )
 
+        // Multi-week covering sums (see coveringPeriodTotal). Null-literal placeholders for a
+        // dateless search so the multiselect arity stays fixed; the Kotlin side only trusts these
+        // when a dated multi-week request fully tiles (coveringNights == requestedNights).
+        val requestedNights: Int? =
+            searchParams.startDate?.let { s ->
+                searchParams.endDate?.let { e -> java.time.temporal.ChronoUnit.DAYS.between(s, e).toInt() }
+            }
+        val daysPath = root.get<Int>("numberOfDays")
+        val dateFromPath = root.get<LocalDate>("dateFrom")
+        val dateToPath = root.get<LocalDate>("dateTo")
+        val coveringClientTotalExpr =
+            coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+                ?: cb.nullLiteral(BigDecimal::class.java)
+        val coveringListTotalExpr =
+            coveringPeriodTotal(cb, root.get("listPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+                ?: cb.nullLiteral(BigDecimal::class.java)
+        val coveringCommissionTotalExpr =
+            coveringPeriodTotal(cb, root.get("brokerCommission"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+                ?: cb.nullLiteral(BigDecimal::class.java)
+        val coveringNightsExpr =
+            coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+                ?: cb.nullLiteral(Int::class.javaObjectType)
+
         cq.multiselect(
             root.get<Long>("id"),
             root.get<String>("yachtName"),
@@ -246,6 +273,10 @@ class YachtQueryingService(
             // which is enough for the badge to show a sensible alternative.
             exactOrEarliest(cb, root.get<LocalDate>("dateFrom"), searchParams.startDate),
             exactOrEarliest(cb, root.get<LocalDate>("dateTo"), searchParams.endDate),
+            coveringClientTotalExpr,
+            coveringListTotalExpr,
+            coveringCommissionTotalExpr,
+            coveringNightsExpr,
         )
 
         val predicates =
@@ -289,27 +320,34 @@ class YachtQueryingService(
         // matched week, so a yacht with a cheaper neighbouring week jumped above
         // one whose displayed (searched-week) price was actually lower → price-asc
         // looked broken (fix 7.6.2026). Already aggregated, so no outer cb.min.
-        val totalPriceExpr =
+        val exactDaysExpr =
+            exactPeriodDaysOrMin(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+        val exactTotalExpr =
             cb.prod(
-                exactPeriodOrMin(
-                    cb,
-                    root.get<BigDecimal>("clientPrice"),
-                    root.get("dateFrom"),
-                    root.get("dateTo"),
-                    searchParams.startDate,
-                    searchParams.endDate,
-                ),
-                cb.toBigDecimal(
-                    exactPeriodDaysOrMin(
-                        cb,
-                        root.get<Int>("numberOfDays"),
-                        root.get("dateFrom"),
-                        root.get("dateTo"),
-                        searchParams.startDate,
-                        searchParams.endDate,
-                    ),
-                ),
+                exactPeriodOrMin(cb, root.get<BigDecimal>("clientPrice"), dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate),
+                cb.toBigDecimal(exactDaysExpr),
             )
+        // For a multi-week request that the weekly offers fully tile (and no exact-period offer
+        // exists), order by the TRUE summed period total — the same number the card now shows —
+        // so price-asc/desc stays consistent with the displayed price (the 7.6.2026 invariant).
+        val totalPriceExpr: Expression<out Number> =
+            if (requestedNights != null && requestedNights > WEEK_NIGHTS) {
+                val coveringTotal =
+                    coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)!!
+                val coveringNights =
+                    coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)!!
+                cb.selectCase<BigDecimal>()
+                    .`when`(
+                        cb.and(
+                            cb.equal(coveringNights, cb.literal(requestedNights)),
+                            cb.notEqual(exactDaysExpr, cb.literal(requestedNights)),
+                        ),
+                        coveringTotal,
+                    )
+                    .otherwise(exactTotalExpr)
+            } else {
+                exactTotalExpr
+            }
 
         // Recommended-agency boost: only the "Recommended" tab promotes
         // curated partners' yachts to the top. The other tabs (price asc/desc,
@@ -410,7 +448,11 @@ class YachtQueryingService(
             }
 
         val searchResponseDtos =
-            results.map { view ->
+            results.map { rawView ->
+                // Multi-week period price: when the searched window is fully tiled by weekly offers
+                // (and no exact-period offer exists), swap the single-week per-day rate for the summed
+                // period total so the card shows the true 2-week price (e.g. 7615.30, not 5212.90).
+                val view = applyCoveringPeriodPrice(rawView, requestedNights)
                 // isOption requires BOTH the aggregated offerStatus to flag
                 // OPTION(2) / OPTION_WAITING(3) AND a still-live external
                 // reservation backing it. Partner sync can leave offer.status
@@ -586,6 +628,81 @@ class YachtQueryingService(
                 .`when`(cb.and(cb.equal(dateFrom, start), cb.equal(dateTo, end)), value)
                 .otherwise(cb.nullLiteral(Int::class.javaObjectType))
         return cb.coalesce(cb.min(exactOnly), minAll)
+    }
+
+    /**
+     * Multi-week period pricing (2026-06-29). Charter weeks are sold Sat→Sat (7 nights), so a
+     * 2-week request like 15–29 May has NO single offer row whose dates are exactly the period —
+     * only weekly rows (15–22, 22–29). The [exactPeriodOrMin] path then falls back to MIN(per-day)
+     * and pairs it with one week's day-count, showing one (often a cheaper neighbouring) week's
+     * price for the whole period. Instead, SUM the period totals (per-day × days) of the offers
+     * that fall FULLY INSIDE [start,end] — these tile the window — to get the true period price.
+     *
+     * `dateFrom >= start AND dateTo <= end` (fully-inside, NOT the NEARBY-padded slot predicate) so
+     * an adjacent week ending on the check-in day (e.g. 8–15 for a 15–29 search) is excluded.
+     * Caller only trusts the sum when the covered nights equal the requested nights (full tiling)
+     * and no exact single-period offer already exists (avoids double-counting a 14-night row plus
+     * its component weeks).
+     */
+    private fun coveringPeriodTotal(
+        cb: CriteriaBuilder,
+        perDay: Expression<BigDecimal>,
+        days: Expression<Int>,
+        dateFrom: Expression<LocalDate>,
+        dateTo: Expression<LocalDate>,
+        start: LocalDate?,
+        end: LocalDate?,
+    ): Expression<BigDecimal>? {
+        if (start == null || end == null) return null
+        val inRange = cb.and(cb.greaterThanOrEqualTo(dateFrom, start), cb.lessThanOrEqualTo(dateTo, end))
+        val perOfferTotal = cb.prod(perDay, cb.toBigDecimal(days))
+        return cb.sum(
+            cb.selectCase<BigDecimal>().`when`(inRange, perOfferTotal).otherwise(cb.literal(BigDecimal.ZERO)),
+        )
+    }
+
+    private fun coveringPeriodNights(
+        cb: CriteriaBuilder,
+        days: Expression<Int>,
+        dateFrom: Expression<LocalDate>,
+        dateTo: Expression<LocalDate>,
+        start: LocalDate?,
+        end: LocalDate?,
+    ): Expression<Int>? {
+        if (start == null || end == null) return null
+        val inRange = cb.and(cb.greaterThanOrEqualTo(dateFrom, start), cb.lessThanOrEqualTo(dateTo, end))
+        return cb.sum(
+            cb.selectCase<Int>().`when`(inRange, days).otherwise(cb.literal(0)),
+        )
+    }
+
+    /**
+     * Replace a search row's single-week per-day price with the multi-week period price when the
+     * requested window is fully tiled by the weekly offers inside it (coveringNights == requested)
+     * AND no exact single-period offer already supplies it (numberOfDays != requested — else the
+     * exact row, possibly a partner-materialised 14-night offer, already holds the correct value
+     * and summing would double-count). The per-day rate is kept as the DTO contract (the card
+     * renders per-day × numberOfDays), so per-day = coveringTotal / requestedNights and
+     * numberOfDays = requestedNights → card total = coveringTotal exactly. No-op for dateless or
+     * single-week searches, custom yachts (NULL offer dates → coveringNights = 0), and partial
+     * coverage (some weeks booked → coveringNights < requested → fall back to existing price).
+     */
+    private fun applyCoveringPeriodPrice(
+        view: YachtSearchSelectResult,
+        requestedNights: Int?,
+    ): YachtSearchSelectResult {
+        if (requestedNights == null || requestedNights <= WEEK_NIGHTS) return view
+        val coveringNights = view.coveringNights ?: return view
+        val coveringTotal = view.coveringClientTotal ?: return view
+        if (coveringNights != requestedNights || view.numberOfDays == requestedNights) return view
+        val nights = requestedNights.toBigDecimal()
+        fun perDay(total: BigDecimal?): BigDecimal? = total?.divide(nights, 10, java.math.RoundingMode.HALF_UP)
+        return view.copy(
+            clientPrice = perDay(coveringTotal),
+            listPrice = perDay(view.coveringListTotal),
+            brokerCommission = perDay(view.coveringCommissionTotal),
+            numberOfDays = requestedNights,
+        )
     }
 
     /**

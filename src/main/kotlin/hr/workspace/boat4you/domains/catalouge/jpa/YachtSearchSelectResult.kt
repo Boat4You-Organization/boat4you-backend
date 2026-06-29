@@ -42,4 +42,12 @@ data class YachtSearchSelectResult(
      * badge when the offer doesn't sit on the exact dates the user searched. */
     val offerDateFrom: LocalDate?,
     val offerDateTo: LocalDate?,
+    /** Multi-week covering sums: SUM over offers fully inside the searched period of
+     *  (per-day × days) for client/list/commission, and of days. Used to show the true
+     *  multi-week total when weekly offers tile the request and no exact-period offer exists.
+     *  Null for a dateless search. See [YachtQueryingService.coveringPeriodTotal]. */
+    val coveringClientTotal: BigDecimal?,
+    val coveringListTotal: BigDecimal?,
+    val coveringCommissionTotal: BigDecimal?,
+    val coveringNights: Int?,
 )
