@@ -39,6 +39,16 @@ class NausysReservationIntegrationService(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
+    private companion object {
+        // Broker (Cusmanich d.o.o. / Europe Yachts) office address. NauSys createOption requires a
+        // COMPLETE client postal address for strict agencies (Navigare, Dream Yacht Charter); we do not
+        // collect the customer's address, so we send the broker's. See createOption() for the rationale.
+        const val BROKER_ADDRESS = "Hrvatske Mornarice 1i"
+        const val BROKER_ZIP = "21000"
+        const val BROKER_CITY = "Split"
+        const val BROKER_COUNTRY_ID = 1 // NauSys countryId 1 = Croatia (HRV)
+    }
+
     fun getReservation(nausysReservationId: Long): ReservationResponseWrapper {
         log.info("Fetching Nausys reservation with ID: $nausysReservationId")
         val request =
@@ -74,6 +84,18 @@ class NausysReservationIntegrationService(
                     RestClient(
                         name = reservationData.name,
                         surname = reservationData.surname,
+                        // NauSys createOption rejects the option with INSUFFICIENT_DATA (201) for strict
+                        // agencies (Navigare, Dream Yacht Charter) unless the client carries a COMPLETE
+                        // postal address. We do not collect the customer's address, so we send the broker
+                        // agency's office address (this is an OPTION/hold we place as the broker).
+                        // We deliberately OMIT email: a client email makes NauSys attempt a registered-
+                        // client lookup that itself fails INSUFFICIENT_DATA for those agencies. Verified
+                        // live on 2026-06-30 across 5 NauSys agencies (4 lenient + Navigare strict):
+                        // name+surname+address (no email) succeeds for all; lenient agencies unaffected.
+                        address = BROKER_ADDRESS,
+                        zip = BROKER_ZIP,
+                        city = BROKER_CITY,
+                        countryId = BROKER_COUNTRY_ID,
                     ),
             )
         val infoResponse = nauSysRetryableClient.createInfo(nausysInfoRequest)
