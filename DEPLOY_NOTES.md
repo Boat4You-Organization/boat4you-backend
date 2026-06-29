@@ -16,8 +16,8 @@ registered-client lookup that needs more fields). Live isolation matrix on 2026-
 - address + **email** → INSUFFICIENT again. So: address required, email must be omitted.
 
 **Fix:** `NausysReservationIntegrationService.createOption` now builds the createInfo `RestClient`
-with name + surname + the **broker agency's office address** (Hrvatske Mornarice 1i, 21000 Split,
-countryId=1=HRV) and **no email**. We don't collect the customer's address, and the option is a hold
+with name + surname + the **broker agency's registered address** (Vrboran 37, 21000 Split,
+countryId=1=HRV — Cusmanich d.o.o., matches the NauSys agency profile) and **no email**. We don't collect the customer's address, and the option is a hold
 we place as the broker, so the broker address is correct. Constants live in a `private companion object`.
 
 **Scope:** API node only (`createOption` runs on the booking request path = cusma2). The scheduler

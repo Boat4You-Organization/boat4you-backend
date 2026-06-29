@@ -43,7 +43,7 @@ class NausysReservationIntegrationService(
         // Broker (Cusmanich d.o.o. / Europe Yachts) office address. NauSys createOption requires a
         // COMPLETE client postal address for strict agencies (Navigare, Dream Yacht Charter); we do not
         // collect the customer's address, so we send the broker's. See createOption() for the rationale.
-        const val BROKER_ADDRESS = "Hrvatske Mornarice 1i"
+        const val BROKER_ADDRESS = "Vrboran 37"
         const val BROKER_ZIP = "21000"
         const val BROKER_CITY = "Split"
         const val BROKER_COUNTRY_ID = 1 // NauSys countryId 1 = Croatia (HRV)
