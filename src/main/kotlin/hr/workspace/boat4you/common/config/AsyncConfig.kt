@@ -23,8 +23,14 @@ class AsyncConfig(
     @Bean(name = ["taskExecutor"])
     fun taskExecutor(): Executor {
         val executor = ThreadPoolTaskExecutor()
-        executor.corePoolSize = 5
-        executor.maxPoolSize = 15
+        // Capped well below the Hikari pool (DB_POOL_MAX=25): each cache-warm holds a DB connection
+        // for up to the ~1min partner read timeout, so a saturating search/booking flood with 15
+        // threads could pin 15/25 connections and STARVE the booking flow of a connection
+        // ("idle-in-transaction timeout" / "connection leak" -> failed reservation). 6 caps sync
+        // connection usage at 6/25, leaving the rest for request handling; offers still refresh via
+        // the 4x/day scheduled sync. Mario 30.6.2026 (booking outage). See F1-064.
+        executor.corePoolSize = 3
+        executor.maxPoolSize = 6
         executor.queueCapacity = 200
         executor.setThreadNamePrefix("AsyncThread-")
         // F1-064: do NOT fall back to caller-runs here. Every consumer
