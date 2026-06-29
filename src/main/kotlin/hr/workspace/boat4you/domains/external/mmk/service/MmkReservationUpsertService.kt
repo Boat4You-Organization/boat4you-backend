@@ -85,15 +85,42 @@ class MmkReservationUpsertService(
         updateOffer(existingYachtOffers, externalReservation, yacht)
 
         if (reservationMapping == null) {
-            externalMappingRepository.save(
-                ExternalMapping(
-                    externalId = mmkReservation.id!!,
-                    externalSystem = externalSystem,
-                    systemId = externalReservation.id!!,
-                    type = ExternalReservation::class.simpleName.toString(),
-                    extendedType = RESERVATION_YACHT_EXTERNAL_MAPPING_KEY + yacht.id,
-                ),
-            )
+            val reservationType = ExternalReservation::class.simpleName.toString()
+            val partnerReservationId = mmkReservation.id!!
+            val newReservationId = externalReservation.id!!
+            val existing =
+                externalMappingRepository.findAllByExternalIdAndExternalSystemAndType(
+                    partnerReservationId,
+                    externalSystem,
+                    reservationType,
+                )
+            if (existing.isEmpty()) {
+                externalMappingRepository.save(
+                    ExternalMapping(
+                        externalId = partnerReservationId,
+                        externalSystem = externalSystem,
+                        systemId = newReservationId,
+                        type = reservationType,
+                        extendedType = RESERVATION_YACHT_EXTERNAL_MAPPING_KEY + yacht.id,
+                    ),
+                )
+            } else {
+                // This partner id is already mapped to another reservation (a different yacht / stale
+                // twin). Repoint ONE mapping onto the row we just wrote and drop the extra duplicate
+                // mappings: prevents a NEW duplicate WITHOUT deleting any reservation (the
+                // now-mapping-less stale row is cleared safely by the natural-key reconcile in its
+                // own agency's sync). MMK reassigns reservation ids between syncs, so this also stops
+                // the triplication seen earlier and drains the legacy duplicate-mapping backlog.
+                val keep = existing.first()
+                keep.systemId = newReservationId
+                keep.extendedType = RESERVATION_YACHT_EXTERNAL_MAPPING_KEY + yacht.id
+                externalMappingRepository.save(keep)
+                existing.drop(1).forEach { externalMappingRepository.delete(it) }
+                log.warn(
+                    "Repointed MMK reservation mapping ext=$partnerReservationId to yacht ${yacht.id} " +
+                        "res $newReservationId; dropped ${existing.size - 1} duplicate mapping(s)",
+                )
+            }
         }
     }
 

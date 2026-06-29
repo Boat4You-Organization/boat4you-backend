@@ -1,11 +1,13 @@
 package hr.workspace.boat4you.domains.external.mmk.service
 
+import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalAvailabilityReconcileService
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
+import hr.workspace.boat4you.domains.external.service.ReservationNaturalKey
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.YACHT_AGENCY_EXTERNAL_MAPPING_KEY
 import org.openapitools.client.mmk.model.AvailabilityResponse
@@ -54,19 +56,30 @@ class MmkAvailabilitySyncService(
             )
         val agencyYachts = yachtRepository.findAllByAgencyId(agencyId)
 
+        // Build the partner's "seen" set as NATURAL KEYS (our yacht id + dates + status) from the
+        // SAME conversion the upsert writes with, so reconcileAbsent mirrors removals WITHOUT relying
+        // on external-id mappings (which go missing / duplicate). seenYachtIds gates which yachts the
+        // reconcile may touch (per-yacht-present guard).
+        val seenKeys = mutableSetOf<ReservationNaturalKey>()
+        val seenYachtIds = mutableSetOf<Long>()
         mmkResponse.forEach { mmkReservation ->
             val yacht = getYacht(yachtMappings, agencyYachts, mmkReservation) ?: return@forEach
+            val yachtId = yacht.id ?: return@forEach
             // SHORT transaction per reservation (separate bean → proxy applies).
-            mmkReservationUpsertService.upsertReservation(externalSystem, yacht.id!!, mmkReservation)
+            mmkReservationUpsertService.upsertReservation(externalSystem, yachtId, mmkReservation)
+            seenYachtIds.add(yachtId)
+            ReservationNaturalKey.of(
+                yachtId,
+                mmkReservation.dateFrom?.value?.toLocalDate(),
+                mmkReservation.dateTo?.value?.toLocalDate(),
+                ExternalReservationStatus.fromMmkValue(mmkReservation.status),
+            )?.let { seenKeys.add(it) }
         }
 
-        // Mirror MMK: /availability is the COMPLETE set per (agency, year), so any reservation/
-        // option we hold for this agency's yachts in this year that MMK no longer returns was
-        // cancelled/removed — drop it (+ its synthetic OPTION offer / mapping). Empty response =
-        // no-data → deletes nothing. Runs only after the upsert loop completes without throwing.
-        // reconcileAbsent carries its own @Transactional → its own (no longer combined) tx.
-        val seenExternalIds = mmkResponse.mapNotNull { it.id }.toSet()
-        externalAvailabilityReconcileService.reconcileAbsent(externalSystem, agencyYachts, seenExternalIds, year)
+        // Mirror MMK: /availability is the COMPLETE set per (agency, year), so any reservation we
+        // hold for this agency's yachts that MMK no longer returns (by natural key) was cancelled —
+        // drop it. Empty key set = no-data → deletes nothing. Runs only after the upsert loop.
+        externalAvailabilityReconcileService.reconcileAbsent(agencyYachts, seenKeys, seenYachtIds, year)
     }
 
     private fun getYacht(

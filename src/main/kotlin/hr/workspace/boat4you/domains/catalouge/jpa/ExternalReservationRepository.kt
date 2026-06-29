@@ -12,6 +12,26 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
     fun findAllByYacht(yacht: Yacht): List<ExternalReservation>
 
     /**
+     * Bulk-fetch every reservation overlapping calendar [:yearStart, :yearEnd) for the given yachts
+     * in ONE index-backed query — used by the natural-key absent-reconcile so it doesn't fire
+     * N×findAllByYacht per agency (the old path's per-row hammering of cusma4). HALF-OPEN: a row
+     * ending on Jan-1 doesn't bleed into the previous year. Caller passes :yachtIds restricted to
+     * yachts actually present in the partner response (per-yacht-present guard).
+     */
+    @Query(
+        """
+        SELECT r FROM ExternalReservation r
+        WHERE r.yacht.id IN :yachtIds
+        AND r.dateFrom < :yearEnd AND r.dateTo > :yearStart
+    """,
+    )
+    fun findAllByYachtIdsAndYearOverlap(
+        @Param("yachtIds") yachtIds: List<Long>,
+        @Param("yearStart") yearStart: LocalDate,
+        @Param("yearEnd") yearEnd: LocalDate,
+    ): List<ExternalReservation>
+
+    /**
      * Booking re-check (Deploy 3): is the yacht hard-blocked (RESERVATION/SERVICE)
      * for any day overlapping [dateFrom, dateTo)? Half-open, turnaround-safe.
      *

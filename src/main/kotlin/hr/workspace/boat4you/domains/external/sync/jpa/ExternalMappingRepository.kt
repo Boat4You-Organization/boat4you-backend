@@ -69,4 +69,17 @@ interface ExternalMappingRepository : JpaRepository<ExternalMapping, Long> {
         externalSystem: ExternalSystem,
         type: String,
     ): ExternalMapping?
+
+    /**
+     * Cross-yacht lookup of every mapping carrying this partner reservation id. List (not single) on
+     * purpose: legacy data has the same external_id duplicate-mapped to several reservations, so the
+     * single-result finder would throw. The upsert dup-guard uses this to repoint one mapping onto
+     * the freshly-written reservation and drop the extras, preventing NEW duplicates without ever
+     * deleting another yacht's reservation (the natural-key reconcile clears stale rows safely).
+     */
+    fun findAllByExternalIdAndExternalSystemAndType(
+        externalId: Long,
+        externalSystem: ExternalSystem,
+        type: String,
+    ): List<ExternalMapping>
 }

@@ -3,13 +3,13 @@ package hr.workspace.boat4you.domains.external.service
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservation
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
-import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMappingRepository
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
@@ -35,11 +35,19 @@ class ExternalAvailabilityReconcileService(
     private val externalReservationRepository: ExternalReservationRepository,
     private val externalMappingRepository: ExternalMappingRepository,
     private val offerRepository: OfferRepository,
+    // Catastrophe firewall: ships ON. While true, reconcileAbsent logs what it WOULD delete and
+    // deletes nothing, so a key bug can't wipe valid bookings. Flip RECONCILE_SHADOW=false only
+    // after the shadow log proves the candidates are all real cancellations. Mario 29.6.2026.
+    @Value("\${reconcile.shadow-mode:true}") private val shadowMode: Boolean,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
     companion object {
         private const val RESERVATION_TYPE = "ExternalReservation"
+
+        /** Cap on per-(agency,year) [SHADOW] WOULD-delete detail lines, so the backlog drain doesn't
+         * flood the log; the summary line always carries the full count. */
+        private const val SHADOW_SAMPLE_LIMIT = 25
     }
 
     @Transactional
@@ -72,74 +80,83 @@ class ExternalAvailabilityReconcileService(
     }
 
     /**
-     * Mirror the partner for one (agency, year): remove our reservations/options for the
-     * agency's yachts that are dated in [year] but whose partner id is NOT in [seenExternalIds].
-     * NauSys Occupancy / MMK Availability are documented COMPLETE per (company, year), so
-     * "absent from a non-empty response = removed at the partner". An EMPTY response is treated
-     * as no-data and deletes nothing (an API hiccup must never wipe valid reservations). Must run
-     * only after a SUCCESSFUL fetch — the integration loop's per-(agency,year) try/catch ensures
-     * a failed call never reaches here.
+     * Mirror the partner for one (agency, year): remove our reservations for the agency's yachts
+     * that the partner's COMPLETE occupancy response no longer contains, matched by NATURAL KEY
+     * (our yacht id + dates + status) instead of by external-id mapping. This makes the cleanup
+     * immune to the mapping damage that made stale rows immortal — missing mappings (96k legacy
+     * RESERVATION rows) and one partner id duplicate-mapped to two yachts (the Vi La Ut case where
+     * the stale 4736 twin survived because the id was still "seen" via yacht 4741).
+     *
+     * Guards (a wrongful mass-delete wipes real availability = double-booking risk):
+     *  - EMPTY-GUARD: an empty key set = no-data → delete nothing.
+     *  - PER-YACHT-PRESENT: only yachts present in THIS response are reconciled; a yacht absent
+     *    from it (yacht-mapping drift) keeps ALL its rows.
+     *  - START-YEAR OWNERSHIP: only rows that START in [year] are deletion candidates, so a
+     *    multi-year SERVICE block (e.g. 2026-12-01→2098) is owned solely by its start year's pass.
+     *  - 30% CIRCUIT BREAKER: a large absent fraction = a truncated HTTP-200 response → skip.
+     *  - SHADOW MODE: while on, logs candidates and deletes nothing.
+     * Both sides build the key through the SAME conversion the upsert writes with, so a just-synced
+     * valid row is byte-identical to its response key and can never look "absent". Must run only
+     * after a SUCCESSFUL fetch (the integration loop's per-(agency,year) try/catch ensures this).
      */
     @Transactional
     fun reconcileAbsent(
-        externalSystem: ExternalSystem,
         agencyYachts: List<Yacht>,
-        seenExternalIds: Set<Long>,
+        seenKeys: Set<ReservationNaturalKey>,
+        seenYachtIds: Set<Long>,
         year: Int,
     ) {
-        if (seenExternalIds.isEmpty()) {
+        if (seenKeys.isEmpty()) {
             log.warn("Skip absent-reconcile (year=$year): partner returned ZERO reservations — treated as no-data, not all-free")
             return
         }
         val yearStart = LocalDate.of(year, 1, 1)
         val yearEnd = LocalDate.of(year + 1, 1, 1)
 
-        // First pass: collect in-scope rows + the subset the partner no longer returns.
-        // Only rows whose period overlaps this synced year are in scope — a row in another year
-        // isn't covered by this year's response (a later year's reconcile owns it).
-        var inScopeCount = 0
-        val toRemove = mutableListOf<Pair<ExternalReservation, ExternalMapping>>()
-        agencyYachts.forEach { yacht ->
-            if (yacht.id == null) return@forEach
-            val inYear =
-                externalReservationRepository.findAllByYacht(yacht).filter { r ->
-                    val from = r.dateFrom ?: return@filter false
-                    val to = r.dateTo ?: from
-                    from < yearEnd && to > yearStart
-                }
-            inScopeCount += inYear.size
-            inYear.forEach { res ->
-                val resId = res.id ?: return@forEach
-                val mapping = externalMappingRepository.findBySystemIdAndType(resId, RESERVATION_TYPE)
-                val extId = mapping?.externalId
-                // Conservative: only a row we can confidently attribute to THIS partner response
-                // (has a mapping with a partner id) that the partner no longer returns. Mapping-less
-                // rows are left untouched.
-                if (mapping != null && extId != null && extId !in seenExternalIds) {
-                    toRemove.add(res to mapping)
-                }
+        // PER-YACHT-PRESENT guard: a yacht missing from the response is "no data for this yacht" →
+        // none of its rows may be deleted (prevents yacht-mapping drift wiping a yacht's bookings).
+        val yachtIds = agencyYachts.mapNotNull { it.id }.filter { it in seenYachtIds }
+        if (yachtIds.isEmpty()) return
+
+        val inScope = externalReservationRepository.findAllByYachtIdsAndYearOverlap(yachtIds, yearStart, yearEnd)
+        // START-YEAR OWNERSHIP: only rows that START in this year are candidates, so a later year's
+        // pass (which legitimately omits a block that began earlier) can't delete a multi-year block.
+        val candidates = inScope.filter { res -> res.dateFrom?.let { it >= yearStart } ?: false }
+        val toRemove =
+            candidates.filter { res ->
+                val key = ReservationNaturalKey.of(res.yacht?.id, res.dateFrom, res.dateTo, res.status)
+                // Conservative: delete only a row we can confidently key AND that the partner no
+                // longer returns. An unkeyable (corrupt) row is left untouched.
+                key != null && key !in seenKeys
             }
-        }
         if (toRemove.isEmpty()) return
 
-        // CIRCUIT BREAKER (required pre-deploy review fix): a real cancellation wave is tiny
-        // relative to total occupancy; a LARGE fraction looking "absent" almost always means the
-        // partner returned a TRUNCATED-but-parseable (HTTP 200) response, not real removals — and
-        // the empty-guard above only catches a fully-empty body. Refuse to mass-delete valid
-        // reservations: skip the whole reconcile, log, and self-heal on the next complete response.
-        val maxDeletable = PartnerWithdrawalGuard.maxWithdrawable(inScopeCount)
+        // CIRCUIT BREAKER: a real cancellation wave is tiny vs total occupancy; a LARGE absent
+        // fraction almost always = a truncated-but-parseable response. Refuse to mass-delete.
+        val maxDeletable = PartnerWithdrawalGuard.maxWithdrawable(inScope.size)
         if (toRemove.size > maxDeletable) {
             log.warn(
-                "Skip absent-reconcile (year=$year): would delete ${toRemove.size} of $inScopeCount in-scope " +
+                "Skip absent-reconcile (year=$year): would delete ${toRemove.size} of ${inScope.size} in-scope " +
                     "external_reservations (over cap $maxDeletable) — likely a partial/truncated partner response, " +
                     "not real cancellations. Deleting nothing; will retry on the next complete response.",
             )
             return
         }
 
-        toRemove.forEach { (res, mapping) -> removeReservationCascade(res, mapping) }
+        if (shadowMode) {
+            toRemove.take(SHADOW_SAMPLE_LIMIT).forEach { res ->
+                log.warn(
+                    "[SHADOW] reconcile WOULD delete external_reservation ${res.id} yacht=${res.yacht?.id} " +
+                        "${res.dateFrom}->${res.dateTo} ${res.status} (absent from partner response)",
+                )
+            }
+            log.info("[SHADOW] Absent-reconcile year=$year: WOULD remove ${toRemove.size} of ${inScope.size} (no deletions; shadow mode ON)")
+            return
+        }
+
+        toRemove.forEach { removeReservationCascade(it) }
         log.info(
-            "Absent-reconcile year=$year: removed ${toRemove.size} of $inScopeCount external_reservations " +
+            "Absent-reconcile year=$year: removed ${toRemove.size} of ${inScope.size} external_reservations " +
                 "no longer returned by the partner",
         )
     }
