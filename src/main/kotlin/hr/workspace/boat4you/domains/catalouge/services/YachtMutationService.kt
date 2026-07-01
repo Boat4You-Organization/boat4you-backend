@@ -418,6 +418,7 @@ class YachtMutationService(
     )
     fun deleteYacht(id: Long) {
         val yacht = yachtRepository.findById(id).orElseThrow { YachtDoesNotExistException() }
+        yacht.yachtImages.forEach { image -> image.url?.let { fileSystemService.deleteFile(it) } }
         yachtImageRepository.deleteAll(yacht.yachtImages)
         customYachtDetailRepository.deleteByYachtId(id)
         yachtTranslationRepository.deleteByYachtId(id)
