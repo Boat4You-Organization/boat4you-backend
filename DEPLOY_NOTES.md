@@ -1,5 +1,17 @@
 # Backend deploy notes
 
+## 2026-07-02 — ⚠️ PENDING DEPLOY: V9_26 phone trunk-zero data fix (commit 64b8dd4)
+
+`V9_26` rewrites stored `+3850…` phone numbers to `+385…` (reservation_flow 18, inquiry 2 —
+customers typed national format 098… and the old PhoneInput stored the trunk zero; undialable
+abroad). The FE fix (boat4you-web `ba943da`, PhoneInput strips trunk zero except IT/SM) is
+ALREADY LIVE on cusma1. Deploy backend cusma2 (applies V9_26) + cusma3 when the parallel
+image-spam session (commit 38a8d9d, same jar) finishes its own deploy — do NOT race two
+deploys of the same service. Verify after: `SELECT count(*) FROM reservation_flow WHERE
+phone LIKE '+3850%'` → 0.
+
+---
+
 ## 2026-07-01 — First-payment deadline clamped to option expiry (commit f2c09c2, DEPLOYED)
 
 **Bug (Mario):** payment page / emails said "pay by 08.07" while the NauSys option expired
