@@ -1,5 +1,34 @@
 # Backend deploy notes
 
+## 2026-07-01 — Payment-method fees: card +5% / bank transfer 32 EUR (commit e2106ce, DEPLOYED)
+
+**Policy (Mario 1.7.2026):** card payments +5% processing fee on the amount being paid
+(per installment); bank transfers a fixed 32 EUR per reservation split evenly across
+installments (2 phases → 16 EUR per wire, mandatory); all fees whole-euro (no cents).
+
+**How it works:** the fee infrastructure already existed (settings `CARD_PAYMENT_SURCHARGE`
++ `BANK_TRANSFER_FIXED_FEE`, public endpoints, FE display) — card surcharge was already
+applied to the Stripe charge but the setting was unset (0), and the bank fee was
+display-only cosmetics. This deploy: `V9_24` seeds 5/32 (admin-editable later); Stripe
+surcharge now rounded HALF_UP to whole EUR; NEW `BankTransferFeeShare` splits 32 whole-euro
+across phases (earlier phases absorb remainder: 3 phases → 11/11/10); the wire "Transfer
+amount" in fewMoreDetails / optionExpiryReminder / reservationPaymentPending emails now
+carries the phase's share + a localized mandatory-fee notice (all 10 email locales).
+**Payment phase rows keep the base charter price** — the fee is a payment-channel
+surcharge applied at charge/communication time, so card payers never pay the wire fee
+and vice versa; no phase mutation, no confirmed-price interaction.
+
+**Frontend (boat4you-web 5e888c2, deployed cusma1 BUILD_ID GJ1QezPFzD74fW8uoKH22):**
+UnifiedPaymentStep + PayNowModal mirror the backend math exactly (Math.round card fee;
+per-installment bank share via `bankFeeShareForPhase` — was showing the full 32 on one
+installment).
+
+**Deployed 2026-07-01 ~21:35 UTC:** cusma2 (V9_24 applied, `/public/settings/*` return
+5/32), cusma3 (scheduler jar for reminder emails; flags preserved), cusma1 FE swap.
+Rollbacks: `webservice.jar.bak.78b8027` (both), `.next.bak-202607012138` (cusma1).
+
+---
+
 ## 2026-06-30 — NauSys createOption INSUFFICIENT_DATA fix for strict agencies (commit 797f9bd)
 
 **Symptom:** customers could not place an option on yachts of *strict* NauSys agencies
