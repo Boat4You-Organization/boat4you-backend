@@ -13,8 +13,15 @@ No migration.
 now LIVE (V9_26 was already applied at 22:28 by the parallel session's own cusma2 deploy of
 `07fcff5`; this deploy supersedes that jar).
 
-**Verify:** first image run after deploy logs `Purged N images of deactivated yachts` (N≈6.2k on
-first run, then 0); dead-URL log spam replaced by one `Image sync: X failed…` WARN summary per run.
+**Verify (DONE, first run 22:50 UTC):** `Purged 6221 images of deactivated yachts` + DB check:
+exactly 335 rows (all main images) remain for inactive yachts. Summary line live:
+`Image sync: 477 of 478 images failed for 139 yachts; 1 skipped as known-dead`.
+
+**Follow-up `23c9ee2` (DEPLOYED both nodes ~22:56 UTC):** 6 residual ERRORs/run were partner images
+over the 10 MB save cap (deterministic) — `IllegalArgumentException` from saveImage now joins the
+7-day negative cache as WARN; ERROR stays for real disk/NFS failures only. Restart wiped the
+in-memory cache, so the 00:50 run bursts ~477 WARNs once more; steady state (~12 WARN summaries/day,
+0 image ERRORs) from 02:50 on.
 
 ---
 
