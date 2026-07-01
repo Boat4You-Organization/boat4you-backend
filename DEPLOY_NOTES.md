@@ -1,5 +1,26 @@
 # Backend deploy notes
 
+## 2026-07-01 — First-payment deadline clamped to option expiry (commit f2c09c2, DEPLOYED)
+
+**Bug (Mario):** payment page / emails said "pay by 08.07" while the NauSys option expired
+06.07 23:59 (Zen 100183/2026). A customer paying between the two dates pays for a boat the
+agency may already have re-let. Root cause: the first-phase deadline comes from the PARTNER
+payment plan ("first installment within N days"), which is independent of the option window.
+
+**Fix:** `ReservationMutationService.clampFirstPaymentDeadlineToOptionExpiry` — at reservation
+creation (customer path only), the EARLIEST unpaid phase deadline is clamped to
+`optionExpiresAt.toLocalDate()`. Later installments keep the partner schedule (the option
+ceases to matter once the first payment confirms). Null expiry → untouched (never invent
+deadlines). Same transaction → payment page, wire emails, and reminders all read the clamped
+date. `V9_25` fixed pre-existing rows (live unconfirmed options, earliest unpaid phase only —
+prod dry-run + actual: exactly 1 row, the Zen reservation: 08.07 → 06.07).
+
+**Deployed 2026-07-01 ~21:52 UTC** cusma2 (V9_25 applied, verified Zen phase 88 = 2026-07-06)
++ cusma3. Rollback: `webservice.jar.bak.e2106ce` (both). Note: an already-open booking session
+caches phases in sessionStorage — fresh page loads / my-bookings / emails read the DB.
+
+---
+
 ## 2026-07-01 — Payment-method fees: card +5% / bank transfer 32 EUR (commit e2106ce, DEPLOYED)
 
 **Policy (Mario 1.7.2026):** card payments +5% processing fee on the amount being paid
