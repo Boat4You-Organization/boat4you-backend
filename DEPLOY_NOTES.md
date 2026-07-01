@@ -1,6 +1,24 @@
 # Backend deploy notes
 
-## 2026-07-02 — ⚠️ PENDING DEPLOY: cache-warm Hikari connection-pinning fix (commit 5c7aa53)
+## 2026-07-02 — Taken-back yacht image purge (commit 5e9818e, DEPLOYED)
+
+**Rule (Mario 2.7.2026):** yacht removed from the partner → its images go too. `ImageDownloadJob`
+now purges partner-sourced images of deactivated yachts (rows + NFS files, 500/batch; main image
+kept because sent reservation emails hotlink `/public/image/{mainImageId}`); `deleteYacht()` now
+deletes files too. Backfill target measured pre-deploy: **6.5k rows / 335 inactive yachts**.
+No migration.
+
+**Deploy (DONE 2026-07-01 ~22:31 UTC):** jar from `5e9818e` → cusma2 (22:31, `/public/countries`
+200) + cusma3 (22:32, started 10.9s). This jar also carried the two pending items below — both are
+now LIVE (V9_26 was already applied at 22:28 by the parallel session's own cusma2 deploy of
+`07fcff5`; this deploy supersedes that jar).
+
+**Verify:** first image run after deploy logs `Purged N images of deactivated yachts` (N≈6.2k on
+first run, then 0); dead-URL log spam replaced by one `Image sync: X failed…` WARN summary per run.
+
+---
+
+## 2026-07-02 — cache-warm Hikari connection-pinning fix (commit 5c7aa53, DEPLOYED via 5e9818e jar 22:31 UTC)
 
 Root cause of the nightly/daily "Connection is not available" bursts (18–41 errors in one
 second, booking flow → "technical difficulties"): `ExternalSyncService`'s class-level
@@ -24,7 +42,7 @@ the V9_26 deploy below (any jar built from main ≥ 5c7aa53 carries it).
 
 ---
 
-## 2026-07-02 — ⚠️ PENDING DEPLOY: V9_26 phone trunk-zero data fix (commit 64b8dd4)
+## 2026-07-02 — V9_26 phone trunk-zero data fix (commit 64b8dd4, DEPLOYED — migration applied on cusma2 22:28 UTC)
 
 `V9_26` rewrites stored `+3850…` phone numbers to `+385…` (reservation_flow 18, inquiry 2 —
 customers typed national format 098… and the old PhoneInput stored the trunk zero; undialable
