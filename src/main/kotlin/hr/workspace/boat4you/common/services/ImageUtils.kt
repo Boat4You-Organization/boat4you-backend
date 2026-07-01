@@ -51,7 +51,8 @@ object ImageUtils {
             MatOfByte(*inputBytes).use { matOfByte ->
                 Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR).use { image ->
                     if (image.empty()) {
-                        log.error("Could not decode image from input stream")
+                        // callers get null back and log the failure with context (URL/filename)
+                        log.warn("Could not decode image from input stream")
                         null
                     } else {
                         MatOfInt().use { params ->

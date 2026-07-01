@@ -36,16 +36,36 @@ class YachtImageIntegrationService(
 
         val batchSize = imageSyncBatch ?: 10
 
+        var failed = 0
+        var skipped = 0
+        val failedYachts = mutableSetOf<Long>()
         images.chunked(batchSize).forEach { batch ->
             val futures =
                 batch.map { yachtImage ->
-                    yachtImageIntegrationServiceAsync.syncOffersForAgencyYachts(
-                        yachtImage.id!!,
-                        yachtImage.yacht!!.id!!,
-                        yachtImage.externalUrl!!,
-                    )
+                    yachtImage to
+                        yachtImageIntegrationServiceAsync.syncOffersForAgencyYachts(
+                            yachtImage.id!!,
+                            yachtImage.yacht!!.id!!,
+                            yachtImage.externalUrl!!,
+                        )
                 }
-            CompletableFuture.allOf(*futures.toTypedArray()).join()
+            CompletableFuture.allOf(*futures.map { it.second }.toTypedArray()).join()
+            futures.forEach { (yachtImage, future) ->
+                when (future.join()) {
+                    ImageSyncOutcome.FAILED -> {
+                        failed++
+                        failedYachts.add(yachtImage.yacht!!.id!!)
+                    }
+                    ImageSyncOutcome.SKIPPED -> skipped++
+                    ImageSyncOutcome.SUCCESS -> {}
+                }
+            }
+        }
+        if (failed > 0 || skipped > 0) {
+            log.warn(
+                "Image sync: $failed of ${images.size} images failed for ${failedYachts.size} yachts; " +
+                    "$skipped skipped as known-dead (re-probed after 7 days)",
+            )
         }
     }
 }
