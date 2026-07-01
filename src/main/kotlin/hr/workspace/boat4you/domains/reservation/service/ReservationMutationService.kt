@@ -195,6 +195,7 @@ class ReservationMutationService(
         // admin is dictating price.
         if (adminOverridePrice == null) {
             createPaymentPlans(reservation, externalReservation)
+            clampFirstPaymentDeadlineToOptionExpiry(reservationFlow, externalReservation.expiresAt)
         }
         createReservationExtras(reservation, externalReservation)
 
@@ -225,6 +226,39 @@ class ReservationMutationService(
         offerMutationService.updateOfferStatus(reservationFlow.offer!!.id!!, finalOfferStatus)
 
         return reservationMappers.toReservationDto(reservation)
+    }
+
+    /**
+     * The first payment is what confirms the partner option — its deadline must
+     * never exceed the option expiry (Mario 1.7.2026): a customer who pays AFTER
+     * the option lapsed pays for a boat the agency may already have re-let.
+     * Partner payment plans regularly say "first installment within N days"
+     * while the actual option window is shorter (Zen: plan said 08.07, option
+     * expired 06.07), so clamp the earliest unpaid phase to the expiry date.
+     * Later installments keep their schedule — once the first payment lands the
+     * booking is confirmed and the option ceases to matter. A null expiry
+     * (partner sent nothing) leaves the schedule untouched — we never invent
+     * deadlines (option-expiry-no-fallback rule). Runs in the same transaction,
+     * so every surface reading phase rows (payment page, wire emails, reminders)
+     * sees the clamped date. One-time fix for pre-existing rows: V9_25.
+     */
+    private fun clampFirstPaymentDeadlineToOptionExpiry(
+        reservationFlow: hr.workspace.boat4you.domains.reservation.jpa.ReservationFlow,
+        optionExpiresAt: LocalDateTime?,
+    ) {
+        val expiryDate = optionExpiresAt?.toLocalDate() ?: return
+        val firstUnpaid = reservationFlow.paymentPhases
+            .filter { it.paidOn == null }
+            .minByOrNull { it.deadline } ?: return
+        if (firstUnpaid.deadline.isAfter(expiryDate)) {
+            log.info(
+                "Clamping first payment deadline {} -> option expiry {} (flow={})",
+                firstUnpaid.deadline,
+                expiryDate,
+                reservationFlow.id,
+            )
+            firstUnpaid.deadline = expiryDate
+        }
     }
 
     private fun createPaymentPlans(
