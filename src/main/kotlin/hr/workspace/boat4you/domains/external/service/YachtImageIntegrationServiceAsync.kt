@@ -55,8 +55,16 @@ class YachtImageIntegrationServiceAsync(
             }
             val result = fileSystemService.saveImage(imageBytes, "y-$yachtId")
             if (result.isFailure) {
-                // local disk/NFS problem, not a dead partner URL — stay loud, retry next run
-                log.error("Failed to save image for yacht $yachtId: ${result.exceptionOrNull()?.message}")
+                val cause = result.exceptionOrNull()
+                if (cause is IllegalArgumentException) {
+                    // validation reject (size cap, undecodable) — deterministic per URL,
+                    // retrying every run can't succeed; back off like a dead URL
+                    deadUrls[externalImageUrl] = Instant.now()
+                    log.warn("Failed to save image for yacht $yachtId from URL: $externalImageUrl because of: ${cause.message}")
+                } else {
+                    // local disk/NFS problem, not a dead partner URL — stay loud, retry next run
+                    log.error("Failed to save image for yacht $yachtId: ${cause?.message}")
+                }
                 return CompletableFuture.completedFuture(ImageSyncOutcome.FAILED)
             }
 
