@@ -1,5 +1,29 @@
 # Backend deploy notes
 
+## 2026-07-02 — ⚠️ PENDING DEPLOY: cache-warm Hikari connection-pinning fix (commit 5c7aa53)
+
+Root cause of the nightly/daily "Connection is not available" bursts (18–41 errors in one
+second, booking flow → "technical difficulties"): `ExternalSyncService`'s class-level
+read-only transaction pinned a Hikari connection while the location-path cache-warm waited
+up to 5 min on nested @Async tasks that starved/dropped on the same 6-thread pool
+(F1-064 handler drops leave futures that never complete). Postgres
+(`idle_in_transaction_session_timeout=5min` on cusma4) killed the session each cycle
+(SQLSTATE 08006). Steady state: 6/25 connections gone + warm markers never written →
+same ranges re-warmed forever. Fix: no ambient transaction on the location path,
+partner syncs run in-thread sequentially (bounded by HTTP timeouts), per-yacht path
+keeps its bounded read-only tx. NO migration in this commit — safe to ride along with
+the V9_26 deploy below (any jar built from main ≥ 5c7aa53 carries it).
+
+**Verify after deploy (cusma2):**
+- `journalctl -u boat4you --since "<deploy time>" | grep -c "Apparent connection leak"` → should stay 0
+  (pre-fix: ~1700/day in 5-min lockstep on AsyncThread-*).
+- psql on cusma4: `SELECT count(*) FROM pg_stat_activity WHERE client_addr='192.168.55.2' AND state='idle in transaction' AND now()-xact_start > interval '90 seconds'` → 0 across a few samples
+  (pre-fix: constantly 3–6).
+- "Failed to sync yacht offers … TimeoutException" should drop to ~0 (pre-fix 1.5–4k/day);
+  "Connection is not available" bursts should disappear over the following day.
+
+---
+
 ## 2026-07-02 — ⚠️ PENDING DEPLOY: V9_26 phone trunk-zero data fix (commit 64b8dd4)
 
 `V9_26` rewrites stored `+3850…` phone numbers to `+385…` (reservation_flow 18, inquiry 2 —
