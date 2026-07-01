@@ -33,6 +33,7 @@ class OptionExpiryService(
     private val reservationMutationService: ReservationMutationService,
     private val reservationIntegrationService: ReservationIntegrationService,
     private val messageSource: MessageSource,
+    private val settingsService: hr.workspace.boat4you.domains.settings.services.AdminSettingsService,
     @Value("\${server.host}") private val serverHost: String,
     @Value("\${server.host-public}") private val serverHostPublic: String,
 ) {
@@ -216,8 +217,28 @@ class OptionExpiryService(
             )
         }
         val firstUnpaid = sortedPhases.firstOrNull { it.paidOn == null }
-        val dueNowLabel = firstUnpaid?.let { "${it.amount.toPlainString()}$currencySymbol" } ?: totalPriceLabel
+        // Wire "Transfer amount" carries this phase's share of the fixed
+        // bank-transfer fee — same math as sendOptionCreatedEmail so the
+        // reminder never asks for a different amount than the option email.
+        val bankFeeTotal = settingsService.getSetting(
+            hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE,
+        ).value?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
+        val firstUnpaidIdx = sortedPhases.indexOfFirst { it.paidOn == null }.coerceAtLeast(0)
+        val bankFeeShare = hr.workspace.boat4you.domains.reservation.service.BankTransferFeeShare
+            .shareFor(bankFeeTotal, sortedPhases.size.coerceAtLeast(1), firstUnpaidIdx)
+        val dueNowLabel = firstUnpaid?.let { "${(it.amount + bankFeeShare).toPlainString()}$currencySymbol" } ?: totalPriceLabel
         val dueNowDeadlineLabel = firstUnpaid?.deadline?.format(dateFormatter) ?: ""
+        val bankFeeNoticeLabel = if (firstUnpaid != null && bankFeeShare > java.math.BigDecimal.ZERO) {
+            runCatching {
+                messageSource.getMessage(
+                    "fewMoreDetails.bankFeeNotice",
+                    arrayOf<Any>("${bankFeeShare.toPlainString()}$currencySymbol"),
+                    customerLocale,
+                )
+            }.getOrNull()
+        } else {
+            null
+        }
 
         // Extras — same split as fewMoreDetails so the reminder shows the
         // customer the full picture: what's locked into the wire payment,
@@ -268,6 +289,7 @@ class OptionExpiryService(
             "totalPrice" to totalPriceLabel,
             "dueNowLabel" to dueNowLabel,
             "dueNowDeadlineLabel" to dueNowDeadlineLabel,
+            "bankFeeNoticeLabel" to bankFeeNoticeLabel,
             "paymentPhases" to phaseViews,
             "extrasInBase" to extrasInBase,
             "extrasOnSite" to extrasOnSite,

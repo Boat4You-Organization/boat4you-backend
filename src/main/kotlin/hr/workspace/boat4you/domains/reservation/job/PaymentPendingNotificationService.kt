@@ -27,6 +27,7 @@ class PaymentPendingNotificationService(
     private val reservationRepository: ReservationRepository,
     private val emailService: EmailService,
     private val messageSource: MessageSource,
+    private val settingsService: hr.workspace.boat4you.domains.settings.services.AdminSettingsService,
     @Value("\${server.host}") private val serverHost: String,
     @Value("\${server.host-public}") private val serverHostPublic: String,
 ) {
@@ -200,9 +201,28 @@ class PaymentPendingNotificationService(
         // The bank-transfer card targets THIS specific deadline (not "first
         // unpaid") — we run the cron per-deadline (1d/3d before the date),
         // and the customer needs the wire-amount + due-date that match the
-        // installment they're being reminded about.
-        val dueNowLabel = "${pendingPaymentPhase.amount.toPlainString()}$currencySymbol"
+        // installment they're being reminded about. The wire amount carries
+        // this installment's share of the fixed bank-transfer fee (same math
+        // as sendOptionCreatedEmail / the payment page).
+        val bankFeeTotal = settingsService.getSetting(
+            hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE,
+        ).value?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val pendingPhaseIdx = sortedPhases.indexOfFirst { it.id == pendingPaymentPhase.id }.coerceAtLeast(0)
+        val bankFeeShare = hr.workspace.boat4you.domains.reservation.service.BankTransferFeeShare
+            .shareFor(bankFeeTotal, sortedPhases.size.coerceAtLeast(1), pendingPhaseIdx)
+        val dueNowLabel = "${(pendingPaymentPhase.amount + bankFeeShare).toPlainString()}$currencySymbol"
         val dueNowDeadlineLabel = pendingPaymentPhase.deadline.format(dateFormatter)
+        val bankFeeNoticeLabel = if (bankFeeShare > BigDecimal.ZERO) {
+            runCatching {
+                messageSource.getMessage(
+                    "fewMoreDetails.bankFeeNotice",
+                    arrayOf<Any>("${bankFeeShare.toPlainString()}$currencySymbol"),
+                    customerLocale,
+                )
+            }.getOrNull()
+        } else {
+            null
+        }
 
         // Extras — same split as fewMoreDetails / optionExpiryReminder so
         // the customer sees the full picture: what's locked into the wire
@@ -260,6 +280,7 @@ class PaymentPendingNotificationService(
             "totalPrice" to totalPriceLabel,
             "dueNowLabel" to dueNowLabel,
             "dueNowDeadlineLabel" to dueNowDeadlineLabel,
+            "bankFeeNoticeLabel" to bankFeeNoticeLabel,
             "paymentPhases" to phaseViews,
             "extrasInBase" to extrasInBase,
             "extrasOnSite" to extrasOnSite,

@@ -270,6 +270,13 @@
                             th:text="#{fewMoreDetails.bankAmount(${dueNowLabel})}">
                             Transfer amount: 1,050 &#8364;
                           </div>
+                          <!-- Mandatory bank-transfer fee note (this wire's share of the
+                               fixed per-reservation fee). Hidden when the fee setting is 0. -->
+                          <div th:if="${bankFeeNoticeLabel != null}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:11px; color:#64748b; line-height:1.4; margin-bottom:4px;"
+                            th:text="${bankFeeNoticeLabel}">
+                            Includes the mandatory 16&#8364; bank transfer fee.
+                          </div>
                           <div th:if="${dueNowDeadlineLabel != null and !dueNowDeadlineLabel.empty}"
                             style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#64748b; line-height:1.4; margin-bottom:12px;"
                             th:text="#{fewMoreDetails.bankAmountDueBy(${dueNowDeadlineLabel})}">

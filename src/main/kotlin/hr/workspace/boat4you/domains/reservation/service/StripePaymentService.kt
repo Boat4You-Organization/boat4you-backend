@@ -122,7 +122,10 @@ class StripePaymentService(
             }
 
         val cardSurchargePercentage = settingsService.getSetting(SettingsKeyEnum.CARD_PAYMENT_SURCHARGE).value?.toBigDecimal() ?: BigDecimal(0.0)
-        val cardSurchargeAmount = dbPrice.times(cardSurchargePercentage.div(100.toBigDecimal()))
+        // Whole-euro surcharge (Mario 1.7.2026: fees must not introduce cents) —
+        // HALF_UP on the fee itself; the frontend mirrors this with Math.round so
+        // the displayed fee always equals the charged fee.
+        val cardSurchargeAmount = dbPrice.times(cardSurchargePercentage.div(100.toBigDecimal())).setScale(0, RoundingMode.HALF_UP)
         val totalPriceInCents = (dbPrice + cardSurchargeAmount).toCentsLong()
 
         // The customer-facing booking number is the public payment reference

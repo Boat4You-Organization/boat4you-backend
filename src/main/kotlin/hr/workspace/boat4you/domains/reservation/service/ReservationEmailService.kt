@@ -36,6 +36,7 @@ class ReservationEmailService(
     private val reservationRepository: ReservationRepository,
     private val messageSource: MessageSource,
     private val charterAgreementService: CharterAgreementService,
+    private val settingsService: hr.workspace.boat4you.domains.settings.services.AdminSettingsService,
     @Value("\${server.host}") private val serverHost: String,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${server.host-admin-public}") private val serverHostAdminPublic: String,
@@ -155,9 +156,33 @@ class ReservationEmailService(
 
         // Due-now = first unpaid phase. When the option email goes out the
         // customer hasn't paid anything yet, so this is normally phase #1.
+        // The wire "Transfer amount" carries this phase's share of the fixed
+        // bank-transfer fee (BANK_TRANSFER_FIXED_FEE split across phases,
+        // whole euros) — this email IS the bank-transfer instruction, so the
+        // amount here is what the customer must actually wire. Card payers
+        // pay via Stripe instead, where the card surcharge applies.
+        val bankFeeTotal = settingsService.getSetting(
+            hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE,
+        ).value?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
         val firstUnpaid = sortedPhases.firstOrNull { it.paidOn == null }
-        val dueNowLabel = firstUnpaid?.let { "${it.amount.money()}$currencySymbol" } ?: totalPriceLabel
+        val firstUnpaidIdx = sortedPhases.indexOfFirst { it.paidOn == null }.coerceAtLeast(0)
+        val bankFeeShare = BankTransferFeeShare.shareFor(bankFeeTotal, sortedPhases.size.coerceAtLeast(1), firstUnpaidIdx)
+        val dueNowLabel = firstUnpaid?.let { "${(it.amount + bankFeeShare).money()}$currencySymbol" }
+            ?: "${((reservation.totalPrice ?: java.math.BigDecimal.ZERO) + bankFeeShare).money()}$currencySymbol"
         val dueNowDeadlineLabel = firstUnpaid?.deadline?.format(dateFormatter) ?: ""
+        // Transparency line under the transfer amount ("Includes the mandatory
+        // 16€ bank transfer fee."). Null when the fee is 0 so the template row hides.
+        val bankFeeNoticeLabel = if (bankFeeShare > java.math.BigDecimal.ZERO) {
+            runCatching {
+                messageSource.getMessage(
+                    "fewMoreDetails.bankFeeNotice",
+                    arrayOf<Any>("${bankFeeShare.toPlainString()}$currencySymbol"),
+                    customerLocale,
+                )
+            }.getOrNull()
+        } else {
+            null
+        }
 
         // Extras — split by payment timing. `payableAtBase = true` means
         // the customer settles it on-site (cash/card at the marina),
@@ -209,6 +234,7 @@ class ReservationEmailService(
                 "totalPrice" to totalPriceLabel,
                 "dueNowLabel" to dueNowLabel,
                 "dueNowDeadlineLabel" to dueNowDeadlineLabel,
+                "bankFeeNoticeLabel" to bankFeeNoticeLabel,
                 "paymentPhases" to phaseViews,
                 "extrasInBase" to extrasInBase,
                 "extrasOnSite" to extrasOnSite,
