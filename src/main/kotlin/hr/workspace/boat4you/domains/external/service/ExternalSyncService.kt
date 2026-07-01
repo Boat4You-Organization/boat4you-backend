@@ -17,10 +17,15 @@ import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
-import java.util.concurrent.CompletableFuture
 
+// Deliberately NOT @Transactional at class level: the location-path warm below
+// waits on partner HTTP calls, and an ambient transaction pins a Hikari
+// connection for that whole wait — Postgres kills it after
+// idle_in_transaction_session_timeout (5 min on prod) and the pool ran 6/25
+// short at all times, starving the booking flow ("Connection is not available"
+// bursts). Repository reads open their own short transactions; sync services
+// manage their own write transactions (TransactionTemplate / REQUIRES_NEW).
 @Service
-@Transactional(readOnly = true)
 class ExternalSyncService(
     private val nauSysYachtOfferIntegrationServiceAsync: NauSysYachtOfferIntegrationServiceAsync,
     private val mmkYachtOfferIntegrationServiceAsync: MmkYachtOfferIntegrationServiceAsync,
@@ -49,37 +54,41 @@ class ExternalSyncService(
             val mmkGroup = locationGroups[ExternalSystemEnum.MMK.value]!!
             val nausysGroup = locationGroups[ExternalSystemEnum.NAUSYS.value]!!
 
-            val nausysFuture =
-                nauSysYachtOfferIntegrationServiceAsync.syncOffersForDateRange(
-                    startDate,
-                    endDate,
-                    nausysGroup.countries,
-                    nausysGroup.regions,
-                    nausysGroup.locations,
-                )
-            val mmkFuture =
-                mmkYachtOfferIntegrationServiceAsync.syncOffersForDateRange(
-                    startDate,
-                    endDate,
-                    mmkGroup.countryCodes,
-                    mmkGroup.regions,
-                    mmkGroup.locations,
-                )
-
-            // 5-minute hard cap. If either partner API hangs (no socket
-            // timeout fired), we stop waiting and let the caller move on.
-            // Cache marker is only written on clean completion so a half-
-            // synced range will be retried by the next user search.
-            CompletableFuture.allOf(nausysFuture, mmkFuture)
-                .orTimeout(5, java.util.concurrent.TimeUnit.MINUTES)
-                .join()
+            // In-thread, sequential partner calls — never fan out to taskExecutor
+            // from a task already running on it. The old dispatch-and-join(5 min)
+            // queued the inner NauSys/MMK tasks behind other outer tasks on the
+            // same 6-thread pool (or the F1-064 handler dropped them, leaving
+            // futures that never complete), so every saturated warm blocked the
+            // full 5 minutes and the cache marker below was never written —
+            // the same ranges re-warmed forever. Partner clients carry their own
+            // read timeouts + retry caps, so each call is bounded.
+            nauSysYachtOfferIntegrationServiceAsync.syncOffersForDateRangeBlocking(
+                startDate,
+                endDate,
+                nausysGroup.countries,
+                nausysGroup.regions,
+                nausysGroup.locations,
+            )
+            mmkYachtOfferIntegrationServiceAsync.syncOffersForDateRangeBlocking(
+                startDate,
+                endDate,
+                mmkGroup.countryCodes,
+                mmkGroup.regions,
+                mmkGroup.locations,
+            )
             serviceCallCacheService.saveYachtSearch(startDate, endDate, locations)
         } catch (e: Exception) {
             log.error("Failed to sync yacht offers for locations {}: {}", locations, e.message, e)
         }
     }
 
+    // Keeps a read-only transaction (unlike the location-path warm above):
+    // the yacht -> agency -> primarySource lazy chain below needs an open
+    // session (open-in-view=false), and the advisory-locked partner call is
+    // bounded by the HTTP read timeout (~1 min) and serialized per yacht, so
+    // the held connection can't hit Postgres' 5-min idle-in-transaction kill.
     @Async("taskExecutor")
+    @Transactional(readOnly = true)
     fun syncYachtOffers(
         yachtId: Long,
         startDate: LocalDate,

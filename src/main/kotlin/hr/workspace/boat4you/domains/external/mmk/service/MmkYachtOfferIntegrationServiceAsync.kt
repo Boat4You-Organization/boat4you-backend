@@ -115,7 +115,11 @@ class MmkYachtOfferIntegrationServiceAsync(
     }
 
     /**
-     * Sync offers for exact date range
+     * Sync offers for exact date range — fire-and-forget wrapper for callers
+     * OUTSIDE taskExecutor (admin MmkSyncController). Tasks already running on
+     * taskExecutor (ExternalSyncService cache-warm) must call
+     * [syncOffersForDateRangeBlocking] directly: re-dispatching to the same
+     * bounded pool starves the inner task behind outer ones.
      */
     @Async("taskExecutor")
     fun syncOffersForDateRange(
@@ -125,6 +129,17 @@ class MmkYachtOfferIntegrationServiceAsync(
         regions: List<Long>?,
         marinas: List<Long>?,
     ): CompletableFuture<Unit> {
+        syncOffersForDateRangeBlocking(dateFrom, dateTo, countries, regions, marinas)
+        return CompletableFuture.completedFuture(Unit)
+    }
+
+    fun syncOffersForDateRangeBlocking(
+        dateFrom: LocalDate,
+        dateTo: LocalDate,
+        countries: List<String>?,
+        regions: List<Long>?,
+        marinas: List<Long>?,
+    ) {
         try {
             val startDate = LocalDateTime.of(dateFrom, LocalTime.MIN)
             val endDate = LocalDateTime.of(dateTo, LocalTime.MAX)
@@ -164,8 +179,6 @@ class MmkYachtOfferIntegrationServiceAsync(
                 e,
             )
         }
-
-        return CompletableFuture.completedFuture(Unit)
     }
 
     /**

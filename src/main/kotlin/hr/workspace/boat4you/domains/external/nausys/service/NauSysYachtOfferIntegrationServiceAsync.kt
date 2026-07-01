@@ -6,11 +6,9 @@ import hr.workspace.boat4you.domains.external.nausys.model.NauSysDateWrapper
 import org.openapitools.client.nausys.model.RestFreeYachtsSearchRequest
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.LocalDate
-import java.util.concurrent.CompletableFuture
 
 @Service
 class NauSysYachtOfferIntegrationServiceAsync(
@@ -21,14 +19,17 @@ class NauSysYachtOfferIntegrationServiceAsync(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
-    @Async("taskExecutor")
-    fun syncOffersForDateRange(
+    // Runs on the CALLER's thread by design (no @Async): the only caller is
+    // ExternalSyncService.syncYachtOffers, itself already a taskExecutor task.
+    // Re-dispatching to the same bounded pool deadlock-starved the inner task
+    // behind outer ones and burned the outer thread's 5-minute wait.
+    fun syncOffersForDateRangeBlocking(
         dateFrom: LocalDate,
         dateTo: LocalDate,
         countries: List<Long>?,
         regions: List<Long>?,
         marinas: List<Long>?,
-    ): CompletableFuture<Unit> {
+    ) {
         // F3-014 (note): "only one Nausys call at a time" was a stale TODO
         // from before scheduler-side serialization existed. The cron-driven
         // catchment paths (`NausysSyncJob.runCatalogueSync` /
@@ -68,7 +69,5 @@ class NauSysYachtOfferIntegrationServiceAsync(
         } catch (e: Exception) {
             log.error("Error while syncing NauSYS yacht offers for date range $dateFrom to $dateTo", e)
         }
-
-        return CompletableFuture.completedFuture(Unit)
     }
 }

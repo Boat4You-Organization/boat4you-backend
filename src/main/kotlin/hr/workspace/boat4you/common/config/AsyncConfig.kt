@@ -23,28 +23,32 @@ class AsyncConfig(
     @Bean(name = ["taskExecutor"])
     fun taskExecutor(): Executor {
         val executor = ThreadPoolTaskExecutor()
-        // Capped well below the Hikari pool (DB_POOL_MAX=25): each cache-warm holds a DB connection
-        // for up to the ~1min partner read timeout, so a saturating search/booking flood with 15
-        // threads could pin 15/25 connections and STARVE the booking flow of a connection
-        // ("idle-in-transaction timeout" / "connection leak" -> failed reservation). 6 caps sync
-        // connection usage at 6/25, leaving the rest for request handling; offers still refresh via
-        // the 4x/day scheduled sync. Mario 30.6.2026 (booking outage). See F1-064.
+        // 6 caps cache-warm concurrency: bounded partner-API pressure and bounded
+        // cusma4 write load from warm syncs. (The original 15->6 rationale — each
+        // warm pinning a Hikari connection for the whole partner call — is gone:
+        // ExternalSyncService no longer runs its @Async entry points inside a
+        // transaction, and the per-yacht path only holds one during the
+        // advisory-locked partner call, bounded by the HTTP read timeout.)
+        // Mario 30.6.2026 (booking outage). See F1-064.
         executor.corePoolSize = 3
         executor.maxPoolSize = 6
         executor.queueCapacity = 200
         executor.setThreadNamePrefix("AsyncThread-")
         // F1-064: do NOT fall back to caller-runs here. Every consumer
         // of `taskExecutor` is a best-effort partner cache-warm
-        // (`ExternalSyncService.syncYachtOffers`, `NauSys`/`MMK`
-        // YachtOfferIntegrationServiceAsync — all triggered from the
-        // public yacht search endpoints in YachtController). Each call
-        // costs up to ~1 minute of wall-clock (F3-001 partner read
-        // timeout), so "execute on the caller's thread" under
-        // saturation cascades a partner slowdown into request-thread
-        // starvation on every Tomcat worker that hit the search
-        // endpoint. Dropping the task is cheap — ServiceCallCacheService
-        // dedupes via TTL and the next public miss re-triggers the
-        // sync naturally.
+        // (`ExternalSyncService.syncYachtOffers` from the public yacht
+        // search endpoints, `MmkYachtOfferIntegrationServiceAsync` from
+        // admin/scheduler). Each call costs up to ~1 minute of
+        // wall-clock (F3-001 partner read timeout), so "execute on the
+        // caller's thread" under saturation cascades a partner slowdown
+        // into request-thread starvation on every Tomcat worker that hit
+        // the search endpoint. Dropping the task is cheap —
+        // ServiceCallCacheService dedupes via TTL and the next public
+        // miss re-triggers the sync naturally. Tasks submitted here must
+        // stay self-contained: nothing may join() a future backed by
+        // this pool, because a dropped task's future never completes
+        // (that combination previously froze cache-warm threads for the
+        // full 5-minute orTimeout while they held a DB connection).
         executor.setRejectedExecutionHandler { _, exec ->
             log.warn(
                 "taskExecutor saturated (active={}, pool={}, queue={}); dropping task — partner sync will retry on next cache miss (F1-064)",
