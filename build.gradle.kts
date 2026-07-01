@@ -1,14 +1,14 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    kotlin("jvm") version "2.3.0"
-    kotlin("plugin.spring") version "2.3.0"
+    kotlin("jvm") version "2.4.0"
+    kotlin("plugin.spring") version "2.4.0"
     id("org.springframework.boot") version "3.5.10"
     id("io.spring.dependency-management") version "1.1.7"
     id("io.gitlab.arturbosch.detekt") version "1.23.8"
-    id("org.jlleitschuh.gradle.ktlint") version "14.0.1"
-    id("org.openapi.generator") version "7.19.0"
-    kotlin("plugin.jpa") version "2.3.0"
+    id("org.jlleitschuh.gradle.ktlint") version "14.2.0"
+    id("org.openapi.generator") version "7.23.0"
+    kotlin("plugin.jpa") version "2.4.0"
 }
 
 group = "hr.workspace"
@@ -28,15 +28,15 @@ repositories {
 }
 
 val springDocVersion = "2.8.15"
-val bouncyCastleVersion = "1.83"
-val jjwtVersion = "0.12.7"
+val bouncyCastleVersion = "1.84"
+val jjwtVersion = "0.13.0"
 val apacheCommonsValidatorVersion = "1.10.1"
 val apacheCommonsTextVersion = "1.15.0"
-val libPhoneNumberVersion = "9.0.23"
+val libPhoneNumberVersion = "9.0.33"
 val stripeSdkVersion = "31.1.0"
 val eCacheVersion = "3.12.0"
 val opencvVersion = "4.9.0-0"
-val koTestVersion = "6.1.11"
+val koTestVersion = "6.2.1"
 // ShedLock — distributed lock for @Scheduled cron methods so VM2 and VM3
 // (and any future replica) do not both fire the same job at once
 // (F4-002 prod-blocker for 2-VM deploy). 5.16.0 is the latest stable
