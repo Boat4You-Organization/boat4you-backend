@@ -10,6 +10,10 @@ enum class ReservationDocumentType {
     BOARDING_PASS,
     CREW_LIST,
     CONTRACT,
+
+    /** Agency-supplied preference list (provisioning wishes etc.), usually a
+     *  PDF — delivered to the customer like the base info (Mario 3.7.2026). */
+    PREFERENCE_LIST,
     OTHER,
     ;
 
