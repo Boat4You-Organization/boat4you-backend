@@ -27,6 +27,23 @@ in-memory cache, so the 00:50 run bursts ~477 WARNs once more; steady state (~12
 
 ## 2026-07-02 — cache-warm Hikari connection-pinning fix (commit 5c7aa53, DEPLOYED via 5e9818e jar 22:31 UTC)
 
+**Overnight verify (22:55→06:26 UTC, 7.5 h) + follow-up:** the 5-min zombie mechanism is dead —
+0 idle-in-transaction kills, 0 sync TimeoutExceptions (pre-fix 1.5–4k/day), 0 executor drops
+(pre-fix ~16k/day), 1146 completed warm syncs, cache markers being written. Residual: 3 pool-
+exhaustion bursts (03:32, 04:00, 05:32 — 102 errors total vs ~200+/day pre-fix), ALL inside the
+nightly NauSys/MMK sync window; at those seconds NO connection was held >60 s (no leak WARNs
+around them) → remaining bursts are pure throughput (cusma4 slow under sync writes + matview
+refresh, 19–25 conns churning multi-second queries, 20 s waiters expire together). The ~188
+overnight leak WARNs are the BOUNDED per-yacht warm path (partner call w/ retries can exceed the
+60 s leak threshold; always unleaks) — expected noise, not a leak.
+
+**Follow-up (06:31 UTC): `DB_POOL_MAX=35` on cusma2** (`boat4you_vars.env`, was default 25;
+backup `boat4you_vars.env.bak.pre_pool35`; restart 06:30:59, verified in `/proc/<pid>/environ`,
+health 200). PG headroom fine: max_connections=100, total in use ~21. cusma3 left at 25 (no
+bursts there). Watch next night's 03:00–06:00 window: `journalctl -u boat4you | grep -c
+"Connection is not available"` — expect 0; if bursts persist at 35, next lever is cusma4 query
+perf during sync, not more connections.
+
 Root cause of the nightly/daily "Connection is not available" bursts (18–41 errors in one
 second, booking flow → "technical difficulties"): `ExternalSyncService`'s class-level
 read-only transaction pinned a Hikari connection while the location-path cache-warm waited
