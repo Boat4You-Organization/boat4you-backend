@@ -21,6 +21,13 @@ reloadSelectedBooking (fixes stale-store bug after save).
 "Travel documents": typed rows (human label, filename · size · date meta, Open/Download
 action), passport-accuracy note under the crew-list row. 7 new keys × 9 locales.
 
+**Round 2 (same day, DEPLOYED):** `PREFERENCE_LIST` document type (backend f19930f — enum only,
+document_type is VARCHAR so no migration; admin c427f6b adds it to the Upload-as select; web
+3062697). Web also gains the **TravelDocumentsBar** — a prominent button strip rendered directly
+UNDER the yacht images on /my-bookings/{id} (crew list link + uploaded crew form + boarding
+pass/base info + preference list; renders nothing until something exists) so the customer can't
+miss the travel documents. Boarding-pass label now reads "Boarding pass / Base info".
+
 **Deployed 2026-07-03:** cusma2 (V9_27 applied) → cusma3 (flags preserved); admin dist swap
 (rollback `html.old`); web .next swap (rollback `.next.bak-20260702225950`). Backend jar
 rollbacks: `webservice.jar.bak.pre-docs` (both).
