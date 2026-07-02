@@ -1,5 +1,30 @@
 # Backend deploy notes
 
+## 2026-07-03 — Travel documents: type + crew-list CTA (commit e7a1f87, DEPLOYED all 3 apps)
+
+**Feature (Mario 3.7.2026):** near charter start the customer needs the crew list and the
+boarding pass / base info. Decision: crew list = the PARTNER's own editor link (agency files
+it with the port authority — no transcription by us); Kavas-style Word forms and boarding-pass
+PDFs = admin-uploaded documents (existing reservation_document pipeline, reused).
+
+**Backend:** `V9_27` adds `reservation_document.document_type` (BOARDING_PASS/CREW_LIST/
+CONTRACT/OTHER, default OTHER — verified live) + threading through entity/repo projections/
+DTO/upload endpoint (`type` param, lenient parse). Pre-charter reminder email gains a
+conditional "Complete your crew list" CTA (partner `crew_list_url`; null → omitted), i18n in
+9 email locales.
+
+**Admin (b0dafed, deployed cusma1 /var/www/admin.boat4you.com):** "Upload as" type select on
+the customer-visible drawer + type chip; crew-URL editor gains Open ↗ test button + onSaved →
+reloadSelectedBooking (fixes stale-store bug after save).
+
+**Web (80eb7ba, deployed cusma1 BUILD klrZoif73Nw4LSOK9Syt7):** sidebar Documents stack →
+"Travel documents": typed rows (human label, filename · size · date meta, Open/Download
+action), passport-accuracy note under the crew-list row. 7 new keys × 9 locales.
+
+**Deployed 2026-07-03:** cusma2 (V9_27 applied) → cusma3 (flags preserved); admin dist swap
+(rollback `html.old`); web .next swap (rollback `.next.bak-20260702225950`). Backend jar
+rollbacks: `webservice.jar.bak.pre-docs` (both).
+
 ## 2026-07-02 — Taken-back yacht image purge (commit 5e9818e, DEPLOYED)
 
 **Rule (Mario 2.7.2026):** yacht removed from the partner → its images go too. `ImageDownloadJob`
