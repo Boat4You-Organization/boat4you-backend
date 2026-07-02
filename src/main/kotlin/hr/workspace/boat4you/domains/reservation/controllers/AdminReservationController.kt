@@ -256,16 +256,20 @@ internal class AdminReservationController(
     @Operation(
         summary = "Upload a PDF/DOC/DOCX document to the reservation",
         description = "Pass `internal=true` to mark the doc admin-only (hidden from " +
-            "customer my-bookings sidebar). Default is customer-visible.",
+            "customer my-bookings sidebar). Default is customer-visible. " +
+            "`type` labels the document (BOARDING_PASS, CREW_LIST, CONTRACT, OTHER) — " +
+            "drives the customer-facing name/icon; unknown/absent -> OTHER.",
     )
     @PostMapping("/{id}/documents", consumes = [MediaType.MULTIPART_FORM_DATA_VALUE])
     fun uploadDocument(
         @PathVariable id: Long,
         @org.springframework.web.bind.annotation.RequestParam("file") file: org.springframework.web.multipart.MultipartFile,
         @org.springframework.web.bind.annotation.RequestParam("internal", required = false, defaultValue = "false") internal: Boolean,
+        @org.springframework.web.bind.annotation.RequestParam("type", required = false) type: String?,
     ): ResponseEntity<ReservationDocumentDto> {
         val uploadedBy = getAuthenticatedUserId().takeIf { it != ANONYMOUS_USER_ID }
-        return ResponseEntity.ok(reservationDocumentService.upload(id, file, uploadedBy, internal))
+        val documentType = hr.workspace.boat4you.domains.reservation.enums.ReservationDocumentType.fromParam(type)
+        return ResponseEntity.ok(reservationDocumentService.upload(id, file, uploadedBy, internal, documentType))
     }
 
     @Operation(summary = "Download a single attached document")

@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.dto
 
+import hr.workspace.boat4you.domains.reservation.enums.ReservationDocumentType
 import java.time.Instant
 
 /**
@@ -17,4 +18,6 @@ data class ReservationDocumentDto(
     val uploadedAt: Instant,
     /** True = admin-only, hidden from customer my-bookings sidebar. */
     val isInternal: Boolean = false,
+    /** Drives the customer-facing label/icon ("Boarding pass", "Crew list"). */
+    val documentType: ReservationDocumentType = ReservationDocumentType.OTHER,
 )

@@ -242,6 +242,31 @@
                       </tr>
                     </table>
 
+                    <!-- Crew list CTA — partner (NauSys/MMK) crew editor. The agency
+                         files this with the port authority, so the data must be exact.
+                         Rendered only when the partner returned a link; agencies that
+                         work with a Word form instead deliver it via the my-bookings
+                         Travel documents section. -->
+                    <table th:if="${crewListUrl != null}" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#eef4ff; border-radius:10px; margin-top:14px;">
+                      <tr>
+                        <td style="padding:14px 18px;">
+                          <div style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:14px; color:#0f172a; margin-bottom:4px;"
+                            th:text="#{preCharterReminder.crewListTitle}">
+                            Complete your crew list
+                          </div>
+                          <div style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#475569; line-height:1.5; margin-bottom:10px;"
+                            th:text="#{preCharterReminder.crewListBody}">
+                            The charter company must register every guest with the port authority before departure. Enter each guest's details exactly as they appear on their passport.
+                          </div>
+                          <a th:href="${crewListUrl}" th:text="#{preCharterReminder.crewListCta}" target="_blank"
+                            style="display:inline-block; padding:10px 20px; border-radius:8px; background-color:#2856ff; color:#ffffff; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13px; font-weight:600; line-height:1; text-decoration:none;">
+                            Open crew list
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+
                     <!-- Spacer -->
                     <table role="presentation" width="100%"><tr><td style="height:18px; font-size:0; line-height:18px;">&#160;</td></tr></table>
 

@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.service
 
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDocumentDto
+import hr.workspace.boat4you.domains.reservation.enums.ReservationDocumentType
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationDocument
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationDocumentRepository
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
@@ -38,6 +39,7 @@ class ReservationDocumentService(
         file: MultipartFile,
         uploadedBy: Long?,
         isInternal: Boolean = false,
+        documentType: ReservationDocumentType = ReservationDocumentType.OTHER,
     ): ReservationDocumentDto {
         ensureReservationExists(reservationId)
 
@@ -67,6 +69,7 @@ class ReservationDocumentService(
             this.uploadedBy = uploadedBy
             this.uploadedAt = Instant.now()
             this.isInternal = isInternal
+            this.documentType = documentType
         }
         val saved = reservationDocumentRepository.save(entity)
         return ReservationDocumentDto(
@@ -78,6 +81,7 @@ class ReservationDocumentService(
             uploadedBy = saved.uploadedBy,
             uploadedAt = saved.uploadedAt!!,
             isInternal = saved.isInternal,
+            documentType = saved.documentType,
         )
     }
 

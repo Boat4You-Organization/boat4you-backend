@@ -895,6 +895,12 @@ class ReservationEmailService(
             "dropOffDateHourPeriod" to dropOffDateHourPeriod,
             "locationUrl" to "https://www.google.com/maps/search/?api=1&query=${URLEncoder.encode(reservation.locationFrom!!.name, Charsets.UTF_8)}",
             "reservationUrl" to serverHostPublic + "/my-bookings/" + reservation.id,
+            // Partner crew-list editor (NauSys/MMK). The agency files the crew
+            // list with the port authority, so we hand the customer the
+            // partner's own editor — no transcription in between (Mario
+            // 3.7.2026). Null (agency without a link, e.g. Kavas Word-doc
+            // flow) → the template omits the CTA block entirely.
+            "crewListUrl" to reservation.crewListUrl?.takeIf { it.isNotBlank() },
             "sentAt" to sentAtFormatted,
             "currentYear" to LocalDate.now().year.toString(),
         )

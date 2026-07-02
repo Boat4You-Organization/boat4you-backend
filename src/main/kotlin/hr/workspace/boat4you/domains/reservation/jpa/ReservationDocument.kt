@@ -1,7 +1,10 @@
 package hr.workspace.boat4you.domains.reservation.jpa
 
+import hr.workspace.boat4you.domains.reservation.enums.ReservationDocumentType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
@@ -68,4 +71,12 @@ open class ReservationDocument {
     @NotNull
     @Column(name = "is_internal", nullable = false)
     open var isInternal: Boolean = false
+
+    /** What the document IS (boarding pass / crew list / contract / other) —
+     *  drives the customer-facing label and icon in the "Travel documents"
+     *  section. Pre-existing uploads carry the migration default OTHER. */
+    @NotNull
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_type", length = 31, nullable = false)
+    open var documentType: ReservationDocumentType = ReservationDocumentType.OTHER
 }

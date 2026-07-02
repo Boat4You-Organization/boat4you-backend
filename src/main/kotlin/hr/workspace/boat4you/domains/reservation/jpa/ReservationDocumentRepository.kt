@@ -12,7 +12,7 @@ interface ReservationDocumentRepository : JpaRepository<ReservationDocument, Lon
         """
         SELECT new hr.workspace.boat4you.domains.reservation.dto.ReservationDocumentDto(
             d.id, d.reservationId, d.filename, d.contentType, d.sizeBytes,
-            d.uploadedBy, d.uploadedAt, d.isInternal
+            d.uploadedBy, d.uploadedAt, d.isInternal, d.documentType
         )
         FROM ReservationDocument d
         WHERE d.reservationId = :reservationId
@@ -27,7 +27,7 @@ interface ReservationDocumentRepository : JpaRepository<ReservationDocument, Lon
         """
         SELECT new hr.workspace.boat4you.domains.reservation.dto.ReservationDocumentDto(
             d.id, d.reservationId, d.filename, d.contentType, d.sizeBytes,
-            d.uploadedBy, d.uploadedAt, d.isInternal
+            d.uploadedBy, d.uploadedAt, d.isInternal, d.documentType
         )
         FROM ReservationDocument d
         WHERE d.reservationId = :reservationId AND d.isInternal = false
