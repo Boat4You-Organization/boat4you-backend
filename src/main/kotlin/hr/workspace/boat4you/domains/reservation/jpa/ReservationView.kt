@@ -96,15 +96,6 @@ open class ReservationView protected constructor() {
     open var reservationTripToken: String? = null
         protected set
 
-    /** Trip-chat unread badge: last human message vs when the admin last
-     *  opened the chat (phase 3). */
-    @Column(name = "reservation_admin_chat_seen_at")
-    open var reservationAdminChatSeenAt: java.time.LocalDateTime? = null
-        protected set
-
-    @Column(name = "reservation_trip_last_chat_at")
-    open var reservationTripLastChatAt: java.time.LocalDateTime? = null
-        protected set
 
     @Column(name = "reservation_user_id")
     open var reservationUserId: Long? = null

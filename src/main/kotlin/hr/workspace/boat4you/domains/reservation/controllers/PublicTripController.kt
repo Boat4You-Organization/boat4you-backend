@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.controllers
 
+import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.reservation.dto.TripChatMessageDto
 import hr.workspace.boat4you.domains.reservation.dto.TripChatPostRequest
 import hr.workspace.boat4you.domains.reservation.dto.TripDto
@@ -13,6 +14,7 @@ import hr.workspace.boat4you.domains.reservation.service.TripChatService
 import hr.workspace.boat4you.domains.reservation.service.TripCrewService
 import hr.workspace.boat4you.domains.reservation.service.TripJoinResult
 import hr.workspace.boat4you.domains.reservation.service.TripPhotoService
+import hr.workspace.boat4you.domains.reservation.service.TripAlbumZip
 import hr.workspace.boat4you.domains.reservation.service.TripPushService
 import hr.workspace.boat4you.domains.reservation.service.TripQueryService
 import io.swagger.v3.oas.annotations.Operation
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody
 
 /**
  * Boat4You Trip — the /trip/{token} PWA hub backend. Unauthenticated by
@@ -48,6 +51,7 @@ class PublicTripController(
     private val tripCrewService: TripCrewService,
     private val tripChatService: TripChatService,
     private val tripPhotoService: TripPhotoService,
+    private val fileSystemService: FileSystemService,
 ) {
     @Operation(summary = "Trip hub payload by trip token (no prices / payments)")
     @GetMapping("/{token}")
@@ -239,12 +243,15 @@ class PublicTripController(
     fun downloadAlbum(
         @PathVariable token: String,
         @RequestParam key: String,
-    ): ResponseEntity<ByteArray> {
-        val zip = tripPhotoService.zipForCrew(token, key) ?: return ResponseEntity.notFound().build()
+    ): ResponseEntity<StreamingResponseBody> {
+        val files = tripPhotoService.crewAlbumFiles(token, key)
+            ?: return ResponseEntity.status(HttpStatus.FORBIDDEN).build()
+        if (files.isEmpty()) return ResponseEntity.notFound().build()
+        val body = StreamingResponseBody { out -> TripAlbumZip.write(files, fileSystemService, out) }
         return ResponseEntity.ok()
             .contentType(MediaType.parseMediaType("application/zip"))
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"trip-photos.zip\"")
             .header("X-Robots-Tag", "noindex, nofollow")
-            .body(zip)
+            .body(body)
     }
 }

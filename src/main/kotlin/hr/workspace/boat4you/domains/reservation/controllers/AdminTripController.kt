@@ -1,7 +1,9 @@
 package hr.workspace.boat4you.domains.reservation.controllers
 
+import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.jpa.TripPushSubscriptionRepository
+import hr.workspace.boat4you.domains.reservation.service.TripAlbumZip
 import hr.workspace.boat4you.domains.reservation.service.TripPhotoService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody
 import java.util.UUID
 
 data class TripAlbumSummaryDto(val total: Long, val marketingConsented: Int)
@@ -36,6 +39,7 @@ class AdminTripController(
     private val tripPhotoService: TripPhotoService,
     private val reservationRepository: ReservationRepository,
     private val pushSubscriptionRepository: TripPushSubscriptionRepository,
+    private val fileSystemService: FileSystemService,
 ) {
     @Operation(summary = "Album counts (total + how many carry marketing consent) — no image data")
     @GetMapping("/{reservationId}/album-summary")
@@ -51,13 +55,15 @@ class AdminTripController(
     fun downloadAlbum(
         @PathVariable reservationId: Long,
         @RequestParam(defaultValue = "false") marketingOnly: Boolean,
-    ): ResponseEntity<ByteArray> {
-        val zip = tripPhotoService.adminZip(reservationId, marketingOnly) ?: return ResponseEntity.notFound().build()
+    ): ResponseEntity<StreamingResponseBody> {
+        val files = tripPhotoService.adminAlbumFiles(reservationId, marketingOnly)
+        if (files.isEmpty()) return ResponseEntity.notFound().build()
         val name = if (marketingOnly) "trip-$reservationId-marketing.zip" else "trip-$reservationId-photos.zip"
+        val body = StreamingResponseBody { out -> TripAlbumZip.write(files, fileSystemService, out) }
         return ResponseEntity.ok()
             .contentType(MediaType.parseMediaType("application/zip"))
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$name\"")
-            .body(zip)
+            .body(body)
     }
 
     @Operation(summary = "Regenerate the trip link — the old token (and every shared link) dies instantly")
