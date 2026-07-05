@@ -97,6 +97,21 @@ class TripPhotoService(
     fun count(reservationId: Long): Long = photoRepository.countByReservationId(reservationId)
 
     /**
+     * GDPR retention purge (Mario 5.7.2026): 10 days after the charter ends we
+     * delete every trip photo — DB rows AND the NFS files. Run daily off the
+     * scheduler node; [cutoff] = start-of-day 10 days ago. The crew is told the
+     * exact deadline in the T+1 "album ready" post so nobody is surprised.
+     */
+    @Transactional
+    fun purgeExpired(cutoff: java.time.LocalDateTime): Int {
+        val expired = photoRepository.findExpired(cutoff)
+        if (expired.isEmpty()) return 0
+        expired.forEach { photo -> photo.filePath?.let { fileSystemService.deleteFile(it) } }
+        photoRepository.deleteAll(expired)
+        return expired.size
+    }
+
+    /**
      * Photo file descriptors for the crew "download all" (key-scoped). Only
      * the id + on-disk path are returned — the controller streams the ZIP
      * OUTSIDE any transaction (no DB connection pinned across NFS reads, no
@@ -139,7 +154,9 @@ class TripPhotoService(
     )
 
     companion object {
-        private const val UPLOADS_CLOSE_AFTER_DAYS = 30L
+        // Uploads close at the same 10-day mark the retention purge deletes at —
+        // no point accepting a photo we'll remove the same day.
+        private const val UPLOADS_CLOSE_AFTER_DAYS = 10L
         private const val MAX_PHOTOS_PER_TRIP = 300L
     }
 }

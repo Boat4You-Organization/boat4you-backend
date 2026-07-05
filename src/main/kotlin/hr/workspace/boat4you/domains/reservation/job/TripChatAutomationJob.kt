@@ -103,12 +103,17 @@ class TripChatAutomationJob(
 
     private fun albumReadyPost(reservation: Reservation): String {
         val yacht = reservation.reservationFlow?.yacht?.name?.takeIf { it.isNotBlank() } ?: "your yacht"
+        val deadline = reservation.dateTo?.toLocalDate()?.plusDays(PHOTO_RETENTION_DAYS)?.format(DATE_FORMAT)
+        val deadlineNote = deadline?.let {
+            " Please download them by $it — after that we permanently remove all trip photos from our system (GDPR)."
+        } ?: ""
         return "📸 Your $yacht photos are ready! Open the Chat tab of this trip, scroll to the album and tap " +
-            "“Download all photos” to keep the whole week. Thank you for sailing with Boat4You 💙"
+            "“Download all photos” to keep the whole week.$deadlineNote Thank you for sailing with Boat4You 💙"
     }
 
     companion object {
         private const val ITINERARY_DAYS_AHEAD = 14L
+        private const val PHOTO_RETENTION_DAYS = 10L
         private val DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM yyyy")
     }
 }
