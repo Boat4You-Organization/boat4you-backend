@@ -257,7 +257,10 @@ class ReservationEmailService(
                 "receivedAt" to receivedAtFormatted,
                 "currentYear" to LocalDate.now().year.toString(),
             )
-        val customerSubject = messageSource.getMessage("fewMoreDetails.subject", null, customerLocale)
+        // Pass the reservation number so `#{0}` in the subject resolves (Spring only runs
+        // MessageFormat when args are non-null — null left the literal "#{0}" in the subject).
+        val customerSubject =
+            messageSource.getMessage("fewMoreDetails.subject", arrayOf<Any>(displayReservationRef), customerLocale)
         emailService.sendEmail(
             recipients = listOf(recipientAddress),
             subject = customerSubject,
