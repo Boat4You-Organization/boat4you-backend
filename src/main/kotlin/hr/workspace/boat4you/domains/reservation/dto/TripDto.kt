@@ -24,6 +24,9 @@ data class TripDto(
     /** Travel documents only (crew list / boarding pass / preference list) —
      *  contracts and untyped uploads stay owner-only in my-bookings. */
     val documents: List<ReservationDocumentDto>,
+    /** VAPID public key for web-push subscribe; null = push not configured,
+     *  the hub hides its trip-reminders card. */
+    val vapidPublicKey: String?,
 )
 
 data class TripYachtDto(

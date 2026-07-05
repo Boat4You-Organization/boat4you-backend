@@ -1,6 +1,9 @@
 package hr.workspace.boat4you.domains.reservation.controllers
 
 import hr.workspace.boat4you.domains.reservation.dto.TripDto
+import hr.workspace.boat4you.domains.reservation.dto.TripEventRequest
+import hr.workspace.boat4you.domains.reservation.dto.TripPushSubscribeRequest
+import hr.workspace.boat4you.domains.reservation.service.TripPushService
 import hr.workspace.boat4you.domains.reservation.service.TripQueryService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -9,6 +12,8 @@ import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -23,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController
 @RequestMapping("/public/trip")
 class PublicTripController(
     private val tripQueryService: TripQueryService,
+    private val tripPushService: TripPushService,
 ) {
     @Operation(summary = "Trip hub payload by trip token (no prices / payments)")
     @GetMapping("/{token}")
@@ -49,5 +55,33 @@ class PublicTripController(
             contentLength = doc.data.size.toLong()
         }
         return ResponseEntity.ok().headers(headers).body(doc.data)
+    }
+
+    @Operation(summary = "Subscribe this device to trip push reminders (upsert by push endpoint)")
+    @PostMapping("/{token}/push-subscriptions")
+    fun subscribe(
+        @PathVariable token: String,
+        @RequestBody request: TripPushSubscribeRequest,
+    ): ResponseEntity<Void> {
+        if (!request.isValid()) return ResponseEntity.badRequest().build()
+        val found = tripPushService.subscribe(
+            token = token,
+            endpoint = request.endpoint,
+            p256dh = request.p256dh,
+            auth = request.auth,
+            isOwner = request.isOwner,
+            userAgent = request.userAgent,
+        )
+        return if (found) ResponseEntity.noContent().build() else ResponseEntity.notFound().build()
+    }
+
+    @Operation(summary = "Record a trip analytics event (hub view, install, push open, site click)")
+    @PostMapping("/{token}/events")
+    fun recordEvent(
+        @PathVariable token: String,
+        @RequestBody request: TripEventRequest,
+    ): ResponseEntity<Void> {
+        val found = tripPushService.recordEvent(token, request.type, request.meta)
+        return if (found) ResponseEntity.noContent().build() else ResponseEntity.notFound().build()
     }
 }

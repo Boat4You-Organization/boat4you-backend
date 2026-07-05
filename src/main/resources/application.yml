@@ -215,3 +215,13 @@ application:
     # Keys MUST come from the environment (.env / boat4you_vars.env).
     secret-key: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY required}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET required}
+  trip-push:
+    # Web-push VAPID keypair for the Boat4You Trip hub reminders (base64url,
+    # P-256). Deliberately optional: blank keys = push disabled, the hub hides
+    # its reminders card and TripPushJob no-ops. Same keypair on cusma2 (serves
+    # the public key + stores subscriptions) and cusma3 (sends the pushes).
+    public-key: ${TRIP_PUSH_VAPID_PUBLIC_KEY:}
+    private-key: ${TRIP_PUSH_VAPID_PRIVATE_KEY:}
+    subject: ${TRIP_PUSH_VAPID_SUBJECT:mailto:info@boat4you.com}
+    # Absolute base for push click-through URLs (…/trip/{token}?push=tag).
+    web-base-url: ${TRIP_PUSH_WEB_BASE_URL:https://www.boat4you.com}

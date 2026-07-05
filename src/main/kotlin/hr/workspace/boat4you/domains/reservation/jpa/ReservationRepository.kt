@@ -117,4 +117,26 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
         @Param("startTime") startTime: LocalDateTime,
         @Param("endTime") endTime: LocalDateTime,
     ): List<Reservation>
+
+    /**
+     * Confirmed reservations whose drop-off falls within `[startTime, endTime)`.
+     * Used by [hr.workspace.boat4you.domains.reservation.job.TripPushJob] for
+     * the day-after "thank you for sailing with us" push.
+     */
+    @Query(
+        """
+        SELECT r FROM Reservation r
+        JOIN FETCH r.reservationFlow rf
+        JOIN FETCH rf.yacht y
+        WHERE r.sysStatus = :status
+        AND r.dateTo >= :startTime AND r.dateTo < :endTime
+    """,
+    )
+    fun findConfirmedEndingBetween(
+        @Param("status") status: ReservationStatus,
+        @Param("startTime") startTime: LocalDateTime,
+        @Param("endTime") endTime: LocalDateTime,
+    ): List<Reservation>
+
+    fun findByReservationFlow(reservationFlow: ReservationFlow): Reservation?
 }

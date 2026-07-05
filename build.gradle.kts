@@ -34,6 +34,7 @@ val apacheCommonsValidatorVersion = "1.10.1"
 val apacheCommonsTextVersion = "1.15.0"
 val libPhoneNumberVersion = "9.0.23"
 val stripeSdkVersion = "31.1.0"
+val webPushVersion = "5.1.1"
 val eCacheVersion = "3.12.0"
 val opencvVersion = "4.9.0-0"
 val koTestVersion = "6.1.11"
@@ -70,6 +71,12 @@ dependencies {
     }
     implementation("com.googlecode.libphonenumber:libphonenumber:$libPhoneNumberVersion")
     implementation("com.stripe:stripe-java:$stripeSdkVersion")
+    // Web-push (VAPID) for Boat4You Trip hub reminders. Exclude its bundled
+    // bcprov-jdk15on — we already ship bcprov-jdk18on and two BC providers on
+    // the classpath fight over provider registration.
+    implementation("nl.martijndwars:web-push:$webPushVersion") {
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15on")
+    }
     runtimeOnly("io.jsonwebtoken:jjwt-impl:$jjwtVersion")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:$jjwtVersion")
     runtimeOnly("org.postgresql:postgresql")

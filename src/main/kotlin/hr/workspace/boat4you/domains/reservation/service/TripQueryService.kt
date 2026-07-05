@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional
 class TripQueryService(
     private val reservationRepository: ReservationRepository,
     private val reservationDocumentService: ReservationDocumentService,
+    private val tripPushService: TripPushService,
 ) {
     /** Documents the CREW may see. Contracts / untyped uploads stay owner-only. */
     private val travelDocumentTypes = setOf(
@@ -91,6 +92,7 @@ class TripQueryService(
             agencyPhone = yacht.agency?.mobile?.takeIf { it.isNotBlank() }
                 ?: yacht.agency?.phone?.takeIf { it.isNotBlank() },
             documents = documents,
+            vapidPublicKey = tripPushService.vapidPublicKey.takeIf { tripPushService.enabled },
         )
     }
 
