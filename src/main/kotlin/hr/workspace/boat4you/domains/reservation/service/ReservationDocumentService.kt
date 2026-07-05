@@ -20,7 +20,15 @@ import java.time.Instant
 class ReservationDocumentService(
     private val reservationDocumentRepository: ReservationDocumentRepository,
     private val reservationRepository: ReservationRepository,
+    private val tripPushService: TripPushService,
 ) {
+    /** Travel documents the crew is push-notified about when uploaded. */
+    private val crewNotifiableTypes = mapOf(
+        ReservationDocumentType.BOARDING_PASS to "Your boarding pass / base info is ready",
+        ReservationDocumentType.CREW_LIST to "A crew list form was added",
+        ReservationDocumentType.PREFERENCE_LIST to "A preference list was added",
+    )
+
     fun list(reservationId: Long): List<ReservationDocumentDto> {
         ensureReservationExists(reservationId)
         return reservationDocumentRepository.findMetadataByReservationId(reservationId)
@@ -72,6 +80,19 @@ class ReservationDocumentService(
             this.documentType = documentType
         }
         val saved = reservationDocumentRepository.save(entity)
+
+        // Push the crew when a customer-visible travel document lands (after commit).
+        if (!isInternal) {
+            crewNotifiableTypes[documentType]?.let { body ->
+                tripPushService.notifyCrew(
+                    reservationId = reservationId,
+                    title = "📄 New document in your trip",
+                    body = "$body — open your trip to view it.",
+                    tag = "doc",
+                )
+            }
+        }
+
         return ReservationDocumentDto(
             id = saved.id!!,
             reservationId = saved.reservationId!!,

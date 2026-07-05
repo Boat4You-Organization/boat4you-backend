@@ -16,6 +16,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.security.Security
 
 /**
@@ -37,6 +39,7 @@ class TripPushService(
     @Value("\${application.trip-push.public-key}") val vapidPublicKey: String,
     @Value("\${application.trip-push.private-key}") private val vapidPrivateKey: String,
     @Value("\${application.trip-push.subject}") private val vapidSubject: String,
+    @Value("\${application.trip-push.web-base-url}") private val webBaseUrl: String,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -91,6 +94,33 @@ class TripPushService(
         subscription.userAgent = userAgent?.take(MAX_META_LENGTH)
         subscriptionRepository.save(subscription)
         return true
+    }
+
+    /**
+     * Notify the whole crew that something new landed on their trip (a travel
+     * document, the crew-list link, …). Resolves the token, then sends AFTER
+     * the caller's transaction commits — the admin who triggered it must not
+     * wait on the push HTTP inside their write tx, and the crew must never be
+     * pushed towards a change that could still roll back. No-op when push is
+     * off or the reservation has no token yet.
+     */
+    fun notifyCrew(reservationId: Long, title: String, body: String, tag: String) {
+        if (!enabled) return
+        val token = reservationRepository.findById(reservationId).orElse(null)?.tripToken ?: return
+        val url = "$webBaseUrl/trip/$token?push=$tag"
+        afterCommit { sendToReservation(reservationId, title, body, url, tag) }
+    }
+
+    private fun afterCommit(block: () -> Unit) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() = block()
+                },
+            )
+        } else {
+            block()
+        }
     }
 
     /** Append a trip analytics event; silently drops unknown types. */

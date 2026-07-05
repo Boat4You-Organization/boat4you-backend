@@ -31,6 +31,7 @@ class ReservationMutationService(
     private val offerMutationService: OfferMutationService,
     private val bookingNumberService: BookingNumberService,
     private val jdbcTemplate: JdbcTemplate,
+    private val tripPushService: TripPushService,
 ) {
     private val log = LoggerFactory.getLogger(this.javaClass)
     /**
@@ -556,8 +557,20 @@ class ReservationMutationService(
         crewListUrl: String?,
     ): ReservationDto {
         val reservation = reservationRepository.findById(id).getOrElse { throw ReservationNotExistException() }
-        reservation.crewListUrl = crewListUrl?.takeIf { it.isNotBlank() }
-        return reservationMappers.toReservationDto(reservationRepository.save(reservation))
+        val newUrl = crewListUrl?.takeIf { it.isNotBlank() }
+        val wasEmpty = reservation.crewListUrl.isNullOrBlank()
+        reservation.crewListUrl = newUrl
+        val saved = reservationRepository.save(reservation)
+        // Notify the crew only when the link is newly provided (not on edits/clears).
+        if (newUrl != null && wasEmpty) {
+            tripPushService.notifyCrew(
+                reservationId = id,
+                title = "📋 Crew list ready",
+                body = "Please complete your crew list in the trip app — the base needs every guest's passport details.",
+                tag = "crewlist",
+            )
+        }
+        return reservationMappers.toReservationDto(saved)
     }
 
     @Transactional
