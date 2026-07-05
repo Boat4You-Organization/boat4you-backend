@@ -1,5 +1,49 @@
 # Backend deploy notes
 
+## 2026-07-05 — Boat4You Trip PHASES 3+4: crew, chat, album, admin console (BE b499987, web 876f006, admin fcc6d80 — ALL DEPLOYED)
+
+**The full Trip product is live.** V9_32: trip_participant (secret per-device key,
+roles OWNER/GUEST/SKIPPER/CONCIERGE, soft remove), trip_chat_message (automation_tag
+for idempotent scheduled posts), trip_photo (per-upload marketing consent),
+reservation.admin_chat_seen_at.
+
+**Closed group:** guests join with just a name (unlocks after 1st payment / status
+RESERVATION, max 20, refusal reasons LOCKED/FULL/FINISHED/CANCELLED); the owner
+enters pre-claimed through his web session (/secured/trip/{token}/owner — stable
+key across devices); leader/admin remove members; admin can regenerate the link
+(now also deletes push subscriptions so old devices can't receive the new URL).
+
+**Chat:** PG rows + SSE fan-out on cusma2 (heartbeat 25s, X-Accel-Buffering:no) +
+30s full-resync poll (scheduler posts have no SSE emitters + fixes id-cursor gaps);
+writable until dateTo+14d; concierge posts (admin or automation) push to crew
+devices AFTER COMMIT. TripChatAutomationJob 09:45 (cusma3): itinerary T-14 (+push),
+ready T-1 (no double push, TripPushJob covers it), daily digest email to admins;
+per-post transactions (review fix — one bad reservation no longer poisons the batch).
+
+**Album:** webp ingest to NFS trip-photos/{id}, consent checkbox per upload,
+uploader/leader/admin delete (= GDPR consent-withdrawal path), uploads close
+dateTo+30d. **Admin:** Trip chat & crew panel in the booking detail (concierge
+composer, participant chips w/ remove, photo grid w/ MKT-consent badges + delete),
+💬 unread badge in the bookings list (concierge posts excluded).
+
+**QRs:** my-bookings (desktop→phone, next to the Trip app button) + hub invite
+card (owner: QR + navigator.share). Push isOwner is now VERIFIED via the OWNER
+participant key (client boolean was spoofable — review find).
+
+**Review:** 22-agent adversarial workflow, 15 confirmed findings fixed pre-deploy
+(tx poisoning, commit-ordered SSE/push, newest-200 history, badge filter, docs
++30d listing window, key-leaking album anchors removed). Known accepted: key in
+query strings for GET/SSE/img (EventSource/img can't send headers; nginx logs are
+internal), removed guests can rejoin under a new name (leader just removes again).
+
+**E2E verified live on Zen:** join→chat post→history→SSE ':connected'→photo
+upload(webp)→raw 200→self-delete 204; 403 wrong key; /admin/trip 403 unauthed.
+Test rows left as demo: participants 'Test Gost' + 'SSE Probe', 1 chat message —
+removable via the new admin panel. Rollbacks: webservice.jar.bak.pre-trip3 (oba),
+.next.bak-20260705165603, admin html.old.
+
+---
+
 ## 2026-07-05 — Boat4You Trip PHASE 2: push + analytics (BE 819390c, web 7b75ae0, ALL DEPLOYED)
 
 **Web-push reminders + day-1 analytics are live.** V9_30 adds trip_push_subscription
