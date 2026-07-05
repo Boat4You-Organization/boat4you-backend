@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.reservation.dto.TripChatMessageDto
 import hr.workspace.boat4you.domains.reservation.dto.TripParticipantDto
 import hr.workspace.boat4you.domains.reservation.dto.TripPhotoDto
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
+import hr.workspace.boat4you.domains.reservation.jpa.TripPushSubscriptionRepository
 import hr.workspace.boat4you.domains.reservation.service.TripChatService
 import hr.workspace.boat4you.domains.reservation.service.TripCrewService
 import hr.workspace.boat4you.domains.reservation.service.TripPhotoService
@@ -40,6 +41,7 @@ class AdminTripController(
     private val tripCrewService: TripCrewService,
     private val tripPhotoService: TripPhotoService,
     private val reservationRepository: ReservationRepository,
+    private val pushSubscriptionRepository: TripPushSubscriptionRepository,
 ) {
     @Operation(summary = "Chat history (marks the booking's chat as seen)")
     @GetMapping("/{reservationId}/chat")
@@ -92,6 +94,17 @@ class AdminTripController(
             .body(resource)
     }
 
+    @Operation(summary = "Delete a photo (admin — e.g. inappropriate content or consent withdrawal)")
+    @DeleteMapping("/{reservationId}/photos/{photoId}")
+    fun deletePhoto(
+        @PathVariable reservationId: Long,
+        @PathVariable photoId: Long,
+    ): ResponseEntity<Void> = if (tripPhotoService.adminDelete(reservationId, photoId)) {
+        ResponseEntity.noContent().build()
+    } else {
+        ResponseEntity.notFound().build()
+    }
+
     @Operation(summary = "Regenerate the trip link — the old token (and every shared link) dies instantly")
     @PostMapping("/{reservationId}/regenerate-token")
     @Transactional
@@ -100,6 +113,9 @@ class AdminTripController(
             ?: return ResponseEntity.notFound().build()
         reservation.tripToken = UUID.randomUUID().toString().replace("-", "")
         reservationRepository.save(reservation)
+        // Devices subscribed under the OLD link must not keep receiving pushes
+        // (each push carries the NEW secret URL — that would defeat the rotation).
+        pushSubscriptionRepository.deleteAll(pushSubscriptionRepository.findAllByReservationId(reservationId))
         return ResponseEntity.ok(mapOf("tripToken" to reservation.tripToken!!))
     }
 }

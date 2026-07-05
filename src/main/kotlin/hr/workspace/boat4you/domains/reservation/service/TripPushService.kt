@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.jpa.TripEvent
 import hr.workspace.boat4you.domains.reservation.jpa.TripEventRepository
+import hr.workspace.boat4you.domains.reservation.jpa.TripParticipantRepository
+import hr.workspace.boat4you.domains.reservation.jpa.TripParticipantRole
 import hr.workspace.boat4you.domains.reservation.jpa.TripPushSubscription
 import hr.workspace.boat4you.domains.reservation.jpa.TripPushSubscriptionRepository
 import nl.martijndwars.webpush.Notification
@@ -30,6 +32,7 @@ class TripPushService(
     private val subscriptionRepository: TripPushSubscriptionRepository,
     private val tripEventRepository: TripEventRepository,
     private val reservationRepository: ReservationRepository,
+    private val participantRepository: TripParticipantRepository,
     private val objectMapper: ObjectMapper,
     @Value("\${application.trip-push.public-key}") val vapidPublicKey: String,
     @Value("\${application.trip-push.private-key}") private val vapidPrivateKey: String,
@@ -68,10 +71,16 @@ class TripPushService(
         endpoint: String,
         p256dh: String,
         auth: String,
-        isOwner: Boolean,
+        ownerKey: String?,
         userAgent: String?,
     ): Boolean {
         val reservationId = reservationRepository.findByTripToken(token)?.id ?: return false
+        // Owner status is VERIFIED, never client-claimed: the key must match
+        // this reservation's active OWNER participant.
+        val isOwner = ownerKey?.let { key ->
+            participantRepository.findByParticipantKey(key)
+                ?.takeIf { it.reservationId == reservationId && !it.removed && it.role == TripParticipantRole.OWNER }
+        } != null
         val subscription = subscriptionRepository.findByEndpoint(endpoint) ?: TripPushSubscription()
         val sameReservation = subscription.reservationId == reservationId
         subscription.reservationId = reservationId

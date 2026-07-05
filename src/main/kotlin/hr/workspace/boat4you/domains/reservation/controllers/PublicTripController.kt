@@ -88,7 +88,7 @@ class PublicTripController(
             endpoint = request.endpoint,
             p256dh = request.p256dh,
             auth = request.auth,
-            isOwner = request.isOwner,
+            ownerKey = request.ownerKey,
             userAgent = request.userAgent,
         )
         return if (found) ResponseEntity.noContent().build() else ResponseEntity.notFound().build()
@@ -204,6 +204,18 @@ class PublicTripController(
         val photo = tripPhotoService.upload(token, key, file, marketingConsent)
             ?: return ResponseEntity.status(HttpStatus.FORBIDDEN).build()
         return ResponseEntity.ok(photo)
+    }
+
+    @Operation(summary = "Delete a photo — the uploader his own, the trip leader any (also the consent-withdrawal path)")
+    @DeleteMapping("/{token}/photos/{photoId}")
+    fun deletePhoto(
+        @PathVariable token: String,
+        @PathVariable photoId: Long,
+        @RequestParam key: String,
+    ): ResponseEntity<Void> = if (tripPhotoService.delete(token, key, photoId)) {
+        ResponseEntity.noContent().build()
+    } else {
+        ResponseEntity.status(HttpStatus.FORBIDDEN).build()
     }
 
     @Operation(summary = "Photo bytes (webp), participant-key scoped")

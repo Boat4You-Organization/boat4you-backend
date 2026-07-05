@@ -139,4 +139,33 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
     ): List<Reservation>
 
     fun findByReservationFlow(reservationFlow: ReservationFlow): Reservation?
+
+    /** Like [findConfirmedStartingBetween] but also fetches the marina —
+     *  used by jobs that build message texts OUTSIDE a transaction. */
+    @Query(
+        """
+        SELECT r FROM Reservation r
+        JOIN FETCH r.reservationFlow rf
+        JOIN FETCH rf.yacht y
+        LEFT JOIN FETCH r.locationFrom
+        WHERE r.sysStatus = :status
+        AND r.dateFrom >= :startTime AND r.dateFrom < :endTime
+    """,
+    )
+    fun findConfirmedStartingBetweenWithMarina(
+        @Param("status") status: ReservationStatus,
+        @Param("startTime") startTime: LocalDateTime,
+        @Param("endTime") endTime: LocalDateTime,
+    ): List<Reservation>
+
+    /** Digest helper — yacht names accessed outside any transaction. */
+    @Query(
+        """
+        SELECT r FROM Reservation r
+        JOIN FETCH r.reservationFlow rf
+        JOIN FETCH rf.yacht y
+        WHERE r.id IN :ids
+    """,
+    )
+    fun findAllWithYachtByIdIn(@Param("ids") ids: Collection<Long>): List<Reservation>
 }

@@ -34,9 +34,17 @@ class TripQueryService(
         val flow = reservation.reservationFlow ?: return null
         val yacht = flow.yacht ?: return null
 
-        val documents = reservationDocumentService
-            .listCustomerVisible(reservation.id!!)
-            .filter { it.documentType in travelDocumentTypes }
+        // Same 30-day withdrawal window as the download endpoint — listing a
+        // document whose download 404s would just confuse the crew.
+        val docsWithdrawn = reservation.dateTo?.plusDays(DOCS_WITHDRAWN_AFTER_DAYS)
+            ?.isBefore(java.time.LocalDateTime.now()) == true
+        val documents = if (docsWithdrawn) {
+            emptyList()
+        } else {
+            reservationDocumentService
+                .listCustomerVisible(reservation.id!!)
+                .filter { it.documentType in travelDocumentTypes }
+        }
 
         // Main image first, then partner ordering — max 8 keeps payload small.
         val imageIds = yacht.yachtImages

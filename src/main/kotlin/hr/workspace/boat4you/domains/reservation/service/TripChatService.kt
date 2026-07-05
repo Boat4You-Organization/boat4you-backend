@@ -8,6 +8,8 @@ import hr.workspace.boat4you.domains.reservation.jpa.TripParticipantRole
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Instant
 import java.time.LocalDateTime
 
@@ -44,7 +46,7 @@ class TripChatService(
             },
         )
         val dto = saved.toDto()
-        streamRegistry.publish(reservation.id!!, dto)
+        afterCommit { streamRegistry.publish(reservation.id!!, dto) }
         return dto
     }
 
@@ -76,9 +78,13 @@ class TripChatService(
             },
         )
         val dto = saved.toDto()
-        streamRegistry.publish(reservationId, dto)
-        if (push) {
-            reservation.tripToken?.let { token ->
+        val token = reservation.tripToken
+        // SSE + push only AFTER the row is committed — clients must never see
+        // (or be pushed towards) a message that could still roll back, and the
+        // push HTTP calls must not run while holding this transaction.
+        afterCommit {
+            streamRegistry.publish(reservationId, dto)
+            if (push && token != null) {
                 tripPushService.sendToReservation(
                     reservationId = reservationId,
                     title = "⚓ $CONCIERGE_NAME",
@@ -91,10 +97,28 @@ class TripChatService(
         return dto
     }
 
+    private fun afterCommit(block: () -> Unit) {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() = block()
+                },
+            )
+        } else {
+            block()
+        }
+    }
+
     fun history(token: String, participantKey: String, sinceId: Long): List<TripChatMessageDto>? {
         val (reservation, _) = crewService.findActiveParticipant(token, participantKey) ?: return null
-        return chatRepository.findTop200ByReservationIdAndIdGreaterThanOrderByIdAsc(reservation.id!!, sinceId)
-            .map { it.toDto() }
+        // Initial load = the NEWEST 200 (ascending-from-0 would pin long chats
+        // to their oldest messages); incremental polls page forward by id.
+        val messages = if (sinceId <= 0) {
+            chatRepository.findTop200ByReservationIdOrderByIdDesc(reservation.id!!).sortedBy { it.id }
+        } else {
+            chatRepository.findTop200ByReservationIdAndIdGreaterThanOrderByIdAsc(reservation.id!!, sinceId)
+        }
+        return messages.map { it.toDto() }
     }
 
     fun subscribe(token: String, participantKey: String) =
@@ -109,7 +133,10 @@ class TripChatService(
             it.adminChatSeenAt = LocalDateTime.now()
             reservationRepository.save(it)
         }
-        return chatRepository.findTop200ByReservationIdAndIdGreaterThanOrderByIdAsc(reservationId, 0)
+        // Newest 200, oldest-first for rendering (the ascending Top200 from id 0
+        // would pin the admin to the OLDEST messages on long chats).
+        return chatRepository.findTop200ByReservationIdOrderByIdDesc(reservationId)
+            .sortedBy { it.id }
             .map { it.toDto() }
     }
 

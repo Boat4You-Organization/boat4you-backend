@@ -77,7 +77,8 @@ SELECT r.id                        AS reservation_id,
        -- Trip-chat unread badge for the admin bookings list (phase 3).
        r.admin_chat_seen_at        AS reservation_admin_chat_seen_at,
        (SELECT max(m.created_at) FROM trip_chat_message m
-         WHERE m.reservation_id = r.id) AS reservation_trip_last_chat_at
+         WHERE m.reservation_id = r.id
+           AND m.sender_role <> 'CONCIERGE') AS reservation_trip_last_chat_at
 FROM reservation_flow rf
          JOIN users cu ON rf.created_by = cu.id
          JOIN users cf ON rf.user_id = cf.id

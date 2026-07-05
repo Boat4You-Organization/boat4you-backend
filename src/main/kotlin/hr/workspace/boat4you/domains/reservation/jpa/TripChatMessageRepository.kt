@@ -8,6 +8,8 @@ import java.time.Instant
 interface TripChatMessageRepository : JpaRepository<TripChatMessage, Long> {
     fun findTop200ByReservationIdAndIdGreaterThanOrderByIdAsc(reservationId: Long, sinceId: Long): List<TripChatMessage>
 
+    fun findTop200ByReservationIdOrderByIdDesc(reservationId: Long): List<TripChatMessage>
+
     fun existsByReservationIdAndAutomationTag(reservationId: Long, automationTag: String): Boolean
 
     /** Non-concierge traffic of the last day, for the admin digest email. */

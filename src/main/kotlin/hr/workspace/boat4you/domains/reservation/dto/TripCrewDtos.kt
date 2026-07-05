@@ -37,6 +37,7 @@ data class TripChatPostRequest(
 
 data class TripPhotoDto(
     val id: Long,
+    val participantId: Long?,
     val uploaderName: String?,
     val marketingConsent: Boolean,
     val createdAt: Instant,

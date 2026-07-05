@@ -13,7 +13,6 @@ import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -39,9 +38,13 @@ class TripChatAutomationJob(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
+    // Deliberately NOT @Transactional: each postAsConcierge runs its own tx,
+    // so one failing reservation cannot poison the whole batch (review 5.7:
+    // a joined outer tx turned per-post runCatching into all-or-nothing) and
+    // no connection is pinned across web-push/SMTP calls. The fetch queries
+    // JOIN FETCH everything the message builders touch.
     @Scheduled(cron = "0 45 9 ? * *")
     @SchedulerLock(name = "tripChatAutomation", lockAtMostFor = "PT45M")
-    @Transactional
     fun run() {
         val today = LocalDate.now()
         var posted = 0
@@ -65,11 +68,12 @@ class TripChatAutomationJob(
         log.info("TripChatAutomationJob: posted $posted concierge message(s)")
     }
 
-    private fun startingOn(date: LocalDate): List<Reservation> = reservationRepository.findConfirmedStartingBetween(
-        status = ReservationStatus.RESERVATION,
-        startTime = date.atStartOfDay(),
-        endTime = date.plusDays(1).atStartOfDay(),
-    )
+    private fun startingOn(date: LocalDate): List<Reservation> =
+        reservationRepository.findConfirmedStartingBetweenWithMarina(
+            status = ReservationStatus.RESERVATION,
+            startTime = date.atStartOfDay(),
+            endTime = date.plusDays(1).atStartOfDay(),
+        )
 
     private fun itineraryPost(reservation: Reservation): String {
         val yacht = reservation.reservationFlow?.yacht?.name?.takeIf { it.isNotBlank() } ?: "your yacht"
@@ -94,7 +98,7 @@ class TripChatAutomationJob(
         val since = Instant.now().minus(1, ChronoUnit.DAYS)
         val messages = chatMessageRepository.findForDigest(since)
         if (messages.isEmpty()) return
-        val reservations = reservationRepository.findAllById(messages.mapNotNull { it.reservationId }.toSet())
+        val reservations = reservationRepository.findAllWithYachtByIdIn(messages.mapNotNull { it.reservationId }.toSet())
             .associateBy { it.id }
         val trips = messages.groupBy { it.reservationId }.map { (reservationId, list) ->
             val reservation = reservations[reservationId]

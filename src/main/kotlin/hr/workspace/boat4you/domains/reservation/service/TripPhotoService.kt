@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.reservation.service
 
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.reservation.dto.TripPhotoDto
+import hr.workspace.boat4you.domains.reservation.jpa.TripParticipantRole
 import hr.workspace.boat4you.domains.reservation.jpa.TripPhoto
 import hr.workspace.boat4you.domains.reservation.jpa.TripPhotoRepository
 import org.springframework.core.io.Resource
@@ -62,6 +63,32 @@ class TripPhotoService(
         return rawInternal(reservation.id!!, photoId)
     }
 
+    /** Uploader deletes his own photo; the trip leader may delete any. Also
+     *  the consent-withdrawal path (GDPR): delete = consent gone with it. */
+    @Transactional
+    fun delete(token: String, participantKey: String, photoId: Long): Boolean {
+        val (reservation, participant) = crewService.findActiveParticipant(token, participantKey) ?: return false
+        val photo = photoRepository.findById(photoId).orElse(null) ?: return false
+        if (photo.reservationId != reservation.id) return false
+        val mayDelete = photo.participantId == participant.id || participant.role == TripParticipantRole.OWNER
+        if (!mayDelete) return false
+        deleteInternal(photo)
+        return true
+    }
+
+    @Transactional
+    fun adminDelete(reservationId: Long, photoId: Long): Boolean {
+        val photo = photoRepository.findById(photoId).orElse(null) ?: return false
+        if (photo.reservationId != reservationId) return false
+        deleteInternal(photo)
+        return true
+    }
+
+    private fun deleteInternal(photo: TripPhoto) {
+        photo.filePath?.let { fileSystemService.deleteFile(it) }
+        photoRepository.delete(photo)
+    }
+
     fun adminList(reservationId: Long): List<TripPhotoDto> =
         photoRepository.findAllByReservationIdOrderByIdDesc(reservationId).map { it.toDto() }
 
@@ -78,6 +105,7 @@ class TripPhotoService(
 
     private fun TripPhoto.toDto() = TripPhotoDto(
         id = id!!,
+        participantId = participantId,
         uploaderName = uploaderName,
         marketingConsent = marketingConsent,
         createdAt = createdAt,
