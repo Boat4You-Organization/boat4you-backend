@@ -219,6 +219,7 @@ class ReservationMappers(
             // Admin-curated docs (crew list pdf/docx, pickup info, contract
             // scans). Customer downloads via /secured/reservations/my-reservations/{id}/documents/{docId}.
             crewListUrl = reservationView.reservationCrewListUrl,
+            tripToken = reservationView.reservationTripToken,
             // Customer-visible only — internal admin uploads stay hidden.
             documents = reservationDocumentService.listCustomerVisible(reservationView.reservationId!!),
             // NOTE: adminNotes intentionally NOT exposed here — this is the
@@ -300,6 +301,7 @@ class ReservationMappers(
             reservationNote = reservationView.reservationNote,
             reservationPaymentNote = reservationView.reservationPaymentNote,
             reservationCrewListUrl = reservationView.reservationCrewListUrl,
+            reservationTripToken = reservationView.reservationTripToken,
             reservationUserId = reservationView.reservationUserId,
             endUser = "${reservationView.createdForName} ${reservationView.createdForSurname}",
             endUserEmail = reservationView.reservationFlowEmail!!,

@@ -87,6 +87,8 @@ data class MyReservationDetailsDto(
     // (fictitious bookings, manual confirmation flow). Customer renders as
     // "Open crew list" CTA in /my-bookings/{id}.
     val crewListUrl: String? = null,
+    /** Boat4You Trip PWA hub key — /trip/{token}; owner-facing "Trip app" button. */
+    val tripToken: String? = null,
     // Admin-uploaded files attached to the booking — pickup directions,
     // crew list docx, contract scans, anything PDF/DOC/DOCX. Mario rule
     // (3.5.2026): visible to customer in /my-bookings/{id}.

@@ -10,6 +10,9 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 
 interface ReservationRepository : JpaRepository<Reservation, Long> {
+    /** Trip-hub lookup — the token is the ONLY key the /trip PWA page holds. */
+    fun findByTripToken(tripToken: String): Reservation?
+
     @Query(
         """
         SELECT r

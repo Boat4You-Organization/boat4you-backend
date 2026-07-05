@@ -186,6 +186,9 @@ class ReservationMutationService(
                 this.product = externalReservation.product
                 this.reservationNumber = reservationNumber
                 this.adminNotes = adminNotes?.takeIf { it.isNotBlank() }
+                // Boat4You Trip hub key — unguessable, page is noindex, the
+                // token is the only way in (V9_28 backfilled older rows).
+                this.tripToken = java.util.UUID.randomUUID().toString().replace("-", "")
             }
 
         // External payment plan only applies to partner-managed bookings. In

@@ -38,6 +38,8 @@ data class ReservationViewDetailsDto(
     val reservationNote: String?,
     val reservationPaymentNote: String?,
     val reservationCrewListUrl: String?,
+    /** Boat4You Trip PWA hub key — /trip/{token}; admin shows link + QR. */
+    val reservationTripToken: String? = null,
     val reservationUserId: Long?,
     val endUser: String,
     val endUserEmail: String,

@@ -94,6 +94,7 @@ class ReservationDocumentService(
             contentType = doc.contentType!!,
             data = doc.data!!,
             isInternal = doc.isInternal,
+            documentType = doc.documentType,
         )
     }
 
@@ -155,4 +156,5 @@ data class ReservationDocumentDownload(
     val contentType: String,
     val data: ByteArray,
     val isInternal: Boolean,
+    val documentType: ReservationDocumentType = ReservationDocumentType.OTHER,
 )

@@ -90,6 +90,10 @@ open class ReservationView protected constructor() {
     @Size(max = 1000)
     @Column(name = "reservation_crew_list_url", length = 1000)
     open var reservationCrewListUrl: String? = null
+
+    /** Boat4You Trip hub token (see Reservation.tripToken). */
+    @Column(name = "reservation_trip_token")
+    open var reservationTripToken: String? = null
         protected set
 
     @Column(name = "reservation_user_id")

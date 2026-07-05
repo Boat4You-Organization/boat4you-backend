@@ -89,6 +89,12 @@ open class Reservation {
     @Column(name = "option_expires_at")
     open var optionExpiresAt: LocalDateTime? = null
 
+    /** Unguessable key of the customer's /trip/{token} PWA hub (Boat4You
+     *  Trip). 32 hex chars (~122 bits); unique-indexed. Generated at
+     *  reservation creation; V9_28 backfilled historical rows. */
+    @Column(name = "trip_token", length = 64)
+    open var tripToken: String? = null
+
     /**
      * Partner reservation code (MMK reservationCode / Nausys UUID). Null
      * for admin "fictitious" replacement reservations — no partner call.
