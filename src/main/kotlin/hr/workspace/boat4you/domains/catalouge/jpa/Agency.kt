@@ -79,6 +79,14 @@ open class Agency {
     @Column(name = "availability_blocked", nullable = false)
     open var availabilityBlocked: Boolean = false
 
+    // Agency mirror (Mario 5.7.2026): the ExternalSystemEnum value (1=MMK, 2=NauSys) whose
+    // catalogue sync set active=false because that partner's company list no longer contains
+    // this agency; NULL = not deactivated by the mirror. Only the SAME system may re-activate
+    // it — an admin's manual deactivation (toggleActive resets this to NULL) is never
+    // overridden, and one partner's sync can never re-activate what the other's deactivated.
+    @Column(name = "sync_deactivated_by")
+    open var syncDeactivatedBy: Int? = null
+
     // EAGER fetch — admin AgencyDto serialises every source into a `sources`
     // array. Default LAZY would only load the collection inside the
     // @Transactional service method; some call sites (Page.map serialisation,

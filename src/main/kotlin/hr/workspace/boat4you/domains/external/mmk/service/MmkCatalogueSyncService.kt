@@ -1,7 +1,11 @@
 package hr.workspace.boat4you.domains.external.mmk.service
 
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalEquipmentType
+import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.AgencySource
+import hr.workspace.boat4you.domains.catalouge.jpa.AgencySourceId
+import hr.workspace.boat4you.domains.catalouge.jpa.AgencySourceRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalEquipment
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalEquipmentRepository
@@ -32,6 +36,7 @@ class MmkCatalogueSyncService(
     private val externalMappingService: ExternalMappingService,
     private val countryRepository: CountryRepository,
     private val agencyRepository: AgencyRepository,
+    private val agencySourceRepository: AgencySourceRepository,
     private val regionRepository: RegionRepository,
     private val manufacturerRepository: ManufacturerRepository,
     private val locationQueryingService: LocationQueryingService,
@@ -41,32 +46,100 @@ class MmkCatalogueSyncService(
 ) {
     private val log = LoggerFactory.getLogger(this::class.java)
 
+    /**
+     * Agency mirror, create/refresh half (Mario 5.7.2026: the partner's company list IS our
+     * agency list — e.g. FX Yachting appearing at MMK must show up here without manual
+     * onboarding; the old code skipped every "not configured" company forever).
+     *  - unknown company id → create a fresh agency with a primary MMK source; the next
+     *    yacht/offer sync picks it up automatically (they iterate active primary-MMK agencies).
+     *    Deliberately NO name/VAT merge into an existing NauSys agency: yachts only sync
+     *    through an agency's PRIMARY system, so merging would leave the MMK fleet invisible.
+     *    Same-group companies (FX Yachting vs Fyly Yachting) stay separate rows — Mario decision.
+     *  - known PRIMARY-MMK company → refresh fields; re-activate ONLY if the MMK mirror itself
+     *    deactivated it (syncDeactivatedBy=MMK) — a manual admin blacklist stays off.
+     *  - known but NON-primary source (dual-source agency owned by NauSys) → leave it to the
+     *    owning system's sync; updating here would have the two catalogues fight over fields.
+     * The removal half lives in [AgencyPresenceReconcileService].
+     */
     @Transactional
     fun updateMmkAgencies(mmkAgencies: List<Company>) {
-        val allMmkAgencies = agencyRepository.findAllActiveByPrimarySyncProvider(ExternalSystemEnum.MMK.value.toLong())
+        val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
+        val sourcesByExternalId =
+            agencySourceRepository
+                .findAllByExternalSystemId(ExternalSystemEnum.MMK.value)
+                .associateBy { it.externalId }
+        // Company ids already created in THIS run: the snapshot map above doesn't see rows
+        // inserted mid-loop, so a company id duplicated inside one response would fork two
+        // agencies without this (the V9_28 unique index would abort the whole tx instead).
+        val createdThisRun = mutableSetOf<Long>()
 
         mmkAgencies.forEach { mmkAgency ->
-            val agency = allMmkAgencies.find { a -> a.primarySource?.externalId == mmkAgency.id }
+            val mmkCompanyId = mmkAgency.id
+            // Per-company isolation for read-path surprises (broken source row, corrupt data):
+            // one bad company must not abort the whole nightly mirror. Persist-path errors are
+            // prevented up front (field truncation, dedup) because a flush failure would poison
+            // the transaction anyway.
+            runCatching {
+                val source = sourcesByExternalId[mmkCompanyId]
 
-            if (agency == null) {
-                log.info("Skipping agency ${mmkAgency.name} with ID ${mmkAgency.id} because it is not configured with MMK")
-                return@forEach
+                if (source == null) {
+                    if (!createdThisRun.add(mmkCompanyId)) {
+                        log.warn("MMK company $mmkCompanyId (${mmkAgency.name}) duplicated in response — skipping second occurrence")
+                        return@forEach
+                    }
+                    val newAgency = Agency()
+                    newAgency.active = true
+                    applyMmkCompanyFields(newAgency, mmkAgency)
+                    agencyRepository.saveAndFlush(newAgency)
+
+                    val agencySourceId = AgencySourceId()
+                    agencySourceId.agencyId = newAgency.id
+                    agencySourceId.externalSystemId = ExternalSystemEnum.MMK.value
+                    val newSource = AgencySource()
+                    newSource.id = agencySourceId
+                    newSource.primary = true
+                    newSource.externalId = mmkCompanyId
+                    newSource.agency = newAgency
+                    newSource.externalSystem = externalSystem
+                    agencySourceRepository.save(newSource)
+                    log.info("Created NEW agency ${newAgency.id} (${newAgency.name}) for MMK company $mmkCompanyId")
+                    return@forEach
+                }
+
+                if (source.primary != true) return@forEach
+
+                val agency = source.agency ?: return@forEach
+                if (agency.active != true && agency.syncDeactivatedBy == ExternalSystemEnum.MMK.value) {
+                    agency.active = true
+                    agency.syncDeactivatedBy = null
+                    log.info("Reactivated agency ${agency.id} (${agency.name}) — returned by MMK again")
+                }
+                applyMmkCompanyFields(agency, mmkAgency)
+                agencyRepository.save(agency)
+            }.onFailure { e ->
+                log.error("Failed to mirror MMK company $mmkCompanyId (${mmkAgency.name})", e)
             }
-
-            agency.name = mmkAgency.name
-            agency.address = mmkAgency.address
-            agency.city = mmkAgency.city
-            agency.country = mmkAgency.country
-            agency.zip = mmkAgency.zip
-            agency.vatCode = mmkAgency.vatCode
-            agency.web = mmkAgency.web
-            agency.email = mmkAgency.email
-            agency.mobile = mmkAgency.mobile
-            agency.phone = mmkAgency.telephone
-            agency.bankAccounts = mmkAgency.bankAccountNumber
-
-            agencyRepository.save(agency)
         }
+    }
+
+    private fun applyMmkCompanyFields(
+        agency: Agency,
+        mmkAgency: Company,
+    ) {
+        // take(N) = column @Size limits. MMK company data is unvetted (auto-created since
+        // 5.7.2026); one over-length value would fail bean validation on flush and roll back
+        // the ENTIRE agency mirror transaction every run.
+        agency.name = mmkAgency.name.take(255)
+        agency.address = mmkAgency.address?.take(255)
+        agency.city = mmkAgency.city.take(150)
+        agency.country = mmkAgency.country.take(100)
+        agency.zip = mmkAgency.zip.take(30)
+        agency.vatCode = mmkAgency.vatCode.take(100)
+        agency.web = mmkAgency.web.take(255)
+        agency.email = mmkAgency.email.take(150)
+        agency.mobile = mmkAgency.mobile.take(200)
+        agency.phone = mmkAgency.telephone.take(200)
+        agency.bankAccounts = mmkAgency.bankAccountNumber.take(255)
     }
 
     @Transactional

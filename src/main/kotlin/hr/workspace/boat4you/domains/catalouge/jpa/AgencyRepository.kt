@@ -84,7 +84,9 @@ interface AgencyRepository : JpaRepository<Agency, Long> {
     )
     fun findAllActiveByPrimarySyncProviderAndHasYacht(extarnalSystemId: Long): Set<Agency>
 
-    fun findByVatCode(vatCode: String): Agency?
+    // List, not single: duplicate vat_code values exist in prod (same VAT under both partner
+    // systems), and a single-result query throws IncorrectResultSizeDataAccessException.
+    fun findAllByVatCode(vatCode: String): List<Agency>
 
     @Query(
         """

@@ -72,7 +72,15 @@ class NauSysCatalogueSyncService(
     private val log = LoggerFactory.getLogger(this::class.java)
 
     /**
-     * this method should be run only once to sync agencies from nausys
+     * Create/match pass of the NauSys agency mirror. Originally a one-time bootstrap; since
+     * 5.7.2026 (Mario: the partner's company list IS our agency list) it runs on every
+     * scheduled agencies sync so NEW NauSys companies are created automatically. Idempotent:
+     * already-mapped companies only get re-activated when the NauSys mirror itself deactivated
+     * them (syncDeactivatedBy=NAUSYS) — a manual admin blacklist and the MMK mirror's own
+     * deactivations stay untouched. Name/VAT matching NEVER merges into an agency that has an
+     * MMK source: yachts only sync through an agency's PRIMARY system, so the same physical
+     * company keeps one row per system (Mario decision — e.g. FX Yachting vs Fyly). Field
+     * refresh stays in [updateNausysAgencies]; removal lives in AgencyPresenceReconcileService.
      */
     @Transactional
     fun syncAgenciesByVatCode(nausysAgencies: RestCharterCompanyList) {
@@ -82,75 +90,104 @@ class NauSysCatalogueSyncService(
         val allCountryMappings =
             externalMappingService.getAllMappingsByType(Country::class.simpleName.toString(), externalSystem)
         val allCountries = countryRepository.findAll()
+        // A company id duplicated inside one response would create the agency on the first
+        // occurrence and then crash the pass on the second (saveMapping unique violation
+        // poisons the transaction) — process each id once.
+        val processedIds = mutableSetOf<Long>()
 
         nausysAgencies.companies?.forEach {
-            val mapping = allMappings.find { mapping -> mapping.externalId == it.id }
+            // Partner data is unvetted now that this runs nightly: skip unusable rows and
+            // isolate per-company read-path failures (stale mapping, ambiguous match) so one
+            // bad company can't abort the whole mirror pass.
+            if (it.id == null || it.name.isNullOrBlank()) {
+                log.warn("Skipping NauSYS company with missing id/name (id=${it.id})")
+                return@forEach
+            }
+            if (!processedIds.add(it.id!!)) {
+                log.warn("NauSYS company ${it.id} (${it.name}) duplicated in response — skipping second occurrence")
+                return@forEach
+            }
+            runCatching {
+                val mapping = allMappings.find { mapping -> mapping.externalId == it.id }
 
-            val agency =
-                if (mapping != null) {
-                    agencyRepository.findById(mapping.systemId!!).get()
-                } else {
-                    var agency =
+                val agency =
+                    if (mapping != null) {
+                        agencyRepository.findById(mapping.systemId!!).get()
+                    } else {
+                        // Both matches exclude MMK-sourced agencies (the VAT fallback used to
+                        // return a single arbitrary row and crashed on duplicate VATs, which
+                        // exist in prod): merging a NauSys company into an MMK-primary agency
+                        // would either fork a second "primary" or leave the NauSys fleet
+                        // unsynced — one row per system instead.
                         agencyRepository.findByNameAndNotExistsInOtherSystem(it.name!!, ExternalSystemEnum.MMK.value)
-                    if (agency == null && it.vatcode != null) {
-                        agency = agencyRepository.findByVatCode(it.vatcode!!)
+                            ?: it.vatcode?.let { vat ->
+                                agencyRepository.findAllByVatCode(vat).firstOrNull { candidate ->
+                                    candidate.agencySources.none { s -> s.id?.externalSystemId == ExternalSystemEnum.MMK.value }
+                                }
+                            }
+                    }
+
+                val resolvedAgency = if (agency == null) {
+                    // create new agency for unmatched NauSYS company
+                    val newAgency = Agency()
+                    newAgency.name = it.name?.take(255)
+                    newAgency.address = it.address?.take(255)
+                    newAgency.city = it.city?.take(150)
+                    newAgency.zip = it.zip?.take(30)
+                    newAgency.vatCode = it.vatcode?.take(100)
+                    newAgency.web = it.web?.take(255)
+                    newAgency.email = it.email?.take(150)
+                    newAgency.phone = it.phone?.take(200)
+                    newAgency.mobile = it.mobile?.take(200)
+                    newAgency.active = true
+
+                    val countryMapping = allCountryMappings.find { cm -> cm.externalId == it.countryId }
+                    val country = if (countryMapping != null) allCountries.find { c -> c.id == countryMapping.systemId?.toInt() } else null
+                    newAgency.country = country?.name
+
+                    agencyRepository.saveAndFlush(newAgency)
+                    log.info("Created NEW agency ${newAgency.id} (${newAgency.name}) for NauSYS company ${it.id}")
+                    newAgency
+                } else {
+                    // re-activate so it gets picked up by yacht sync — but ONLY if the NauSys
+                    // mirror itself deactivated it; an admin's manual blacklist (toggleActive)
+                    // and an MMK-mirror deactivation stay off (no cross-system ping-pong)
+                    if (agency.active != true && agency.syncDeactivatedBy == ExternalSystemEnum.NAUSYS.value) {
+                        agency.active = true
+                        agency.syncDeactivatedBy = null
+                        agencyRepository.save(agency)
+                        log.info("Activated agency ${agency.id} (${agency.name}) for NauSYS sync")
                     }
                     agency
                 }
 
-            val resolvedAgency = if (agency == null) {
-                // create new agency for unmatched NauSYS company
-                val newAgency = Agency()
-                newAgency.name = it.name
-                newAgency.address = it.address
-                newAgency.city = it.city
-                newAgency.zip = it.zip
-                newAgency.vatCode = it.vatcode
-                newAgency.web = it.web
-                newAgency.email = it.email
-                newAgency.phone = it.phone
-                newAgency.mobile = it.mobile
-                newAgency.active = true
+                val agencySourceId = AgencySourceId()
+                agencySourceId.agencyId = resolvedAgency.id
+                agencySourceId.externalSystemId = ExternalSystemEnum.NAUSYS.value
+                val existingAgencySource = agencySourceRepository.findById(agencySourceId)
 
-                val countryMapping = allCountryMappings.find { cm -> cm.externalId == it.countryId }
-                val country = if (countryMapping != null) allCountries.find { c -> c.id == countryMapping.systemId?.toInt() } else null
-                newAgency.country = country?.name
-
-                agencyRepository.saveAndFlush(newAgency)
-                log.info("Created NEW agency ${newAgency.id} (${newAgency.name}) for NauSYS company ${it.id}")
-                newAgency
-            } else {
-                // activate existing agency so it gets picked up by yacht sync
-                if (agency.active != true) {
-                    agency.active = true
-                    agencyRepository.save(agency)
-                    log.info("Activated agency ${agency.id} (${agency.name}) for NauSYS sync")
+                if (existingAgencySource.isEmpty) {
+                    val agencySource = AgencySource()
+                    agencySource.id = agencySourceId
+                    // primary only when the agency isn't already driven by another system —
+                    // two primary sources would make yacht sync + both mirrors fight over one row
+                    agencySource.primary = resolvedAgency.agencySources.none { s -> s.primary == true }
+                    agencySource.externalId = it.id
+                    agencySource.agency = resolvedAgency
+                    agencySource.externalSystem = externalSystem
+                    agencySourceRepository.save(agencySource)
                 }
-                agency
-            }
 
-            val agencySourceId = AgencySourceId()
-            agencySourceId.agencyId = resolvedAgency.id
-            agencySourceId.externalSystemId = ExternalSystemEnum.NAUSYS.value
-            val existingAgencySource = agencySourceRepository.findById(agencySourceId)
-
-            if (existingAgencySource.isEmpty) {
-                val agencySource = AgencySource()
-                agencySource.id = agencySourceId
-                agencySource.primary = true
-                agencySource.externalId = it.id
-                agencySource.agency = resolvedAgency
-                agencySource.externalSystem = externalSystem
-                agencySourceRepository.save(agencySource)
-            }
-
-            if (mapping == null) {
-                externalMappingService.saveMapping(
-                    it.id!!.toLong(),
-                    resolvedAgency.id!!.toLong(),
-                    externalSystem,
-                    Agency::class.simpleName.toString(),
-                )
+                if (mapping == null) {
+                    externalMappingService.saveMapping(
+                        it.id!!.toLong(),
+                        resolvedAgency.id!!.toLong(),
+                        externalSystem,
+                        Agency::class.simpleName.toString(),
+                    )
+                }
+            }.onFailure { e ->
+                log.error("Failed to mirror NauSYS company ${it.id} (${it.name})", e)
             }
         }
     }
@@ -173,21 +210,41 @@ class NauSysCatalogueSyncService(
                 return@forEach
             }
 
+            // name is @NotNull on the entity — a blank partner row would fail validation on
+            // flush and roll back the WHOLE update pass (and kill the rest of the nightly
+            // catalogue chain); same reason all fields are truncated to their @Size limits
+            if (nausysAgency.name.isNullOrBlank()) {
+                log.warn("Skipping field refresh for NauSYS company ${nausysAgency.id}: missing name")
+                return@forEach
+            }
+
             val countryMapping = allCountryMappings.find { a -> a.externalId == nausysAgency.countryId }
             val country = allCountries.find { c -> c.id == countryMapping?.systemId?.toInt() }
+            if (country == null) {
+                // was `country!!` — one company with an unmapped countryId would abort the WHOLE
+                // update transaction (and with auto-created companies the exposure grows); keep
+                // the previous country value and refresh the rest instead
+                log.warn("No country mapping for NauSYS company ${nausysAgency.id} (countryId=${nausysAgency.countryId})")
+            }
 
-            agency.name = nausysAgency.name
-            agency.address = nausysAgency.address
-            agency.city = nausysAgency.city
-            agency.country = country!!.name
-            agency.zip = nausysAgency.zip
-            agency.vatCode = nausysAgency.vatcode
-            agency.web = nausysAgency.web
-            agency.email = nausysAgency.email
-            agency.mobile = nausysAgency.mobile
-            agency.phone = nausysAgency.phone
+            agency.name = nausysAgency.name?.take(255)
+            agency.address = nausysAgency.address?.take(255)
+            agency.city = nausysAgency.city?.take(150)
+            country?.let { agency.country = it.name }
+            agency.zip = nausysAgency.zip?.take(30)
+            agency.vatCode = nausysAgency.vatcode?.take(100)
+            agency.web = nausysAgency.web?.take(255)
+            agency.email = nausysAgency.email?.take(150)
+            agency.mobile = nausysAgency.mobile?.take(200)
+            agency.phone = nausysAgency.phone?.take(200)
             if (!nausysAgency.bankAccounts.isNullOrEmpty()) {
-                agency.bankAccounts = nausysAgency.bankAccounts!!.joinToString { "," }
+                // was `joinToString { "," }` — the lambda MAPPED every account object to a
+                // literal comma, storing ",,," instead of the account numbers
+                agency.bankAccounts =
+                    nausysAgency.bankAccounts!!
+                        .mapNotNull { acc -> acc.iban ?: acc.accountNumber }
+                        .joinToString(",")
+                        .take(255)
             }
 
             agencyRepository.save(agency)

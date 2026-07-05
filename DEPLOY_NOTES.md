@@ -1,5 +1,28 @@
 # Backend deploy notes
 
+## 2026-07-05 — Agency mirror: auto-create/auto-deactivate partner agencies (V9_28)
+
+**Rule (Mario 5.7.2026):** the partner's company list IS our agency list — every new MMK/NauSys
+company (e.g. FX Yachting, MMK 8304) is auto-created with a primary source and its fleet follows
+on the next yacht/offer sync; a company the partner stops returning is auto-deactivated
+(active=false → yachts drop out of yacht_search_view). Deactivation is stamped
+`sync_deactivated_by` (1=MMK, 2=NauSys): only the same system may re-activate, admin toggleActive
+(resets to NULL) is never overridden, no cross-system ping-pong. Reconcile guards: empty response
+= skip; >30% absent = truncated response, skip (PartnerWithdrawalGuard); legacy dual-primary rows
+are never deactivated (logged). NauSys VAT/name match never merges into an MMK-sourced agency
+(one row per system — dual VAT duplicates exist in prod, findAllByVatCode + filter).
+
+**Pre-deploy checklist:**
+- `V9_28` = ALTER TABLE agency (ACCESS EXCLUSIVE!) + unique index on
+  agency_source(external_system_id, external_id) (prod pre-checked: 0 duplicates 5.7.).
+  ⚠️ Before restarting cusma2: check `pg_stat_activity` for idle-in-transaction backends
+  holding agency locks (29.6. lesson) — `pg_terminate_backend` first if any.
+- Deploy order: **cusma2 FIRST** (applies Flyway; cusma3 is pinned FLYWAY_TARGET_VERSION=1.43
+  and would not apply V9_28), then cusma3 (scheduler runs the actual mirror).
+- Expected first run (measured 5.7. against live partner lists): MMK +367 created / ~168
+  deactivated; NauSys +139 / ~24. 23 MMK + 52 NauSys agencies are inactive-with-us but still
+  partner-listed — they STAY off (sync_deactivated_by=NULL = treated as manual) — Mario decides.
+
 ## 2026-07-03 — Travel documents: type + crew-list CTA (commit e7a1f87, DEPLOYED all 3 apps)
 
 **Feature (Mario 3.7.2026):** near charter start the customer needs the crew list and the

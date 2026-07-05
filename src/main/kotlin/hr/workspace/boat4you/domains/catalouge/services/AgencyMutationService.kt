@@ -44,6 +44,9 @@ class AgencyMutationService(
         val dbAgency = agencyRepository.findById(id).getOrElse { throw AgencyDoesNotExistException() }
 
         dbAgency.active = isActive
+        // Manual toggle takes ownership of the flag: the partner-mirror sync only re-activates
+        // agencies it deactivated itself (syncDeactivatedBy), so an admin's OFF stays off.
+        dbAgency.syncDeactivatedBy = null
 
         val dto = agencyRepository.save(dbAgency).toDto()
         searchViewRefreshService.requestRefresh()
