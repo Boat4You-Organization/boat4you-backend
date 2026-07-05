@@ -1,5 +1,16 @@
 # Backend deploy notes
 
+## 2026-07-05 (navečer) — Trip hub → app-like bottom tabs (web 3a657a1, BUILD -eCPbHLPinSZWmIgCmHbP)
+
+Per Mario + the approved design: the trip hub's single long scroll became a tabbed
+app. Persistent hero on top; fixed safe-area bottom nav with 4 tabs — **Trip**
+(gallery, owner payments, weather, SOS), **Documents** (travel docs + empty state),
+**Chat** (crew + chat + album), **More** (push reminders, install guide, support).
+Pure web layout change; no backend. Verified live: 200, all four tab labels served,
+build -eCPbHLPinSZWmIgCmHbP. Rollback .next.bak on cusma1.
+
+---
+
 ## 2026-07-05 (kasno navečer) — Trip album upload fix: nginx 413 (SERVER CONFIG + web a8a79ad)
 
 **Symptom:** photo upload from Mario's iPhone silently did nothing. **Cause:** nginx on
