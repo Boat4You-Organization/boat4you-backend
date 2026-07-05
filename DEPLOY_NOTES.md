@@ -1,5 +1,38 @@
 # Backend deploy notes
 
+## 2026-07-05 (noć) — Trip: 10-day GDPR photo retention + ⚠️ concurrent-deploy outage
+
+**Feature (Mario 5.7.2026):** trip photos are kept only 10 days after the charter, then deleted
+(DB rows + NFS files). `TripPhotoRetentionJob` (cusma3, daily 09:50) purges photos of charters
+ended >10d ago; uploads now close at +10; the T+1 "album ready" concierge post states the exact
+download deadline (dateTo+10) + that we remove them afterwards (GDPR); the hub album shows the
+deadline. Web: BUILD BSDKGYZhHgJu83CykyniT. Backend built from a CLEAN git worktree at my HEAD
+(4c52b01) to exclude the parallel session's uncommitted WIP; deployed to cusma3 (retention runs
+there, @Profile data-sync) and cusma2. First purge deletes nothing real yet (only future-dated
+Zen test photos exist).
+
+⚠️ **PRODUCTION INCIDENT — ~5 min API outage (~20:29–20:34 UTC):** TWO work streams were deploying
+to cusma2 at the same time (mine = trip; a parallel one = booking-number prefix 1001→1441 **V9_33**
++ "reservation charter update" **V9_34**). Their concurrent restarts + a transient Flyway
+"Migrations have failed validation" during the migration transition crash-looped cusma2 for ~5 min
+(api.boat4you.com 502). It SELF-RECOVERED: the parallel jar (size 229964138) settled, applied V9_34
+(schema now **9.34**), booted healthy (Tomcat 20:35:03). Final state verified stable: api/www/admin/
+trip all 200/307, cusma2 no further restarts.
+
+**Resulting split (benign, but note for next deploy):** cusma2 (API) runs the PARALLEL jar (9.34,
+charter-update, and it DOES carry my trip code — album.zip 403-guard present, so they built from
+main incl. my commits). cusma3 (scheduler) runs MY jar (9.33, retention job). Job profiles are
+disjoint (data-sync only on cusma3) and only cusma2 serves the API, so both features work. V9_34 is
+applied to the DB but its FILE is NOT yet on origin/main (parallel session's local WIP) — a unified
+rebuild isn't possible until they push it. **⚠️ On cusma3's next restart, Flyway will see DB 9.34 as
+a future migration (warn, no-op) — watch it comes up clean.**
+
+**LESSON: never run two concurrent production backend deploys to cusma2.** Coordinate; deploy
+serially. Rollbacks: webservice.jar.bak.pre-retention (cusma3 = my jar; cusma2 was overwritten by
+the parallel deploy).
+
+---
+
 ## 2026-07-05 (noć) — Trip: GDPR-minimal admin + album ZIP download (BE 05cdd55, web tfBhU7f…, admin, ALL DEPLOYED)
 
 **Mario 5.7.2026:** the broker must NOT have casual access to the crew's private trip content.
