@@ -62,10 +62,16 @@ class TripQueryService(
             ownerFirstName = flow.name?.takeIf { it.isNotBlank() },
             yacht = TripYachtDto(
                 name = yacht.name ?: "",
-                fullLabel = listOfNotNull(yacht.model?.manufacturer?.name, yacht.model?.name, yacht.name)
-                    .filter { it.isNotBlank() }
-                    .joinToString(" ")
-                    .ifBlank { yacht.name ?: "" },
+                // Model names usually already carry the manufacturer prefix
+                // ("Lagoon 450 F") — don't render "Lagoon Lagoon 450 F".
+                fullLabel = run {
+                    val manufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
+                    val model = yacht.model?.name?.takeIf { it.isNotBlank() }
+                    val prefix = if (manufacturer != null && model?.startsWith(manufacturer, ignoreCase = true) != true) manufacturer else null
+                    listOfNotNull(prefix, model, yacht.name?.takeIf { it.isNotBlank() })
+                        .joinToString(" ")
+                        .ifBlank { yacht.name ?: "" }
+                },
                 slug = SlugUtils.toSlugWithId(
                     yacht.model?.manufacturer?.name,
                     yacht.model?.name,
