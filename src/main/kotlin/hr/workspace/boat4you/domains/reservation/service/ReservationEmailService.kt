@@ -91,7 +91,6 @@ class ReservationEmailService(
             .ifBlank { yachtName ?: "—" }
 
         val currencySymbol = Currency.getInstance(reservation.currency).getSymbol(Locale.getDefault()).toString()
-        val totalPriceLabel = "${(reservation.totalPrice ?: java.math.BigDecimal.ZERO).money()}$currencySymbol"
 
         // Locale must be resolved BEFORE we localise per-row payment / extras
         // labels — Customer view uses user.language, admin uses English.
@@ -164,6 +163,18 @@ class ReservationEmailService(
         val bankFeeTotal = settingsService.getSetting(
             hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE,
         ).value?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
+        // TOTAL in the dates strip = what the customer actually pays us: the payment
+        // plan's installments plus the FULL fixed bank fee (whose per-wire shares the
+        // transfer amounts below already carry). reservation.totalPrice can diverge
+        // from the plan (the plan carries the agency discount; #100184 stored an
+        // undiscounted total) — the TOTAL must always equal the sum of the transfers
+        // this email asks for. Mario 5.7.2026.
+        val payableTotal = sortedPhases
+            .takeIf { it.isNotEmpty() }
+            ?.sumOf { it.amount }
+            ?.plus(bankFeeTotal)
+            ?: (reservation.totalPrice ?: java.math.BigDecimal.ZERO)
+        val totalPriceLabel = "${payableTotal.money()}$currencySymbol"
         val firstUnpaid = sortedPhases.firstOrNull { it.paidOn == null }
         val firstUnpaidIdx = sortedPhases.indexOfFirst { it.paidOn == null }.coerceAtLeast(0)
         val bankFeeShare = BankTransferFeeShare.shareFor(bankFeeTotal, sortedPhases.size.coerceAtLeast(1), firstUnpaidIdx)
@@ -312,7 +323,6 @@ class ReservationEmailService(
                 .getInstance(reservation.currency)
                 .getSymbol(Locale.getDefault())
                 .toString()
-        val totalPriceLabel = "${(reservation.totalPrice ?: BigDecimal.ZERO).money()}$currencySymbol"
 
         // Customer locale = stored user.language (set when the booking was
         // initiated). Falls back to English if missing.
@@ -373,6 +383,25 @@ class ReservationEmailService(
                 "isPaid" to (p.paidOn != null),
             )
         }
+
+        // TOTAL = the customer's actual outlay: the plan's installments (already
+        // carrying the card surcharge when paid by card) plus the full fixed wire
+        // fee for bank-transfer payers. reservation.totalPrice can diverge from
+        // the plan (the plan carries the agency discount) — the TOTAL must match
+        // what is actually being paid. Mario 5.7.2026.
+        val bankFeeTotal = if (paymentType == PaymentType.BANK_TRANSFER) {
+            settingsService.getSetting(
+                hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE,
+            ).value?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        } else {
+            BigDecimal.ZERO
+        }
+        val payableTotal = sortedPhases
+            .takeIf { it.isNotEmpty() }
+            ?.sumOf { it.amount }
+            ?.plus(bankFeeTotal)
+            ?: (reservation.totalPrice ?: BigDecimal.ZERO)
+        val totalPriceLabel = "${payableTotal.money()}$currencySymbol"
 
         // "Just paid" amount = the most-recent paid phase (CARD pays them all
         // in one go = `totalPrice`; BANK_TRANSFER pays them one at a time).

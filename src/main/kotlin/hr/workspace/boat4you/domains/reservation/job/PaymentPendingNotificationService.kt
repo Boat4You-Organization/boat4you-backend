@@ -174,7 +174,6 @@ class PaymentPendingNotificationService(
             .getInstance(reservation.currency)
             .getSymbol(Locale.getDefault())
             .toString()
-        val totalPriceLabel = "${(reservation.totalPrice ?: BigDecimal.ZERO).toPlainString()}$currencySymbol"
 
         // Payment phases — render BOTH paid and unpaid rows. Booking is
         // already CONFIRMED so the deposit (and possibly mid-balance)
@@ -207,6 +206,17 @@ class PaymentPendingNotificationService(
         val bankFeeTotal = settingsService.getSetting(
             hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE,
         ).value?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        // TOTAL in the dates strip = what the customer actually pays us: the plan's
+        // installments plus the FULL fixed wire fee (whose per-wire shares the transfer
+        // amounts carry). reservation.totalPrice can diverge from the plan (the plan
+        // carries the agency discount) — the TOTAL must match the transfers this email
+        // asks for. Mario 5.7.2026, mirrors sendOptionCreatedEmail.
+        val payableTotal = sortedPhases
+            .takeIf { it.isNotEmpty() }
+            ?.sumOf { it.amount }
+            ?.plus(bankFeeTotal)
+            ?: (reservation.totalPrice ?: BigDecimal.ZERO)
+        val totalPriceLabel = "${payableTotal.toPlainString()}$currencySymbol"
         val pendingPhaseIdx = sortedPhases.indexOfFirst { it.id == pendingPaymentPhase.id }.coerceAtLeast(0)
         val bankFeeShare = hr.workspace.boat4you.domains.reservation.service.BankTransferFeeShare
             .shareFor(bankFeeTotal, sortedPhases.size.coerceAtLeast(1), pendingPhaseIdx)

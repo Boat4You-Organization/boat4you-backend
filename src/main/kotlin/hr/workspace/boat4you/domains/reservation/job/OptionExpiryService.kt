@@ -192,7 +192,6 @@ class OptionExpiryService(
             .getInstance(reservation.currency)
             .getSymbol(Locale.getDefault())
             .toString()
-        val totalPriceLabel = "${(reservation.totalPrice ?: BigDecimal.ZERO).toPlainString()}$currencySymbol"
 
         // Payment phases — same shape and ordinal-key resolution as
         // `sendOptionCreatedEmail` but under the `optionReminder.*`
@@ -223,6 +222,17 @@ class OptionExpiryService(
         val bankFeeTotal = settingsService.getSetting(
             hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE,
         ).value?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
+        // TOTAL in the dates strip = what the customer actually pays us: the plan's
+        // installments plus the FULL fixed wire fee (whose per-wire shares the transfer
+        // amounts carry). reservation.totalPrice can diverge from the plan (the plan
+        // carries the agency discount) — the TOTAL must match the transfers this email
+        // asks for. Mario 5.7.2026, mirrors sendOptionCreatedEmail.
+        val payableTotal = sortedPhases
+            .takeIf { it.isNotEmpty() }
+            ?.sumOf { it.amount }
+            ?.plus(bankFeeTotal)
+            ?: (reservation.totalPrice ?: BigDecimal.ZERO)
+        val totalPriceLabel = "${payableTotal.toPlainString()}$currencySymbol"
         val firstUnpaidIdx = sortedPhases.indexOfFirst { it.paidOn == null }.coerceAtLeast(0)
         val bankFeeShare = hr.workspace.boat4you.domains.reservation.service.BankTransferFeeShare
             .shareFor(bankFeeTotal, sortedPhases.size.coerceAtLeast(1), firstUnpaidIdx)
@@ -354,7 +364,6 @@ class OptionExpiryService(
             .getInstance(reservation.currency)
             .getSymbol(Locale.getDefault())
             .toString()
-        val totalPriceLabel = "${(reservation.totalPrice ?: BigDecimal.ZERO).toPlainString()}$currencySymbol"
 
         // Payment schedule + extras — same shape as the reminder. Mario rule
         // (3.5.2026): the expired email also recaps the booking the customer
@@ -362,6 +371,17 @@ class OptionExpiryService(
         // settled at the marina. Helps the customer make sense of what was
         // booked when they re-engage from the CTA further down.
         val sortedPhases = flow.paymentPhases.sortedBy { it.deadline }
+        // Same TOTAL rule as the reminder (Mario 5.7.2026): plan installments + full
+        // wire fee, so the recap matches the amounts the customer was actually asked for.
+        val expiredBankFeeTotal = settingsService.getSetting(
+            hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE,
+        ).value?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
+        val payableTotal = sortedPhases
+            .takeIf { it.isNotEmpty() }
+            ?.sumOf { it.amount }
+            ?.plus(expiredBankFeeTotal)
+            ?: (reservation.totalPrice ?: BigDecimal.ZERO)
+        val totalPriceLabel = "${payableTotal.toPlainString()}$currencySymbol"
         val phaseViews: List<Map<String, Any?>> = sortedPhases.mapIndexed { idx, p ->
             val ordKey = when {
                 idx == sortedPhases.size - 1 && sortedPhases.size > 1 -> "optionReminder.phaseFinal"
