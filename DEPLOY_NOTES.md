@@ -1,5 +1,23 @@
 # Backend deploy notes
 
+## 2026-07-05 (kasno navečer) — Trip album upload fix: nginx 413 (SERVER CONFIG + web a8a79ad)
+
+**Symptom:** photo upload from Mario's iPhone silently did nothing. **Cause:** nginx on
+cusma2 had NO client_max_body_size anywhere → default 1 MB; phone photos (3-10 MB) got
+413 before reaching Spring (access log confirmed). Admin doc uploads never hit it (small
+PDFs/Word).
+
+**Fixes:** (1) `/etc/nginx/conf.d/boat4you.conf` — `client_max_body_size 25m;` in both
+api server blocks (backup `.bak.pre-bodysize`, nginx -t + reload OK). ⚠️ MANUAL SERVER
+CONFIG — not in git; restore it if the box is ever rebuilt. (2) Web (a8a79ad, BUILD
+E-Q-IcLBAjUlxzS-62d_8): photos downscale client-side to 2048 px JPEG before upload
+(keeps every phone photo ~1 MB, fast on marina Wi-Fi, also under the 10 MB server image
+cap), upload failures now show a message instead of silently doing nothing, accept
+widened to image/* (HEIC decodes in canvas → JPEG). Verified: 5.6 MB upload → 200 →
+webp served; probe rows cleaned from Zen (Test Gost + poruka ostavljeni kao demo).
+
+---
+
 ## 2026-07-05 — Boat4You Trip PHASES 3+4: crew, chat, album, admin console (BE b499987, web 876f006, admin fcc6d80 — ALL DEPLOYED)
 
 **The full Trip product is live.** V9_32: trip_participant (secret per-device key,
