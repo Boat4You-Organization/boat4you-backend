@@ -1,5 +1,34 @@
 # Backend deploy notes
 
+## 2026-07-06 — Trip: crew push on document/crew-list add + install banner (BE 778662a, web -5SRuex, DEPLOYED)
+
+**Push when we add something (Mario 6.7.):** admin uploads a customer-visible travel document
+(BOARDING_PASS / CREW_LIST / PREFERENCE_LIST) or first sets the crew-list link → the crew's
+subscribed devices get a web-push ("📄 New document in your trip" / "📋 Crew list ready").
+Weather + charter-announcement pushes already exist (TripPushJob T-7/T-1/day-of).
+TripPushService.notifyCrew resolves the token + sends after commit. Internal admin docs stay silent.
+
+⚠️ **Review (HIGH) fixed pre-deploy:** the after-commit push ran on the request thread while the
+outer tx's Hikari connection was still bound, and web-push send() blocks with NO timeout — a hung
+push endpoint could pin a pooled connection on cusma2 (single no-swap API node). Fix:
+`sendToReservationAsync` hands the blocking HTTP to a dedicated bounded pool (1-3 daemon threads,
+queue 500, DiscardPolicy) so the request connection frees immediately and no DB connection is held
+across the sends. Also applied to the pre-existing concierge chat push (same pattern). TripPushJob
+(cusma3, scheduled) stays sync.
+
+**Web install banner:** in browser mode (not standalone) a dismissible top banner (sticky, X →
+localStorage) prompts adding to the home screen for notifications; Android drives the native
+`beforeinstallprompt`, iOS shows the Share→Add-to-Home-Screen steps. (Note the Google Play Protect
+"unsafe app" warning on Samsung Internet is a Google/WebAPK quirk, not ours — use Chrome / "Install
+anyway".)
+
+**Deploy:** built ONE unified jar from a CLEAN worktree at HEAD (778662a) — main now carries the
+parallel session's V9_34 + charter-update (both committed + already applied, schema 9.34) plus my
+trip changes, so Flyway skipped V9_34 (already applied) and both nodes booted clean on 9.34,
+health 200. Rollback: webservice.jar.bak.pre-docpush (both). Web .next.bak on cusma1.
+
+---
+
 ## 2026-07-05 (noć) — Trip: 10-day GDPR photo retention + ⚠️ concurrent-deploy outage
 
 **Feature (Mario 5.7.2026):** trip photos are kept only 10 days after the charter, then deleted
