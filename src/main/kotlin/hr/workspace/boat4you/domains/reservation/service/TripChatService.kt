@@ -126,20 +126,6 @@ class TripChatService(
             streamRegistry.subscribe(reservation.id!!)
         }
 
-    /** Admin view — full history + stamps the unread-badge marker. */
-    @Transactional
-    fun adminHistory(reservationId: Long): List<TripChatMessageDto> {
-        reservationRepository.findById(reservationId).orElse(null)?.let {
-            it.adminChatSeenAt = LocalDateTime.now()
-            reservationRepository.save(it)
-        }
-        // Newest 200, oldest-first for rendering (the ascending Top200 from id 0
-        // would pin the admin to the OLDEST messages on long chats).
-        return chatRepository.findTop200ByReservationIdOrderByIdDesc(reservationId)
-            .sortedBy { it.id }
-            .map { it.toDto() }
-    }
-
     private fun TripChatMessage.toDto() = TripChatMessageDto(
         id = id!!,
         participantId = participantId,

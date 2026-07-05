@@ -94,6 +94,43 @@ class TripPhotoService(
 
     fun adminRaw(reservationId: Long, photoId: Long): Pair<Resource, String>? = rawInternal(reservationId, photoId)
 
+    fun count(reservationId: Long): Long = photoRepository.countByReservationId(reservationId)
+
+    /** Crew self-service "download all" from the hub album (key-scoped). */
+    fun zipForCrew(token: String, participantKey: String): ByteArray? {
+        val (reservation, _) = crewService.findActiveParticipant(token, participantKey) ?: return null
+        return zip(photoRepository.findAllByReservationIdOrderByIdDesc(reservation.id!!))
+    }
+
+    /**
+     * Admin download of the compiled album. [marketingOnly] returns only the
+     * photos whose uploader ticked the marketing-consent box — the ONLY ones
+     * we may reuse for marketing (Mario 5.7.2026). Null when the trip has no
+     * qualifying photo.
+     */
+    fun adminZip(reservationId: Long, marketingOnly: Boolean): ByteArray? {
+        val photos = photoRepository.findAllByReservationIdOrderByIdDesc(reservationId)
+            .filter { !marketingOnly || it.marketingConsent }
+        return zip(photos)
+    }
+
+    private fun zip(photos: List<TripPhoto>): ByteArray? {
+        if (photos.isEmpty()) return null
+        val buffer = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(buffer).use { zos ->
+            photos.forEachIndexed { index, photo ->
+                val path = photo.filePath ?: return@forEachIndexed
+                val bytes = runCatching {
+                    fileSystemService.getResourceFromPath(fileSystemService.getResourcePath(path)).contentAsByteArray
+                }.getOrNull() ?: return@forEachIndexed
+                zos.putNextEntry(java.util.zip.ZipEntry("photo-${String.format("%03d", index + 1)}-${photo.id}.webp"))
+                zos.write(bytes)
+                zos.closeEntry()
+            }
+        }
+        return buffer.toByteArray()
+    }
+
     private fun rawInternal(reservationId: Long, photoId: Long): Pair<Resource, String>? {
         val photo = photoRepository.findById(photoId).orElse(null) ?: return null
         if (photo.reservationId != reservationId) return null

@@ -233,4 +233,18 @@ class PublicTripController(
             .header("X-Robots-Tag", "noindex, nofollow")
             .body(resource)
     }
+
+    @Operation(summary = "Download the whole trip album as a ZIP (participant-key scoped)")
+    @GetMapping("/{token}/album.zip")
+    fun downloadAlbum(
+        @PathVariable token: String,
+        @RequestParam key: String,
+    ): ResponseEntity<ByteArray> {
+        val zip = tripPhotoService.zipForCrew(token, key) ?: return ResponseEntity.notFound().build()
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("application/zip"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"trip-photos.zip\"")
+            .header("X-Robots-Tag", "noindex, nofollow")
+            .body(zip)
+    }
 }

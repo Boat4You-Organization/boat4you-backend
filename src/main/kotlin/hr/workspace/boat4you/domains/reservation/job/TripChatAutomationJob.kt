@@ -1,47 +1,42 @@
 package hr.workspace.boat4you.domains.reservation.job
 
-import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
-import hr.workspace.boat4you.domains.reservation.jpa.TripChatMessageRepository
 import hr.workspace.boat4you.domains.reservation.service.TripChatService
-import hr.workspace.boat4you.domains.users.jpa.UserRepository
+import hr.workspace.boat4you.domains.reservation.service.TripPhotoService
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 
 /**
- * Concierge automations (locked 4.7.2026: "predlošci + zakazane objave") +
- * the admin's daily chat digest. Scheduled posts are idempotent via
- * automation_tag; the T-1 post does NOT push (TripPushJob's own T-1 push
- * covers that minute-window) while the T-14 itinerary post does. Digest =
- * yesterday's guest/owner messages, English, to the admin users — replaces
- * per-message notifications on Mario's phone by explicit decision.
+ * Boat4You Trip concierge automations (locked 4.7.2026: "predlošci + zakazane
+ * objave"). Scheduled posts are idempotent via automation_tag. The T-1 post
+ * does NOT push (TripPushJob's own T-1 push covers that minute-window); the
+ * T-14 itinerary and the T+1 album-ready posts do. After the charter, if the
+ * crew uploaded photos, the "album ready" post tells them to open their hub
+ * and download the lot — that IS the delivery of their download link (guests
+ * have no e-mail; the broker keeps a GDPR-minimal download in admin instead of
+ * any chat access).
  */
 @Profile("data-sync")
 @Component
 class TripChatAutomationJob(
     private val reservationRepository: ReservationRepository,
     private val tripChatService: TripChatService,
-    private val chatMessageRepository: TripChatMessageRepository,
-    private val emailService: EmailService,
-    private val userRepository: UserRepository,
+    private val tripPhotoService: TripPhotoService,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
     // Deliberately NOT @Transactional: each postAsConcierge runs its own tx,
     // so one failing reservation cannot poison the whole batch (review 5.7:
     // a joined outer tx turned per-post runCatching into all-or-nothing) and
-    // no connection is pinned across web-push/SMTP calls. The fetch queries
+    // no connection is pinned across web-push calls. The fetch queries
     // JOIN FETCH everything the message builders touch.
     @Scheduled(cron = "0 45 9 ? * *")
     @SchedulerLock(name = "tripChatAutomation", lockAtMostFor = "PT45M")
@@ -63,8 +58,15 @@ class TripChatAutomationJob(
                     ?.also { posted++ }
             }.onFailure { log.error("Trip ready post failed for reservation $id", it) }
         }
+        endedOn(today.minusDays(1)).forEach { reservation ->
+            val id = reservation.id ?: return@forEach
+            if (tripPhotoService.count(id) <= 0) return@forEach
+            runCatching {
+                tripChatService.postAsConcierge(id, albumReadyPost(reservation), automationTag = "album_ready_t1")
+                    ?.also { posted++ }
+            }.onFailure { log.error("Trip album-ready post failed for reservation $id", it) }
+        }
 
-        runCatching { sendDigest() }.onFailure { log.error("Trip chat digest failed", it) }
         log.info("TripChatAutomationJob: posted $posted concierge message(s)")
     }
 
@@ -74,6 +76,12 @@ class TripChatAutomationJob(
             startTime = date.atStartOfDay(),
             endTime = date.plusDays(1).atStartOfDay(),
         )
+
+    private fun endedOn(date: LocalDate): List<Reservation> = reservationRepository.findConfirmedEndingBetween(
+        status = ReservationStatus.RESERVATION,
+        startTime = date.atStartOfDay(),
+        endTime = date.plusDays(1).atStartOfDay(),
+    )
 
     private fun itineraryPost(reservation: Reservation): String {
         val yacht = reservation.reservationFlow?.yacht?.name?.takeIf { it.isNotBlank() } ?: "your yacht"
@@ -93,39 +101,14 @@ class TripChatAutomationJob(
             "Need anything last-minute? Reply here. Fair winds!"
     }
 
-    /** Yesterday's human traffic → one internal email; silent when empty. */
-    private fun sendDigest() {
-        val since = Instant.now().minus(1, ChronoUnit.DAYS)
-        val messages = chatMessageRepository.findForDigest(since)
-        if (messages.isEmpty()) return
-        val reservations = reservationRepository.findAllWithYachtByIdIn(messages.mapNotNull { it.reservationId }.toSet())
-            .associateBy { it.id }
-        val trips = messages.groupBy { it.reservationId }.map { (reservationId, list) ->
-            val reservation = reservations[reservationId]
-            mapOf(
-                "reservationNumber" to (reservation?.reservationNumber ?: "#$reservationId"),
-                "yachtName" to (reservation?.reservationFlow?.yacht?.name ?: ""),
-                "messageCount" to list.size,
-                "lines" to list.map { message ->
-                    val time = message.createdAt.atZone(ZoneId.of("UTC")).format(TIME_FORMAT)
-                    "$time · ${message.senderName}: ${message.body?.take(DIGEST_PREVIEW_LENGTH)}"
-                },
-            )
-        }
-        val adminEmails = userRepository.findAllAdminEmailAddresses()
-        if (adminEmails.isEmpty()) return
-        emailService.sendEmail(
-            recipients = adminEmails,
-            subject = "Trip chat digest — ${messages.size} message(s) across ${trips.size} trip(s)",
-            templateName = "email/tripChatDigest",
-            variables = mapOf("trips" to trips),
-        )
+    private fun albumReadyPost(reservation: Reservation): String {
+        val yacht = reservation.reservationFlow?.yacht?.name?.takeIf { it.isNotBlank() } ?: "your yacht"
+        return "📸 Your $yacht photos are ready! Open the Chat tab of this trip, scroll to the album and tap " +
+            "“Download all photos” to keep the whole week. Thank you for sailing with Boat4You 💙"
     }
 
     companion object {
         private const val ITINERARY_DAYS_AHEAD = 14L
-        private const val DIGEST_PREVIEW_LENGTH = 300
         private val DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM yyyy")
-        private val TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
     }
 }
