@@ -85,7 +85,9 @@ class TripChatService(
         afterCommit {
             streamRegistry.publish(reservationId, dto)
             if (push && token != null) {
-                tripPushService.sendToReservation(
+                // Async: never hold the request thread's DB connection across
+                // the blocking web-push HTTP (cusma2 single API node).
+                tripPushService.sendToReservationAsync(
                     reservationId = reservationId,
                     title = "⚓ $CONCIERGE_NAME",
                     body = trimmed.take(PUSH_PREVIEW_LENGTH),

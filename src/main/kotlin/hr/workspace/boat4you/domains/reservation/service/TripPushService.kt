@@ -18,7 +18,11 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionSynchronization
 import org.springframework.transaction.support.TransactionSynchronizationManager
+import jakarta.annotation.PreDestroy
 import java.security.Security
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * Web-push for the Boat4You Trip hub (phase 2). Subscriptions are stored per
@@ -48,6 +52,26 @@ class TripPushService(
 
     /** Event types the public endpoint accepts — anything else is dropped. */
     private val allowedEventTypes = setOf("HUB_VIEW", "SITE_CLICK", "PUSH_SUBSCRIBE", "PUSH_OPEN", "DOC_OPEN")
+
+    /**
+     * Dedicated, isolated pool for REQUEST-path pushes (admin doc upload,
+     * crew-list link, concierge chat post). The web-push HTTP is blocking and
+     * un-timed; running it here means it never holds the request's DB
+     * connection on cusma2 (the single no-swap API node). Best-effort: bounded
+     * queue + DiscardPolicy so a burst / hung push endpoint can never grow
+     * threads or pin the DB pool. NOT the sync/scheduling pool — keeps it clear
+     * of the Hikari-burst hazard (2.7.2026). TripPushJob on cusma3 stays sync.
+     */
+    private val pushExecutor = ThreadPoolExecutor(
+        1, 3, 60L, TimeUnit.SECONDS, LinkedBlockingQueue(500),
+        { r -> Thread(r, "trip-push").apply { isDaemon = true } },
+        ThreadPoolExecutor.DiscardPolicy(),
+    )
+
+    @PreDestroy
+    fun shutdown() {
+        pushExecutor.shutdown()
+    }
 
     private val pushService: PushService? by lazy {
         if (!enabled) {
@@ -108,7 +132,29 @@ class TripPushService(
         if (!enabled) return
         val token = reservationRepository.findById(reservationId).orElse(null)?.tripToken ?: return
         val url = "$webBaseUrl/trip/$token?push=$tag"
-        afterCommit { sendToReservation(reservationId, title, body, url, tag) }
+        afterCommit { sendToReservationAsync(reservationId, title, body, url, tag) }
+    }
+
+    /**
+     * Fire-and-forget push for the REQUEST path: hands the blocking web-push
+     * HTTP to [pushExecutor] so the caller's thread (and its DB connection)
+     * is freed immediately. On the pool thread [sendToReservation]'s repo
+     * calls open+close their own short transactions, so NO connection is held
+     * across the HTTP sends. Best-effort — dropped if the pool is saturated.
+     */
+    fun sendToReservationAsync(
+        reservationId: Long,
+        title: String,
+        body: String,
+        url: String,
+        tag: String,
+        ownerOnly: Boolean = false,
+    ) {
+        if (!enabled) return
+        pushExecutor.execute {
+            runCatching { sendToReservation(reservationId, title, body, url, tag, ownerOnly) }
+                .onFailure { log.warn("Async trip push failed for reservation $reservationId", it) }
+        }
     }
 
     private fun afterCommit(block: () -> Unit) {
