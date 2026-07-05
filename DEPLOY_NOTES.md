@@ -1,5 +1,37 @@
 # Backend deploy notes
 
+## 2026-07-05 — Boat4You Trip PHASE 2: push + analytics (BE 819390c, web 7b75ae0, ALL DEPLOYED)
+
+**Web-push reminders + day-1 analytics are live.** V9_30 adds trip_push_subscription
+(endpoint-unique upsert, is_owner flag) + trip_event; V9_31 backfills ACI Marina Split
+coords (43.5024, 16.4295 — the only reservation marina without lat/lon; sync never
+writes coords so it sticks). New deps: nl.martijndwars:web-push 5.1.1 (bcprov-jdk15on
+excluded — we ship jdk18on).
+
+**Endpoints:** POST /public/trip/{token}/push-subscriptions (400 on non-https endpoint,
+404 wrong token) + /events (whitelist HUB_VIEW/SITE_CLICK/PUSH_SUBSCRIBE/PUSH_OPEN/
+DOC_OPEN). TripDto gains vapidPublicKey (null = push off, hub hides the card).
+
+**TripPushJob (cusma3, daily 09:40, shedlock):** T-7, T-1 + Open-Meteo forecast, day-of
+welcome + forecast, T+1 thank-you, installment reminders 7/2 days before deadline —
+owner-only devices, NO amounts ever (crew shares the hub). Click-through =
+/trip/{token}?push=tag → hub logs PUSH_OPEN. Dead subscriptions (404/410) auto-delete.
+
+**Web:** sw.js bumped b4y-v2 with push/notificationclick; hub gets a "Get trip
+reminders" card (SW registered on /trip, hidden on unsupported browsers/finished trips),
+analytics events fire-and-forget. iOS: card appears only inside the installed PWA.
+
+**VAPID:** keypair generated 5.7, appended to cusma2 boat4you_vars.env + cusma3
+boat4youscheduler_vars.env (backups *.bak.pre-vapid). Rollback jars:
+webservice.jar.bak.pre-trip2 (both nodes); web .next.bak-20260705123210.
+
+**Verified live:** V9_30+V9_31 applied (schema v9.31), Zen payload carries marina
+coords + vapid key, sw.js v2 served, events 204→row in trip_event, 404/400 guards.
+⚠️ First real push goes out at the 09:40 job — check `TripPushJob: delivered` in the
+cusma3 journal after someone subscribes (Mario's phone is the E2E test).
+
+---
+
 ## 2026-07-05 — Boat4You Trip PHASE 1 (commits 73fcf5d/858a54a/84d943f + web 4ceeccd + admin 161f1eb, ALL DEPLOYED)
 
 **The PWA trip companion is live.** Every reservation carries an unguessable `trip_token`
