@@ -165,6 +165,15 @@ open class Reservation {
     @Column(name = "admin_notes", columnDefinition = "TEXT")
     open var adminNotes: String? = null
 
+    /**
+     * Free-form "Charter update" the broker writes for the CUSTOMER — negotiated
+     * extras arranged with the agency (e.g. "Skipper: 1470 €", "Stand Up Paddle
+     * 200 €"). Unlike [adminNotes] this IS shown to the customer on
+     * /my-bookings/{id} below the Pay-now action.
+     */
+    @Column(name = "charter_update", columnDefinition = "TEXT")
+    open var charterUpdate: String? = null
+
     @Column(name = "deposit")
     open var deposit: BigDecimal? = null
 

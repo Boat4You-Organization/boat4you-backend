@@ -182,6 +182,20 @@ internal class AdminReservationController(
         return ResponseEntity.ok(reservationMutationService.updateCrewListUrl(id, body.crewListUrl))
     }
 
+    @Operation(
+        summary = "Set/clear the customer-visible charter update on a reservation",
+        description = "Broker-written note about extras arranged with the agency (e.g. " +
+            "'Skipper: 1470 €'). Shown to the customer below the Pay-now action in " +
+            "/my-bookings/{id}. Null/empty clears it.",
+    )
+    @PatchMapping("/{id}/charterUpdate")
+    fun updateCharterUpdate(
+        @PathVariable id: Long,
+        @RequestBody body: CharterUpdateBody,
+    ): ResponseEntity<ReservationDto> {
+        return ResponseEntity.ok(reservationMutationService.updateCharterUpdate(id, body.charterUpdate))
+    }
+
     @Operation(description = "Refresh reservation status from external service")
     @PostMapping("/{id}/refresh")
     fun refreshReservation(
@@ -461,6 +475,9 @@ data class AdminNotesBody(val notes: String?)
 
 /** Body for PATCH /{id}/crewListUrl — null/empty clears the URL. */
 data class CrewListUrlBody(val crewListUrl: String?)
+
+/** Body for PATCH /{id}/charterUpdate — null/empty clears the note. */
+data class CharterUpdateBody(val charterUpdate: String?)
 
 /** Optional body for DELETE /{id} — admin-provided reason shown to the customer. */
 data class CancelBody(val reason: String?)

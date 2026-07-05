@@ -73,7 +73,8 @@ SELECT r.id                        AS reservation_id,
        o.ext_base_price            AS offer_list_price,
        r.agency_price              AS reservation_agency_price,
        r.commission                AS reservation_commission,
-       r.admin_notes               AS reservation_admin_notes
+       r.admin_notes               AS reservation_admin_notes,
+       r.charter_update            AS reservation_charter_update
 FROM reservation_flow rf
          JOIN users cu ON rf.created_by = cu.id
          JOIN users cf ON rf.user_id = cf.id

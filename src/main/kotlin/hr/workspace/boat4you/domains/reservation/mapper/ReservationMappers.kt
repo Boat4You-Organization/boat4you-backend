@@ -220,6 +220,8 @@ class ReservationMappers(
             // scans). Customer downloads via /secured/reservations/my-reservations/{id}/documents/{docId}.
             crewListUrl = reservationView.reservationCrewListUrl,
             tripToken = reservationView.reservationTripToken,
+            // Broker-written charter update — customer-visible (unlike adminNotes).
+            charterUpdate = reservationView.reservationCharterUpdate,
             // Customer-visible only — internal admin uploads stay hidden.
             documents = reservationDocumentService.listCustomerVisible(reservationView.reservationId!!),
             // NOTE: adminNotes intentionally NOT exposed here — this is the
@@ -353,6 +355,7 @@ class ReservationMappers(
             amenities = yacht.yachtEquipments.distinctBy { it.equipmentId }.map { it.toDto() },
             specialRequest = reservationView.reservationFlowRequest,
             adminNotes = reservationView.reservationAdminNotes,
+            charterUpdate = reservationView.reservationCharterUpdate,
             services =
                 yacht.yachtExtras
                     .filter { it.shouldDisplay() }

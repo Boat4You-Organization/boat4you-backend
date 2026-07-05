@@ -560,6 +560,16 @@ class ReservationMutationService(
         return reservationMappers.toReservationDto(reservationRepository.save(reservation))
     }
 
+    @Transactional
+    fun updateCharterUpdate(
+        id: Long,
+        charterUpdate: String?,
+    ): ReservationDto {
+        val reservation = reservationRepository.findById(id).getOrElse { throw ReservationNotExistException() }
+        reservation.charterUpdate = charterUpdate?.takeIf { it.isNotBlank() }
+        return reservationMappers.toReservationDto(reservationRepository.save(reservation))
+    }
+
     // Legacy generator replaced by BookingNumberService (per-charter-year
     // counter, format "1001{sequence}/{charter_year}"). Old format was
     // "{sequential prefix starting at 1001}/{current calendar year}".

@@ -340,6 +340,11 @@ open class ReservationView protected constructor() {
     open var reservationAdminNotes: String? = null
         protected set
 
+    // Customer-visible "Charter update" (broker-arranged extras). Shown on /my-bookings/{id}.
+    @Column(name = "reservation_charter_update", columnDefinition = "TEXT")
+    open var reservationCharterUpdate: String? = null
+        protected set
+
     @Enumerated(EnumType.STRING)
     @Column(name = "charter_type")
     open var charterType: CharterType? = null

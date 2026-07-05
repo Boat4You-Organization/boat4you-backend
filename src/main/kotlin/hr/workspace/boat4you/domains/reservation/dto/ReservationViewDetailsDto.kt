@@ -87,6 +87,9 @@ data class ReservationViewDetailsDto(
     // Free-form admin notes (internal). Admin-only — not exposed in customer
     // reservation endpoints.
     val adminNotes: String?,
+    // Broker-written "Charter update" — negotiated extras; CUSTOMER-visible
+    // (also carried here so admin can read/edit it in the booking detail).
+    val charterUpdate: String?,
     val services: List<YachtExtrasDto> = emptyList(),
     val obligatoryExtrasKeys: List<String> = emptyList(),
 ) : Serializable

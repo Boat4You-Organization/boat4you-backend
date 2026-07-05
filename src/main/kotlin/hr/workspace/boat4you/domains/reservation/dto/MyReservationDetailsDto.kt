@@ -89,6 +89,10 @@ data class MyReservationDetailsDto(
     val crewListUrl: String? = null,
     /** Boat4You Trip PWA hub key — /trip/{token}; owner-facing "Trip app" button. */
     val tripToken: String? = null,
+    // Broker-written "Charter update" — negotiated extras arranged with the
+    // agency (e.g. "Skipper: 1470 €"). Free text, customer-visible, shown below
+    // the Pay-now action in /my-bookings/{id}. Null/blank → the block is hidden.
+    val charterUpdate: String? = null,
     // Admin-uploaded files attached to the booking — pickup directions,
     // crew list docx, contract scans, anything PDF/DOC/DOCX. Mario rule
     // (3.5.2026): visible to customer in /my-bookings/{id}.
