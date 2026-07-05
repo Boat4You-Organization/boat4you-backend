@@ -9,10 +9,17 @@ import org.springframework.transaction.annotation.Transactional
 /**
  * Hands out the next customer-facing booking number for a given charter year.
  *
- * Format: `"1001" + sequence + "/" + charterYear` (e.g. `100176/2026`).
- * Prefix `1001` is fixed; sequence restarts at 1 for each new charter year
- * and is unpadded — so 99 becomes `100199/…` and the next one is
- * `1001100/…`.
+ * Format: `"1441" + sequence(≥3 digits, zero-padded) + "/" + charterYear`
+ * (e.g. `1441001/2026`, `1441002/2026`). Prefix `1441` is fixed; the sequence
+ * restarts at 1 for each new charter year and is zero-padded to a minimum of
+ * three digits — so 1 is `1441001/…`, 999 is `1441999/…` and 1000 grows to
+ * `14411000/…`.
+ *
+ * Prefix changed from `1001` to `1441` on 5.7.2026 (Mario): the online bookings
+ * this year must be numbered distinctly from the legacy back-office system so
+ * the two documentation streams don't clash. V9_33 reset the per-year counters
+ * so the first new-prefix number is `1441001/{year}`; existing `1001…` numbers
+ * keep their old prefix (no collision — different prefix).
  *
  * Charter year is the year the charter starts, not the year the reservation
  * was booked — a reservation booked in December 2025 for a charter that
@@ -23,7 +30,8 @@ class BookingNumberService(
     private val bookingSequenceRepository: BookingSequenceRepository,
 ) {
     private companion object {
-        const val PREFIX = "1001"
+        const val PREFIX = "1441"
+        const val MIN_SEQUENCE_DIGITS = 3
     }
 
     /**
@@ -48,6 +56,7 @@ class BookingNumberService(
         row.lastSequence += 1
         bookingSequenceRepository.save(row)
 
-        return "$PREFIX${row.lastSequence}/$charterYear"
+        val sequence = row.lastSequence.toString().padStart(MIN_SEQUENCE_DIGITS, '0')
+        return "$PREFIX$sequence/$charterYear"
     }
 }

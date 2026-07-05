@@ -1,0 +1,16 @@
+-- Reservation-number prefix change 1001 -> 1441 (Mario 5.7.2026).
+-- This year runs parallel bookkeeping: legacy back-office reservations AND the
+-- new online ones. To keep the two streams from clashing, online bookings switch
+-- to the 1441 prefix (BookingNumberService) and the per-charter-year counters are
+-- reset so the first new-prefix number is 1441001/{year} (then 1441002/… etc.).
+--
+-- Safe: existing numbers keep the old 1001 prefix and 1441… never collides with
+-- 1001… (different prefix). Rows for years without a counter yet auto-start at 0
+-- in BookingNumberService, so this only needs to zero the existing rows.
+--
+-- ⚠️ ROLLBACK HAZARD: if the jar is rolled back to the old 1001/unpadded code
+-- while these counters stay 0, the old code would regenerate early numbers like
+-- 10011/{year} and hit the unique constraint. If rolling back the jar, also
+-- restore the counters (2026 -> 84, 2027 -> 3 as of 5.7.2026) or bump them past
+-- the highest used legacy sequence for each year.
+UPDATE booking_sequence SET last_sequence = 0;

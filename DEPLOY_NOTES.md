@@ -1,5 +1,22 @@
 # Backend deploy notes
 
+## 2026-07-05 — Reservation-number prefix 1001 → 1441 + counter reset (V9_33)
+
+**Rule (Mario 5.7.2026):** online bookings switch prefix `1001` → `1441` and the per-year
+sequence restarts at 1, zero-padded to 3 digits → next is **`1441001/2026`**, then
+`1441002/2026`; a 2027-start charter → `1441001/2027`. Reason: parallel bookkeeping this
+year (legacy back-office reservations + new online ones) — the two streams must not clash.
+
+- Code: `BookingNumberService.PREFIX="1441"` + `padStart(3,'0')`.
+- `V9_33` = `UPDATE booking_sequence SET last_sequence = 0` (was 2026→84, 2027→3 on 5.7.).
+  Existing `1001…` numbers untouched; `1441…` never collides (different prefix).
+- **Deploy order: cusma2 FIRST** (applies Flyway; cusma3 pinned won't). Bookings are created
+  on cusma2, so both the reset + new code land there together at boot (no window).
+- **⚠️ ROLLBACK HAZARD:** rolling the jar back to old `1001`/unpadded code while the counters
+  stay 0 → old code regenerates `10011/{year}` etc. → unique-constraint failure on booking
+  creation. If you roll back the jar, ALSO restore the counters (2026→84, 2027→3) or bump
+  each year past its highest used legacy sequence. Rollback jar: `webservice_pre_prefix1441.jar`.
+
 ## 2026-07-05 (navečer) — Trip hub → app-like bottom tabs (web 3a657a1, BUILD -eCPbHLPinSZWmIgCmHbP)
 
 Per Mario + the approved design: the trip hub's single long scroll became a tabbed
