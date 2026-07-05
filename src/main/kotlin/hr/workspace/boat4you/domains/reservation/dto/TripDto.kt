@@ -27,6 +27,9 @@ data class TripDto(
     /** VAPID public key for web-push subscribe; null = push not configured,
      *  the hub hides its trip-reminders card. */
     val vapidPublicKey: String?,
+    /** Crew invites open only after the first payment (locked rule) —
+     *  false hides the invite/join surfaces on the hub. */
+    val inviteUnlocked: Boolean,
 )
 
 data class TripYachtDto(

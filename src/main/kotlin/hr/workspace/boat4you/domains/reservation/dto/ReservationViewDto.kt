@@ -58,4 +58,7 @@ data class ReservationViewDto(
     val reservationCommission: BigDecimal?,
     // Admin-only: internal notes (transfer info, callbacks, etc.).
     val reservationAdminNotes: String?,
+    // Trip-chat unread badge (phase 3): true when the crew wrote something
+    // after the admin last opened the booking's chat.
+    val tripChatUnread: Boolean = false,
 ) : Serializable

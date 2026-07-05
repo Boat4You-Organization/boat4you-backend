@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Trip chat digest</title>
+</head>
+<body style="font-family: Arial, Helvetica, sans-serif; color: #0f172a; background: #f6f8fb; margin: 0; padding: 24px;">
+<div style="max-width: 640px; margin: 0 auto; background: #ffffff; border: 1px solid #e3e9f2; border-radius: 12px; padding: 24px;">
+    <h2 style="margin: 0 0 4px;">⛵ Trip chat — daily digest</h2>
+    <p style="margin: 0 0 18px; color: #5b6b82; font-size: 13px;">
+        Crew messages from the last 24 hours. Reply from the admin booking view (Trip chat) — answers go out as the Concierge.
+    </p>
+
+    <div th:each="trip : ${trips}" style="border-top: 1px solid #e3e9f2; padding: 14px 0;">
+        <div style="font-weight: bold; font-size: 15px;">
+            <span th:text="${trip.reservationNumber}">100183/2026</span> ·
+            <span th:text="${trip.yachtName}">Zen</span>
+            <span style="color: #5b6b82; font-weight: normal; font-size: 12px;"
+                  th:text="'(' + ${trip.messageCount} + ' message(s))'">(2 messages)</span>
+        </div>
+        <div th:each="line : ${trip.lines}"
+             style="font-size: 13px; color: #33415c; margin-top: 6px;"
+             th:text="${line}">Ana: What time do we board?</div>
+    </div>
+
+    <p style="margin: 18px 0 0; font-size: 12px; color: #5b6b82;">
+        Boat4You Trip · automated internal digest
+    </p>
+</div>
+</body>
+</html>

@@ -20,6 +20,7 @@ class TripQueryService(
     private val reservationRepository: ReservationRepository,
     private val reservationDocumentService: ReservationDocumentService,
     private val tripPushService: TripPushService,
+    private val tripCrewService: TripCrewService,
 ) {
     /** Documents the CREW may see. Contracts / untyped uploads stay owner-only. */
     private val travelDocumentTypes = setOf(
@@ -93,6 +94,7 @@ class TripQueryService(
                 ?: yacht.agency?.phone?.takeIf { it.isNotBlank() },
             documents = documents,
             vapidPublicKey = tripPushService.vapidPublicKey.takeIf { tripPushService.enabled },
+            inviteUnlocked = tripCrewService.inviteUnlocked(reservation),
         )
     }
 
@@ -100,6 +102,10 @@ class TripQueryService(
      *  to THIS reservation, be customer-visible and of a travel type. */
     fun getTravelDocument(token: String, documentId: Long): ReservationDocumentDownload? {
         val reservation = reservationRepository.findByTripToken(token) ?: return null
+        // Memory mode: travel documents are withdrawn 30 days after the
+        // charter (locked 4.7.2026) — the my-bookings copies stay for the owner.
+        val withdrawnFrom = reservation.dateTo?.plusDays(DOCS_WITHDRAWN_AFTER_DAYS)
+        if (withdrawnFrom != null && java.time.LocalDateTime.now().isAfter(withdrawnFrom)) return null
         val doc = try {
             reservationDocumentService.download(documentId)
         } catch (e: NoSuchElementException) {
@@ -109,5 +115,9 @@ class TripQueryService(
         if (doc.isInternal) return null
         if (doc.documentType !in travelDocumentTypes) return null
         return doc
+    }
+
+    companion object {
+        private const val DOCS_WITHDRAWN_AFTER_DAYS = 30L
     }
 }

@@ -95,6 +95,12 @@ open class Reservation {
     @Column(name = "trip_token", length = 64)
     open var tripToken: String? = null
 
+    /** Admin unread-chat badge marker: trip-chat messages newer than this
+     *  light the badge in the bookings list. Stamped when the admin opens
+     *  the booking's Trip chat. */
+    @Column(name = "admin_chat_seen_at")
+    open var adminChatSeenAt: LocalDateTime? = null
+
     /**
      * Partner reservation code (MMK reservationCode / Nausys UUID). Null
      * for admin "fictitious" replacement reservations — no partner call.

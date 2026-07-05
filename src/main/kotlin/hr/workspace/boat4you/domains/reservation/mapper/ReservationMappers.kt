@@ -271,6 +271,11 @@ class ReservationMappers(
             reservationAgencyPrice = reservationView.reservationAgencyPrice,
             reservationCommission = reservationView.reservationCommission,
             reservationAdminNotes = reservationView.reservationAdminNotes,
+            tripChatUnread = reservationView.reservationTripLastChatAt != null &&
+                (
+                    reservationView.reservationAdminChatSeenAt == null ||
+                        reservationView.reservationTripLastChatAt!!.isAfter(reservationView.reservationAdminChatSeenAt)
+                    ),
         )
 
     fun toDetailsDto(
