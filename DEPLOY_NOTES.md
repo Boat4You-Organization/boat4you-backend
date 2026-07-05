@@ -1,5 +1,29 @@
 # Backend deploy notes
 
+## 2026-07-05 — Boat4You Trip PHASE 1 (commits 73fcf5d/858a54a/84d943f + web 4ceeccd + admin 161f1eb, ALL DEPLOYED)
+
+**The PWA trip companion is live.** Every reservation carries an unguessable `trip_token`
+(V9_29 — ⚠️ was V9_28 but the parallel agency-mirror session took that number; the clash
+crash-looped cusma2 for ~90 s until the rename redeploy. LESSON: `git pull` + check migration
+numbers against origin BEFORE building a jar). `GET /public/trip/{token}` serves the hub
+payload (yacht+gallery+specs+slug, marina+coords, dates, crew-list link, agency phone, TRAVEL
+docs only — no prices/PII); token-scoped travel-doc download; token in my-bookings + admin DTOs
+via reservation_view (R__1_02 re-ran).
+
+**Web:** `/trip/[token]` standalone EN mobile hub (own root layout; `trip` excluded from the
+locale-middleware matcher!): countdown hero, gallery→boat page, Open-Meteo 7-day forecast for
+the marina coords, country-aware SOS card, leader-only payments card (session+reservation-number
+match), cancelled/finished modes, per-token manifest (`/trip/{t}/manifest.webmanifest`),
+noindex. My-bookings shows a navy "Trip app" button. **Admin:** Trip hub panel with QR
+(qrcode dep) + copy/open in the booking sidebar.
+
+**Verified live on Zen (#100183/2026):** page 200 + SSR content, manifest OK, wrong token 404,
+API 200, admin 200. Known gap: ACI Marina Split has NULL lat/lon → weather hidden there
+(coords backfill = phase 2 item). Zen token: 718b59ec456c48c2b291ca2893ebbff8.
+
+---
+
+
 ## 2026-07-05 — Agency mirror: auto-create/auto-deactivate partner agencies (V9_28)
 
 **Rule (Mario 5.7.2026):** the partner's company list IS our agency list — every new MMK/NauSys
