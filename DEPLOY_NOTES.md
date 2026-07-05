@@ -1,5 +1,38 @@
 # Backend deploy notes
 
+## 2026-07-05 (noć) — Trip: GDPR-minimal admin + album ZIP download (BE 05cdd55, web tfBhU7f…, admin, ALL DEPLOYED)
+
+**Mario 5.7.2026:** the broker must NOT have casual access to the crew's private trip content.
+- **Admin now has NO chat / participants / photo-browsing.** AdminTripController reduced to:
+  album-summary (counts only), album.zip (?marketingOnly=true = only consented), regenerate-token.
+  Removed the chat DIGEST email (it carried guest PII) and the 💬 unread badge; also removed the
+  `tripChatUnread` field from the reservation view/entity/DTO/mapper (it leaked a crew-chat-activity
+  signal to the broker on every bookings-list fetch — review find). Physical `admin_chat_seen_at`
+  column left unused (no migration, avoids V9 clash).
+- **Album delivery:** the crew hub gets a "⬇ Download all photos" (ZIP) button; the T+1 concierge
+  automation now posts "your photos are ready — download them" (chat + push) when photos exist =
+  the crew's download link. Admin keeps an on-demand ZIP (all, or marketing-consented) for when a
+  guest asks / for approved marketing reuse.
+- **ZIP is STREAMED** (StreamingResponseBody + Files.copy, one photo at a time, OUTSIDE any tx) —
+  never buffered whole in heap (would OOM cusma2, the single no-swap API node) and never pins a
+  Hikari connection across the NFS reads (review HIGH+MEDIUM). Service returns only the file list
+  in a short tx; the controller streams.
+
+⚠️ **V9_33 COORDINATION:** a parallel session's `V9_33__reset_booking_sequence_new_prefix.sql`
+(booking-number prefix 1001→1441, resets booking_sequence to 0) was already applied to cusma2's DB
+(schema at v9.33) and its 1441 `BookingNumberService` code is on origin/main (in HEAD). My jar
+(max migration 9.32) was built with V9_33 PARKED OUT of the migration dir so it doesn't carry it;
+Flyway treats the DB's 9.33 as a future migration (warn, no-op) and re-ran the repeatable R__1_02.
+My jar DOES contain the 1441 code (from HEAD), so it's consistent with the reset counters —
+first new online booking = 1441001/{year}, no collision with legacy 1001…. **If ever rolling my
+jar back, the 1441 code stays (it's committed), so no counter hazard from my side.**
+
+**Verified live on Zen:** crew album.zip 200 (valid ZIP, streamed), wrong key 403, admin endpoints
+security-gated. Rollback: webservice.jar.bak.pre-gdpr (both nodes); web .next.bak on cusma1;
+admin html.old. Test artifacts cleaned from Zen (real crew Cvijo/Jadranka/Mario kept).
+
+---
+
 ## 2026-07-05 — Reservation-number prefix 1001 → 1441 + counter reset (V9_33)
 
 **Rule (Mario 5.7.2026):** online bookings switch prefix `1001` → `1441` and the per-year
