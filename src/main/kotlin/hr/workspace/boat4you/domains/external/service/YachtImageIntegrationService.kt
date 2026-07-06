@@ -33,7 +33,21 @@ class YachtImageIntegrationService(
         log.info("Unsynced images count $count")
 
         val pageSize = imageSyncCount ?: 2000
-        val images = yachtImageRepository.findBySyncedFalseOrderByIdDesc(PageRequest.of(0, pageSize))
+        val images =
+            if (count <= pageSize) {
+                // whole backlog fits in one page — order is irrelevant, take it all
+                yachtImageRepository.findBySyncedFalseOrderByIdDesc(PageRequest.of(0, pageSize))
+            } else {
+                // Fairness: split the page between newest ids (fresh listings get their
+                // images fast) and oldest ids (low-id agencies can't starve under a large
+                // influx of newer un-synced images — e.g. an auto-create of hundreds of
+                // agencies at once). count > pageSize guarantees the two halves are
+                // disjoint, so no image is fetched — or downloaded — twice.
+                val newestHalf = pageSize / 2
+                val newest = yachtImageRepository.findBySyncedFalseOrderByIdDesc(PageRequest.of(0, newestHalf))
+                val oldest = yachtImageRepository.findBySyncedFalseOrderByIdAsc(PageRequest.of(0, pageSize - newestHalf))
+                newest + oldest
+            }
         if (images.isEmpty()) {
             return
         }

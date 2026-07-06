@@ -9,6 +9,8 @@ interface YachtImageRepository : JpaRepository<YachtImage, Long> {
 
     fun findBySyncedFalseOrderByIdDesc(pageable: Pageable): List<YachtImage>
 
+    fun findBySyncedFalseOrderByIdAsc(pageable: Pageable): List<YachtImage>
+
     // Partner-sourced images of taken-back yachts. The main image is kept:
     // already-sent reservation emails hotlink /public/image/{mainImageId}.
     @Query(
