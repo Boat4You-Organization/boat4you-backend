@@ -1,5 +1,32 @@
 # Backend deploy notes
 
+## 2026-07-06 — Agencies: inquiry-only flag (BE 534150f, admin cc9b0f7, DEPLOYED)
+
+**What:** per-agency "Inquiry mode" toggle in the admin /agencies edit modal (right of
+Recommended). When ON, every yacht of that agency becomes inquiry-only — no direct/live
+reservation, only the inquiry form — exactly like CUSTOM boats.
+
+**Mechanism (no web change):** `Agency.inquiryOnly` (V9_36 `inquiry_only BOOLEAN NOT NULL
+DEFAULT false`) → `Yacht.isInquireOnly()` now also true when `agency.inquiryOnly`. That one
+method already feeds BOTH the web detail DTO (`YachtMapper.toDetailsDto.inquireOnly` →
+web `resolveGate` shows the inquiry form) AND the booking guard
+(`ReservationFlowMutationService.createReservationFlow:84` throws "Yacht is inquire only").
+Agency is loaded within the @Transactional at both call sites (no LazyInit). Admin threads
+the flag via `AgencyDto.inquiryOnly` + `toDto`/`updateBlockWithModel` (null-coalesced so a
+partial PUT never clears it).
+
+**Deploy:** jar built from clean detached worktree @534150f (Xmx5g, no-daemon). cusma2 FIRST
+(Flyway applied V9_36 clean → `now at version v9.36`, Started 11.7s, `/public/countries` 200
+local+edge), then cusma3 scheduler (Flyway-pinned, skips V9_36; column already present → clean
+boot 12.9s). Admin dist → cusma1 `/var/www/admin.boat4you.com/html` (entry `index-DZLf54rx.js`,
+`inquiryOnly` in bundle, `api.boat4you.com` baked 0× localhost). Rollbacks:
+cusma2/3 `webservice_pre_inquiry.jar`, cusma1 `html.old`.
+
+**Verified live (A/B on cusma2):** yacht 15932 (Allure, FX Yachting 1616) → FX flag OFF
+`inquireOnly=false`, flag ON `inquireOnly=true`, reverted OFF `inquireOnly=false`. Adversarial
+review: no real bugs. FX left at inquiry_only=**false** (feature shipped disabled everywhere —
+Mario toggles per agency; 0/2061 agencies currently on).
+
 ## 2026-07-06 — Trip: crew push on document/crew-list add + install banner (BE 778662a, web -5SRuex, DEPLOYED)
 
 **Push when we add something (Mario 6.7.):** admin uploads a customer-visible travel document
