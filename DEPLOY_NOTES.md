@@ -25,6 +25,15 @@ low-id front (545+) should flip synced → verify Alexandros images download.
 ⚠️ Committed by the parallel MMK/NauSys session; I did the single combined deploy so the
 two sessions don't ship competing jars (5.7 concurrent-deploy outage lesson).
 
+**RESULT + one-time drain (16:52→18:20 UTC):** interleave confirmed (Alexandros/low-id
+blanks filling). To skip the ~15h wait at 5000/2h, bumped cusma3 env `IMAGE_SYNC_BATCH
+10→30` + `IMAGE_SYNC_COUNT 5000→40000` (restart) → one run cleared **37,509 → 602**
+(blank yachts 3309→5, blank main 3331→19). Residual 602 = dead partner URLs (neg-cache 7d).
+Reverted env to 10/5000 + restart (steady-state), backup `.bak.imgdrain` removed.
+⚠️ Learned: cusma3 image throughput is **CPU-bound** (2 cores, webp encode), ~260/min avg
+(bursts 2500/min); batch beyond ~30 doesn't help. Frequent cusma3 SSH (monitor loops) trips
+**fail2ban** ("Permission denied", not a bad pw) — poll pending via cusma2, spare cusma3.
+
 ## 2026-07-06 — Agencies: inquiry-only flag (BE 534150f, admin cc9b0f7, DEPLOYED)
 
 **What:** per-agency "Inquiry mode" toggle in the admin /agencies edit modal (right of
