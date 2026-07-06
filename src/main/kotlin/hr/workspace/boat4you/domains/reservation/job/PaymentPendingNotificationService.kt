@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.reservation.job
 
 import hr.workspace.boat4you.common.services.resolveEmailLocale
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
+import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhase
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
@@ -339,6 +340,25 @@ class PaymentPendingNotificationService(
                         "Skipping payment-pending email for flow={} — no matching reservation",
                         flow.id,
                     )
+                    skipped++
+                    return@forEach
+                }
+                // Only a genuinely-active, CONFIRMED booking may receive a
+                // payment-due reminder. `findPendingPayments` keys purely on
+                // deadline + unpaid + no-successor-flow — it has NO reservation-
+                // status filter — while a cancel (ReservationMutationService
+                // .cancelReservation) flips sysStatus=CANCELLED but leaves the
+                // unpaid, future-dated payment_phase rows in place. Without this
+                // guard a CANCELLED booking with a pending installment would still
+                // get "your payment is due in N days". sysStatus is the
+                // authoritative lifecycle field (the status/OfferStatus column
+                // historically drifted — the 2-status bug, Mario 6.7.2026), and
+                // RESERVATION is the only state this confirmed-booking email is
+                // meant for (OPTION / OPTION_WAITING get option-expiry mail
+                // instead). Mirrors the OptionExpiryService.sendReminderBatch
+                // sysStatus guard; the sibling caller TripPushJob.installment-
+                // Reminders already skips CANCELLED on this same query.
+                if (reservation.sysStatus != ReservationStatus.RESERVATION) {
                     skipped++
                     return@forEach
                 }
