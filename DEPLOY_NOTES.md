@@ -1,5 +1,30 @@
 # Backend deploy notes
 
+## 2026-07-06 — Image download: interleave oldest+newest (BE 5e50ac4, DEPLOYED)
+
+**What:** `ImageDownloadJob` fetched un-synced images newest-id-first only
+(`findBySyncedFalseOrderByIdDesc`). When ~500 MMK/NauSys agencies auto-created at once
+(~58k new images), the nightly sync kept adding higher-id un-synced rows that leapfrogged
+the backlog → old low-id agencies (FX Yachting) starved for days. Fix = `downloadImages()`
+now splits the page ½ newest (DESC) + ½ oldest (ASC) when `count > pageSize` (strictly
+disjoint → no double-download); `count ≤ pageSize` takes all. New repo method
+`findBySyncedFalseOrderByIdAsc`. No migration, no config/entity/sync-write change,
+`image-sync-count` untouched (5000, ~21min ≪ PT2H lock → no double-run).
+
+**Deploy:** ONE combined jar from clean worktree @ 5e50ac4 (HEAD — linear, contains inquiry
+534150f + image fix + V9_33–36; tree clean, no parallel WIP). Job is `@Profile("data-sync &
+image-sync")` = cusma3 only, but jar shipped to BOTH nodes to keep the "isti webservice.jar"
+invariant. **cusma3 first** (Started 16:17:42, image fix live before next 16:50 UTC run),
+then **cusma2** (inert change there, API 200 local+edge, Started 16:18:54). Jar verified
+pre-deploy: V9_30–36 present + `findBySyncedFalseOrderByIdAsc` compiled + `isInquireOnly`
+intact. Rollback: `webservice_pre_imgfix.jar` on cusma2/3.
+
+**Baseline for verification (16:19 UTC):** pending 37,509; min pending id 545 = yacht 30
+"Alexandros" (oldest starved). After the 16:50 UTC run (interleave, ~2500 oldest/run) the
+low-id front (545+) should flip synced → verify Alexandros images download.
+⚠️ Committed by the parallel MMK/NauSys session; I did the single combined deploy so the
+two sessions don't ship competing jars (5.7 concurrent-deploy outage lesson).
+
 ## 2026-07-06 — Agencies: inquiry-only flag (BE 534150f, admin cc9b0f7, DEPLOYED)
 
 **What:** per-agency "Inquiry mode" toggle in the admin /agencies edit modal (right of
