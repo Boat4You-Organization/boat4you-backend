@@ -457,6 +457,11 @@ class OptionExpiryService(
         )
     }
 
+    /** True once ANY payment installment has been settled — the booking is secured,
+     *  so option-expiry reminders and grace-period auto-cancel must both stop. */
+    private fun hasAnyPaidPhase(reservation: Reservation): Boolean =
+        reservation.reservationFlow?.paymentPhases?.any { it.paidOn != null } == true
+
     private fun sendReminderBatch(
         reservations: List<Reservation>,
         expiryHours: String,
@@ -469,6 +474,17 @@ class OptionExpiryService(
         var skipped = 0
         reservations.forEach { reservation ->
             try {
+                // Only a genuinely-pending, UNPAID option may get an expiry reminder.
+                // The query filters r.status=OPTION, but a confirmed booking keeps its
+                // lifecycle state in sysStatus (a bank-transfer confirm sets
+                // sysStatus=RESERVATION and historically left status=OPTION), and a
+                // paid deposit secures the booking regardless of any status field.
+                // Mario 6.7.2026: "čim dođe uplata, svi ti jobovi se moraju odmah
+                // ugasiti" (#100183 kept getting "expires in 24h" after paying).
+                if (reservation.sysStatus != ReservationStatus.OPTION || hasAnyPaidPhase(reservation)) {
+                    skipped++
+                    return@forEach
+                }
                 val ctx = buildReminderVariables(reservation, expiryHours)
                 if (ctx == null) {
                     skipped++
@@ -575,6 +591,11 @@ class OptionExpiryService(
             )
         log.trace("Checking status for expired reservations: {}", expiredReservations.size)
         expiredReservations.forEach { reservation ->
+            // Never auto-cancel a booking that has already been paid (any installment).
+            // sysStatus=RESERVATION normally excludes paid bookings here, but guard on the
+            // payment state directly so a paid deposit can never lose the boat to the
+            // grace-period auto-cancel. Mario 6.7.2026.
+            if (hasAnyPaidPhase(reservation)) return@forEach
             // Step 1: try to sync from partner. If partner has already flipped
             // (cancelled / converted to booking), trust it and mirror locally.
             val partnerSynced = runCatching {

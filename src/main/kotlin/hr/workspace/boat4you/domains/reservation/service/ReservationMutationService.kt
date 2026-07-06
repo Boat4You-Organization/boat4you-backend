@@ -352,6 +352,12 @@ class ReservationMutationService(
     ): ReservationDto {
         val reservation = reservationRepository.findById(reservationId).orElseThrow()
 
+        // reservation.status (OfferStatus) MUST flip to RESERVED too — not just
+        // sysStatus. The option-expiry reminder job selects on r.status=OPTION, so
+        // leaving it OPTION made a confirmed, deposit-paid booking keep receiving
+        // "your option expires in 24h" emails (Mario 6.7.2026, #100183). Mirrors the
+        // partner-driven confirmReservation which sets status from the partner reply.
+        reservation.status = OfferStatus.RESERVED
         reservation.sysStatus = ReservationStatus.RESERVATION
         reservation.externalStatus = "RESERVATION"
         if (reservation.reservationNumber == null) {
