@@ -124,6 +124,17 @@ open class Agency {
     @Column(name = "recommended", nullable = false)
     open var recommended: Boolean? = false
 
+    /**
+     * Inquiry-only partner (Mario 6.7.2026): when true, this agency's yachts
+     * cannot be booked directly — the customer may only send an inquiry, like
+     * a CUSTOM boat. Feeds [Yacht.isInquireOnly]. Toggled from the admin
+     * /agencies "Inquiry mode" checkbox.
+     */
+    @NotNull
+    @ColumnDefault("false")
+    @Column(name = "inquiry_only", nullable = false)
+    open var inquiryOnly: Boolean? = false
+
     @Transient
     open var primarySource: AgencySource? = null
         get() = agencySources.find { it.primary == true }

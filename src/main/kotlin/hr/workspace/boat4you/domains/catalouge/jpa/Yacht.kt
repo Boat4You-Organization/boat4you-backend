@@ -282,5 +282,9 @@ open class Yacht {
     @Column(name = "crew_number")
     open var crewNumber: Short? = null
 
-    fun isInquireOnly(): Boolean = (optionApproval == true || entryType == EntryType.CUSTOM)
+    // Inquiry-only when the yacht itself requires it (CUSTOM / option-approval)
+    // OR its agency is flagged inquiry-only (Mario 6.7.2026). The agency is
+    // eagerly available wherever this is called (search mapper + booking guard).
+    fun isInquireOnly(): Boolean =
+        optionApproval == true || entryType == EntryType.CUSTOM || agency?.inquiryOnly == true
 }

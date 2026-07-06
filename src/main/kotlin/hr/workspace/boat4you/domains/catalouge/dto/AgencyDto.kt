@@ -42,6 +42,8 @@ data class AgencyDto(
     val skipExternalSystem: Boolean? = null,
     @get:JsonProperty("recommended")
     val recommended: Boolean? = null,
+    @get:JsonProperty("inquiryOnly")
+    val inquiryOnly: Boolean? = null,
     @get:JsonProperty("primarySource")
     val primarySource: ExternalSystemEnum?,
     /** All sources the agency is synced from (MMK, NauSys, ...). The single
