@@ -21,6 +21,7 @@ import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
+import hr.workspace.boat4you.domains.external.service.YachtSyncMutex
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.YACHT_AGENCY_EXTERNAL_MAPPING_KEY
 import hr.workspace.boat4you.domains.external.utils.Matchers
@@ -29,8 +30,6 @@ import org.openapitools.client.nausys.model.RestFreeYachtList
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Propagation
-import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
@@ -48,6 +47,7 @@ class NauSysYachtOfferSyncService(
     private val offerExtraRepository: OfferExtraRepository,
     private val externalEquipmentRepository: ExternalEquipmentRepository,
     private val yachtRepository: YachtRepository,
+    private val yachtSyncMutex: YachtSyncMutex,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -69,7 +69,12 @@ class NauSysYachtOfferSyncService(
         const val SYNTHETIC_DISAPPEARANCE_EXT_STATUS = "SYNTHETIC_DISAPPEARANCE"
     }
 
-    @Transactional
+    /**
+     * Transaction unit = ONE YACHT, guarded by [YachtSyncMutex.runExclusiveYachtWrite]
+     * (8.7.2026 Hikari exhaustion — see the MMK twin for the full note). A yacht another
+     * sync path is writing right now is skipped and heals on the next run; one yacht's
+     * failure no longer rolls back the rest of the batch.
+     */
     fun syncOffers(
         agency: Agency,
         nausysOffers: RestFreeYachtList,
@@ -95,13 +100,14 @@ class NauSysYachtOfferSyncService(
         val syncedOffers = mutableSetOf<Long>()
         var skippedCount = 0
         var skippedYachtCount = 0
+        var skippedLockedCount = 0
 
         nausysOffers.freeYachts?.groupBy { it.yachtId }?.forEach { (yachtId, nausysYachtOffers) ->
             // Defensive: same NPE risk as MmkYachtOfferSyncService — partner may
             // send yachtId we haven't mapped yet. Skip + warn instead of `!!` chain.
             val mapping = allMappings.find { it.externalId == yachtId }
-            val yacht = mapping?.systemId?.let { sysId -> allAgencyYachts.find { it.id == sysId } }
-            if (yacht == null) {
+            val systemYachtId = mapping?.systemId?.takeIf { sysId -> allAgencyYachts.any { it.id == sysId } }
+            if (systemYachtId == null) {
                 log.warn(
                     "Skipping ${nausysYachtOffers.size} NauSys offers for agency=${agency.id} yachtId=$yachtId " +
                         "— no Yacht mapping or yacht not loaded (mapping.systemId=${mapping?.systemId})",
@@ -110,71 +116,86 @@ class NauSysYachtOfferSyncService(
                 return@forEach
             }
 
-            val existingYachtOffers = getOffersForYacht(yacht, nausysYachtOffers)
+            try {
+                val ran =
+                    yachtSyncMutex.runExclusiveYachtWrite(systemYachtId) {
+                        // Reload INSIDE the per-yacht transaction so lazy chains
+                        // (yacht.agency -> discount) are managed, not detached.
+                        val yacht = yachtRepository.findById(systemYachtId).orElse(null) ?: return@runExclusiveYachtWrite
 
-            if (existingYachtOffers.isEmpty()) {
-                nausysYachtOffers.forEach { nausysOffer ->
-                    if (updateOffer(Offer(), yacht, nausysOffer, allLocationMappings) != OfferUpdateResult.UPDATED) {
-                        skippedCount++
-                    }
-                }
-            } else {
-                nausysYachtOffers.forEach { nausysOffer ->
-                    val existingOffer =
-                        existingYachtOffers.find { it.dateFrom == nausysOffer.periodFrom!!.value && it.dateTo == nausysOffer.periodTo!!.value }
-                    val result =
-                        if (existingOffer == null) {
-                            updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)
+                        val existingYachtOffers = getOffersForYacht(yacht, nausysYachtOffers)
+
+                        if (existingYachtOffers.isEmpty()) {
+                            nausysYachtOffers.forEach { nausysOffer ->
+                                if (updateOffer(Offer(), yacht, nausysOffer, allLocationMappings) != OfferUpdateResult.UPDATED) {
+                                    skippedCount++
+                                }
+                            }
                         } else {
-                            updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings)
+                            nausysYachtOffers.forEach { nausysOffer ->
+                                val existingOffer =
+                                    existingYachtOffers.find { it.dateFrom == nausysOffer.periodFrom!!.value && it.dateTo == nausysOffer.periodTo!!.value }
+                                val result =
+                                    if (existingOffer == null) {
+                                        updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)
+                                    } else {
+                                        updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings)
+                                    }
+                                // Keep the existing row "alive" (exempt from the disappearance sweep) when the
+                                // partner refreshed it OR we skipped for OUR mapping gap. A FREE-but-unpriced
+                                // return (reseller lost pricing) is a REAL change → leave it un-marked so the
+                                // sweep flips the stale FREE row to OPTION_WAITING ("pre-reserved").
+                                if (existingOffer != null && result != OfferUpdateResult.FREE_UNPRICED) {
+                                    syncedOffers.add(existingOffer.id!!)
+                                }
+                                if (result != OfferUpdateResult.UPDATED) skippedCount++
+                            }
                         }
-                    // Keep the existing row "alive" (exempt from the disappearance sweep) when the
-                    // partner refreshed it OR we skipped for OUR mapping gap. A FREE-but-unpriced
-                    // return (reseller lost pricing) is a REAL change → leave it un-marked so the
-                    // sweep flips the stale FREE row to OPTION_WAITING ("pre-reserved").
-                    if (existingOffer != null && result != OfferUpdateResult.FREE_UNPRICED) {
-                        syncedOffers.add(existingOffer.id!!)
-                    }
-                    if (result != OfferUpdateResult.UPDATED) skippedCount++
-                }
-            }
 
-            // Handle offers that existed for this exact (dateFrom, dateTo) but were not refreshed
-            // by the current response (yacht was in response but didn't return an offer for this week).
-            //
-            // SYNTHETIC_OPTION rows (created by NauSysAvailabilitySyncService) are skipped — they'd
-            // re-synthesize on the next availability sync, causing thrashing and brief invisibility.
-            // SYNTHETIC_DISAPPEARANCE rows are likewise skipped so repeated misses don't flip them.
-            //
-            // For FREE offers that disappeared, we mark them as OPTION_WAITING with
-            // SYNTHETIC_DISAPPEARANCE marker so they surface in search as pre-reserved instead of
-            // silently vanishing (UNAVAILABLE is filtered out by yacht_search_view).
-            // Skip entirely for the supplemental 7-day min-stay query (see param doc).
-            if (skipDisappearance) return@forEach
-            existingYachtOffers
-                .filter { it.dateFrom == dateFrom && it.dateTo == dateTo }
-                .filter {
-                    !syncedOffers.contains(it.id!!) &&
-                        it.status != OfferStatus.UNAVAILABLE &&
-                        it.extStatus != NauSysAvailabilitySyncService.SYNTHETIC_OPTION_EXT_STATUS &&
-                        it.extStatus != SYNTHETIC_DISAPPEARANCE_EXT_STATUS
-                }
-                .forEach { offer ->
-                    if (offer.status == OfferStatus.FREE) {
-                        offer.status = OfferStatus.OPTION_WAITING
-                        offer.extStatus = SYNTHETIC_DISAPPEARANCE_EXT_STATUS
-                        log.info(
-                            "Marked offer ${offer.id} (yacht ${offer.yacht?.id}) as SYNTHETIC_DISAPPEARANCE " +
-                                "for $dateFrom-$dateTo (in response, but no offer for this week)",
-                        )
-                    } else {
-                        // Preserve legacy UNAVAILABLE transition for non-FREE statuses
-                        offer.status = OfferStatus.UNAVAILABLE
+                        // Handle offers that existed for this exact (dateFrom, dateTo) but were not refreshed
+                        // by the current response (yacht was in response but didn't return an offer for this week).
+                        //
+                        // SYNTHETIC_OPTION rows (created by NauSysAvailabilitySyncService) are skipped — they'd
+                        // re-synthesize on the next availability sync, causing thrashing and brief invisibility.
+                        // SYNTHETIC_DISAPPEARANCE rows are likewise skipped so repeated misses don't flip them.
+                        //
+                        // For FREE offers that disappeared, we mark them as OPTION_WAITING with
+                        // SYNTHETIC_DISAPPEARANCE marker so they surface in search as pre-reserved instead of
+                        // silently vanishing (UNAVAILABLE is filtered out by yacht_search_view).
+                        // Skip entirely for the supplemental 7-day min-stay query (see param doc).
+                        if (skipDisappearance) return@runExclusiveYachtWrite
+                        existingYachtOffers
+                            .filter { it.dateFrom == dateFrom && it.dateTo == dateTo }
+                            .filter {
+                                !syncedOffers.contains(it.id!!) &&
+                                    it.status != OfferStatus.UNAVAILABLE &&
+                                    it.extStatus != NauSysAvailabilitySyncService.SYNTHETIC_OPTION_EXT_STATUS &&
+                                    it.extStatus != SYNTHETIC_DISAPPEARANCE_EXT_STATUS
+                            }
+                            .forEach { offer ->
+                                if (offer.status == OfferStatus.FREE) {
+                                    offer.status = OfferStatus.OPTION_WAITING
+                                    offer.extStatus = SYNTHETIC_DISAPPEARANCE_EXT_STATUS
+                                    log.info(
+                                        "Marked offer ${offer.id} (yacht ${offer.yacht?.id}) as SYNTHETIC_DISAPPEARANCE " +
+                                            "for $dateFrom-$dateTo (in response, but no offer for this week)",
+                                    )
+                                } else {
+                                    // Preserve legacy UNAVAILABLE transition for non-FREE statuses
+                                    offer.status = OfferStatus.UNAVAILABLE
+                                }
+                                offerRepository.save(offer)
+                            }
                     }
-                    offerRepository.save(offer)
-                }
+                if (!ran) skippedLockedCount++
+            } catch (e: Exception) {
+                log.error("NauSys offer sync failed for yacht=$systemYachtId (agency=${agency.id}) — yacht skipped, batch continues", e)
+            }
         }
 
+        if (skippedLockedCount > 0) {
+            log.info("NauSys offer sync for agency ${agency.id}: skipped $skippedLockedCount yachts already being written by another sync")
+        }
         if (skippedCount > 0) {
             log.warn("NauSys offer sync for agency ${agency.id}: skipped $skippedCount offers (missing Location mapping or unpriced FREE)")
         }
@@ -183,7 +204,10 @@ class NauSysYachtOfferSyncService(
         }
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    /**
+     * Transaction unit = ONE YACHT under the advisory write lock — same rationale as
+     * [syncOffers]. A yacht another sync is writing right now is skipped.
+     */
     fun syncOffersForAsync(nausysAllOffers: List<RestFreeYacht>) {
         val yachtExternalIds = nausysAllOffers.map { it.yachtId!! }.toList()
         if (yachtExternalIds.isEmpty()) {
@@ -207,28 +231,45 @@ class NauSysYachtOfferSyncService(
             externalMappingService.getCachedAllMappingsByType(Location::class.simpleName.toString(), externalSystem)
 
         var skippedCount = 0
+        var skippedLockedCount = 0
         nausysAllOffers.groupBy { it.yachtId }?.forEach { (nausysYachtId, nausysOffers) ->
             val mapping = allYachtMappings.find { it.externalId == nausysYachtId!! } ?: return@forEach
-            val yacht = allYachts.find { y -> y.id == mapping.systemId } ?: return@forEach
+            val systemYachtId =
+                mapping.systemId?.takeIf { sysId -> allYachts.any { it.id == sysId } } ?: return@forEach
 
-            val existingYachtOffers = getOffersForYacht(yacht, nausysOffers)
+            try {
+                val ran =
+                    yachtSyncMutex.runExclusiveYachtWrite(systemYachtId) {
+                        // Reload INSIDE the per-yacht transaction so lazy chains
+                        // (yacht.agency -> discount) are managed, not detached.
+                        val yacht = yachtRepository.findById(systemYachtId).orElse(null) ?: return@runExclusiveYachtWrite
 
-            nausysOffers.forEach { nausysOffer ->
-                val existingOffer =
-                    existingYachtOffers.find {
-                        it.dateFrom == nausysOffer.periodFrom!!.value!! &&
-                            it.dateTo == nausysOffer.periodTo!!.value!!
+                        val existingYachtOffers = getOffersForYacht(yacht, nausysOffers)
+
+                        nausysOffers.forEach { nausysOffer ->
+                            val existingOffer =
+                                existingYachtOffers.find {
+                                    it.dateFrom == nausysOffer.periodFrom!!.value!! &&
+                                        it.dateTo == nausysOffer.periodTo!!.value!!
+                                }
+                            val result =
+                                if (existingOffer == null) {
+                                    updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)
+                                } else {
+                                    updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings)
+                                }
+                            if (result != OfferUpdateResult.UPDATED) skippedCount++
+                        }
                     }
-                val result =
-                    if (existingOffer == null) {
-                        updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)
-                    } else {
-                        updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings)
-                    }
-                if (result != OfferUpdateResult.UPDATED) skippedCount++
+                if (!ran) skippedLockedCount++
+            } catch (e: Exception) {
+                log.error("NauSys async offer sync failed for yacht=$systemYachtId — yacht skipped, batch continues", e)
             }
         }
 
+        if (skippedLockedCount > 0) {
+            log.info("NauSys async offer sync: skipped $skippedLockedCount yachts already being written by another sync")
+        }
         if (skippedCount > 0) {
             log.warn("NauSys async offer sync: skipped $skippedCount offers due to missing Location mappings")
         }

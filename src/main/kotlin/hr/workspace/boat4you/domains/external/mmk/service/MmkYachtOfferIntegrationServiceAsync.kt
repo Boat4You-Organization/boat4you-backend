@@ -16,7 +16,6 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
-import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -31,7 +30,6 @@ class MmkYachtOfferIntegrationServiceAsync(
     private val externalSystemService: ExternalSystemService,
     private val syncConfigurationProperties: SyncConfigurationProperties,
     private val mmkYachtOfferSyncService: MmkYachtOfferSyncService,
-    private val transactionTemplate: TransactionTemplate,
     private val mmkOfferIntegrationUtils: MmkOfferIntegrationUtils,
     private val mmkRetryableClient: MmkRetryableClient,
 ) {
@@ -87,14 +85,15 @@ class MmkYachtOfferIntegrationServiceAsync(
 
                     if (offersResponse.isNotEmpty()) {
                         try {
-                            transactionTemplate.execute<Unit> {
-                                mmkYachtOfferSyncService.syncOffersForAgency(
-                                    agency.id!!,
-                                    offersResponse,
-                                    windowFrom = startDate,
-                                    windowTo = endDate,
-                                )
-                            }
+                            // No outer transaction on purpose: syncOffersForAgency opens its
+                            // own short per-yacht transactions (advisory-locked) — a suspended
+                            // outer tx would just pin a second Hikari connection for the batch.
+                            mmkYachtOfferSyncService.syncOffersForAgency(
+                                agency.id!!,
+                                offersResponse,
+                                windowFrom = startDate,
+                                windowTo = endDate,
+                            )
                         } catch (e: Exception) {
                             log.error(
                                 "Failed to sync offers for agency: {}, date range: {} - {}",
@@ -164,9 +163,8 @@ class MmkYachtOfferIntegrationServiceAsync(
             log.info("Syncing offers took ${Instant.now().toEpochMilli() - callStartTime.toEpochMilli()}ms}")
 
             if (offersResponse.isNotEmpty()) {
-                transactionTemplate.execute<Unit> {
-                    mmkYachtOfferSyncService.syncOffers(offersResponse)
-                }
+                // No outer transaction — syncOffers manages per-yacht transactions itself.
+                mmkYachtOfferSyncService.syncOffers(offersResponse)
             }
         } catch (e: Exception) {
             log.error(
@@ -236,9 +234,7 @@ class MmkYachtOfferIntegrationServiceAsync(
                                 tripDuration = mmkOfferIntegrationUtils.getTripDurations(reservationOptionsGroup.key.minimalDuration),
                             )
                         if (offersResponse.isNotEmpty()) {
-                            transactionTemplate.execute<Unit> {
-                                mmkYachtOfferSyncService.syncOffersForAgency(agency.id!!, offersResponse)
-                            }
+                            mmkYachtOfferSyncService.syncOffersForAgency(agency.id!!, offersResponse)
                         }
                     }
                 } else if (reservationOptionsGroup.key.hasStandardReservation()) {
@@ -266,9 +262,7 @@ class MmkYachtOfferIntegrationServiceAsync(
                             )
 
                         if (offersResponse.isNotEmpty()) {
-                            transactionTemplate.execute<Unit> {
-                                mmkYachtOfferSyncService.syncOffersForAgency(agency.id!!, offersResponse)
-                            }
+                            mmkYachtOfferSyncService.syncOffersForAgency(agency.id!!, offersResponse)
                         }
                     }
                 }

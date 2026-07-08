@@ -7,14 +7,12 @@ import org.openapitools.client.nausys.model.RestFreeYachtsSearchRequest
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.support.TransactionTemplate
 import java.time.LocalDate
 
 @Service
 class NauSysYachtOfferIntegrationServiceAsync(
     private val nauSysAuthProvider: NauSysAuthProvider,
     private val nauSysYachtOfferSyncService: NauSysYachtOfferSyncService,
-    private val transactionTemplate: TransactionTemplate,
     private val nauSysRetryableClient: NauSysRetryableClient,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
@@ -62,9 +60,10 @@ class NauSysYachtOfferIntegrationServiceAsync(
 
             val response = nauSysRetryableClient.getFreeYachtsSearchForAsync(freeYachtRequest)
             if (!response.freeYachtsInPeriod.isNullOrEmpty()) {
-                transactionTemplate.execute<Unit> {
-                    nauSysYachtOfferSyncService.syncOffersForAsync(response.freeYachtsInPeriod!!)
-                }
+                // No outer transaction on purpose: syncOffersForAsync opens its own
+                // short per-yacht transactions (advisory-locked) — a suspended outer
+                // tx would just pin a second Hikari connection for the whole batch.
+                nauSysYachtOfferSyncService.syncOffersForAsync(response.freeYachtsInPeriod!!)
             }
         } catch (e: Exception) {
             log.error("Error while syncing NauSYS yacht offers for date range $dateFrom to $dateTo", e)

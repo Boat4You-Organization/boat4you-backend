@@ -20,13 +20,12 @@ import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.service.PartnerWithdrawalGuard
+import hr.workspace.boat4you.domains.external.service.YachtSyncMutex
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.YACHT_AGENCY_EXTERNAL_MAPPING_KEY
 import hr.workspace.boat4you.domains.external.utils.Matchers
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Propagation
-import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.time.LocalDate
 
@@ -39,6 +38,7 @@ class MmkYachtOfferSyncService(
     private val yachtRepository: YachtRepository,
     private val extraRepository: ExtraRepository,
     private val offerExtraRepository: OfferExtraRepository,
+    private val yachtSyncMutex: YachtSyncMutex,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -49,8 +49,14 @@ class MmkYachtOfferSyncService(
      *   propagate faithfully. Null ⇒ legacy narrow scope (returned-offers span) for the deprecated /
      *   duration-filtered callers. Either way the deactivate sweep is gated by
      *   [PartnerWithdrawalGuard] so a truncated partner response never wipes good offers.
+     *
+     * Transaction unit = ONE YACHT, guarded by [YachtSyncMutex.runExclusiveYachtWrite]
+     * (8.7.2026 Hikari exhaustion: the previous whole-agency REQUIRES_NEW transaction held
+     * thousands of row locks for minutes and convoyed with the location-warm / per-yacht
+     * sync paths on `delete from offer_extras`). A yacht another sync is currently writing
+     * is skipped and heals on the next run; one yacht's failure no longer rolls back the
+     * whole agency batch.
      */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun syncOffersForAgency(
         agencyId: Long,
         mmkOffers: List<org.openapitools.client.mmk.model.Offer>,
@@ -68,6 +74,7 @@ class MmkYachtOfferSyncService(
         val syncedOffers = mutableSetOf<Long>()
         var skippedCount = 0
         var skippedYachtCount = 0
+        var skippedLockedCount = 0
 
         mmkOffers.groupBy { it.yachtId }.forEach { (yachtId, mmkOffers) ->
             // Defensive: MMK can send a yachtId we haven't mapped yet (e.g. partner
@@ -76,8 +83,8 @@ class MmkYachtOfferSyncService(
             // chain NPE'd here and aborted the whole agency batch — we'd lose all
             // offers for the rest of this transaction.
             val mapping = allMappings.find { it.externalId == yachtId?.toLong() }
-            val yacht = mapping?.systemId?.let { sysId -> allAgencyYachts.find { it.id == sysId } }
-            if (yacht == null) {
+            val systemYachtId = mapping?.systemId?.takeIf { sysId -> allAgencyYachts.any { it.id == sysId } }
+            if (systemYachtId == null) {
                 log.warn(
                     "Skipping ${mmkOffers.size} MMK offers for agency=$agencyId yachtId=$yachtId " +
                         "— no Yacht mapping or yacht not loaded (mapping.systemId=${mapping?.systemId})",
@@ -86,62 +93,77 @@ class MmkYachtOfferSyncService(
                 return@forEach
             }
 
-            // Deactivate scope = the full synced window when the caller knows this response is the
-            // COMPLETE set for it (sat-sat year sync); else the returned offers' own span (legacy).
-            val loadFrom = windowFrom ?: mmkOffers.minOfOrNull { it.dateFrom.value!!.toLocalDate() }!!
-            val loadTo = windowTo ?: mmkOffers.maxOfOrNull { it.dateTo.value!!.toLocalDate() }!!
+            try {
+                val ran =
+                    yachtSyncMutex.runExclusiveYachtWrite(systemYachtId) {
+                        // Reload INSIDE the per-yacht transaction so lazy chains
+                        // (yacht.agency -> discount) are managed, not detached.
+                        val yacht = yachtRepository.findById(systemYachtId).orElse(null) ?: return@runExclusiveYachtWrite
 
-            val existingYachtOffers =
-                offerRepository.findAllByYachtAndDateFromGreaterThanEqualAndDateToLessThanEqual(
-                    yacht,
-                    loadFrom,
-                    loadTo,
-                )
+                        // Deactivate scope = the full synced window when the caller knows this response is the
+                        // COMPLETE set for it (sat-sat year sync); else the returned offers' own span (legacy).
+                        val loadFrom = windowFrom ?: mmkOffers.minOfOrNull { it.dateFrom.value!!.toLocalDate() }!!
+                        val loadTo = windowTo ?: mmkOffers.maxOfOrNull { it.dateTo.value!!.toLocalDate() }!!
 
-            mmkOffers.forEach { mmkOffer ->
-                val existingOffer =
-                    existingYachtOffers.find {
-                        it.dateFrom == mmkOffer.dateFrom.value?.toLocalDate() &&
-                            it.dateTo == mmkOffer.dateTo.value?.toLocalDate() &&
-                            it.product == CharterType.fromMmkValue(mmkOffer.product)
+                        val existingYachtOffers =
+                            offerRepository.findAllByYachtAndDateFromGreaterThanEqualAndDateToLessThanEqual(
+                                yacht,
+                                loadFrom,
+                                loadTo,
+                            )
+
+                        mmkOffers.forEach { mmkOffer ->
+                            val existingOffer =
+                                existingYachtOffers.find {
+                                    it.dateFrom == mmkOffer.dateFrom.value?.toLocalDate() &&
+                                        it.dateTo == mmkOffer.dateTo.value?.toLocalDate() &&
+                                        it.product == CharterType.fromMmkValue(mmkOffer.product)
+                                }
+                            // Mark existing offer as "still alive" BEFORE updateOffer so a missing-location skip
+                            // (early return inside updateOffer) doesn't deactivate a perfectly valid DB row in
+                            // the deactivate-loop below. See V1_51-era log: a single broken Location mapping
+                            // would otherwise wipe an entire agency's offers.
+                            if (existingOffer != null) {
+                                syncedOffers.add(existingOffer.id!!)
+                            }
+                            val updated =
+                                if (existingOffer == null) {
+                                    updateOffer(Offer(), yacht, mmkOffer)
+                                } else {
+                                    updateOffer(existingOffer, yacht, mmkOffer)
+                                }
+                            if (!updated) skippedCount++
+                        }
+
+                        // Deactivate the weeks MMK no longer returns in this window so partner withdrawals
+                        // propagate — but NEVER wipe good offers on a truncated response: gate behind
+                        // PartnerWithdrawalGuard (same 30% cap as the occupancy reconcile). We're inside
+                        // groupBy { yachtId } so this yacht WAS returned (partnerReturnedNonEmpty = true).
+                        val inScope = existingYachtOffers.filter { it.status != OfferStatus.UNAVAILABLE }
+                        val toDeactivate = inScope.filter { !syncedOffers.contains(it.id!!) }
+                        if (PartnerWithdrawalGuard.isSafeToWithdraw(true, inScope.size, toDeactivate.size)) {
+                            toDeactivate.forEach { offer ->
+                                offer.status = OfferStatus.UNAVAILABLE
+                                offerRepository.save(offer)
+                            }
+                        } else if (toDeactivate.isNotEmpty()) {
+                            log.warn(
+                                "Skip MMK offer-withdrawal yacht=${yacht.id} ($loadFrom..$loadTo): would deactivate " +
+                                    "${toDeactivate.size} of ${inScope.size} in-scope offers (over cap " +
+                                    "${PartnerWithdrawalGuard.maxWithdrawable(inScope.size)}) — likely a partial/truncated " +
+                                    "MMK response, not real withdrawals. Deactivating nothing; self-heals next run.",
+                            )
+                        }
                     }
-                // Mark existing offer as "still alive" BEFORE updateOffer so a missing-location skip
-                // (early return inside updateOffer) doesn't deactivate a perfectly valid DB row in
-                // the deactivate-loop below. See V1_51-era log: a single broken Location mapping
-                // would otherwise wipe an entire agency's offers.
-                if (existingOffer != null) {
-                    syncedOffers.add(existingOffer.id!!)
-                }
-                val updated =
-                    if (existingOffer == null) {
-                        updateOffer(Offer(), yacht, mmkOffer)
-                    } else {
-                        updateOffer(existingOffer, yacht, mmkOffer)
-                    }
-                if (!updated) skippedCount++
-            }
-
-            // Deactivate the weeks MMK no longer returns in this window so partner withdrawals
-            // propagate — but NEVER wipe good offers on a truncated response: gate behind
-            // PartnerWithdrawalGuard (same 30% cap as the occupancy reconcile). We're inside
-            // groupBy { yachtId } so this yacht WAS returned (partnerReturnedNonEmpty = true).
-            val inScope = existingYachtOffers.filter { it.status != OfferStatus.UNAVAILABLE }
-            val toDeactivate = inScope.filter { !syncedOffers.contains(it.id!!) }
-            if (PartnerWithdrawalGuard.isSafeToWithdraw(true, inScope.size, toDeactivate.size)) {
-                toDeactivate.forEach { offer ->
-                    offer.status = OfferStatus.UNAVAILABLE
-                    offerRepository.save(offer)
-                }
-            } else if (toDeactivate.isNotEmpty()) {
-                log.warn(
-                    "Skip MMK offer-withdrawal yacht=${yacht.id} ($loadFrom..$loadTo): would deactivate " +
-                        "${toDeactivate.size} of ${inScope.size} in-scope offers (over cap " +
-                        "${PartnerWithdrawalGuard.maxWithdrawable(inScope.size)}) — likely a partial/truncated " +
-                        "MMK response, not real withdrawals. Deactivating nothing; self-heals next run.",
-                )
+                if (!ran) skippedLockedCount++
+            } catch (e: Exception) {
+                log.error("MMK offer sync failed for yacht=$systemYachtId (agency=$agencyId) — yacht skipped, batch continues", e)
             }
         }
 
+        if (skippedLockedCount > 0) {
+            log.info("MMK offer sync for agency $agencyId: skipped $skippedLockedCount yachts already being written by another sync")
+        }
         if (skippedCount > 0) {
             log.warn("MMK offer sync for agency $agencyId: skipped $skippedCount offers due to missing Location mappings")
         }
@@ -364,7 +386,10 @@ class MmkYachtOfferSyncService(
         offerRepository.save(offer)
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    /**
+     * Transaction unit = ONE YACHT under the advisory write lock — same rationale as
+     * [syncOffersForAgency]. A yacht another sync is writing right now is skipped.
+     */
     fun syncOffers(mmkAllOffers: List<org.openapitools.client.mmk.model.Offer>) {
         val yachtExternalIds = mmkAllOffers.map { it.yachtId }.distinct()
         val allYachts =
@@ -378,41 +403,59 @@ class MmkYachtOfferSyncService(
                 ExternalSystemEnum.MMK.value,
                 yachtExternalIds,
             )
+        var skippedLockedCount = 0
 
         mmkAllOffers.groupBy { it.yachtId }.forEach { (mmkYachyId, mmkOffers) ->
             val mapping = allYachtMappings.find { it.externalId == mmkYachyId!! } ?: return@forEach
-            val yacht = allYachts.find { y -> y.id == mapping.systemId } ?: return@forEach
+            val systemYachtId =
+                mapping.systemId?.takeIf { sysId -> allYachts.any { it.id == sysId } } ?: return@forEach
 
-            val minDateFrom = mmkOffers.minOfOrNull { it.dateFrom.value!!.toLocalDate() }
-            val maxDateTo = mmkOffers.maxOfOrNull { it.dateTo.value!!.toLocalDate() }
-            val allDatesEqual =
-                mmkOffers.all { it.dateFrom.value!!.toLocalDate() == minDateFrom && it.dateTo.value!!.toLocalDate() == maxDateTo }
+            try {
+                val ran =
+                    yachtSyncMutex.runExclusiveYachtWrite(systemYachtId) {
+                        // Reload INSIDE the per-yacht transaction so lazy chains
+                        // (yacht.agency -> discount) are managed, not detached.
+                        val yacht = yachtRepository.findById(systemYachtId).orElse(null) ?: return@runExclusiveYachtWrite
 
-            // use for better db index usage
-            val existingYachtOffers =
-                if (allDatesEqual) {
-                    offerRepository.findAllByYachtAndDateFromAndDateTo(yacht, minDateFrom!!, maxDateTo!!)
-                } else {
-                    offerRepository.findAllByYachtAndDateFromGreaterThanEqualAndDateToLessThanEqual(
-                        yacht,
-                        minDateFrom!!,
-                        maxDateTo!!,
-                    )
-                }
+                        val minDateFrom = mmkOffers.minOfOrNull { it.dateFrom.value!!.toLocalDate() }
+                        val maxDateTo = mmkOffers.maxOfOrNull { it.dateTo.value!!.toLocalDate() }
+                        val allDatesEqual =
+                            mmkOffers.all { it.dateFrom.value!!.toLocalDate() == minDateFrom && it.dateTo.value!!.toLocalDate() == maxDateTo }
 
-            mmkOffers.forEach { mmkOffer ->
-                val existingOffer =
-                    existingYachtOffers.find {
-                        it.dateFrom == mmkOffer.dateFrom.value?.toLocalDate() &&
-                            it.dateTo == mmkOffer.dateTo.value?.toLocalDate() &&
-                            it.product == CharterType.fromMmkValue(mmkOffer.product)
+                        // use for better db index usage
+                        val existingYachtOffers =
+                            if (allDatesEqual) {
+                                offerRepository.findAllByYachtAndDateFromAndDateTo(yacht, minDateFrom!!, maxDateTo!!)
+                            } else {
+                                offerRepository.findAllByYachtAndDateFromGreaterThanEqualAndDateToLessThanEqual(
+                                    yacht,
+                                    minDateFrom!!,
+                                    maxDateTo!!,
+                                )
+                            }
+
+                        mmkOffers.forEach { mmkOffer ->
+                            val existingOffer =
+                                existingYachtOffers.find {
+                                    it.dateFrom == mmkOffer.dateFrom.value?.toLocalDate() &&
+                                        it.dateTo == mmkOffer.dateTo.value?.toLocalDate() &&
+                                        it.product == CharterType.fromMmkValue(mmkOffer.product)
+                                }
+                            if (existingOffer == null) {
+                                updateOffer(Offer(), yacht, mmkOffer)
+                            } else {
+                                updateOffer(existingOffer, yacht, mmkOffer)
+                            }
+                        }
                     }
-                if (existingOffer == null) {
-                    updateOffer(Offer(), yacht, mmkOffer)
-                } else {
-                    updateOffer(existingOffer, yacht, mmkOffer)
-                }
+                if (!ran) skippedLockedCount++
+            } catch (e: Exception) {
+                log.error("MMK offer sync failed for yacht=$systemYachtId — yacht skipped, batch continues", e)
             }
+        }
+
+        if (skippedLockedCount > 0) {
+            log.info("MMK offer sync: skipped $skippedLockedCount yachts already being written by another sync")
         }
     }
 }
