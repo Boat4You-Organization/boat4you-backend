@@ -234,20 +234,32 @@ class YachtQueryingService(
             coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
                 ?: cb.nullLiteral(Int::class.javaObjectType)
 
+        // GROUP BY id ONLY (9.7.2026); every other selected yacht attribute is
+        // functionally dependent on it (same yacht ⇒ same name/model/agency/…)
+        // and gets wrapped in MIN()/LEAST() to stay valid SQL. Grouping by the
+        // full 12-column tuple made the planner estimate ~161k groups (actual
+        // ~4k) — it refused HashAggregate and fell back to a sorted full-view
+        // index walk (~1.9s for one country page). With GROUP BY id the group
+        // estimate is n_distinct(id) and the same query hash-aggregates the
+        // bitmap-scanned country rows in ~0.5s.
         cq.multiselect(
             root.get<Long>("id"),
-            root.get<String>("yachtName"),
-            root.get<VesselType>("vesselType"),
-            root.get<Short>("buildYear"),
-            root.get<Short>("maxPersons"),
-            root.get<Short>("cabins"),
-            root.get<BigDecimal>("length"),
-            root.get<String>("modelName"),
-            root.get<String>("manufacturerName"),
-            root.get<Long>("mainImage"),
-            root.get<String>("agencyName"),
-            root.get<EntryType>("entryType"),
-            cb.countDistinct(root.get<Long>("totalLocations")).alias("sumLocations"),
+            cb.least(root.get<String>("yachtName")),
+            cb.least(root.get<VesselType>("vesselType")),
+            cb.min(root.get<Short>("buildYear")),
+            cb.min(root.get<Short>("maxPersons")),
+            cb.min(root.get<Short>("cabins")),
+            cb.min(root.get<BigDecimal>("length")),
+            cb.least(root.get<String>("modelName")),
+            cb.least(root.get<String>("manufacturerName")),
+            cb.min(root.get<Long>("mainImage")),
+            cb.least(root.get<String>("agencyName")),
+            cb.least(root.get<EntryType>("entryType")),
+            // sumLocations RETIRED (9.7.2026): fed only a dead FE prop, and as
+            // the sole COUNT(DISTINCT …) it forced sort-based grouping (blocks
+            // HashAggregate). Null literal keeps the multiselect arity; the
+            // mapper passes null through and no client renders it.
+            cb.nullLiteral(Long::class.javaObjectType),
             cb.least(root.get<CharterType>("charterType")),
             cb.least(root.get<String>("locationFullName")),
             // Pickup and drop-off can differ for one-way charters. We
@@ -291,20 +303,10 @@ class YachtQueryingService(
 
         cq.where(*predicates.toTypedArray())
 
-        cq.groupBy(
-            root.get<Long>("id"),
-            root.get<String>("yachtName"),
-            root.get<VesselType>("vesselType"),
-            root.get<Short>("buildYear"),
-            root.get<Short>("maxPersons"),
-            root.get<Short>("cabins"),
-            root.get<BigDecimal>("length"),
-            root.get<String>("modelName"),
-            root.get<String>("manufacturerName"),
-            root.get<Long>("mainImage"),
-            root.get<String>("agencyName"),
-            root.get<EntryType>("entryType"),
-        )
+        // See the multiselect comment: grouping by id alone (attributes are
+        // functionally dependent + aggregate-wrapped) keeps the planner's
+        // group estimate accurate so it picks HashAggregate.
+        cq.groupBy(root.get<Long>("id"))
 
         // FE sends a simple sortBy string; each branch below maps to the column
         // actually used for ORDER BY. Anything unrecognized falls back to the
@@ -376,15 +378,16 @@ class YachtQueryingService(
                 // Yachts without length land at the end — COALESCE maps NULL to a
                 // large value so ascending order pushes them to the bottom. Postgres'
                 // default ASC already does this; the COALESCE makes it explicit and
-                // dialect-independent.
-                cq.orderBy(cb.asc(cb.coalesce(root.get<BigDecimal>("length"), cb.literal(BigDecimal.valueOf(9999)))))
+                // dialect-independent. MIN() because only `id` is grouped —
+                // length is constant per yacht, so MIN is the value itself.
+                cq.orderBy(cb.asc(cb.coalesce(cb.min(root.get<BigDecimal>("length")), cb.literal(BigDecimal.valueOf(9999)))))
             }
 
             "lengthDesc" -> {
                 // Default Postgres DESC puts NULLs first, which surfaces yachts
                 // with no length as the "longest" — wrong. Map NULL to -1 so they
                 // fall to the bottom while real lengths still sort largest-first.
-                cq.orderBy(cb.desc(cb.coalesce(root.get<BigDecimal>("length"), cb.literal(BigDecimal.valueOf(-1)))))
+                cq.orderBy(cb.desc(cb.coalesce(cb.min(root.get<BigDecimal>("length")), cb.literal(BigDecimal.valueOf(-1)))))
             }
 
             "recommendedScore", "recommended" -> {
@@ -817,7 +820,13 @@ class YachtQueryingService(
         val cq = cb.createQuery(Long::class.java)
         val root = cq.from(YachtSearchView::class.java)
 
-        cq.select(cb.countDistinct(root))
+        // SELECT DISTINCT id + count the (small) id list in Kotlin instead of
+        // COUNT(DISTINCT <entity>): the DISTINCT-aggregate form forces Postgres
+        // into a sort-based dedup of every matched view row (~1.3s for one
+        // country), while plain SELECT DISTINCT hash-aggregates the same rows
+        // in ~0.5s. The list is one Long per yacht (a few thousand), so the
+        // transfer is negligible. (9.7.2026)
+        cq.select(root.get<Long>("id")).distinct(true)
 
         val predicates =
             buildYachtSearchPredicates(
@@ -828,7 +837,7 @@ class YachtQueryingService(
             )
 
         cq.where(*predicates.toTypedArray())
-        return entityManager.createQuery(cq).singleResult
+        return entityManager.createQuery(cq).resultList.size.toLong()
     }
 
     private fun buildYachtSearchPredicates(
