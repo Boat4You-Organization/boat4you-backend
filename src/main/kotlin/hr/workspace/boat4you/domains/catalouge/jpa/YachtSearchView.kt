@@ -169,6 +169,26 @@ open class YachtSearchView protected constructor() {
     open var locationToFullName: String? = null
         protected set
 
+    /**
+     * 2-letter ISO code of the pickup marina's country (lfrom.country_code;
+     * the custom-yacht branch uses the home location's code). Dedicated
+     * indexed column because country searches (`did=c-…`, sitemap
+     * countryCodes) used to compute right(location_full_name, 2) or expand
+     * into 200+ marina IN-lists — neither could use an index (Hibernate
+     * binds criteria literals, so an expression index never matches the
+     * parameterized SQL), forcing a full-view walk per page.
+     */
+    @Size(max = 2)
+    @Column(name = "country_code")
+    open var countryCode: String? = null
+        protected set
+
+    /** Same for the drop-off marina; NULL when the offer has no location_to. */
+    @Size(max = 2)
+    @Column(name = "country_code_to")
+    open var countryCodeTo: String? = null
+        protected set
+
     @Enumerated(EnumType.STRING)
     @Column(name = "entry_type")
     open var entryType: EntryType? = null

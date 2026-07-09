@@ -24,6 +24,7 @@ import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
+import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtDetailRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtViewRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalBaseRepository
@@ -80,6 +81,7 @@ class YachtQueryingService(
     private val yachtExtraRepository: YachtExtraRepository,
     private val externalBaseRepository: ExternalBaseRepository,
     private val regionRepository: RegionRepository,
+    private val countryRepository: CountryRepository,
 ) {
     companion object {
         private const val MAX_PAGE_SIZE = 100
@@ -837,10 +839,16 @@ class YachtQueryingService(
     ): List<Predicate> {
         val predicates = mutableListOf<Predicate>()
 
-        // Resolve `did` (country / region / marina) into the matching marina
-        // ids. Branch 1 yachts carry offer.location_from at marina granularity,
-        // and branch 2 (custom) now also points to a marina via the admin
-        // marina selector — so a single allMarinas IN-clause covers both.
+        // Resolve `did` (country / region / marina) into predicates. Region
+        // (`r-…`) and marina (`l-…`) ids expand into marina-id lists matched
+        // against location_from/location_to — branch 1 yachts carry
+        // offer.location_from at marina granularity, and branch 2 (custom)
+        // also points to a marina via the admin marina selector. Country ids
+        // (`c-…`) used to expand into the same 200+ marina IN-list, which the
+        // planner could not serve from the location indexes (OR across two
+        // huge IN-lists) — every country page walked all 1.6M view rows. They
+        // now filter on the dedicated indexed country_code/country_code_to
+        // columns instead; semantics unchanged (pickup OR drop-off in scope).
         //
         // Earlier we tried adding the parent country/region realId alongside,
         // to surface custom yachts pinned at country level, but Country.id and
@@ -848,18 +856,31 @@ class YachtQueryingService(
         // accidentally matched Location.id=8 (ACI Marina Trogir) and pulled
         // unrelated Croatian yachts into Greek region searches. The marina
         // selector closes that gap at the data layer instead.
+        val countryDidCodes =
+            searchParams.locationIds
+                ?.filter { it.firstOrNull() == 'c' }
+                ?.mapNotNull { it.substring(2).toLongOrNull() }
+                ?.mapNotNull { countryRepository.findById(it).orElse(null)?.code2?.uppercase() }
+                ?.distinct()
+                .orEmpty()
         val allMarinas =
             searchParams.locationIds
+                ?.filterNot { it.firstOrNull() == 'c' }
                 ?.flatMap { locationId ->
                     getMarinas(locationId).mapNotNull { it.id }
                 }?.distinct()
-        if (!allMarinas.isNullOrEmpty()) {
-            predicates.add(
-                cb.or(
-                    root.get<String>("locationFrom").`in`(allMarinas),
-                    root.get<String>("locationTo").`in`(allMarinas),
-                ),
-            )
+                .orEmpty()
+        val didPredicates = mutableListOf<Predicate>()
+        if (allMarinas.isNotEmpty()) {
+            didPredicates.add(root.get<String>("locationFrom").`in`(allMarinas))
+            didPredicates.add(root.get<String>("locationTo").`in`(allMarinas))
+        }
+        if (countryDidCodes.isNotEmpty()) {
+            didPredicates.add(root.get<String>("countryCode").`in`(countryDidCodes))
+            didPredicates.add(root.get<String>("countryCodeTo").`in`(countryDidCodes))
+        }
+        if (didPredicates.isNotEmpty()) {
+            predicates.add(cb.or(*didPredicates.toTypedArray()))
         }
 
         if (!searchParams.yachtIds.isNullOrEmpty()) {
@@ -898,20 +919,15 @@ class YachtQueryingService(
         // it from any REGION ids in `did` so a region search only returns yachts in that
         // region's OWN country. Fixes cross-country partner regions: MMK's "Ionian" spans the
         // whole sea (Greek + Italian + Albanian coast), so a Greece > Ionian search used to
-        // surface Taranto/Brindisi boats. RIGHT() over location_full_name sidesteps the JOIN +
-        // Pageable bug; null-country regions contribute nothing so the filter quietly no-ops.
+        // surface Taranto/Brindisi boats. Filters on the dedicated indexed country_code
+        // column (pickup side, matching the old right(location_full_name, 2) semantics);
+        // null-country regions contribute nothing so the filter quietly no-ops.
         val effectiveCountryCodes =
             searchParams.countryCodes?.takeIf { it.isNotEmpty() }
                 ?: deriveRegionCountryCodes(searchParams.locationIds)
         if (effectiveCountryCodes.isNotEmpty()) {
             val codeUpper = effectiveCountryCodes.map { it.uppercase() }
-            val countryCodeExpr = cb.function(
-                "right",
-                String::class.java,
-                root.get<String>("locationFullName"),
-                cb.literal(2),
-            )
-            predicates.add(countryCodeExpr.`in`(codeUpper))
+            predicates.add(root.get<String>("countryCode").`in`(codeUpper))
         }
 
         if (!searchParams.manufacturers.isNullOrEmpty()) {

@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.RelaxSuggestionDto
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
 import jakarta.persistence.EntityManager
 import org.springframework.cache.annotation.Cacheable
@@ -34,6 +35,7 @@ import java.time.LocalDate
 class YachtRelaxSuggestionService(
     private val entityManager: EntityManager,
     private val locationRepository: LocationRepository,
+    private val countryRepository: CountryRepository,
 ) {
     // Same search interactions that hit /distribution also hit /relax-suggest;
     // cache the 4-5 COUNT(DISTINCT id) scans behind one entry on the same 3-min
@@ -47,9 +49,15 @@ class YachtRelaxSuggestionService(
     fun suggest(filters: ActiveFilters): RelaxSuggestionDto? {
         if (!filters.hasAnyRelaxable()) return null
 
-        // Resolve `did` (country / region / marina) into the matching marina
-        // IDs once — avoids re-running the marina lookup in every WHERE build.
-        val resolved = filters.copy(marinaIds = resolveMarinas(filters.locationIds))
+        // Resolve `did` (country / region / marina) once — avoids re-running
+        // the lookups in every WHERE build. Regions/marinas expand to marina
+        // ids; countries resolve to 2-letter codes matched on the view's
+        // indexed country_code columns (a 200+ marina IN-list forced a
+        // full-view walk on every count).
+        val resolved = filters.copy(
+            marinaIds = resolveMarinaIds(filters.locationIds),
+            didCountryCodes = resolveCountryCodes(filters.locationIds),
+        )
         val baseline = countWith(resolved)
 
         val candidates = mutableListOf<RelaxSuggestionDto>()
@@ -102,12 +110,22 @@ class YachtRelaxSuggestionService(
         // Always-on filters (mirror `YachtQueryingService` so relax delta
         // matches the listing's "Boats available" baseline).
         clauses += "offer_status <> 'UNAVAILABLE'"
+        val hasMarinas = !filters.marinaIds.isNullOrEmpty()
+        val hasDidCountries = !filters.didCountryCodes.isNullOrEmpty()
         when {
-            filters.marinaIds == null -> {}
-            filters.marinaIds.isEmpty() -> clauses += "FALSE"
+            filters.marinaIds == null && filters.didCountryCodes == null -> {}
+            !hasMarinas && !hasDidCountries -> clauses += "FALSE"
             else -> {
-                clauses += "(location_from IN (:marinaIds) OR location_to IN (:marinaIds))"
-                params["marinaIds"] = filters.marinaIds
+                val ors = mutableListOf<String>()
+                if (hasMarinas) {
+                    ors += "location_from IN (:marinaIds) OR location_to IN (:marinaIds)"
+                    params["marinaIds"] = filters.marinaIds!!
+                }
+                if (hasDidCountries) {
+                    ors += "country_code IN (:didCountryCodes) OR country_code_to IN (:didCountryCodes)"
+                    params["didCountryCodes"] = filters.didCountryCodes!!
+                }
+                clauses += "(${ors.joinToString(" OR ")})"
             }
         }
         filters.startDate?.let {
@@ -141,16 +159,16 @@ class YachtRelaxSuggestionService(
         return "WHERE ${clauses.joinToString(" AND ")}" to params
     }
 
-    /** Resolve `did=c-54 / r-12 / l-9001` strings into the matching marina
-     *  IDs (mirrors `YachtQueryingService.getMarinas` / `YachtDistributionService.resolveMarinas`).
+    /** Resolve `r-12 / l-9001` did strings into the matching marina IDs
+     *  (mirrors `YachtQueryingService.getMarinas` / `YachtDistributionService`).
+     *  Country ids are handled by [resolveCountryCodes] instead.
      *  `null` when no destination filter is active. */
-    private fun resolveMarinas(locationIds: List<String>?): List<Long>? {
+    private fun resolveMarinaIds(locationIds: List<String>?): List<Long>? {
         if (locationIds.isNullOrEmpty()) return null
         return locationIds
             .flatMap { id ->
                 val type = when (id.firstOrNull()) {
                     'r' -> LocationType.REGION
-                    'c' -> LocationType.COUNTRY
                     'l' -> LocationType.MARINA
                     else -> return@flatMap emptyList()
                 }
@@ -158,10 +176,22 @@ class YachtRelaxSuggestionService(
                 when (type) {
                     LocationType.MARINA -> locationRepository.findById(numeric.toLong())
                         .map { listOfNotNull(it.id) }.orElse(emptyList())
-                    LocationType.COUNTRY -> locationRepository.findMarinasByCountryId(numeric).mapNotNull { it.id }
                     LocationType.REGION -> locationRepository.findMarinasByRegionId(numeric).mapNotNull { it.id }
+                    else -> emptyList()
                 }
             }
+            .distinct()
+    }
+
+    /** 2-letter codes for the `c-…` did entries — matched on the view's
+     *  indexed country_code/country_code_to columns. `null` when no
+     *  destination filter is active. */
+    private fun resolveCountryCodes(locationIds: List<String>?): List<String>? {
+        if (locationIds.isNullOrEmpty()) return null
+        return locationIds
+            .filter { it.firstOrNull() == 'c' }
+            .mapNotNull { it.substring(2).toLongOrNull() }
+            .mapNotNull { countryRepository.findById(it).orElse(null)?.code2?.uppercase() }
             .distinct()
     }
 
@@ -192,8 +222,9 @@ class YachtRelaxSuggestionService(
      *  / charter) are *always-on* — they're held constant across every
      *  candidate-with-X-removed query, so the listing's destination /
      *  date / type context flows through. The bottom group is *relaxable* —
-     *  each branch in [suggest] tests dropping one dimension. `marinaIds`
-     *  is filled by [resolveMarinas] inside [suggest]. */
+     *  each branch in [suggest] tests dropping one dimension. `marinaIds` /
+     *  `didCountryCodes` are filled by [resolveMarinaIds] / [resolveCountryCodes]
+     *  inside [suggest]. */
     data class ActiveFilters(
         val locationIds: List<String>? = null,
         val startDate: LocalDate? = null,
@@ -210,6 +241,11 @@ class YachtRelaxSuggestionService(
         /** Resolved marina IDs from `locationIds` — populated internally,
          *  never set by callers. */
         val marinaIds: List<Long>? = null,
+        /** Resolved 2-letter codes for `c-…` entries in `locationIds` —
+         *  populated internally, never set by callers. Resolution happens
+         *  AFTER the @Cacheable boundary (always null in the key), so keys
+         *  stay deterministic per input. */
+        val didCountryCodes: List<String>? = null,
     ) {
         fun hasAnyRelaxable(): Boolean =
             listOf(minBuildYear, maxBuildYear, minLength, maxLength, maxPrice, minCabins, maxCabins)

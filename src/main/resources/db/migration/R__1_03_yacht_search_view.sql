@@ -27,7 +27,12 @@
 -- Tracked patches: V1_60 (drop UNAVAILABLE filter + custom branch reads
 -- y.location_id), V1_67 (agency_recommended 0/1), 7.5.2026 (location_to_full_name),
 -- 3.6.2026 (location_full_name embeds location.display_name = "name | city", a STORED
--- generated column from V9_16, so the nightly catalogue sync can never revert the city label).
+-- generated column from V9_16, so the nightly catalogue sync can never revert the city label),
+-- 9.7.2026 (country_code/country_code_to columns + indexes: country searches used to expand
+-- into 200+ marina IN-lists / right(location_full_name, 2) — neither could use an index
+-- (Hibernate binds criteria literals, so an expression index never matches), forcing a
+-- 1.6M-row full-view walk per page; a dedicated indexed column bitmap-scans only that
+-- country's rows).
 
 DO $$
 BEGIN
@@ -79,7 +84,9 @@ CREATE MATERIALIZED VIEW public.yacht_search_view AS
          a.name AS agency_name,
          y.entry_type,
          o.status AS offer_status,
-         (CASE WHEN COALESCE(a.recommended, false) THEN 1 ELSE 0 END) AS agency_recommended
+         (CASE WHEN COALESCE(a.recommended, false) THEN 1 ELSE 0 END) AS agency_recommended,
+         lfrom.country_code AS country_code,
+         lto.country_code AS country_code_to
   FROM   yacht y
          JOIN agency a              ON  y.agency_id = a.id AND a.active = true AND a.availability_blocked = false
          JOIN offer o               ON  o.yacht_id = y.id
@@ -128,7 +135,9 @@ UNION ALL
          a.name AS agency_name,
          y.entry_type,
          'FREE' AS offer_status,
-         (CASE WHEN COALESCE(a.recommended, false) THEN 1 ELSE 0 END) AS agency_recommended
+         (CASE WHEN COALESCE(a.recommended, false) THEN 1 ELSE 0 END) AS agency_recommended,
+         l.country_code AS country_code,
+         l.country_code AS country_code_to
   FROM   yacht y
          LEFT JOIN agency a         ON  y.agency_id = a.id AND a.active = true
          LEFT JOIN location l       ON  l.id = y.location_id
@@ -151,5 +160,7 @@ CREATE INDEX yacht_search_view_id_idx           ON public.yacht_search_view (id)
 CREATE INDEX yacht_search_view_dates_idx        ON public.yacht_search_view (date_from, date_to);
 CREATE INDEX yacht_search_view_client_price_idx ON public.yacht_search_view (client_price);
 CREATE INDEX yacht_search_view_agency_id_idx    ON public.yacht_search_view (agency_id);
+CREATE INDEX yacht_search_view_country_from_idx ON public.yacht_search_view (country_code);
+CREATE INDEX yacht_search_view_country_to_idx   ON public.yacht_search_view (country_code_to);
 
 GRANT SELECT ON public.yacht_search_view TO boat4you_app;

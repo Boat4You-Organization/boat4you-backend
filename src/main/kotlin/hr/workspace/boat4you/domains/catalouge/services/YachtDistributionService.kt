@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
+import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
 import jakarta.persistence.EntityManager
 import org.springframework.cache.annotation.Cacheable
@@ -36,6 +37,7 @@ import java.time.LocalDate
 class YachtDistributionService(
     private val entityManager: EntityManager,
     private val locationRepository: LocationRepository,
+    private val countryRepository: CountryRepository,
 ) {
     // Cache the whole facet payload (all 9-11 COUNT(DISTINCT)/histogram/percentile
     // scans collapse into one entry) keyed on the full 24-param filter set, so
@@ -81,9 +83,10 @@ class YachtDistributionService(
         require(startDate == null || endDate == null || startDate.isBefore(endDate)) {
             "startDate must be before endDate"
         }
-        val marinaIds = resolveMarinas(locationIds)
+        val didScope = resolveDidScope(locationIds)
         val ctx = FilterContext(
-            marinaIds = marinaIds,
+            marinaIds = didScope.marinaIds,
+            didCountryCodes = didScope.countryCodes,
             startDate = startDate,
             endDate = endDate,
             vesselTypeNames = vesselTypes?.map { it.name },
@@ -158,6 +161,10 @@ class YachtDistributionService(
      *  as VARCHAR after F2-018 migration to `@Enumerated(EnumType.STRING)`. */
     private data class FilterContext(
         val marinaIds: List<Long>?,
+        /** 2-letter codes for `c-…` did entries — filtered on the view's indexed
+         *  country_code/country_code_to columns instead of a 200+ marina IN-list
+         *  (which forced a full-view walk on every country facet query). */
+        val didCountryCodes: List<String>? = null,
         val startDate: LocalDate?,
         val endDate: LocalDate?,
         val vesselTypeNames: List<String>? = null,
@@ -184,27 +191,39 @@ class YachtDistributionService(
         val modelIds: List<Long>? = null,
     )
 
-    /** Resolve `did=c-54 / r-12 / l-9001` strings into the matching marina
-     *  IDs (mirrors `YachtQueryingService.getMarinas`). Returns null when no
-     *  location filter is active so callers can omit the WHERE clause and
-     *  scan the whole view. */
-    private fun resolveMarinas(locationIds: List<String>?): List<Long>? {
-        if (locationIds.isNullOrEmpty()) return null
-        val ids =
+    /** The `did` filter split by granularity: region/marina ids expand into
+     *  marina-id lists, country ids resolve to 2-letter codes (filtered on the
+     *  view's indexed country_code columns). Both null when no location filter
+     *  is active so callers can omit the WHERE clause and scan the whole view. */
+    private data class DidScope(val marinaIds: List<Long>?, val countryCodes: List<String>?)
+
+    /** Resolve `did=c-54 / r-12 / l-9001` strings (mirrors the split in
+     *  `YachtQueryingService.buildYachtSearchPredicates`). */
+    private fun resolveDidScope(locationIds: List<String>?): DidScope {
+        if (locationIds.isNullOrEmpty()) return DidScope(null, null)
+        val countryCodes =
             locationIds
+                .filter { it.firstOrNull() == 'c' }
+                .mapNotNull { it.substring(2).toLongOrNull() }
+                .mapNotNull { countryRepository.findById(it).orElse(null)?.code2?.uppercase() }
+                .distinct()
+        // Empty lists (only invalid prefixes / unknown ids) stay non-null so the
+        // WHERE clause restricts to no rows; matches the pre-split behaviour.
+        val marinaIds =
+            locationIds
+                .filterNot { it.firstOrNull() == 'c' }
                 .flatMap { resolveOne(it) }
                 .distinct()
-        // Empty list (only invalid prefixes / unknown ids) — return empty
-        // so the WHERE clause restricts to no rows; matches main search.
-        return ids
+        return DidScope(marinaIds, countryCodes)
     }
 
     private fun resolveOne(locationId: String): List<Long> {
         val type =
             when (locationId.firstOrNull()) {
                 'r' -> LocationType.REGION
-                'c' -> LocationType.COUNTRY
                 'l' -> LocationType.MARINA
+                // 'c' never reaches here — resolveDidScope routes country ids
+                // to the indexed country-code filter instead of a marina list.
                 else -> return emptyList()
             }
         val numeric = locationId.substring(2).toIntOrNull() ?: return emptyList()
@@ -224,8 +243,8 @@ class YachtDistributionService(
                             .ifEmpty { listOfNotNull(marina.id) }
                 }
             }
-            LocationType.COUNTRY -> locationRepository.findMarinasByCountryId(numeric).mapNotNull { it.id }
             LocationType.REGION -> locationRepository.findMarinasByRegionId(numeric).mapNotNull { it.id }
+            else -> emptyList()
         }
     }
 
@@ -239,10 +258,11 @@ class YachtDistributionService(
      *     The main search applies this whenever `includeUnavailable` is false,
      *     which is true for every customer-facing call. STAYS as the matview
      *     pre-filter exactly like `buildYachtSearchPredicates`.
-     *  2. **Destination** (when `did` filter active): `(location_from IN
-     *     (:marinaIds) OR location_to IN (:marinaIds))`. Empty resolved list
-     *     short-circuits to FALSE so counts collapse to 0, matching main
-     *     search behaviour.
+     *  2. **Destination** (when `did` filter active): marina/region ids match
+     *     `(location_from IN (:marinaIds) OR location_to IN (:marinaIds))`;
+     *     country ids match the indexed `country_code`/`country_code_to`
+     *     columns — both OR-ed together. Nothing resolved short-circuits to
+     *     FALSE so counts collapse to 0, matching main search behaviour.
      *  3. **Honest date interval-overlap** (Deploy 4 — replaces the old
      *     `date_from BETWEEN startDate±FLEX` start-day clamp). A slot qualifies
      *     when its OWN window overlaps the request padded by [NEARBY_WINDOW_DAYS]:
@@ -261,10 +281,17 @@ class YachtDistributionService(
      *     so the NOT EXISTS is vacuously true and never drops them. */
     private fun whereClause(ctx: FilterContext): String {
         val parts = mutableListOf(" AND offer_status <> 'UNAVAILABLE'")
+        val hasMarinas = !ctx.marinaIds.isNullOrEmpty()
+        val hasDidCountries = !ctx.didCountryCodes.isNullOrEmpty()
         when {
-            ctx.marinaIds == null -> {}
-            ctx.marinaIds.isEmpty() -> parts.add(" AND FALSE")
-            else -> parts.add(" AND (location_from IN (:marinaIds) OR location_to IN (:marinaIds))")
+            ctx.marinaIds == null && ctx.didCountryCodes == null -> {}
+            !hasMarinas && !hasDidCountries -> parts.add(" AND FALSE")
+            else -> {
+                val ors = mutableListOf<String>()
+                if (hasMarinas) ors.add("location_from IN (:marinaIds) OR location_to IN (:marinaIds)")
+                if (hasDidCountries) ors.add("country_code IN (:didCountryCodes) OR country_code_to IN (:didCountryCodes)")
+                parts.add(" AND (${ors.joinToString(" OR ")})")
+            }
         }
         if (ctx.startDate != null && ctx.endDate != null) {
             // Slot window [date_from, date_to) overlaps padded request
@@ -385,6 +412,7 @@ class YachtDistributionService(
 
     private fun bindFilters(q: jakarta.persistence.Query, ctx: FilterContext) {
         if (!ctx.marinaIds.isNullOrEmpty()) q.setParameter("marinaIds", ctx.marinaIds)
+        if (!ctx.didCountryCodes.isNullOrEmpty()) q.setParameter("didCountryCodes", ctx.didCountryCodes)
         // Honest interval-overlap bind, matching buildYachtSearchPredicates:
         // padded window for the slot overlap, RAW window for the live hard-block.
         if (ctx.startDate != null && ctx.endDate != null) {

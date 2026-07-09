@@ -54,11 +54,11 @@ data class YachtSearchParamObject(
      * search keeps showing every yacht regardless of country (deep-links
      * to non-promoted countries still resolve normally).
      *
-     * yacht_search_view stores the country code as the last 2 chars of
-     * `location_full_name` (format: "<id>-<name>-<countryCode>"). The
-     * predicate uses RIGHT() rather than a JOIN to avoid the JPA
-     * fetch-join + Pageable totalElements drift documented in
-     * project_jpa_join_fetch_pagination memory.
+     * Filters on yacht_search_view's dedicated indexed `country_code`
+     * column (pickup side; 9.7.2026 — previously RIGHT(location_full_name,
+     * 2), which could never use an index). Still a view column rather than
+     * a JOIN, avoiding the JPA fetch-join + Pageable totalElements drift
+     * documented in project_jpa_join_fetch_pagination memory.
      */
     val countryCodes: List<String>? = null,
     /**
