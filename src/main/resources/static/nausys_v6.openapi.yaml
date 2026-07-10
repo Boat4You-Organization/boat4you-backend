@@ -3090,11 +3090,15 @@ components:
           format: date-time
           description: Timestamp when the equipment record was last modified.
         quantityExtras:
-          type: integer
-          description: Quantity of the selected equipment item.
+          # NauSys sends a decimal STRING here ("1.00"), same as on
+          # RestYachtReservationService — `integer` made Jackson abort the whole
+          # reservations parse for any booking carrying additional equipment
+          # (e.g. Transit log), which broke the yacht-swap sync for it every run.
+          type: string
+          description: Quantity of the selected equipment item (decimal string, e.g. "1.00").
         quantityPriceMeasure:
-          type: integer
-          description: Quantity of the price measure (per booking, per day, etc.) used for price calculation.
+          type: string
+          description: Quantity of the price measure (per booking, per day, etc.) used for price calculation (decimal string).
     RestYachtReservationService:
       type: object
       properties:
