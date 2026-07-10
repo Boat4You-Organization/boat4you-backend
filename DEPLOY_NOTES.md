@@ -1,5 +1,31 @@
 # Backend deploy notes
 
+## 2026-07-12 — Retention reaper + fix silent 06:00 rollback (BE 918a1d7+41bcf6c, V9_37, DEPLOYED, backlog DRAINED)
+
+**New nightly 03:40 job (cusma3, ShedLock `retentionReaper`)** deletes in bounded batches,
+each batch its own autocommit tx: service_call >60d, dead offers (past >30d, no
+reservation_flow ref; children via one atomic data-modifying CTE), expired
+external_reservations >30d (zero FKs). Manual: `POST /admin/maintenance/retention-reaper`
+(SYSTEM_ADMIN, data-sync node). `V9_37` = index on service_call(received_at) (applied in 3s).
+
+**ROOT-CAUSE INCIDENT:** the old 06:00 `deleteExpiredReservationsAndOffers` ran offers +
+reservations + option purge in ONE giant @Transactional that **silently never committed** —
+identical "Purge mirror" orphan counts on consecutive nights (83,925 on 7.7 AND 8.7) proved
+full nightly rollback; hence 26k offers / 78k mirror rows / 3.2M service_call backlog since
+January. That job now runs ONLY purgeExpiredOptions (own tx); `deleteExpiredOffers` +
+`deleteExpiredReservations` repo methods REMOVED (single owner = reaper).
+
+**Backlog drained via 3 manual passes (~70s total):** service_call −3,169,468 (now 2.85M,
+all <60d), offers −27,269 (+68k extras, +27k plans), external_reservations −78,494.
+Post-checks: 0 stale left, future offers intact (1.68M), API/web 200. Space note: freed
+pages are dead tuples until autovacuum; files don't shrink without VACUUM FULL/pg_repack
+(optional, off-hours) but growth stops and space gets reused.
+
+⚠️ **V9_36 CLASH (2nd time!):** my index migration was first numbered V9_36 — the parallel
+session's `V9_36__agency_inquiry_only` was already applied in prod. Renamed to V9_37
+(41bcf6c) BEFORE deploy — caught by the `unzip -l jar | grep V9_` pre-deploy check, which is
+now clearly mandatory. Rollback jars: `webservice_pre_reaper.jar` (both nodes).
+
 ## 2026-07-06 — Image download: interleave oldest+newest (BE 5e50ac4, DEPLOYED)
 
 **What:** `ImageDownloadJob` fetched un-synced images newest-id-first only
