@@ -151,16 +151,9 @@ interface OfferRepository : JpaRepository<Offer, Long> {
         @Param("dateTo") dateTo: LocalDate,
     ): List<Offer>
 
-    @Modifying
-    @Query(
-        """
-        DELETE FROM offer o
-        WHERE o.date_to < CURRENT_DATE - INTERVAL '30 days'
-        AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = o.id)
-        """,
-        nativeQuery = true,
-    )
-    fun deleteExpiredOffers()
+    // deleteExpiredOffers removed 12.7.2026 — expired-offer retention is owned by
+    // RetentionReaperJob (batched, per-batch commits). Keeping a second delete path
+    // here invites the giant-single-tx failure mode back.
 
     /**
      * Drop SYNTHETIC_OPTION offers (availability sync creates these to surface a boat held under

@@ -58,9 +58,8 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
         @Param("now") now: LocalDateTime,
     ): Boolean
 
-    @Modifying
-    @Query("DELETE FROM ExternalReservation r WHERE r.dateTo < :cutoff")
-    fun deleteExpiredReservations(@Param("cutoff") cutoff: LocalDate)
+    // deleteExpiredReservations removed 12.7.2026 — expired-row retention is owned by
+    // RetentionReaperJob (batched, per-batch commits); see ReservationOfferService.
 
     /**
      * Bulk-purge holds (of the given status) whose option expiry has lapsed at the partner
