@@ -173,6 +173,13 @@ class NauSysYachtSyncService(
         }
     }
 
+    // MUST override the class-level @Transactional(readOnly = true): without a
+    // writable tx Hibernate never flushes the sysActive=false saves, so this
+    // logged "Deactivating N yachts…" every night while silently persisting
+    // NOTHING — the same 32 Angelina yachts reappeared in the log on
+    // 7./8./9./10.7. and the NauSys take-back effectively never worked. Found
+    // via the weekly consistency inventory (Mario 11.7.2026).
+    @Transactional
     fun deactivateYachtsForAgency(
         agencyId: Long,
         allYachts: List<Long>,
