@@ -104,6 +104,60 @@ class MmkYachtOfferIntegrationServiceAsync(
                             )
                         }
                     }
+
+                    // MMK `flexibility=6` (in year) only returns boats whose DEFAULT
+                    // check-in day is Saturday (API spec) — hard non-Saturday boats
+                    // (e.g. Sunday-to-Sunday EBcharter MARILA, Mario 12.7.2026) never
+                    // appear in the yearly sweep and looked permanently sold out
+                    // (~64 yachts had zero FREE offers). For those groups walk the
+                    // same horizon month by month with `flexibility=5` (in month) +
+                    // tripDuration, which returns ALL departure days. Verified against
+                    // the live API: flex5 WITHOUT tripDuration returns nothing for
+                    // such boats, flex7 returns nothing at all.
+                    val groupKey = reservationOptionsGroup.key
+                    if (!groupKey.checkinSat && groupKey.hasNonStandardCheckIn() && mmkYachtIds.isNotEmpty()) {
+                        var month = YearMonth.from(startDate)
+                        val lastMonth = YearMonth.from(endDate)
+                        while (month <= lastMonth) {
+                            val monthStart = month.atDay(1)
+                            val monthEnd = month.atEndOfMonth()
+                            val monthlyResponse =
+                                mmkRetryableClient.getOffersForAsync(
+                                    dateFrom =
+                                        MmkDateTimeWrapper(
+                                            LocalDateTime.of(monthStart, LocalTime.MIN)
+                                                .format(MmkDateTimeWrapper.READ_FORMATTER),
+                                        ),
+                                    dateTo =
+                                        MmkDateTimeWrapper(
+                                            LocalDateTime.of(monthEnd, LocalTime.MAX)
+                                                .format(MmkDateTimeWrapper.READ_FORMATTER),
+                                        ),
+                                    flexibility = Flexibility._5,
+                                    tripDuration = listOf(groupKey.minimalDuration),
+                                    companyId = listOf(agencyExternalId),
+                                    yachtId = mmkYachtIds,
+                                )
+                            if (monthlyResponse.isNotEmpty()) {
+                                try {
+                                    mmkYachtOfferSyncService.syncOffersForAgency(
+                                        agency.id!!,
+                                        monthlyResponse,
+                                        windowFrom = monthStart,
+                                        windowTo = monthEnd,
+                                    )
+                                } catch (e: Exception) {
+                                    log.error(
+                                        "Failed to sync non-Saturday monthly offers for agency: {}, month: {}",
+                                        agency.name,
+                                        month,
+                                        e,
+                                    )
+                                }
+                            }
+                            month = month.plusMonths(1)
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {
