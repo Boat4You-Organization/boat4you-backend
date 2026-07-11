@@ -737,7 +737,9 @@ class MmkYachtSyncService(
         reservationOptionRepository.save(reservationOption)
     }
 
-    private fun shouldSkip(mmkYacht: org.openapitools.client.mmk.model.Yacht): Boolean {
+    // Also used by ConsistencyVerifierJob so the weekly inventory counts the
+    // partner fleet with the exact same eligibility rules the sync applies.
+    fun shouldSkip(mmkYacht: org.openapitools.client.mmk.model.Yacht): Boolean {
         val filteredProducts =
             mmkYacht.products?.filter { MMK_ALLOWED_PRODUCTS.contains(it.name.lowercase()) }
         if (filteredProducts.isNullOrEmpty()) {
