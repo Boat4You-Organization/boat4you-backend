@@ -352,6 +352,15 @@ class NauSysCatalogueSyncService(
                 countryRepository.findByNausysRegionId(it.regionId!!, ExternalSystemEnum.NAUSYS.value.toLong())
             location.countryCode = country?.code2
             location.country = country
+            // NauSys ships lat/lon for every location (RestLocation.lat/lon) — persist it
+            // so the trip-hub weather card and the F2 marina map work for ANY marina without
+            // a manual backfill (V9_31/V9_39 were reactive one-offs). Only fill when NULL so a
+            // manually curated coordinate is never churned; skip the 0,0 "unknown" sentinel.
+            // Mario 12.7.2026.
+            val nsLat = it.lat
+            val nsLon = it.lon
+            if (location.lat == null && nsLat != null && nsLat != 0.0) location.lat = nsLat.toBigDecimal()
+            if (location.lon == null && nsLon != null && nsLon != 0.0) location.lon = nsLon.toBigDecimal()
             locationRepository.saveAndFlush(location)
 
             if (mapping == null) {

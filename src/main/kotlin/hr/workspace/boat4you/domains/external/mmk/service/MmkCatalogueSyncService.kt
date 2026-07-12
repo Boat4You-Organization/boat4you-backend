@@ -260,6 +260,15 @@ class MmkCatalogueSyncService(
             val country = allCountries.find { c -> c.id == countryMapping!!.systemId!!.toInt() }
             location.countryCode = country?.code2
             location.country = country
+            // MMK ships base coordinates as strings (Base.latitude/longitude) — persist them
+            // so the trip-hub weather card and the F2 marina map work for ANY base without a
+            // manual backfill (V9_31/V9_39 were reactive one-offs). Only fill when NULL so a
+            // manually curated coordinate is never churned; toBigDecimalOrNull drops empty/
+            // malformed strings and signum!=0 skips the 0,0 "unknown" sentinel. Mario 12.7.2026.
+            val mmkLat = mmkLocation.latitude.toBigDecimalOrNull()
+            val mmkLon = mmkLocation.longitude.toBigDecimalOrNull()
+            if (location.lat == null && mmkLat != null && mmkLat.signum() != 0) location.lat = mmkLat
+            if (location.lon == null && mmkLon != null && mmkLon.signum() != 0) location.lon = mmkLon
             locationRepository.saveAndFlush(location)
 
             if (mapping == null) {
