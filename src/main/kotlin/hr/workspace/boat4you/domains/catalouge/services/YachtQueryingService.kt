@@ -374,6 +374,27 @@ class YachtQueryingService(
                 cq.orderBy(cb.asc(cb.min(root.get<BigDecimal>("lowestPrepayment"))))
             }
 
+            "discount" -> {
+                // Deals/promo pages: biggest saving vs partner list price first.
+                // Ordered by the client/list ratio of the SAME searched-week
+                // expressions the card displays, so the ordering matches the
+                // "-X%" chips. NULLIF guards zero list prices; COALESCE sends
+                // yachts without a list price (ratio NULL) to the end together
+                // with undiscounted ones (ratio 1); ties break cheapest-first.
+                val savingRatio =
+                    cb.coalesce(
+                        cb.quot(
+                            exactPeriodOrMin(cb, root.get<BigDecimal>("clientPrice"), dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate),
+                            cb.nullif(
+                                exactPeriodOrMin(cb, root.get<BigDecimal>("listPrice"), dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate),
+                                BigDecimal.ZERO,
+                            ),
+                        ).`as`(BigDecimal::class.java),
+                        cb.literal(BigDecimal.ONE),
+                    )
+                cq.orderBy(cb.asc(savingRatio), cb.asc(totalPriceExpr))
+            }
+
             "lengthAsc" -> {
                 // Yachts without length land at the end — COALESCE maps NULL to a
                 // large value so ascending order pushes them to the bottom. Postgres'

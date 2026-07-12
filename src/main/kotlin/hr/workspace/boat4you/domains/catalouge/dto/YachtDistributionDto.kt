@@ -31,6 +31,11 @@ data class YachtDistributionDto(
      *  `null` when the filtered set is empty. */
     val priceMin: BigDecimal?,
     val priceMax: BigDecimal?,
+    /** Highest "you save X% vs list price" among offers in the filtered set
+     *  (client_price vs list_price — the same pair the card's "-X%" chip is
+     *  computed from). Drives the dynamic "up to X%" figure on promo/deals
+     *  banners. `null` when nothing in the set is discounted. */
+    val maxDiscountPerc: Int?,
     val lengthHistogram: List<Long>,
     val engineHistogram: List<Long>,
     val byVesselType: Map<VesselType, Long>,

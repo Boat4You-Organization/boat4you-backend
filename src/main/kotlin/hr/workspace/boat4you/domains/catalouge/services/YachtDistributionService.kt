@@ -124,6 +124,7 @@ class YachtDistributionService(
             priceMedian = medianWeekly,
             priceMin = BigDecimal(PRICE_MIN_WEEKLY),
             priceMax = BigDecimal(PRICE_MAX_WEEKLY),
+            maxDiscountPerc = maxDiscountPerc(ctx),
             lengthHistogram = histogramLog(
                 column = "length",
                 low = LENGTH_MIN.toDouble(),
@@ -506,6 +507,23 @@ class YachtDistributionService(
         bindFilters(q, ctx)
         val raw = q.singleResult as Number?
         return raw?.let { BigDecimal(it.toString()).setScale(0, RoundingMode.HALF_UP) }
+    }
+
+    /** Highest partner-discount percentage in the filtered set: rounded
+     *  MAX of (1 - client_price/list_price) — per-day values, so the ratio
+     *  is duration-independent. Guards: NULLIF for zero list prices and a
+     *  client < list predicate so bad partner data (client above list) can
+     *  never produce a negative "discount". Capped at 90 — anything higher
+     *  is partner data noise, not a real campaign discount. */
+    private fun maxDiscountPerc(ctx: FilterContext): Int? {
+        val sql =
+            "SELECT MAX(ROUND((1 - client_price / NULLIF(list_price, 0)) * 100)) " +
+                "FROM yacht_search_view WHERE client_price IS NOT NULL AND list_price IS NOT NULL " +
+                "AND client_price < list_price${whereClause(ctx)}"
+        val q = entityManager.createNativeQuery(sql)
+        bindFilters(q, ctx)
+        val raw = q.singleResult as Number?
+        return raw?.toInt()?.coerceAtMost(90)
     }
 
     /** GROUP BY on an enum-backed column. The view stores enums as
