@@ -361,6 +361,56 @@
             letter-spacing: 0.8pt;
         }
 
+        /* ==== Payment options (two methods) ====
+           Same instalment schedule shown for bank transfer and credit card,
+           each in its own bordered card with the method fee folded in. */
+        .pay-lead {
+            font-family: sans-serif;
+            color: #4b5563;
+            font-size: 9.5pt;
+            line-height: 1.5;
+            margin: 0 0 10pt 0;
+        }
+        .pay-option {
+            border: 0.6pt solid #e2e5ee;
+            border-top: 2pt solid #2856ff;
+            padding: 10pt 14pt 12pt 14pt;
+            margin-bottom: 12pt;
+        }
+        .pay-option-head {
+            font-family: serif;
+            font-weight: bold;
+            font-size: 12pt;
+            color: #141857;
+            margin-bottom: 6pt;
+        }
+        .pay-option-head .pay-option-fee {
+            font-family: sans-serif;
+            font-weight: normal;
+            font-size: 8.5pt;
+            color: #6b7280;
+            margin-left: 8pt;
+        }
+        table.payments tr.opt-total td {
+            border-bottom: none;
+            border-top: 0.8pt solid #d7dbe6;
+            padding-top: 8pt;
+        }
+        table.payments tr.opt-total td.col-label .phase-name {
+            color: #2856ff;
+        }
+        .pay-note {
+            font-family: sans-serif;
+            color: #6b7280;
+            font-size: 8.5pt;
+            line-height: 1.5;
+            margin: 8pt 0 0 0;
+        }
+        .pay-note.card-lead {
+            margin: 0 0 8pt 0;
+            color: #4b5563;
+        }
+
         /* ==== Signatures ====
            Mirror layout, hairline rule, broker side has the embedded
            signature image; charterer side leaves the line empty. */
@@ -625,31 +675,77 @@
     </table>
 </div>
 
-<!-- Payment schedule -->
-<h2 class="section">Payment schedule</h2>
-<table class="payments">
-    <tr th:each="phase, iter : ${paymentPhases}">
-        <td class="col-num" th:text="${iter.count + '.'}">1.</td>
-        <td class="col-label">
-            <span class="phase-name" th:text="${phase.label}">Deposit payment</span>
-            <span class="phase-due">due by <span th:text="${phase.deadlineLabel}">15 May 2026</span></span>
-            <span th:if="${phase.isPaid}" class="paid-pill">PAID</span>
-        </td>
-        <td class="col-amount" th:text="${phase.amountLabel}">2,375.00&#8364;</td>
-    </tr>
-</table>
+<!-- Payment options — two payment methods, each with its processing fee
+     folded into the instalment amounts. The Charterer chooses ONE. -->
+<div th:if="${hasPaymentPhases}">
+    <h2 class="section">Payment options</h2>
+    <p class="pay-lead">The charter price is payable in the instalments shown below.
+        Choose <strong>one</strong> payment method — the amounts differ only by the
+        payment-processing fee. All amounts are in <span th:text="${currency}">EUR</span>.</p>
 
-<!-- Bank transfer details — only when at least one phase is unpaid. -->
-<div th:if="${hasUnpaidPhase}">
-    <h2 class="section">Bank transfer details</h2>
-    <div class="bank">
-        <table class="bank-table">
-            <tr><td class="bank-label">Account name</td><td class="bank-value">Cusmanich d.o.o.</td></tr>
-            <tr><td class="bank-label">Bank</td><td class="bank-value">Erste &amp; Steierm&#228;rkische Bank d.d.</td></tr>
-            <tr><td class="bank-label">SWIFT / BIC</td><td class="bank-value">ESBCHR22</td></tr>
-            <tr><td class="bank-label">IBAN</td><td class="bank-value iban">HR3924020061101202108</td></tr>
-            <tr><td class="bank-label">Payment reference</td><td class="bank-value">#<span th:text="${reservationNumber}">000000/2026</span></td></tr>
+    <!-- Option 1 — Bank transfer -->
+    <div class="pay-option">
+        <div class="pay-option-head">Bank transfer<span
+            th:if="${hasBankFee}" class="pay-option-fee">incl. <span th:text="${bankFeeLabel}">32.00&#8364;</span> transfer fee</span></div>
+        <table class="payments">
+            <tr th:each="phase, iter : ${bankPhases}">
+                <td class="col-num" th:text="${iter.count + '.'}">1.</td>
+                <td class="col-label">
+                    <span class="phase-name" th:text="${phase.label}">Deposit payment</span>
+                    <span class="phase-due">due by <span th:text="${phase.deadlineLabel}">15 May 2026</span></span>
+                </td>
+                <td class="col-amount" th:text="${phase.amountLabel}">2,693.60&#8364;</td>
+            </tr>
+            <tr class="opt-total">
+                <td class="col-num">&#160;</td>
+                <td class="col-label"><span class="phase-name">Total by bank transfer</span></td>
+                <td class="col-amount" th:text="${bankTotalLabel}">5,387.20&#8364;</td>
+            </tr>
         </table>
+        <div class="bank">
+            <table class="bank-table">
+                <tr><td class="bank-label">Account name</td><td class="bank-value">Cusmanich d.o.o.</td></tr>
+                <tr><td class="bank-label">Payment type</td><td class="bank-value">OUR</td></tr>
+                <tr><td class="bank-label">Bank</td><td class="bank-value">Erste &amp; Steierm&#228;rkische Bank d.d.</td></tr>
+                <tr><td class="bank-label">SWIFT / BIC</td><td class="bank-value">ESBCHR22</td></tr>
+                <tr><td class="bank-label">IBAN</td><td class="bank-value iban">HR3924020061101202108</td></tr>
+                <tr><td class="bank-label">Payment reference</td><td class="bank-value">#<span th:text="${reservationNumber}">000000/2026</span></td></tr>
+            </table>
+        </div>
+        <p class="pay-note">Please quote booking reference
+            #<span th:text="${reservationNumber}">000000/2026</span> on the transfer.
+            Payment type OUR — the sender bears all bank charges.</p>
+    </div>
+
+    <!-- Option 2 — Credit card -->
+    <div class="pay-option">
+        <div class="pay-option-head">Credit card<span
+            th:if="${hasCardFee}" class="pay-option-fee">incl. <span th:text="${cardSurchargePercentLabel}">5%</span> card fee</span></div>
+        <p class="pay-note card-lead" th:if="${hasCardFee}">Payment must be made in
+            <span th:text="${currency}">EUR</span>. A <span th:text="${cardSurchargePercentLabel}">5%</span>
+            card-processing fee applies and is already included in the amounts below.</p>
+        <table class="payments">
+            <tr th:each="phase, iter : ${cardPhases}">
+                <td class="col-num" th:text="${iter.count + '.'}">1.</td>
+                <td class="col-label">
+                    <span class="phase-name" th:text="${phase.label}">Deposit payment</span>
+                    <span class="phase-due">due by <span th:text="${phase.deadlineLabel}">15 May 2026</span></span>
+                </td>
+                <td class="col-amount" th:text="${phase.amountLabel}">2,811.60&#8364;</td>
+            </tr>
+            <tr class="opt-total">
+                <td class="col-num">&#160;</td>
+                <td class="col-label"><span class="phase-name">Total by credit card</span></td>
+                <td class="col-amount" th:text="${cardTotalLabel}">5,623.20&#8364;</td>
+            </tr>
+        </table>
+        <div class="bank">
+            <table class="bank-table">
+                <tr><td class="bank-label">Order / reservation no.</td><td class="bank-value">#<span th:text="${reservationNumber}">000000/2026</span></td></tr>
+                <tr><td class="bank-label">Secure payment link</td><td class="bank-value" th:text="${paymentLink}">https://www.boat4you.com/my-bookings/0</td></tr>
+            </table>
+        </div>
+        <p class="pay-note">Pay securely by card on your booking page using the link above.</p>
     </div>
 </div>
 

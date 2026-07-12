@@ -3,6 +3,9 @@ package hr.workspace.boat4you.domains.catalouge.services
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder
 import hr.workspace.boat4you.domains.catalouge.jpa.Country
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
+import hr.workspace.boat4you.domains.reservation.service.BankTransferFeeShare
+import hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum
+import hr.workspace.boat4you.domains.settings.services.AdminSettingsService
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.core.io.Resource
@@ -32,6 +35,7 @@ import java.util.Locale
 @Service
 class CharterAgreementService(
     private val templateEngine: SpringTemplateEngine,
+    private val settingsService: AdminSettingsService,
     @Value("classpath:data/images/mario-kuzmanic-signature.png")
     private val signatureImage: Resource,
 ) {
@@ -183,22 +187,62 @@ class CharterAgreementService(
         // payment, last (when >1) = Final balance payment, intermediate =
         // 2nd / 3rd / Nth payment.
         val sortedPhases = flow.paymentPhases.sortedBy { it.deadline }
-        val paymentPhases: List<Map<String, Any?>> = sortedPhases.mapIndexed { idx, p ->
-            val label = when {
-                idx == 0 -> "Deposit payment"
-                idx == sortedPhases.size - 1 && sortedPhases.size > 1 -> "Final balance payment"
-                idx == 1 -> "2nd payment"
-                idx == 2 -> "3rd payment"
-                else -> "${idx + 1}th payment"
-            }
-            mapOf(
+        val phaseCount = sortedPhases.size
+        fun phaseLabel(idx: Int): String = when {
+            idx == 0 -> "Deposit payment"
+            idx == phaseCount - 1 && phaseCount > 1 -> "Final balance payment"
+            idx == 1 -> "2nd payment"
+            idx == 2 -> "3rd payment"
+            else -> "${idx + 1}th payment"
+        }
+
+        // Two payment-method options — the SAME instalment schedule presented
+        // twice, each with its payment-processing fee folded in, mirroring
+        // exactly what the system collects (Mario 12.7.2026, booking 1441002:
+        // the paid amount must reconcile with the client's chosen method and
+        // our accounting). Bank transfer = BANK_TRANSFER_FIXED_FEE split
+        // whole-euro across phases (BankTransferFeeShare — same math as the
+        // wire-payment emails). Credit card = CARD_PAYMENT_SURCHARGE % per
+        // phase, whole-euro HALF_UP (same math as StripePaymentService, so the
+        // contract equals the Stripe charge).
+        val cardSurchargePct = settingsService.getSetting(SettingsKeyEnum.CARD_PAYMENT_SURCHARGE).value
+            ?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val bankTransferFee = settingsService.getSetting(SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE).value
+            ?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+
+        val bankPhases = mutableListOf<Map<String, Any?>>()
+        val cardPhases = mutableListOf<Map<String, Any?>>()
+        var bankOptionTotal = BigDecimal.ZERO
+        var cardOptionTotal = BigDecimal.ZERO
+        sortedPhases.forEachIndexed { idx, p ->
+            val base = p.amount.setScale(2, RoundingMode.HALF_UP)
+            val bankShare = BankTransferFeeShare.shareFor(bankTransferFee, phaseCount, idx)
+            val bankAmount = (base + bankShare).setScale(2, RoundingMode.HALF_UP)
+            val cardSurcharge = base.multiply(cardSurchargePct).divide(BigDecimal(100), 0, RoundingMode.HALF_UP)
+            val cardAmount = (base + cardSurcharge).setScale(2, RoundingMode.HALF_UP)
+            bankOptionTotal += bankAmount
+            cardOptionTotal += cardAmount
+            val label = phaseLabel(idx)
+            val deadlineLabel = p.deadline.format(DATE_FORMATTER)
+            bankPhases += mapOf(
                 "label" to label,
-                "amountLabel" to "${p.amount.setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol",
-                "deadlineLabel" to p.deadline.format(DATE_FORMATTER),
-                "isPaid" to (p.paidOn != null),
+                "amountLabel" to "${bankAmount.toPlainString()}$currencySymbol",
+                "deadlineLabel" to deadlineLabel,
+            )
+            cardPhases += mapOf(
+                "label" to label,
+                "amountLabel" to "${cardAmount.toPlainString()}$currencySymbol",
+                "deadlineLabel" to deadlineLabel,
             )
         }
-        val hasUnpaidPhase = sortedPhases.any { it.paidOn == null }
+        val hasPaymentPhases = sortedPhases.isNotEmpty()
+        val hasCardFee = cardSurchargePct.signum() > 0
+        val hasBankFee = bankTransferFee.signum() > 0
+        val cardSurchargePercentLabel = "${cardSurchargePct.stripTrailingZeros().toPlainString()}%"
+        val bankFeeLabel = "${bankTransferFee.setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol"
+        val bankTotalLabel = "${bankOptionTotal.setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol"
+        val cardTotalLabel = "${cardOptionTotal.setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol"
+        val paymentLink = "https://www.boat4you.com/my-bookings/${reservation.id}"
 
         // Charter type (Bareboat vs Skippered) — derived from extras.
         val charterType = run {
@@ -282,9 +326,18 @@ class CharterAgreementService(
             "inPaymentExtras" to inPaymentExtrasList,
             "hasInPaymentExtras" to inPaymentExtrasList.isNotEmpty(),
 
-            // Payment
-            "paymentPhases" to paymentPhases,
-            "hasUnpaidPhase" to hasUnpaidPhase,
+            // Payment — two method options (bank transfer / credit card),
+            // each with its processing fee folded into the instalment amounts.
+            "hasPaymentPhases" to hasPaymentPhases,
+            "bankPhases" to bankPhases,
+            "cardPhases" to cardPhases,
+            "bankTotalLabel" to bankTotalLabel,
+            "cardTotalLabel" to cardTotalLabel,
+            "hasBankFee" to hasBankFee,
+            "hasCardFee" to hasCardFee,
+            "bankFeeLabel" to bankFeeLabel,
+            "cardSurchargePercentLabel" to cardSurchargePercentLabel,
+            "paymentLink" to paymentLink,
 
             // Extras payable at the marina (charter pack, harbour fees, …)
             "obligatoryExtras" to obligatoryExtras,
