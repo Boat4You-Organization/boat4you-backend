@@ -19,6 +19,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.MatchKind
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.catalouge.jpa.ReplacementSearchRow
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
@@ -439,6 +440,12 @@ class YachtQueryingService(
         // with total yacht count.
         val amenityKeysByYachtId = fetchTopAmenities(results.map { it.id }, 3)
 
+        // Admin-only: which partner system each yacht is synced from ("MMK" /
+        // "NauSys"), so the broker can tell duplicate listings of the same
+        // physical yacht apart (Mario 11.7.2026). One extra query per page,
+        // skipped entirely for customer searches (isAdmin false).
+        val sourceSystemByYachtId = if (isAdmin) fetchYachtSourceSystems(results.map { it.id }) else emptyMap()
+
         // Bulk-fetch option expiry timestamps for the optioned yachts on
         // this page — one extra query regardless of page size. Options
         // come from `external_reservations`, populated by MMK + Nausys
@@ -505,6 +512,7 @@ class YachtQueryingService(
                     amenityKeysByYachtId[view.id],
                     optionExpiryByYachtId[view.id],
                     matchKind,
+                    sourceSystemByYachtId[view.id],
                 )
             }
 
@@ -564,6 +572,40 @@ class YachtQueryingService(
                     .take(limit)
                     .map { it.first }
             }
+    }
+
+    /**
+     * Admin-only: yachtId -> partner system label ("MMK" / "NauSys") for the
+     * yachts on the current search page. A yacht row belongs to exactly one
+     * agency, which belongs to exactly one source system, so `external_mapping`
+     * (type='Yacht') has a single row per yacht id — no ambiguity. One extra
+     * indexed query per page; never called for customer searches.
+     */
+    private fun fetchYachtSourceSystems(yachtIds: List<Long>): Map<Long, String> {
+        if (yachtIds.isEmpty()) return emptyMap()
+
+        @Suppress("UNCHECKED_CAST")
+        val rows =
+            entityManager
+                .createNativeQuery(
+                    """
+                    SELECT em.system_id, em.external_system_id
+                    FROM external_mapping em
+                    WHERE em.type = 'Yacht' AND em.system_id IN (:yachtIds)
+                    """.trimIndent(),
+                ).setParameter("yachtIds", yachtIds)
+                .resultList as List<Array<Any?>>
+
+        return rows.mapNotNull { row ->
+            val yachtId = (row[0] as? Number)?.toLong() ?: return@mapNotNull null
+            val label =
+                when ((row[1] as? Number)?.toInt()) {
+                    ExternalSystemEnum.MMK.value -> "MMK"
+                    ExternalSystemEnum.NAUSYS.value -> "NauSys"
+                    else -> return@mapNotNull null
+                }
+            yachtId to label
+        }.toMap()
     }
 
     /**

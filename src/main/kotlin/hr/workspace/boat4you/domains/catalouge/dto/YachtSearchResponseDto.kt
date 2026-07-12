@@ -61,6 +61,14 @@ data class YachtSearchResponseDto(
     @field:JsonSerialize(using = TwoDecimalSerializer::class)
     val agencyCommissionEur: BigDecimal? = null,
     /**
+     * Partner system this yacht is synced from — "MMK" or "NauSys". Admin-only
+     * (same SYSTEM_ADMIN gate as agencyName), null for anonymous/customer
+     * callers. Lets the broker tell apart duplicate listings of the same
+     * physical yacht that exist under both source systems (e.g. MG Yachts
+     * "Endurance" as an MMK row and a NauSys row with different prices).
+     */
+    val sourceSystem: String? = null,
+    /**
      * Top N equipment label_codes for this yacht, sorted by Equipment.filterOrder.
      * Drives the small amenity-icon row on the search card. Null when the
      * feature is disabled or yacht has no equipment rows.

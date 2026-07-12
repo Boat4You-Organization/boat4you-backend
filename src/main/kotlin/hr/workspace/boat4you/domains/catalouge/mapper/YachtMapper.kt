@@ -51,6 +51,7 @@ class YachtMapper(
         amenityKeys: List<String>? = null,
         optionExpiresAt: java.time.LocalDateTime? = null,
         matchKind: MatchKind? = null,
+        sourceSystem: String? = null,
     ): YachtSearchResponseDto {
         val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName)
         // One-way charter: surface drop-off as separate DTO only when
@@ -117,6 +118,7 @@ class YachtMapper(
             // Sourced from offer.broker_commission (partner's per-offer
             // figure), NOT offer.agency_commission (our client discount).
             agencyCommissionEur = if (isAdminUser()) result.brokerCommission else null,
+            sourceSystem = if (isAdminUser()) sourceSystem else null,
             amenityKeys = amenityKeys?.takeIf { it.isNotEmpty() },
             offerDateFrom = result.offerDateFrom,
             offerDateTo = result.offerDateTo,
