@@ -11,6 +11,7 @@ import org.thymeleaf.context.Context
 import org.thymeleaf.spring6.SpringTemplateEngine
 import java.io.ByteArrayOutputStream
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -133,16 +134,50 @@ class CharterAgreementService(
         val currencySymbol = runCatching {
             Currency.getInstance(currencyCode).getSymbol(Locale.ENGLISH).toString()
         }.getOrDefault(currencyCode)
-        val basePrice = reservation.basePrice ?: BigDecimal.ZERO
-        val discount = reservation.discount ?: BigDecimal.ZERO
-        val clientPrice = reservation.clientPrice ?: BigDecimal.ZERO
-        val totalPrice = reservation.totalPrice ?: BigDecimal.ZERO
-        val hasDiscount = discount.compareTo(BigDecimal.ZERO) > 0
+        // --- Pricing, computed from GROUND TRUTH, not the stored
+        // reservation.clientPrice/discount fields which held the raw partner
+        // (Nausys) values: discount was the PERCENT (rendered as "20.0€"),
+        // clientPrice omitted our broker discount, and totalPrice didn't match
+        // the payment schedule (Mario 12.7.2026, booking 1441002).
+        //
+        // Extras split by settlement. `payableAtBase == true` = paid on-site at
+        // the marina (charter pack, harbour fees). Everything else is folded
+        // into what we collect online (crew, APA, with-booking items).
+        val marinaExtras = flow.reservationExtras.filter { it.payableAtBase == true }
+        val inPaymentExtras = flow.reservationExtras.filter { it.payableAtBase != true }
+        val inPaymentExtrasSum = inPaymentExtras.sumOf { it.price ?: BigDecimal.ZERO }
+
+        val basePrice = (reservation.basePrice ?: BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP)
+        // What the Charterer pays us online — the pre-surcharge calculated total
+        // (charter fee after ALL discounts + the extras bundled into the
+        // booking). Falls back to the payment-phase sum, then the stored total.
+        val totalPayable = (
+            flow.calculatedTotalPrice
+                ?: flow.paymentPhases.sumOf { it.amount }.takeIf { it.signum() > 0 }
+                ?: reservation.totalPrice
+                ?: BigDecimal.ZERO
+        ).setScale(2, RoundingMode.HALF_UP)
+        // Charter fee alone = online total minus the extras folded into it.
+        val clientPrice = (totalPayable - inPaymentExtrasSum).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP)
+        // Discount = the euro gap between the operator's list price and our
+        // charter fee (bundles the partner discount + any broker discount).
+        val discountAmount = (basePrice - clientPrice).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP)
+        val hasDiscount = discountAmount.signum() > 0
 
         val basePriceLabel = "${basePrice.toPlainString()}$currencySymbol"
-        val discountLabel = "${discount.toPlainString()}$currencySymbol"
+        val discountLabel = "${discountAmount.toPlainString()}$currencySymbol"
         val clientPriceLabel = "${clientPrice.toPlainString()}$currencySymbol"
-        val totalPriceLabel = "${totalPrice.toPlainString()}$currencySymbol"
+        val totalPriceLabel = "${totalPayable.toPlainString()}$currencySymbol"
+
+        // Extras bundled into the online payment (skipper, crew, …) — itemised
+        // in the Charter price block so the Total reconciles to the payment
+        // schedule. Empty for a plain bareboat booking with no such extras.
+        val inPaymentExtrasList: List<Map<String, Any?>> = inPaymentExtras.map { e ->
+            mapOf(
+                "name" to (e.name ?: EM_DASH),
+                "priceLabel" to "${(e.price ?: BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol",
+            )
+        }
 
         // Payment phases — sorted by deadline. Labels: 1st = Deposit
         // payment, last (when >1) = Final balance payment, intermediate =
@@ -173,29 +208,20 @@ class CharterAgreementService(
             if (hasSkipper) "Skippered charter" else "Bareboat charter"
         }
 
-        // Obligatory extras — surfaced in the contract so the Charterer sees
-        // exactly what they're committed to beyond the base charter fee
-        // (transit log, end-cleaning, security deposit when bookable in
-        // advance, harbour fees, tourist tax, etc.). Filter:
-        //   - obligatory == true
-        //   - exclude skipper line (it's already reflected in `charterType`)
-        // `payableAtBase = true` means settled on-site at the marina (cash /
-        // card at check-in). False/null means it's bundled in the base wire
-        // payment. We expose both so the Charterer reconciles each row.
-        val obligatoryExtras: List<Map<String, Any?>> = flow.reservationExtras
-            .filter { it.obligatory == true }
-            .filterNot { it.name?.contains("skipper", ignoreCase = true) == true }
-            .map { e ->
-                val priceLabel = "${(e.price ?: BigDecimal.ZERO).toPlainString()}$currencySymbol"
-                val payAtMarina = e.payableAtBase == true
-                mapOf(
-                    "name" to (e.name ?: EM_DASH),
-                    "priceLabel" to priceLabel,
-                    "unitLabel" to (e.unit?.name?.lowercase()?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: ""),
-                    "payAtMarina" to payAtMarina,
-                    "settlementLabel" to if (payAtMarina) "At marina" else "In advance",
-                )
-            }
+        // Extras paid on-site at the marina (cash / card at check-in) — charter
+        // pack, harbour fees, tourist tax, etc. Listed in their own block with
+        // an "At marina" label so the Charterer knows these are NOT part of the
+        // online payment schedule above. (In-payment extras like the skipper
+        // are itemised in the Charter price block instead.)
+        val obligatoryExtras: List<Map<String, Any?>> = marinaExtras.map { e ->
+            mapOf(
+                "name" to (e.name ?: EM_DASH),
+                "priceLabel" to "${(e.price ?: BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol",
+                "unitLabel" to (e.unit?.name?.lowercase()?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: ""),
+                "payAtMarina" to true,
+                "settlementLabel" to "At marina",
+            )
+        }
 
         return mapOf(
             // Booking
@@ -251,12 +277,16 @@ class CharterAgreementService(
             "clientPriceLabel" to clientPriceLabel,
             "totalPriceLabel" to totalPriceLabel,
             "hasDiscount" to hasDiscount,
+            // Extras bundled into the online payment (skipper, crew), itemised
+            // in the Charter price block between Client price and Total.
+            "inPaymentExtras" to inPaymentExtrasList,
+            "hasInPaymentExtras" to inPaymentExtrasList.isNotEmpty(),
 
             // Payment
             "paymentPhases" to paymentPhases,
             "hasUnpaidPhase" to hasUnpaidPhase,
 
-            // Obligatory extras (mandatory line items beyond base charter)
+            // Extras payable at the marina (charter pack, harbour fees, …)
             "obligatoryExtras" to obligatoryExtras,
             "hasObligatoryExtras" to obligatoryExtras.isNotEmpty(),
         )

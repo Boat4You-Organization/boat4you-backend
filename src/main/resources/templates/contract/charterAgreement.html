@@ -590,9 +590,13 @@
         <td class="row-label">Discount</td>
         <td class="row-value">- <span th:text="${discountLabel}">250.00&#8364;</span></td>
     </tr>
-    <tr th:if="${hasDiscount}">
+    <tr th:if="${hasDiscount or hasInPaymentExtras}">
         <td class="row-label">Client price</td>
         <td class="row-value" th:text="${clientPriceLabel}">4,750.00&#8364;</td>
+    </tr>
+    <tr th:each="ex : ${inPaymentExtras}">
+        <td class="row-label" th:text="${ex.name}">Skipper</td>
+        <td class="row-value" th:text="${ex.priceLabel}">1,540.00&#8364;</td>
     </tr>
     <tr class="total">
         <td class="row-label">Total</td>
@@ -600,10 +604,10 @@
     </tr>
 </table>
 
-<!-- Obligatory extras: only when present. True 3-column layout —
-     Item | When payable | Amount — so settlement label never wraps. -->
+<!-- Extras paid on-site at the marina — NOT part of the online payment
+     schedule above. 3-column layout: Item | When payable | Amount. -->
 <div th:if="${hasObligatoryExtras}">
-    <h2 class="section">Obligatory extras</h2>
+    <h2 class="section">Payable at the marina</h2>
     <table class="extras">
         <tr>
             <th class="col-item">Item</th>
