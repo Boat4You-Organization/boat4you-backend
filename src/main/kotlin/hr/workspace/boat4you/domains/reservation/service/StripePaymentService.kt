@@ -125,7 +125,16 @@ class StripePaymentService(
         // Whole-euro surcharge (Mario 1.7.2026: fees must not introduce cents) —
         // HALF_UP on the fee itself; the frontend mirrors this with Math.round so
         // the displayed fee always equals the charged fee.
-        val cardSurchargeAmount = dbPrice.times(cardSurchargePercentage.div(100.toBigDecimal())).setScale(0, RoundingMode.HALF_UP)
+        //
+        // MUST multiply first, divide LAST with an explicit scale+rounding: the
+        // old `cardSurchargePercentage.div(100)` used Kotlin's BigDecimal.div
+        // operator whose result scale = max(operand scales) = 0 for an integer
+        // percent like "5", so 5 / 100 rounded to scale 0 = 0 → the surcharge
+        // was SILENTLY 0 on every card payment (Mario 12.7.2026: Stripe charged
+        // 2677.60 instead of 2811.60 on reservation 1441002).
+        val cardSurchargeAmount = dbPrice
+            .multiply(cardSurchargePercentage)
+            .divide(BigDecimal(100), 0, RoundingMode.HALF_UP)
         val totalPriceInCents = (dbPrice + cardSurchargeAmount).toCentsLong()
 
         // The customer-facing booking number is the public payment reference
