@@ -108,11 +108,27 @@ class PriceCalculationService(
         allYachtExtras.forEach { mergeExtra(it) } // yacht first
         allOfferExtras.forEach { mergeExtra(it) } // offer overrides on either key
 
-        // 3. split into at base and in price
+        // 3. split into "at base" (paid separately — on-site at the marina or
+        //    wired to the operator in advance) vs "in price" (folded into OUR
+        //    online payment / Stripe total).
+        //
+        // Classify by paymentType, NOT the legacy `payableInBase` boolean:
+        // ADVANCE_TO_OPERATOR crew (skipper, hostess, APA) and ON_SITE fees
+        // both have payableInBase=false, so the old split wrongly charged the
+        // skipper up-front in our Stripe amount (Mario 12.7.2026, booking
+        // 1441002). Only WITH_BOOKING extras belong in our total; anything
+        // paid to the operator/marina stays out. Rows without a synced
+        // paymentType fall back to the old payableInBase behaviour.
+        fun InternalCalcDto.foldedIntoOurPayment(): Boolean = when (paymentType) {
+            ExtraPaymentType.WITH_BOOKING -> true
+            ExtraPaymentType.ON_SITE, ExtraPaymentType.ADVANCE_TO_OPERATOR, ExtraPaymentType.INCLUDED -> false
+            null -> !payableInBase
+        }
+
         val flattenedExtras: Collection<InternalCalcDto> = flattenedList
         val selectedExtrasAtBase =
             flattenedExtras
-                .filter { it.payableInBase }
+                .filter { !it.foldedIntoOurPayment() }
         selectedExtrasAtBase.forEach { extraInBase ->
             val result =
                 PriceCalculations.calculateExtrasPrice(
@@ -129,7 +145,7 @@ class PriceCalculationService(
 
         // 4. for in price check prices and calc based on unit type
         var potentiallyIncorrectCalc = false
-        val selectedExtrasInPrice = flattenedExtras.filter { !it.payableInBase }
+        val selectedExtrasInPrice = flattenedExtras.filter { it.foldedIntoOurPayment() }
         selectedExtrasInPrice.forEach { extraInPrice ->
             val result =
                 PriceCalculations.calculateExtrasPrice(

@@ -193,7 +193,7 @@ class CharterAgreementService(
             }
             mapOf(
                 "label" to label,
-                "amountLabel" to "${p.amount.toPlainString()}$currencySymbol",
+                "amountLabel" to "${p.amount.setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol",
                 "deadlineLabel" to p.deadline.format(DATE_FORMATTER),
                 "isPaid" to (p.paidOn != null),
             )

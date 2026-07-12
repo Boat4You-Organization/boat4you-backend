@@ -172,7 +172,8 @@ class ReservationFlowMutationService(
             extra.extras = it.extrasId?.let { id -> getExtras(id) }
             extra.name = it.name
             extra.obligatory = it.obligatory
-            extra.payableAtBase = it.payableInBase
+            // This bucket IS folded into our online payment — never "at base".
+            extra.payableAtBase = false
             extra.unitPrice = it.unitPriceEur
             extra.unit = it.unit
             extra.sourceId = it.id
@@ -189,7 +190,9 @@ class ReservationFlowMutationService(
             extra.extras = it.extrasId?.let { id -> getExtras(id) }
             extra.name = it.name
             extra.obligatory = it.obligatory
-            extra.payableAtBase = it.payableInBase
+            // This bucket is paid separately (on-site at the marina / to the
+            // operator in advance) — always "at base", never in our Stripe total.
+            extra.payableAtBase = true
             extra.unitPrice = it.unitPriceEur
             extra.unit = it.unit
             extra.sourceId = it.id
