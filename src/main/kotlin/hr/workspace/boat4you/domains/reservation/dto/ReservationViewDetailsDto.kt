@@ -32,6 +32,16 @@ data class ReservationViewDetailsDto(
     val reservationDiscount: BigDecimal?,
     @field:JsonSerialize(using = TwoDecimalSerializer::class)
     val reservationClientPrice: BigDecimal?,
+    // Clean charter-price breakdown for the admin (mirrors the charter-agreement
+    // PDF): list price = the operator's boat price before discount; guest price =
+    // what the client pays for the charter after ALL discounts (excludes the
+    // separately-settled extras like skipper that sit in Booking total). Sourced
+    // from the offer_* columns, NOT reservation.discount/clientPrice which hold
+    // raw partner values (discount as a percent, clientPrice without our margin).
+    @field:JsonSerialize(using = TwoDecimalSerializer::class)
+    val reservationListPrice: BigDecimal?,
+    @field:JsonSerialize(using = TwoDecimalSerializer::class)
+    val reservationGuestPrice: BigDecimal?,
     val reservationExternalId: Long?,
     val reservationExternalReservationCode: String?,
     val reservationNumber: String?,

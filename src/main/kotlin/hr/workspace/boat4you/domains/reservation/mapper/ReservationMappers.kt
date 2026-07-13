@@ -297,6 +297,8 @@ class ReservationMappers(
             reservationPaymentPhases = paymentPhasesService.getPaymentPhases(reservationView.reservationId!!),
             reservationDiscount = reservationView.reservationDiscount,
             reservationClientPrice = reservationView.reservationClientPrice,
+            reservationListPrice = reservationView.offerListPrice,
+            reservationGuestPrice = reservationView.offerClientPrice,
             reservationExternalId = reservationView.reservationExternalId,
             reservationExternalReservationCode = reservationView.reservationExternalReservationCode,
             reservationNumber = reservationView.reservationNumber,
