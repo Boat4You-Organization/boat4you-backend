@@ -185,6 +185,12 @@ class YachtMapper(
             length = result.length,
             lengthInfo = MeasurementUnitDto.toDto(result.length, language),
             model = result.model?.name ?: "",
+            // modelName/manufacturerName were never passed here, so the DTO
+            // defaulted both to null even though `manufacturer` is resolved
+            // above (the slug already embeds it — "jeanneau-sun-odyssey-...").
+            // Frontends build <title> and Product JSON-LD `brand` from these.
+            modelName = model?.name,
+            manufacturerName = manufacturer?.name,
             offers = offerDtos,
             agency = if (isAdminUser()) result.agency?.toDto() else null,
             location = location,
