@@ -225,3 +225,11 @@ application:
     subject: ${TRIP_PUSH_VAPID_SUBJECT:mailto:info@boat4you.com}
     # Absolute base for push click-through URLs (…/trip/{token}?push=tag).
     web-base-url: ${TRIP_PUSH_WEB_BASE_URL:https://www.boat4you.com}
+
+# AI site chat assistant (Mario 19.7.2026). Disabled until ANTHROPIC_API_KEY
+# is present in the server env — public endpoints then return 503 and the
+# web widget hides itself, so this is safe to deploy dark.
+chat:
+  anthropic-api-key: ${ANTHROPIC_API_KEY:}
+  model: ${CHAT_ASSISTANT_MODEL:claude-haiku-4-5-20251001}
+  self-base-url: ${CHAT_SELF_BASE_URL:http://127.0.0.1:8080}
