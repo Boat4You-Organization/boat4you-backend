@@ -231,5 +231,7 @@ application:
 # web widget hides itself, so this is safe to deploy dark.
 chat:
   anthropic-api-key: ${ANTHROPIC_API_KEY:}
+  # Override for tests only — points the client at a mock Messages API.
+  anthropic-base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
   model: ${CHAT_ASSISTANT_MODEL:claude-haiku-4-5-20251001}
   self-base-url: ${CHAT_SELF_BASE_URL:http://127.0.0.1:8080}

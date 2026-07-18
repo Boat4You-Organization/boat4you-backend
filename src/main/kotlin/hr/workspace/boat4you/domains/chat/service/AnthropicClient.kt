@@ -19,13 +19,14 @@ import java.time.Duration
 @Component
 class AnthropicClient(
     @Value("\${chat.anthropic-api-key:}") private val apiKey: String,
+    @Value("\${chat.anthropic-base-url:https://api.anthropic.com}") baseUrl: String,
     @Value("\${chat.model:claude-haiku-4-5-20251001}") val model: String,
     private val objectMapper: ObjectMapper,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     private val client: RestClient = RestClient.builder()
-        .baseUrl("https://api.anthropic.com")
+        .baseUrl(baseUrl)
         .requestFactory(
             org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
                 setConnectTimeout(Duration.ofSeconds(10))
