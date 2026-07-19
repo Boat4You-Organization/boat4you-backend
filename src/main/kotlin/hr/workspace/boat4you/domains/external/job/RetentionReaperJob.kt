@@ -22,6 +22,16 @@ import org.springframework.stereotype.Component
  *     and offer_payment_plan) go with it in the same atomic statement.
  *  3. Expired `external_reservations` mirror rows (charter ended >
  *     [OFFER_GRACE_DAYS] ago) — nothing references them (verified: zero FKs).
+ *  4. Yachts still sys_active under an INACTIVE agency (Mario 19.7.2026: "ne
+ *     punimo se podacima koji nam ne trebaju"). The partner sync skips inactive
+ *     agencies entirely, so their fleets stay lit forever (4163 at intro).
+ *     Deactivation is REVERSIBLE: both yacht syncs set sysActive=true for every
+ *     yacht the partner lists, so re-activating the agency relights its fleet
+ *     on the next sync pass.
+ *  5. FUTURE offers on inactive yachts — never searchable, never bookable, and
+ *     the sync will not refresh them (inactive yacht/agency). Runs after #4 so
+ *     a freshly darkened fleet's offers drain the same night. Offers referenced
+ *     by a reservation_flow are never touched (same rule as #2).
  *
  * OWNERSHIP NOTE (12.7.2026 incident): #2 and #3 were previously owned by
  * `ReservationOfferService.deleteExpiredReservationsAndOffers` (06:00), which ran
@@ -62,12 +72,15 @@ class RetentionReaperJob(
         private const val SERVICE_CALL_BATCH = 50_000
         private const val OFFER_BATCH = 5_000
         private const val EXTERNAL_RESERVATION_BATCH = 20_000
+        private const val YACHT_DEACTIVATE_BATCH = 2_000
 
         /** Per-run ceilings so one night never bites off too much (backlog
          *  drains across nights instead of hammering cusma4 in one go). */
         private const val SERVICE_CALL_MAX_BATCHES_PER_RUN = 30 // ≤1.5M rows
         private const val OFFER_MAX_BATCHES_PER_RUN = 20 // ≤100k offers
         private const val EXTERNAL_RESERVATION_MAX_BATCHES_PER_RUN = 10 // ≤200k rows
+        private const val YACHT_DEACTIVATE_MAX_BATCHES_PER_RUN = 5 // ≤10k yachts
+        private const val INACTIVE_OFFER_MAX_BATCHES_PER_RUN = 20 // ≤100k offers
     }
 
     data class ReapSummary(
@@ -76,6 +89,8 @@ class RetentionReaperJob(
         val offerExtrasDeleted: Long,
         val offerPlansDeleted: Long,
         val externalReservationsDeleted: Long,
+        val yachtsDeactivated: Long,
+        val inactiveYachtOffersDeleted: Long,
         val backlogRemains: Boolean,
     )
 
@@ -87,12 +102,15 @@ class RetentionReaperJob(
         val summary = reapOnce()
         log.info(
             "Retention reaper: service_call -{} rows, offers -{} (+{} extras, +{} payment plans), " +
-                "external_reservations -{}{}",
+                "external_reservations -{}, yachts darkened {} (inactive agency), " +
+                "inactive-yacht future offers -{}{}",
             summary.serviceCallsDeleted,
             summary.offersDeleted,
             summary.offerExtrasDeleted,
             summary.offerPlansDeleted,
             summary.externalReservationsDeleted,
+            summary.yachtsDeactivated,
+            summary.inactiveYachtOffersDeleted,
             if (summary.backlogRemains) " — backlog remains, continuing next night" else "",
         )
     }
@@ -102,13 +120,19 @@ class RetentionReaperJob(
         val serviceCalls = purgeOldServiceCalls()
         val offers = purgeDeadOffers()
         val externalReservations = purgeExpiredExternalReservations()
+        // #4 before #5 so a fleet darkened tonight sheds its offers tonight.
+        val yachtsDeactivated = deactivateYachtsUnderInactiveAgencies()
+        val inactiveOffers = purgeFutureOffersOnInactiveYachts()
         return ReapSummary(
             serviceCallsDeleted = serviceCalls.first,
             offersDeleted = offers[0],
             offerExtrasDeleted = offers[1],
             offerPlansDeleted = offers[2],
             externalReservationsDeleted = externalReservations.first,
-            backlogRemains = serviceCalls.second || offers[3] > 0 || externalReservations.second,
+            yachtsDeactivated = yachtsDeactivated.first,
+            inactiveYachtOffersDeleted = inactiveOffers[0],
+            backlogRemains = serviceCalls.second || offers[3] > 0 || externalReservations.second ||
+                yachtsDeactivated.second || inactiveOffers[3] > 0,
         )
     }
 
@@ -177,6 +201,86 @@ class RetentionReaperJob(
                 )
             }.getOrElse { e ->
                 log.warn("Dead-offer batch failed (kept prior batches, retrying next run)", e)
+                return longArrayOf(offers, extras, plans, 1)
+            }
+            val batchOffers = (row["offers"] as Number).toLong()
+            offers += batchOffers
+            extras += (row["extras"] as Number).toLong()
+            plans += (row["plans"] as Number).toLong()
+            if (batchOffers < OFFER_BATCH) return longArrayOf(offers, extras, plans, 0)
+        }
+        return longArrayOf(offers, extras, plans, 1)
+    }
+
+    /**
+     * Darken yachts still lit under an inactive (blacklisted/departed) agency.
+     * The partner sync skips inactive agencies, so nothing else ever flips
+     * these; search already filters them out via agency.active, this just
+     * stops the DB carrying them as live inventory. Reversible — re-activating
+     * the agency makes the next yacht sync set sysActive=true again.
+     * @return (yachts deactivated, backlog remains)
+     */
+    private fun deactivateYachtsUnderInactiveAgencies(): Pair<Long, Boolean> {
+        var total = 0L
+        repeat(YACHT_DEACTIVATE_MAX_BATCHES_PER_RUN) {
+            val updated = jdbcTemplate.update(
+                """
+                UPDATE yacht SET sys_active = false
+                WHERE id IN (
+                    SELECT y.id FROM yacht y
+                    JOIN agency a ON a.id = y.agency_id
+                    WHERE y.sys_active = true AND a.active = false
+                    LIMIT ?
+                )
+                """.trimIndent(),
+                YACHT_DEACTIVATE_BATCH,
+            )
+            total += updated
+            if (updated < YACHT_DEACTIVATE_BATCH) return total to false
+        }
+        return total to true
+    }
+
+    /**
+     * Future offers on inactive yachts — dead weight: search never returns
+     * them (yacht/agency filters), the sync never refreshes them, and they
+     * can't be booked. Same child-cleanup CTE + reservation_flow guard as
+     * [purgeDeadOffers]; a booked offer's FK aborts the batch harmlessly.
+     * @return [offersDeleted, extrasDeleted, plansDeleted, backlogRemains(0/1)]
+     */
+    private fun purgeFutureOffersOnInactiveYachts(): LongArray {
+        var offers = 0L
+        var extras = 0L
+        var plans = 0L
+        repeat(INACTIVE_OFFER_MAX_BATCHES_PER_RUN) {
+            val row = runCatching {
+                jdbcTemplate.queryForMap(
+                    """
+                    WITH victims AS (
+                        SELECT o.id FROM offer o
+                        JOIN yacht y ON y.id = o.yacht_id
+                        WHERE y.sys_active = false
+                          AND o.date_to >= CURRENT_DATE
+                          AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = o.id)
+                        LIMIT ?
+                    ),
+                    del_extras AS (
+                        DELETE FROM offer_extras WHERE offer_id IN (SELECT id FROM victims) RETURNING 1
+                    ),
+                    del_plans AS (
+                        DELETE FROM offer_payment_plan WHERE offer_id IN (SELECT id FROM victims) RETURNING 1
+                    ),
+                    del_offers AS (
+                        DELETE FROM offer WHERE id IN (SELECT id FROM victims) RETURNING 1
+                    )
+                    SELECT (SELECT count(*) FROM del_offers)  AS offers,
+                           (SELECT count(*) FROM del_extras)  AS extras,
+                           (SELECT count(*) FROM del_plans)   AS plans
+                    """.trimIndent(),
+                    OFFER_BATCH,
+                )
+            }.getOrElse { e ->
+                log.warn("Inactive-yacht offer batch failed (kept prior batches, retrying next run)", e)
                 return longArrayOf(offers, extras, plans, 1)
             }
             val batchOffers = (row["offers"] as Number).toLong()
