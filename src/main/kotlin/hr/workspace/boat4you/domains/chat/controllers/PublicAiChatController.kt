@@ -56,7 +56,9 @@ class PublicAiChatController(
     fun postMessage(@PathVariable token: String, @RequestBody request: MessageRequest): ResponseEntity<Any> {
         if (!chat.isEnabled()) return disabled()
         val session = chat.getSession(token) ?: return notFound()
-        if (session.status == AiChatSession.STATUS_CLOSED) return ResponseEntity.status(HttpStatus.GONE).body(mapOf("error" to "closed"))
+        // A closed thread reopens on the visitor's next message — same conversation,
+        // same owner (human if a broker ever replied), never a silent AI reset.
+        chat.reopenIfClosed(session)
         val content = request.content?.trim().orEmpty()
         if (content.isBlank()) return ResponseEntity.badRequest().body(mapOf("error" to "empty"))
 

@@ -254,6 +254,21 @@ class AiChatService(
     """.trimIndent()
 
     /**
+     * A returning visitor writing into a session the broker closed continues the SAME
+     * thread instead of being reset to a fresh AI conversation (Mario 20.7.2026): back
+     * to HUMAN when a broker ever replied here (adminUnread + email fire via the normal
+     * message path), back to AI otherwise.
+     */
+    @Transactional
+    fun reopenIfClosed(session: AiChatSession) {
+        if (session.status != AiChatSession.STATUS_CLOSED) return
+        val hadHuman = messages.findAllBySessionIdOrderByIdAsc(session.id!!)
+            .any { it.role == AiChatMessage.ROLE_ADMIN }
+        session.status = if (hadHuman) AiChatSession.STATUS_HUMAN else AiChatSession.STATUS_AI
+        sessions.save(session)
+    }
+
+    /**
      * Widget heartbeat (JivoChat parity, Mario 20.7.2026): stamps "seen now" + the page
      * the visitor is on, and keeps a short trail of recent pages so the broker knows
      * who they're talking to and what the visitor has been looking at.
