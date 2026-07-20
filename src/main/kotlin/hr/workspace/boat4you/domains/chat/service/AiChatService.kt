@@ -303,11 +303,18 @@ class AiChatService(
      * runCatching: a mail hiccup must never delay or break the visitor's chat reply.
      */
     private fun notifyBroker(session: AiChatSession, lastMessage: String, subject: String) {
+        // Template renders the message via th:utext — escape + keep line breaks.
+        val safeMessage = lastMessage.take(400)
+            .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace("\n", "<br />")
         val vars = mapOf(
             "sessionId" to session.id,
             "visitorName" to (session.visitorName ?: ""),
             "visitorEmail" to (session.visitorEmail ?: ""),
-            "lastMessage" to lastMessage.take(400),
+            "country" to (session.country ?: ""),
+            "currentPage" to (session.currentPage ?: ""),
+            "lastMessage" to safeMessage,
+            "currentYear" to LocalDate.now().year.toString(),
             "adminUrl" to "https://admin.boat4you.com/chat",
         )
         Thread({
