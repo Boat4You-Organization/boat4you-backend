@@ -170,6 +170,32 @@ internal class AdminReservationController(
     }
 
     @Operation(
+        summary = "Email the reservation's client a free-text message",
+        description = "Broker answers the client directly from the booking page (e.g. a special " +
+            "request before payment). Sent from the configured From address with the reservation " +
+            "card in the template; an archive copy goes to the team mailbox.",
+    )
+    @PostMapping("/{id}/emailClient")
+    // open-in-view is off: without a transaction the reservation comes back detached and
+    // sendClientMessage's lazy walks (flow -> user/yacht/model) LIE — same trap
+    // downloadCharterAgreement documents below.
+    @Transactional(readOnly = true)
+    fun emailClient(
+        @PathVariable id: Long,
+        @RequestBody body: EmailClientBody,
+    ): ResponseEntity<Void> {
+        val reservation = reservationRepository.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
+        val message = body.message?.trim().orEmpty()
+        if (message.isBlank()) return ResponseEntity.badRequest().build()
+        val subject = (
+            body.subject?.trim()?.takeIf { it.isNotBlank() }
+                ?: "Your boat4you reservation ${reservation.reservationNumber ?: id}"
+            ).replace(Regex("[\\r\\n]"), " ")
+        reservationEmailService.sendClientMessage(reservation, subject.take(200), message.take(5000))
+        return ResponseEntity.ok().build()
+    }
+
+    @Operation(
         summary = "Set/clear the crew-list URL on a reservation",
         description = "Admin enters the partner-supplied crew-list link (or null to clear). " +
             "Customer renders it as 'Open crew list' CTA in /my-bookings/{id}.",
@@ -472,6 +498,9 @@ internal class AdminReservationController(
 
 /** Body for PATCH /{id}/adminNotes — null/empty string clears the notes. */
 data class AdminNotesBody(val notes: String?)
+
+/** Body for POST /{id}/emailClient — subject optional (defaults to the reservation ref). */
+data class EmailClientBody(val subject: String? = null, val message: String? = null)
 
 /** Body for PATCH /{id}/crewListUrl — null/empty clears the URL. */
 data class CrewListUrlBody(val crewListUrl: String?)

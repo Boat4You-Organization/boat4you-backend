@@ -957,6 +957,58 @@ class ReservationEmailService(
         }
     }
 
+    /**
+     * Free-text broker → client email about a reservation (Mario 20.7.2026: answer a
+     * special request from the booking page before the client pays). Sent from the
+     * configured From (prod: info@boat4you.com) with an archive copy to the team
+     * mailbox; the reservation card in the template carries the context.
+     */
+    fun sendClientMessage(
+        reservation: Reservation,
+        subject: String,
+        message: String,
+    ) {
+        val flow = checkNotNull(reservation.reservationFlow) { "reservation ${reservation.id} has no flow" }
+        val email = checkNotNull(flow.email) { "reservation ${reservation.id} client has no email" }
+        // InternetAddress.parse() splits on unquoted commas and chokes on stray quotes —
+        // a checkout name like "Sharaf, Mohammed" must not break the send.
+        val fullName = (flow.user?.getFullName() ?: flow.getFullName())
+            .replace(Regex("[,\"<>;\\\\]"), " ").trim()
+        val recipientAddress = if (fullName.isNotBlank()) "$fullName <$email>" else email
+        val displayReservationRef = reservation.reservationNumber ?: "${reservation.id!!}"
+        val yacht = flow.yacht
+        val yachtModelLabel = listOfNotNull(yacht?.model?.manufacturer?.name, yacht?.model?.name)
+            .filter { it.isNotBlank() }.joinToString(" ")
+
+        val variables = mapOf(
+            "reservationId" to displayReservationRef,
+            "message" to escapeAndLinebreak(message),
+            "reservationUrl" to "$serverHostPublic/my-bookings/${reservation.id}",
+            "yachtImageUrl" to yacht?.mainImageId?.let { "$serverHost/public/image/$it?width=936" },
+            "yachtModel" to yachtModelLabel,
+            "yachtName" to yacht?.name,
+            "locationFrom" to reservation.locationFrom?.name,
+            "viewBoatUrl" to "$serverHostPublic/boat/${yacht?.id}",
+            "publicUrl" to serverHostPublic,
+        )
+
+        emailService.sendEmail(
+            // Archive copy to the team mailbox so the broker keeps a record of what went out.
+            recipients = listOf(recipientAddress, "info@boat4you.com"),
+            subject = subject,
+            templateName = "email/clientMessage",
+            variables = variables,
+        )
+    }
+
+    /** HTML-escape + \n -> <br/> for the th:utext message block in clientMessage.html. */
+    private fun escapeAndLinebreak(raw: String): String =
+        raw.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("\n", "<br />")
+
     fun sendYachtSwapNotification(
         reservation: Reservation,
         audit: ReservationYachtSwapAudit,
