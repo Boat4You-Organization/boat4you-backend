@@ -973,23 +973,29 @@ class ReservationEmailService(
         // InternetAddress.parse() splits on unquoted commas and chokes on stray quotes —
         // a checkout name like "Sharaf, Mohammed" must not break the send.
         val fullName = (flow.user?.getFullName() ?: flow.getFullName())
-            .replace(Regex("[,\"<>;\\\\]"), " ").trim()
-        val recipientAddress = if (fullName.isNotBlank()) "$fullName <$email>" else email
+            .replace(Regex("[,\"<>;\\\\]"), " ").trim().ifBlank { "there" }
+        val recipientAddress = if (fullName != "there") "$fullName <$email>" else email
         val displayReservationRef = reservation.reservationNumber ?: "${reservation.id!!}"
         val yacht = flow.yacht
-        val yachtModelLabel = listOfNotNull(yacht?.model?.manufacturer?.name, yacht?.model?.name)
-            .filter { it.isNotBlank() }.joinToString(" ")
+
+        // Same redesigned-shell variables as the cancellation emails.
+        val dateFormatter = DateTimeFormatter.ofPattern("dd MMMM yyyy")
+        val hourFormatter = DateTimeFormatter.ofPattern("HH:mm")
+        val yachtFullLabel = listOfNotNull(yacht?.model?.manufacturer?.name, yacht?.model?.name, yacht?.name)
+            .filter { it.isNotBlank() }.joinToString(" ").ifBlank { yacht?.name ?: "—" }
 
         val variables = mapOf(
+            "fullName" to fullName,
             "reservationId" to displayReservationRef,
             "message" to escapeAndLinebreak(message),
-            "reservationUrl" to "$serverHostPublic/my-bookings/${reservation.id}",
+            "yachtFullLabel" to yachtFullLabel,
             "yachtImageUrl" to yacht?.mainImageId?.let { "$serverHost/public/image/$it?width=936" },
-            "yachtModel" to yachtModelLabel,
-            "yachtName" to yacht?.name,
-            "locationFrom" to reservation.locationFrom?.name,
+            "pickupLocation" to (reservation.locationFrom?.name ?: ""),
             "viewBoatUrl" to "$serverHostPublic/boat/${yacht?.id}",
-            "publicUrl" to serverHostPublic,
+            "pickupDateHour" to "${reservation.dateFrom!!.format(dateFormatter)}<br/>${reservation.dateFrom!!.format(hourFormatter)}",
+            "dropOffDateHourPeriod" to "${reservation.dateTo!!.format(dateFormatter)}<br/>${reservation.dateTo!!.format(hourFormatter)}",
+            "reservationUrl" to "$serverHostPublic/my-bookings/${reservation.id}",
+            "currentYear" to LocalDate.now().year.toString(),
         )
 
         emailService.sendEmail(
@@ -998,6 +1004,7 @@ class ReservationEmailService(
             subject = subject,
             templateName = "email/clientMessage",
             variables = variables,
+            locale = resolveEmailLocale(flow.user?.language),
         )
     }
 

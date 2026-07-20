@@ -94,6 +94,7 @@ class EmailService(
         "email/cancellationRejected",
         "email/cancellationApproved",
         "email/preCharterReminder",
+        "email/clientMessage",
     )
 
     private val templatesWithoutSharedFooter = setOf(
