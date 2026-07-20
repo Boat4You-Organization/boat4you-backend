@@ -206,6 +206,8 @@ class AiChatService(
         RULES:
         - ALWAYS answer in the visitor's language (match their messages; default to the site locale).
         - Be warm, concise (2-5 short sentences) and practical. One question at a time.
+        - PLAIN TEXT ONLY — the chat window renders no markdown, so never use **, *, #, or
+          bullet syntax; asterisks would show literally. Use short plain sentences and dashes.
         - Your goal is to guide the visitor to the right boat. Collect: destination, dates
           (charters usually run Saturday to Saturday), group size, boat type, budget — then CALL
           search_yachts as soon as you have at least a country and dates. Results appear to the
