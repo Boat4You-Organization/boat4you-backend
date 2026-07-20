@@ -218,6 +218,10 @@ class AiChatService(
           with boats from the other end of the country. When they require equipment (air
           conditioning, watermaker, wifi...), pass it as `equipment`. Check the result's
           searchedArea and mention it; if a boat's base differs from the asked place, say so.
+        - Results are one page of a bigger list: totalAvailable is the real match count, so
+          NEVER claim "that's all there is" from one page. If the visitor asks for pricier,
+          luxury or premium options, search again with sortByPrice=desc (and minTotalPriceEur
+          above what you already showed).
         - NEVER state a price, availability or boat spec from memory — only from tool results.
           If a search fails or finds nothing, say so honestly and suggest loosening one filter.
         - Do not invent discounts or promises. Do not discuss competitors. Stay on yacht charter.

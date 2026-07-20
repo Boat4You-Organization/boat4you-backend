@@ -44,6 +44,8 @@ class AiChatToolExecutor(
         val minCabins = input.path("minCabins").asInt(0)
         val minPersons = input.path("minPersons").asInt(0)
         val maxTotalPriceEur = input.path("maxTotalPriceEur").asInt(0)
+        val minTotalPriceEur = input.path("minTotalPriceEur").asInt(0)
+        val sortByPrice = input.path("sortByPrice").asText("asc").let { if (it == "desc") "desc" else "asc" }
         val limit = input.path("limit").asInt(5).coerceIn(1, 6)
         val equipment = input.path("equipment").mapNotNull { it.asText(null) }.filter { it.isNotBlank() }
 
@@ -67,9 +69,9 @@ class AiChatToolExecutor(
             .queryParam("startDate", startDate)
             .queryParam("endDate", endDate)
             .queryParam("currency", "EUR")
-            .queryParam("size", 20)
+            .queryParam("size", 50)
             .queryParam("page", 0)
-            .queryParam("sortBy", "asc")
+            .queryParam("sortBy", sortByPrice)
             .apply {
                 if (resolved != null) queryParam("did", resolved.did) else queryParam("countryCodes", countryCode)
                 if (vesselType.isNotBlank()) queryParam("vesselType", vesselType)
@@ -86,7 +88,9 @@ class AiChatToolExecutor(
             return ToolOutcome("""{"error":"search temporarily unavailable, apologize and suggest trying again"}""")
         }
 
-        val content = objectMapper.readTree(body).path("content")
+        val parsed = objectMapper.readTree(body)
+        val content = parsed.path("content")
+        val totalAvailable = parsed.path("page").path("totalElements").asInt(content.size())
         val forModel = objectMapper.createArrayNode()
         val cards = objectMapper.createArrayNode()
         var taken = 0
@@ -98,6 +102,7 @@ class AiChatToolExecutor(
             if (perDay <= BigDecimal.ZERO) continue
             val total = perDay.multiply(BigDecimal(days)).setScale(0, RoundingMode.HALF_UP).toInt()
             if (maxTotalPriceEur in 1 until total) continue
+            if (minTotalPriceEur > 0 && total < minTotalPriceEur) continue
 
             val slug = y.path("slug").asText()
             val label = listOf(y.path("modelName").asText(""), y.path("name").asText(""))
@@ -136,6 +141,11 @@ class AiChatToolExecutor(
 
         val result = objectMapper.createObjectNode().apply {
             put("matches", taken)
+            // Total matching the server-side filters, BEYOND the boats shown — the model must
+            // never claim "these are all there is" from one page (Mario 20.7: "daj mi skuplje"
+            // was answered with 'no pricier ones exist' while 24 more existed).
+            put("totalAvailable", totalAvailable)
+            put("sortedBy", if (sortByPrice == "desc") "price descending" else "price ascending")
             when {
                 resolved != null -> put("searchedArea", "${resolved.name} (${resolved.type.lowercase()})")
                 location.isNotBlank() ->
@@ -244,6 +254,14 @@ class AiChatToolExecutor(
             it.putObject("minCabins").put("type", "integer").put("description", "Optional minimum cabins")
             it.putObject("minPersons").put("type", "integer").put("description", "Optional: group size — boat must sleep at least this many")
             it.putObject("maxTotalPriceEur").put("type", "integer").put("description", "Optional budget cap, total EUR for the period")
+            it.putObject("minTotalPriceEur").put("type", "integer").put("description", "Optional lower price bound, total EUR — e.g. when the visitor wants pricier options than already shown")
+            it.putObject("sortByPrice").put("type", "string")
+                .put(
+                    "description",
+                    "asc (default, cheapest first) or desc — USE desc when the visitor asks for " +
+                        "luxury, premium or more expensive boats; the result's totalAvailable tells " +
+                        "you how many boats match in total beyond the ones returned",
+                )
             it.putObject("limit").put("type", "integer").put("description", "Max results, default 5")
         })
         tools.add(tool(
