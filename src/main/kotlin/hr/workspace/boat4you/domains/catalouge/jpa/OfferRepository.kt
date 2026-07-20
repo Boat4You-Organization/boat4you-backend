@@ -208,7 +208,7 @@ interface OfferRepository : JpaRepository<Offer, Long> {
             AND r.status IN ('RESERVATION','SERVICE')
             AND r.date_from < o.date_to AND r.date_to > o.date_from
         )
-        ORDER BY "yachtId", "dateFrom"
+        ORDER BY "dateFrom", "yachtId"
         """,
         nativeQuery = true,
     )
