@@ -180,4 +180,50 @@ interface OfferRepository : JpaRepository<Offer, Long> {
         nativeQuery = true,
     )
     fun deleteUnbackedSyntheticOptionOffers(): Int
+
+    /**
+     * Future UNAVAILABLE weeks of active MMK-primary yachts with NO partner reservation/service
+     * blocking them in the mirror — i.e. weeks we show as taken that the partner may actually
+     * still sell. These are the reverify candidates for [MmkStaleOfferReverifyService]: the
+     * yearly agency sweep response is not a complete picture (proven 20.7.2026), so only a
+     * per-yacht exact-date MMK call may decide such a week's real status. Distinct per
+     * yacht+dates: one partner call covers every product/route row of that week.
+     */
+    @Query(
+        """
+        SELECT DISTINCT o.yacht_id AS "yachtId", em.external_id AS "externalYachtId",
+               y.agency_id AS "agencyId", o.date_from AS "dateFrom", o.date_to AS "dateTo"
+        FROM offer o
+        JOIN yacht y ON y.id = o.yacht_id AND y.sys_active = true
+        JOIN agency a ON a.id = y.agency_id AND a.active = true AND a.availability_blocked = false
+        JOIN agency_source s ON s.agency_id = a.id AND s."primary" = true AND s.external_system_id = :mmkSystemId
+        JOIN external_mapping em ON em.type = 'Yacht' AND em.external_system_id = :mmkSystemId
+             AND em.system_id = o.yacht_id AND em.extended_type = 'Yacht-AgencyId-' || y.agency_id
+        WHERE o.status = 'UNAVAILABLE'
+        AND o.date_from >= CURRENT_DATE
+        AND (o.ext_status IS NULL OR o.ext_status <> 'SYNTHETIC_OPTION')
+        AND NOT EXISTS (
+            SELECT 1 FROM external_reservations r
+            WHERE r.yacht_id = o.yacht_id
+            AND r.status IN ('RESERVATION','SERVICE')
+            AND r.date_from < o.date_to AND r.date_to > o.date_from
+        )
+        ORDER BY "yachtId", "dateFrom"
+        """,
+        nativeQuery = true,
+    )
+    fun findStaleUnavailableMmkCombos(
+        @Param("mmkSystemId") mmkSystemId: Long,
+    ): List<StaleMmkOfferCombo>
+}
+
+/**
+ * Native projection for [OfferRepository.findStaleUnavailableMmkCombos].
+ */
+interface StaleMmkOfferCombo {
+    val yachtId: Long
+    val externalYachtId: Long
+    val agencyId: Long
+    val dateFrom: LocalDate
+    val dateTo: LocalDate
 }

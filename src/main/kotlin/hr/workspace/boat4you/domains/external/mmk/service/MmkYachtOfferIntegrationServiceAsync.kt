@@ -91,8 +91,6 @@ class MmkYachtOfferIntegrationServiceAsync(
                             mmkYachtOfferSyncService.syncOffersForAgency(
                                 agency.id!!,
                                 offersResponse,
-                                windowFrom = startDate,
-                                windowTo = endDate,
                             )
                         } catch (e: Exception) {
                             log.error(
@@ -143,8 +141,6 @@ class MmkYachtOfferIntegrationServiceAsync(
                                     mmkYachtOfferSyncService.syncOffersForAgency(
                                         agency.id!!,
                                         monthlyResponse,
-                                        windowFrom = monthStart,
-                                        windowTo = monthEnd,
                                     )
                                 } catch (e: Exception) {
                                     log.error(
