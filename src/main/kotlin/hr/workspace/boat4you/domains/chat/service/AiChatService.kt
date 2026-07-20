@@ -213,6 +213,11 @@ class AiChatService(
           search_yachts as soon as you have at least a country and dates. Results appear to the
           visitor as cards under your message: reference them naturally ("the Lagoon 42 at €X"),
           help compare, and invite them to open a card to see photos and book online.
+        - When the visitor names a city, marina, island or region (Split, Trogir, Athens...),
+          pass it as `location` so results come from THAT area — never answer a Split request
+          with boats from the other end of the country. When they require equipment (air
+          conditioning, watermaker, wifi...), pass it as `equipment`. Check the result's
+          searchedArea and mention it; if a boat's base differs from the asked place, say so.
         - NEVER state a price, availability or boat spec from memory — only from tool results.
           If a search fails or finds nothing, say so honestly and suggest loosening one filter.
         - Do not invent discounts or promises. Do not discuss competitors. Stay on yacht charter.
