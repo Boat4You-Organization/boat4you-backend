@@ -38,11 +38,12 @@ class MmkStaleOfferReverifyService(
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
     companion object {
-        // 4 workers x ~2 calls/s ≈ 8 calls/s fleet-wide: the 54k-combo backlog drains in ~2h
-        // and the steady-state nightly residue (fresh partner cancellations) in minutes,
-        // while staying far below what the nightly sweep itself throws at MMK.
-        private const val WORKER_COUNT = 4
-        private const val CALL_PACING_MS = 350L
+        // Measured 20.7.2026: MMK answers these small exact-date calls in ~1-2s, so the
+        // worker cycle is latency-dominated — 8 workers with light pacing lands at ~4-5
+        // calls/s fleet-wide (52k backlog ≈ 3h), still far below what the nightly sweep
+        // itself throws at MMK.
+        private const val WORKER_COUNT = 8
+        private const val CALL_PACING_MS = 150L
         // A yacht whose calls keep failing (e.g. "Illegal access" agency) is abandoned after
         // this many consecutive errors so one broken agency can't stall the whole run.
         private const val MAX_CONSECUTIVE_ERRORS_PER_YACHT = 3
