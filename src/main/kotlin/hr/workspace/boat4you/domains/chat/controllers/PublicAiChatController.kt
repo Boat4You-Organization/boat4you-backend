@@ -27,7 +27,7 @@ class PublicAiChatController(
     private val chat: AiChatService,
 ) {
     data class CreateSessionRequest(val locale: String? = null)
-    data class MessageRequest(val content: String? = null)
+    data class MessageRequest(val content: String? = null, val page: String? = null)
     data class MessageDto(val id: Long, val role: String, val content: String, val payload: String?)
     data class SessionStateDto(val token: String, val status: String, val messages: List<MessageDto>)
 
@@ -49,7 +49,7 @@ class PublicAiChatController(
         if (content.isBlank()) return ResponseEntity.badRequest().body(mapOf("error" to "empty"))
 
         val new = try {
-            chat.handleVisitorMessage(session, content)
+            chat.handleVisitorMessage(session, content, request.page?.trim()?.take(500))
         } catch (e: IllegalStateException) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(mapOf("error" to "cap"))
         }

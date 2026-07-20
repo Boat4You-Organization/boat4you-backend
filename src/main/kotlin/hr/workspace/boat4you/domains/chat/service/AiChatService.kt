@@ -56,7 +56,7 @@ class AiChatService(
      * the inbox) and return an empty reply list.
      */
     @Transactional
-    fun handleVisitorMessage(session: AiChatSession, rawContent: String): List<AiChatMessage> {
+    fun handleVisitorMessage(session: AiChatSession, rawContent: String, page: String? = null): List<AiChatMessage> {
         val content = rawContent.trim().take(MAX_MESSAGE_CHARS)
         require(content.isNotBlank()) { "empty message" }
         check(messages.countBySessionId(session.id!!) < MAX_MESSAGES_PER_SESSION) { "session message cap reached" }
@@ -72,7 +72,7 @@ class AiChatService(
         sessions.save(session)
 
         val reply = try {
-            runAssistant(session)
+            runAssistant(session, page)
         } catch (e: Exception) {
             log.warn("chat assistant failed for session ${session.id}: ${e.message}")
             save(
@@ -104,13 +104,18 @@ class AiChatService(
 
     // ---------------------------------------------------------------- internals
 
-    private fun runAssistant(session: AiChatSession): AiChatMessage {
+    private fun runAssistant(session: AiChatSession, page: String? = null): AiChatMessage {
         val history = buildModelMessages(session.id!!)
         var pendingCards: ArrayNode? = null
 
+        // "Why doesn't the chat see which yacht I'm on?" (Mario 20.7.2026) — the widget
+        // sends the visitor's current URL; on a /boat/ page we inject that yacht's live
+        // facts so "this boat" questions (specs, equipment, the page's dates) just work.
+        val system = systemPrompt(session) + (tools.pageContext(page)?.let { "\n\n$it" } ?: "")
+
         var rounds = 0
         while (true) {
-            val response = anthropic.createMessage(systemPrompt(session), history, tools.toolDefinitions())
+            val response = anthropic.createMessage(system, history, tools.toolDefinitions())
             val contentBlocks = response.path("content")
             val stopReason = response.path("stop_reason").asText()
 
@@ -229,6 +234,9 @@ class AiChatService(
           call request_human_agent — the team replies right here in the chat. Ask for their email
           (save_contact) so the team can also reach them if they leave the page.
         - When the visitor shares their name or email at any point, call save_contact.
+        - If a CURRENT PAGE block is present below, the visitor is looking at that yacht right
+          now — "this boat" means that yacht. Answer its spec/equipment questions from the
+          block; if something isn't listed there, say you're not sure instead of guessing.
     """.trimIndent()
 
     private fun save(sessionId: Long, role: String, content: String, payload: String? = null): AiChatMessage =

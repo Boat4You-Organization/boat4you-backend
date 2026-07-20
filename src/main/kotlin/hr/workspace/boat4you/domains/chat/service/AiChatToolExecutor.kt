@@ -200,6 +200,45 @@ class AiChatToolExecutor(
         )
     }
 
+    /**
+     * Compact facts about the yacht page the visitor is on (widget sends its URL with
+     * every message), injected into the system prompt so "this boat" questions work.
+     * Non-/boat/ pages and lookup failures return null — the chat just works without
+     * page awareness then.
+     */
+    fun pageContext(page: String?): String? {
+        if (page.isNullOrBlank()) return null
+        val slug = Regex("/boat/([A-Za-z0-9-]+)").find(page)?.groupValues?.get(1) ?: return null
+        val dates = Regex("startDate=(\\d{4}-\\d{2}-\\d{2}).*?endDate=(\\d{4}-\\d{2}-\\d{2})").find(page)
+        val body = try {
+            client.get().uri("/public/yachts/$slug").retrieve().body(String::class.java)
+        } catch (e: Exception) {
+            log.warn("chat page-context lookup failed for '$slug': ${e.message}")
+            return null
+        }
+        val y = objectMapper.readTree(body)
+        val name = y.path("name").asText("")
+        if (name.isBlank()) return null
+        val label = listOf(y.path("manufacturerName").asText(""), y.path("modelName").asText(""), name)
+            .filter { it.isNotBlank() }.distinct().joinToString(" ")
+        val amenities = y.path("amenities")
+            .mapNotNull { a -> a.path("equipment").path("labelCode").asText(null) ?: a.path("name").asText(null) }
+            .filter { it.isNotBlank() }.distinct().take(25)
+        return buildString {
+            append("CURRENT PAGE — the visitor is viewing this yacht right now:\n")
+            append("- Yacht: $label")
+            y.path("buildYear").asInt(0).takeIf { it > 0 }?.let { append(", year $it") }
+            y.path("length").asDouble(0.0).takeIf { it > 0 }?.let { append(", length ${it}m") }
+            append("\n- Cabins: ${y.path("cabins").asInt(0)}, berths: ${y.path("berths").asInt(0)}, ")
+            append("sleeps up to ${y.path("maxPersons").asInt(0)}, WC: ${y.path("wc").asInt(0)}\n")
+            y.path("location").path("name").asText("").takeIf { it.isNotBlank() }
+                ?.let { append("- Base: $it\n") }
+            if (amenities.isNotEmpty()) append("- Equipment: ${amenities.joinToString(", ")}\n")
+            if (dates != null) append("- Dates selected on the page: ${dates.groupValues[1]} to ${dates.groupValues[2]}\n")
+            append("- Page URL: https://www.boat4you.com/boat/$slug")
+        }
+    }
+
     private fun amenityId(labelCode: String): Long? {
         if (amenityIdsByLabel.isEmpty()) {
             amenityIdsByLabel = try {
