@@ -39,6 +39,10 @@ class AdminAiChatController(
         val adminUnread: Boolean,
         val lastActivityAt: Instant,
         val lastMessage: String?,
+        val lastSeenAt: Instant?,
+        val currentPage: String?,
+        val referrer: String?,
+        val pageTrail: String?,
     )
     data class ReplyRequest(val content: String? = null)
 
@@ -61,6 +65,7 @@ class AdminAiChatController(
             SessionDto(
                 s.id!!, s.status, s.locale, s.visitorName, s.visitorEmail,
                 s.adminUnread, s.lastActivityAt, last?.content?.take(140),
+                s.lastSeenAt, s.currentPage, s.referrer, s.pageTrail,
             )
         }
     }

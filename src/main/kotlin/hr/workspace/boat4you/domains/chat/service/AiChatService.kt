@@ -68,6 +68,7 @@ class AiChatService(
 
         val userMsg = save(session.id!!, AiChatMessage.ROLE_USER, content)
         session.lastActivityAt = Instant.now()
+        updatePresence(session, page)
 
         if (session.status != AiChatSession.STATUS_AI) {
             // First message of a new burst (unread was already seen/answered) pings the
@@ -253,6 +254,29 @@ class AiChatService(
     """.trimIndent()
 
     /**
+     * Widget heartbeat (JivoChat parity, Mario 20.7.2026): stamps "seen now" + the page
+     * the visitor is on, and keeps a short trail of recent pages so the broker knows
+     * who they're talking to and what the visitor has been looking at.
+     */
+    @Transactional
+    fun updatePresence(session: AiChatSession, page: String?, referrer: String? = null) {
+        session.lastSeenAt = Instant.now()
+        if (!referrer.isNullOrBlank() && session.referrer.isNullOrBlank()) {
+            session.referrer = referrer.take(500)
+        }
+        val cleanPage = page?.trim()?.take(500)
+        if (!cleanPage.isNullOrBlank() && cleanPage != session.currentPage) {
+            session.currentPage = cleanPage
+            val trail = runCatching {
+                objectMapper.readValue(session.pageTrail ?: "[]", Array<String>::class.java).toMutableList()
+            }.getOrDefault(mutableListOf())
+            if (trail.lastOrNull() != cleanPage) trail.add(cleanPage)
+            session.pageTrail = objectMapper.writeValueAsString(trail.takeLast(PAGE_TRAIL_CAP))
+        }
+        sessions.save(session)
+    }
+
+    /**
      * Fire-and-forget broker email (Mario can't watch the inbox all day). Own thread +
      * runCatching: a mail hiccup must never delay or break the visitor's chat reply.
      */
@@ -287,6 +311,7 @@ class AiChatService(
         )
 
     companion object {
+        const val PAGE_TRAIL_CAP = 20
         const val MAX_MESSAGE_CHARS = 1000
         const val MAX_MESSAGES_PER_SESSION = 80
         const val MAX_HISTORY_MESSAGES = 30

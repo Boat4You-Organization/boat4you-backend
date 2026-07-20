@@ -45,6 +45,21 @@ open class AiChatSession {
     @Column(name = "last_activity_at", nullable = false)
     open var lastActivityAt: Instant = Instant.now()
 
+    /** Last widget heartbeat — "live on the site" = within ~90 s of now. */
+    @Column(name = "last_seen_at")
+    open var lastSeenAt: Instant? = null
+
+    @Column(name = "current_page", length = 500)
+    open var currentPage: String? = null
+
+    /** document.referrer at session creation — where the visitor came from. */
+    @Column(name = "referrer", length = 500)
+    open var referrer: String? = null
+
+    /** JSON array of recent pages (newest last, capped in the service). */
+    @Column(name = "page_trail")
+    open var pageTrail: String? = null
+
     companion object {
         const val STATUS_AI = "AI"
         const val STATUS_HUMAN_REQUESTED = "HUMAN_REQUESTED"

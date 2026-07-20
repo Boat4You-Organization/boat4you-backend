@@ -26,8 +26,9 @@ import org.springframework.web.bind.annotation.ResponseBody
 class PublicAiChatController(
     private val chat: AiChatService,
 ) {
-    data class CreateSessionRequest(val locale: String? = null)
+    data class CreateSessionRequest(val locale: String? = null, val page: String? = null, val referrer: String? = null)
     data class MessageRequest(val content: String? = null, val page: String? = null)
+    data class PresenceRequest(val page: String? = null)
     data class MessageDto(val id: Long, val role: String, val content: String, val payload: String?)
     data class SessionStateDto(val token: String, val status: String, val messages: List<MessageDto>)
 
@@ -36,7 +37,18 @@ class PublicAiChatController(
     fun createSession(@RequestBody(required = false) request: CreateSessionRequest?): ResponseEntity<Any> {
         if (!chat.isEnabled()) return disabled()
         val session = chat.createSession(request?.locale)
+        chat.updatePresence(session, request?.page, request?.referrer)
         return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList()))
+    }
+
+    /** Widget heartbeat — who is live on the site and which page they're on. */
+    @PostMapping("/sessions/{token}/presence")
+    @ResponseBody
+    fun presence(@PathVariable token: String, @RequestBody(required = false) request: PresenceRequest?): ResponseEntity<Any> {
+        if (!chat.isEnabled()) return disabled()
+        val session = chat.getSession(token) ?: return notFound()
+        chat.updatePresence(session, request?.page)
+        return ResponseEntity.ok(mapOf("ok" to true))
     }
 
     @PostMapping("/sessions/{token}/messages")
