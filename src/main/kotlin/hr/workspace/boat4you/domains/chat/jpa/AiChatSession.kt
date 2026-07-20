@@ -60,6 +60,15 @@ open class AiChatSession {
     @Column(name = "page_trail")
     open var pageTrail: String? = null
 
+    @Column(name = "ip", length = 45)
+    open var ip: String? = null
+
+    @Column(name = "country_code", length = 2)
+    open var countryCode: String? = null
+
+    @Column(name = "country", length = 80)
+    open var country: String? = null
+
     companion object {
         const val STATUS_AI = "AI"
         const val STATUS_HUMAN_REQUESTED = "HUMAN_REQUESTED"

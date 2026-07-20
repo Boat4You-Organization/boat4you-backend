@@ -43,6 +43,9 @@ class AdminAiChatController(
         val currentPage: String?,
         val referrer: String?,
         val pageTrail: String?,
+        val countryCode: String?,
+        val country: String?,
+        val ip: String?,
     )
     data class ReplyRequest(val content: String? = null)
 
@@ -66,6 +69,7 @@ class AdminAiChatController(
                 s.id!!, s.status, s.locale, s.visitorName, s.visitorEmail,
                 s.adminUnread, s.lastActivityAt, last?.content?.take(140),
                 s.lastSeenAt, s.currentPage, s.referrer, s.pageTrail,
+                s.countryCode, s.country, s.ip,
             )
         }
     }

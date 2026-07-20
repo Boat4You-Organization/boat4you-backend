@@ -34,6 +34,7 @@ class AiChatService(
     private val tools: AiChatToolExecutor,
     private val objectMapper: ObjectMapper,
     private val emailService: EmailService,
+    private val geoIp: GeoIpService,
     @Value("\${chat.notify-email:info@boat4you.com}")
     private val notifyEmail: String,
 ) {
@@ -42,10 +43,15 @@ class AiChatService(
     fun isEnabled(): Boolean = anthropic.isEnabled()
 
     @Transactional
-    fun createSession(locale: String?): AiChatSession {
+    fun createSession(locale: String?, name: String? = null, ip: String? = null): AiChatSession {
+        val geo = geoIp.countryOf(ip)
         val session = AiChatSession().apply {
             token = UUID.randomUUID().toString()
             this.locale = (locale ?: "en").take(8)
+            this.visitorName = name?.trim()?.take(120)?.ifBlank { null }
+            this.ip = ip?.take(45)
+            this.countryCode = geo?.code
+            this.country = geo?.name
         }
         return sessions.save(session)
     }
@@ -221,6 +227,7 @@ class AiChatService(
         thousands of boats in 40+ countries (sailing yachts, catamarans, motor yachts, gulets),
         online booking, secure payment and a 72-hour free cancellation window after booking.
         Today's date: ${LocalDate.now()}. Site locale of this visitor: ${session.locale}.
+        ${session.visitorName?.let { "The visitor's name is $it — greet and address them by name." } ?: ""}
 
         RULES:
         - ALWAYS answer in the visitor's language (match their messages; default to the site locale).

@@ -55,6 +55,8 @@ dependencies {
     implementation("org.springframework.security:spring-security-oauth2-jose")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-web")
+    // IP -> country for the chat inbox (DB-IP Country Lite mmdb, CC BY 4.0)
+    implementation("com.maxmind.geoip2:geoip2:4.2.0")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")

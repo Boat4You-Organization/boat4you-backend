@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.chat.controllers
 import hr.workspace.boat4you.domains.chat.jpa.AiChatMessage
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.service.AiChatService
+import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Controller
@@ -26,7 +27,12 @@ import org.springframework.web.bind.annotation.ResponseBody
 class PublicAiChatController(
     private val chat: AiChatService,
 ) {
-    data class CreateSessionRequest(val locale: String? = null, val page: String? = null, val referrer: String? = null)
+    data class CreateSessionRequest(
+        val locale: String? = null,
+        val page: String? = null,
+        val referrer: String? = null,
+        val name: String? = null,
+    )
     data class MessageRequest(val content: String? = null, val page: String? = null)
     data class PresenceRequest(val page: String? = null)
     data class MessageDto(val id: Long, val role: String, val content: String, val payload: String?)
@@ -34,9 +40,14 @@ class PublicAiChatController(
 
     @PostMapping("/sessions")
     @ResponseBody
-    fun createSession(@RequestBody(required = false) request: CreateSessionRequest?): ResponseEntity<Any> {
+    fun createSession(
+        @RequestBody(required = false) request: CreateSessionRequest?,
+        httpRequest: HttpServletRequest,
+    ): ResponseEntity<Any> {
         if (!chat.isEnabled()) return disabled()
-        val session = chat.createSession(request?.locale)
+        // nginx forwards the client address as X-Real-IP; remoteAddr is the proxy.
+        val clientIp = httpRequest.getHeader("X-Real-IP")?.takeIf { it.isNotBlank() } ?: httpRequest.remoteAddr
+        val session = chat.createSession(request?.locale, request?.name, clientIp)
         chat.updatePresence(session, request?.page, request?.referrer)
         return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList()))
     }
