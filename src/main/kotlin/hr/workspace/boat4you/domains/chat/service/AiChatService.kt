@@ -3,11 +3,13 @@ package hr.workspace.boat4you.domains.chat.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
+import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.chat.jpa.AiChatMessage
 import hr.workspace.boat4you.domains.chat.jpa.AiChatMessageRepository
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
@@ -31,6 +33,9 @@ class AiChatService(
     private val anthropic: AnthropicClient,
     private val tools: AiChatToolExecutor,
     private val objectMapper: ObjectMapper,
+    private val emailService: EmailService,
+    @Value("\${chat.notify-email:info@boat4you.com}")
+    private val notifyEmail: String,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -65,8 +70,13 @@ class AiChatService(
         session.lastActivityAt = Instant.now()
 
         if (session.status != AiChatSession.STATUS_AI) {
+            // First message of a new burst (unread was already seen/answered) pings the
+            // broker again — Mario can't watch the inbox all day. While unread stays
+            // true no further mail goes out, so a typing visitor sends one mail, not ten.
+            val firstOfBurst = !session.adminUnread
             session.adminUnread = true
             sessions.save(session)
+            if (firstOfBurst) notifyBroker(session, content, "Nova poruka u chatu #${session.id}")
             return listOf(userMsg)
         }
         sessions.save(session)
@@ -167,6 +177,9 @@ class AiChatService(
                 session.status = AiChatSession.STATUS_HUMAN_REQUESTED
                 session.adminUnread = true
                 sessions.save(session)
+                val lastVisitorLine = messages.findAllBySessionIdOrderByIdAsc(session.id!!)
+                    .lastOrNull { it.role == AiChatMessage.ROLE_USER }?.content ?: ""
+                notifyBroker(session, lastVisitorLine, "Posjetitelj traži živu osobu — chat #${session.id}")
                 AiChatToolExecutor.ToolOutcome(
                     """{"ok":true,"note":"The boat4you team has been notified and will reply right here in this chat. Tell the visitor that, and ask for their email via save_contact if you do not have it yet."}""",
                 )
@@ -238,6 +251,30 @@ class AiChatService(
           now — "this boat" means that yacht. Answer its spec/equipment questions from the
           block; if something isn't listed there, say you're not sure instead of guessing.
     """.trimIndent()
+
+    /**
+     * Fire-and-forget broker email (Mario can't watch the inbox all day). Own thread +
+     * runCatching: a mail hiccup must never delay or break the visitor's chat reply.
+     */
+    private fun notifyBroker(session: AiChatSession, lastMessage: String, subject: String) {
+        val vars = mapOf(
+            "sessionId" to session.id,
+            "visitorName" to (session.visitorName ?: ""),
+            "visitorEmail" to (session.visitorEmail ?: ""),
+            "lastMessage" to lastMessage.take(400),
+            "adminUrl" to "https://admin.boat4you.com/chat",
+        )
+        Thread({
+            runCatching {
+                emailService.sendEmail(
+                    recipients = listOf(notifyEmail),
+                    subject = subject,
+                    templateName = "email/chatBrokerNotification",
+                    variables = vars,
+                )
+            }.onFailure { log.warn("chat broker notification mail failed for session ${session.id}: ${it.message}") }
+        }, "chat-notify-${session.id}").start()
+    }
 
     private fun save(sessionId: Long, role: String, content: String, payload: String? = null): AiChatMessage =
         messages.save(
