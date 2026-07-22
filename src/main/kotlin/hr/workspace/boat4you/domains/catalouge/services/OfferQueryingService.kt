@@ -143,7 +143,15 @@ class OfferQueryingService(
     ): List<OfferDto> {
         val yacht = getValidYacht(yachtId)
 
-        val offers = offerRepository.findAllByYachtAndDateFromAndDateTo(yacht, dateFrom, dateTo)
+        // The sister yacht forms call /offers with a ±6-day WIDENED window
+        // around the picked dates (a non-Saturday pick matches no week
+        // verbatim) and then overlap-pick the best week client-side. The
+        // previous exact-equality lookup (dateFrom = ? AND dateTo = ?) could
+        // never match a widened window, so /offers always returned [] and the
+        // client cleared the freshly calculated price ("Get a custom offer"
+        // flash, Mario 22.7.2026). Overlap semantics also stay correct for
+        // exact-week callers — a week overlaps itself.
+        val offers = offerRepository.findAllByYachtAndDateRangeOverlap(yacht, dateFrom, dateTo)
 
         val user =
             getAuthenticatedUserId()
