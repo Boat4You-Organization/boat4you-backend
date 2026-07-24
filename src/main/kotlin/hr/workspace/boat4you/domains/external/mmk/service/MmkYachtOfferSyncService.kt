@@ -107,12 +107,24 @@ class MmkYachtOfferSyncService(
                                 loadTo,
                             )
 
+                        val pairingSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
+                        val pairingLocationMappings =
+                            externalMappingService.getCachedAllMappingsByType(Location::class.simpleName.toString(), pairingSystem)
+                        // Route-aware pairing: the offer natural key is (yacht, week,
+                        // product, ROUTE) — uq_offer_yacht_week_product_route. Week+product
+                        // matching paired BOTH route variants of a week (one-way vs return)
+                        // with the SAME row, so the second update collided with its
+                        // sibling's key (nightly duplicate-key ERROR flood, 24.7.2026).
                         mmkOffers.forEach { mmkOffer ->
+                            val pairFromId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.startBaseId }?.systemId
+                            val pairToId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.endBaseId }?.systemId
                             val existingOffer =
                                 existingYachtOffers.find {
                                     it.dateFrom == mmkOffer.dateFrom.value?.toLocalDate() &&
                                         it.dateTo == mmkOffer.dateTo.value?.toLocalDate() &&
-                                        it.product == CharterType.fromMmkValue(mmkOffer.product)
+                                        it.product == CharterType.fromMmkValue(mmkOffer.product) &&
+                                        it.locationFrom?.id == pairFromId &&
+                                        it.locationTo?.id == pairToId
                                 }
                             val updated =
                                 if (existingOffer == null) {
@@ -402,12 +414,24 @@ class MmkYachtOfferSyncService(
                                 )
                             }
 
+                        val pairingSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
+                        val pairingLocationMappings =
+                            externalMappingService.getCachedAllMappingsByType(Location::class.simpleName.toString(), pairingSystem)
+                        // Route-aware pairing: the offer natural key is (yacht, week,
+                        // product, ROUTE) — uq_offer_yacht_week_product_route. Week+product
+                        // matching paired BOTH route variants of a week (one-way vs return)
+                        // with the SAME row, so the second update collided with its
+                        // sibling's key (nightly duplicate-key ERROR flood, 24.7.2026).
                         mmkOffers.forEach { mmkOffer ->
+                            val pairFromId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.startBaseId }?.systemId
+                            val pairToId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.endBaseId }?.systemId
                             val existingOffer =
                                 existingYachtOffers.find {
                                     it.dateFrom == mmkOffer.dateFrom.value?.toLocalDate() &&
                                         it.dateTo == mmkOffer.dateTo.value?.toLocalDate() &&
-                                        it.product == CharterType.fromMmkValue(mmkOffer.product)
+                                        it.product == CharterType.fromMmkValue(mmkOffer.product) &&
+                                        it.locationFrom?.id == pairFromId &&
+                                        it.locationTo?.id == pairToId
                                 }
                             if (existingOffer == null) {
                                 updateOffer(Offer(), yacht, mmkOffer)

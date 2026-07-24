@@ -133,8 +133,22 @@ class NauSysYachtOfferSyncService(
                             }
                         } else {
                             nausysYachtOffers.forEach { nausysOffer ->
+                                // Route-aware pairing — same natural key as
+                                // uq_offer_yacht_week_product_route (product is a constant for
+                                // NauSys rows, so week+route identifies the row). Week-only
+                                // matching paired both route variants of a week with the same
+                                // row and the update collided with its sibling's key.
+                                val pairFromId =
+                                    allLocationMappings.find { m -> m.externalId == nausysOffer.locationFromId?.toLong() }?.systemId
+                                val pairToId =
+                                    allLocationMappings.find { m -> m.externalId == nausysOffer.locationToId?.toLong() }?.systemId
                                 val existingOffer =
-                                    existingYachtOffers.find { it.dateFrom == nausysOffer.periodFrom!!.value && it.dateTo == nausysOffer.periodTo!!.value }
+                                    existingYachtOffers.find {
+                                        it.dateFrom == nausysOffer.periodFrom!!.value &&
+                                            it.dateTo == nausysOffer.periodTo!!.value &&
+                                            it.locationFrom?.id == pairFromId &&
+                                            it.locationTo?.id == pairToId
+                                    }
                                 val result =
                                     if (existingOffer == null) {
                                         updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)
