@@ -261,10 +261,20 @@ class NauSysYachtOfferSyncService(
                         val existingYachtOffers = getOffersForYacht(yacht, nausysOffers)
 
                         nausysOffers.forEach { nausysOffer ->
+                            // Route-aware pairing — same fix as the scheduled path above:
+                            // the natural key is (yacht, week, product, ROUTE); week-only
+                            // matching pairs both route variants of a week with the same
+                            // row and the update collides with its sibling's key.
+                            val pairFromId =
+                                allLocationMappings.find { m -> m.externalId == nausysOffer.locationFromId?.toLong() }?.systemId
+                            val pairToId =
+                                allLocationMappings.find { m -> m.externalId == nausysOffer.locationToId?.toLong() }?.systemId
                             val existingOffer =
                                 existingYachtOffers.find {
                                     it.dateFrom == nausysOffer.periodFrom!!.value!! &&
-                                        it.dateTo == nausysOffer.periodTo!!.value!!
+                                        it.dateTo == nausysOffer.periodTo!!.value!! &&
+                                        it.locationFrom?.id == pairFromId &&
+                                        it.locationTo?.id == pairToId
                                 }
                             val result =
                                 if (existingOffer == null) {
