@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.PriceCalcDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
+import hr.workspace.boat4you.domains.catalouge.enums.OPTION_ECHO_GRACE_HOURS
 import hr.workspace.boat4you.domains.catalouge.enums.OfferType
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 
@@ -52,15 +54,19 @@ class OfferQueryingService(
                 OfferType.STANDARD,
             )
 
-        // Live options (optionExpiration > now) overlapping the window — used to
-        // demote stale OPTION offer rows to FREE. The finder is half-open
-        // (date_from < end AND date_to > start) so a turnaround day never counts.
+        // Live options overlapping the window — used to demote stale OPTION
+        // offer rows to FREE. "Live" includes options whose nominal expiry
+        // lapsed less than OPTION_ECHO_GRACE_HOURS ago (partners hold past the
+        // stated deadline without bumping it — Vernicos 28.7.2026). The finder
+        // is half-open (date_from < end AND date_to > start) so a turnaround
+        // day never counts.
         val liveOptions =
             externalReservationRepository.findOptionsByYachtIdsAndPeriod(
                 listOf(yachtId),
                 ExternalReservationStatus.OPTION,
                 dateFrom,
                 dateTo,
+                LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS),
             )
 
         val mappedOffers =
@@ -158,7 +164,30 @@ class OfferQueryingService(
                 .takeIf { it != ANONYMOUS_USER_ID }
                 ?.let { userRepository.findById(it).orElse(null) }
 
-        return offers.map { offerMapper.toDto(it, currency) }
+        // hasLiveOption per offer, same rule as the detail calendar above. This
+        // endpoint used to call toDto without the flag (default false), which
+        // demoted EVERY partner OPTION — expired or not — to FREE, so the boat
+        // page booking panel and the sister forms priced weeks the partner was
+        // actively holding (MY ANGEL 28.7.2026). Overlap-fetched offers can
+        // stick out past the requested window, so the option lookup spans the
+        // offers' envelope, not the raw window — an option overlapping only the
+        // out-of-window tail of an offer still counts.
+        val optionWindowFrom = offers.mapNotNull { it.dateFrom }.minOrNull() ?: dateFrom
+        val optionWindowTo = offers.mapNotNull { it.dateTo }.maxOrNull() ?: dateTo
+        val liveOptions =
+            externalReservationRepository.findOptionsByYachtIdsAndPeriod(
+                listOf(yachtId),
+                ExternalReservationStatus.OPTION,
+                optionWindowFrom,
+                optionWindowTo,
+                LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS),
+            )
+
+        return offers.map { offer ->
+            val hasLiveOption =
+                liveOptions.any { r -> halfOpenOverlap(offer.dateFrom, offer.dateTo, r.dateFrom, r.dateTo) }
+            offerMapper.toDto(offer, currency, hasLiveOption)
+        }
     }
 
     fun getPriceForOfferWithExtras(

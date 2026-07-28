@@ -3,6 +3,19 @@ package hr.workspace.boat4you.domains.catalouge.enums
 import org.openapitools.client.nausys.model.RestYachtReservationOccupancy
 import java.time.LocalDateTime
 
+/**
+ * How long past its nominal optionExpiration a partner-echoed OPTION row is still treated as a
+ * LIVE hold (read-time honesty + mirror purge). Agencies routinely keep an option active past
+ * its stated expiry without bumping the timestamp — proven 28.7.2026 (Vernicos/MMK MY ANGEL,
+ * 8007, week 08-15/08: option nominally lapsed at midnight, still held in MMK 16h later while
+ * every surface showed the week as instantly bookable). Zero grace turns such holds into a
+ * false FREE; unlimited grace resurrects the 25.6.2026 zombie plague (87-131k long-dead echoed
+ * rows hiding sellable weeks on 630 yachts). 48h covers the observed extend-without-bump window
+ * while long-dead echoes still demote and purge. The mirror row disappearing from the partner
+ * occupancy feed (availability sync, 4x/day) remains the definitive "hold ended" signal.
+ */
+const val OPTION_ECHO_GRACE_HOURS = 48L
+
 enum class ExternalReservationStatus(
     val value: Int,
 ) {

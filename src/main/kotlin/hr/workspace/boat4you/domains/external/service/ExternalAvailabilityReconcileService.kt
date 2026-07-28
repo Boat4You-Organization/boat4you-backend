@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.external.service
 
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
+import hr.workspace.boat4you.domains.catalouge.enums.OPTION_ECHO_GRACE_HOURS
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservation
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
@@ -58,17 +59,25 @@ class ExternalAvailabilityReconcileService(
         // "under option" after its option lapsed), (2) drop the expired OPTION reservation rows,
         // (3) clean the now-orphaned reservation mappings.
         val syntheticRemoved = offerRepository.deleteUnbackedSyntheticOptionOffers()
+        // Grace (28.7.2026): purge only options lapsed for more than OPTION_ECHO_GRACE_HOURS.
+        // Partners keep holds live past the nominal expiry without bumping the timestamp
+        // (Vernicos/MMK MY ANGEL) — purging at lapse+0 deleted the mirror row while the boat
+        // was still held, and every surface sold the week as instantly bookable until the
+        // next availability sync resurrected the row. Matches the read-time cutoff in
+        // findOptionsByYachtIdsAndPeriod so display and purge agree on when an echo is dead.
+        val graceCutoff = LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS)
         val optionsRemoved =
-            externalReservationRepository.deleteExpiredOptions(ExternalReservationStatus.OPTION, LocalDateTime.now())
+            externalReservationRepository.deleteExpiredOptions(ExternalReservationStatus.OPTION, graceCutoff)
         // Zombie RESERVATION rows: an expired option hold that was stored under RESERVATION status
         // (legacy/partner-echo) carries a NON-NULL optionExpiration in the past while keeping a
         // future dateTo. The OPTION purge above misses it (wrong status) and deleteExpiredReservations
         // (dateTo < cutoff) misses it too (future dateTo) — so it hard-blocks a boat the partner has
         // already freed forever. Discovered 2026-06-25: 87k such rows hid FREE weeks on 630 yachts.
         // Same query/safety as the OPTION purge — a REAL reservation has optionExpiration = NULL and
-        // `NULL < cutoff` is false, so only the mis-statused expired holds are removed.
+        // `NULL < cutoff` is false, so only the mis-statused expired holds are removed. Same grace
+        // cutoff too: a mis-statused hold can be live past its nominal expiry just like a proper one.
         val staleReservationsRemoved =
-            externalReservationRepository.deleteExpiredOptions(ExternalReservationStatus.RESERVATION, LocalDateTime.now())
+            externalReservationRepository.deleteExpiredOptions(ExternalReservationStatus.RESERVATION, graceCutoff)
         val mappingsRemoved = externalMappingRepository.deleteOrphanReservationMappings(RESERVATION_TYPE)
         if (syntheticRemoved > 0 || optionsRemoved > 0 || staleReservationsRemoved > 0 || mappingsRemoved > 0) {
             log.info(

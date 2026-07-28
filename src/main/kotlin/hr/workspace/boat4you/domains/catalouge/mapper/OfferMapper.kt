@@ -34,7 +34,10 @@ class OfferMapper(
             // Honest customer status (Deploy 4): collapse the partner OfferStatus
             // onto the 4-state ExternalReservationStatus. A partner OPTION /
             // OPTION_WAITING that no longer has a live external_reservations hold
-            // (optionExpiration lapsed) is bookable again -> FREE. RESERVED ->
+            // is bookable again -> FREE. "Live" is grace-aware (28.7.2026): the
+            // hold counts until OPTION_ECHO_GRACE_HOURS past its nominal expiry
+            // or until the partner stops echoing the row — partners keep options
+            // active past the stated deadline (Vernicos/MMK MY ANGEL). RESERVED ->
             // RESERVATION, SERVICE stays SERVICE (both hard-blocked on the FE),
             // OPTION_EXPIRED / CANCELLED / INFO -> FREE.
             status =

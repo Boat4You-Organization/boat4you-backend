@@ -119,13 +119,17 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
 
     /**
      * Bulk-fetch every LIVE option (MMK + Nausys) that overlaps the given
-     * period for any of the listed yachts — used by the admin /offers search
-     * to stamp "Option expires: DD.MM.YYYY HH:mm" next to optioned results.
-     * Returns rows with non-null AND still-future option_expiration so the
-     * caller never has to filter expired ones (partner sync sometimes leaves
-     * stale OPTION offer rows behind months after the option lapsed — those
-     * must NOT surface as "under option" in the listing). Only OPTION status
-     * is considered (RESERVATION / SERVICE don't have an expiry to show).
+     * period for any of the listed yachts — drives the OPTION-vs-FREE call on
+     * all three read surfaces (detail calendar, /offers booking panel, search
+     * listing) plus the admin "Option expires: DD.MM.YYYY HH:mm" stamp.
+     * "Live" = expiry NULL (a hold without a deadline always counts) OR expiry
+     * after :cutoff. Callers pass cutoff = now - [OPTION_ECHO_GRACE_HOURS], NOT
+     * plain now: agencies keep options active past the nominal expiry without
+     * bumping the timestamp (Vernicos/MMK 28.7.2026 — week held 16h past expiry
+     * while every surface sold it as instantly bookable), while long-dead
+     * echoed rows beyond the grace still demote to FREE (25.6.2026 zombie
+     * plague). Only OPTION status is considered (RESERVATION / SERVICE don't
+     * have an expiry to show).
      * HALF-OPEN (CRIT-3): an option ending on the morning the searched charter
      * begins (turnaround) must NOT count as overlapping, or a reservable yacht
      * would be falsely badged "under option" — the inverse of the honesty goal.
@@ -135,8 +139,7 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
         SELECT r FROM ExternalReservation r
         WHERE r.yacht.id IN :yachtIds
         AND r.status = :status
-        AND r.optionExpiration IS NOT NULL
-        AND r.optionExpiration > CURRENT_TIMESTAMP
+        AND (r.optionExpiration IS NULL OR r.optionExpiration > :cutoff)
         AND r.dateFrom < :endDate AND r.dateTo > :startDate
     """,
     )
@@ -145,5 +148,6 @@ interface ExternalReservationRepository : JpaRepository<ExternalReservation, Lon
         @Param("status") status: ExternalReservationStatus,
         @Param("startDate") startDate: LocalDate,
         @Param("endDate") endDate: LocalDate,
+        @Param("cutoff") cutoff: LocalDateTime,
     ): List<ExternalReservation>
 }

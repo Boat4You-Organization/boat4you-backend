@@ -446,39 +446,48 @@ class YachtQueryingService(
         // skipped entirely for customer searches (isAdmin false).
         val sourceSystemByYachtId = if (isAdmin) fetchYachtSourceSystems(results.map { it.id }) else emptyMap()
 
-        // Bulk-fetch option expiry timestamps for the optioned yachts on
-        // this page — one extra query regardless of page size. Options
-        // come from `external_reservations`, populated by MMK + Nausys
-        // availability sync. A yacht can have more than one overlapping
-        // option row in theory (yacht swap mid-option, partner quirk); we
-        // pick the SOONEST expiry so the broker sees the most-urgent
-        // deadline. Skipped entirely when no yachts on the page are
-        // optioned — keeps the query cheap for the common case.
+        // Bulk-fetch live option rows for the optioned yachts on this page —
+        // one extra query regardless of page size. Options come from
+        // `external_reservations`, populated by MMK + Nausys availability
+        // sync. "Live" includes rows whose nominal expiry lapsed less than
+        // OPTION_ECHO_GRACE_HOURS ago and rows without an expiry at all
+        // (partners hold past the stated deadline without bumping it —
+        // Vernicos 28.7.2026). Two derived views: the id set gates isOption
+        // below; the expiry map (soonest deadline per yacht — more than one
+        // overlapping option row is possible: yacht swap mid-option, partner
+        // quirk) feeds the broker "Option expires" stamp. Skipped entirely
+        // when no yachts on the page are optioned — keeps the query cheap
+        // for the common case.
         val optionedIds = results
             .filter { it.offerStatus == 2 || it.offerStatus == 3 }
             .map { it.id }
         val searchStart = searchParams.startDate
         val searchEnd = searchParams.endDate
-        val optionExpiryByYachtId: Map<Long, java.time.LocalDateTime> =
+        val liveOptionRows =
             if (optionedIds.isNotEmpty() && searchStart != null && searchEnd != null) {
-                externalReservationRepository
-                    .findOptionsByYachtIdsAndPeriod(
-                        optionedIds,
-                        hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus.OPTION,
-                        searchStart,
-                        searchEnd,
-                    )
-                    .asSequence()
-                    .mapNotNull { r ->
-                        val yachtId = r.yacht?.id ?: return@mapNotNull null
-                        val expiry = r.optionExpiration ?: return@mapNotNull null
-                        yachtId to expiry
-                    }
-                    .groupBy({ it.first }, { it.second })
-                    .mapValues { (_, expiries) -> expiries.min() }
+                externalReservationRepository.findOptionsByYachtIdsAndPeriod(
+                    optionedIds,
+                    hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus.OPTION,
+                    searchStart,
+                    searchEnd,
+                    java.time.LocalDateTime.now().minusHours(
+                        hr.workspace.boat4you.domains.catalouge.enums.OPTION_ECHO_GRACE_HOURS,
+                    ),
+                )
             } else {
-                emptyMap()
+                emptyList()
             }
+        val optionBackedYachtIds: Set<Long> = liveOptionRows.mapNotNull { it.yacht?.id }.toSet()
+        val optionExpiryByYachtId: Map<Long, java.time.LocalDateTime> =
+            liveOptionRows
+                .asSequence()
+                .mapNotNull { r ->
+                    val yachtId = r.yacht?.id ?: return@mapNotNull null
+                    val expiry = r.optionExpiration ?: return@mapNotNull null
+                    yachtId to expiry
+                }
+                .groupBy({ it.first }, { it.second })
+                .mapValues { (_, expiries) -> expiries.min() }
 
         val searchResponseDtos =
             results.map { rawView ->
@@ -487,16 +496,17 @@ class YachtQueryingService(
                 // period total so the card shows the true 2-week price (e.g. 7615.30, not 5212.90).
                 val view = applyCoveringPeriodPrice(rawView, requestedNights)
                 // isOption requires BOTH the aggregated offerStatus to flag
-                // OPTION(2) / OPTION_WAITING(3) AND a still-live external
-                // reservation backing it. Partner sync can leave offer.status
-                // stuck at OPTION months after the actual option lapsed (the
-                // sync only writes the OPTION snapshot; nothing clears it on
-                // its own). Without this gate the listing would stamp a fake
-                // "Under option" badge on yachts that are actually free —
-                // matching what /yacht/.../offers (live reads) already shows.
+                // OPTION(2) / OPTION_WAITING(3) AND a live external reservation
+                // ROW backing it (row presence, not expiry presence — a hold
+                // without a deadline is still a hold). Partner sync can leave
+                // offer.status stuck at OPTION months after the actual option
+                // lapsed (the sync only writes the OPTION snapshot; nothing
+                // clears it on its own). Without this gate the listing would
+                // stamp a fake "Under option" badge on yachts that are
+                // actually free — matching what /yacht/.../offers shows.
                 val isOption =
                     (view.offerStatus == 2 || view.offerStatus == 3) &&
-                        optionExpiryByYachtId[view.id] != null
+                        view.id in optionBackedYachtIds
 
                 // Honest matched-window kind: compare the chosen slot's REAL
                 // window (offerDateFrom/offerDateTo, from exactOrEarliest) to the
