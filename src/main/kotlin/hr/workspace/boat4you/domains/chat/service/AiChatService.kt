@@ -58,6 +58,12 @@ class AiChatService(
 
     fun getSession(token: String): AiChatSession? = sessions.findByToken(token)
 
+    /** Late name capture — legacy sessions predate the pre-chat name step (Mario 30.7.2026). */
+    fun setVisitorName(session: AiChatSession, name: String) {
+        session.visitorName = name.trim().take(120).ifBlank { return }
+        sessions.save(session)
+    }
+
     fun messagesAfter(sessionId: Long, afterId: Long): List<AiChatMessage> =
         messages.findAllBySessionIdAndIdGreaterThanOrderByIdAsc(sessionId, afterId)
 

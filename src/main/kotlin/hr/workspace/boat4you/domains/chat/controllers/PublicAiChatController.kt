@@ -36,7 +36,7 @@ class PublicAiChatController(
     data class MessageRequest(val content: String? = null, val page: String? = null)
     data class PresenceRequest(val page: String? = null)
     data class MessageDto(val id: Long, val role: String, val content: String, val payload: String?)
-    data class SessionStateDto(val token: String, val status: String, val messages: List<MessageDto>)
+    data class SessionStateDto(val token: String, val status: String, val messages: List<MessageDto>, val visitorName: String? = null)
 
     @PostMapping("/sessions")
     @ResponseBody
@@ -49,7 +49,21 @@ class PublicAiChatController(
         val clientIp = httpRequest.getHeader("X-Real-IP")?.takeIf { it.isNotBlank() } ?: httpRequest.remoteAddr
         val session = chat.createSession(request?.locale, request?.name, clientIp)
         chat.updatePresence(session, request?.page, request?.referrer)
-        return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList()))
+        return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList(), session.visitorName))
+    }
+
+    data class NameRequest(val name: String? = null)
+
+    /** Late name capture for sessions created before the pre-chat name step. */
+    @PostMapping("/sessions/{token}/name")
+    @ResponseBody
+    fun setName(@PathVariable token: String, @RequestBody request: NameRequest): ResponseEntity<Any> {
+        if (!chat.isEnabled()) return disabled()
+        val session = chat.getSession(token) ?: return notFound()
+        val name = request.name?.trim().orEmpty()
+        if (name.isBlank()) return ResponseEntity.badRequest().body(mapOf("error" to "empty"))
+        chat.setVisitorName(session, name)
+        return ResponseEntity.ok(mapOf("ok" to true))
     }
 
     /** Widget heartbeat — who is live on the site and which page they're on. */
@@ -78,7 +92,7 @@ class PublicAiChatController(
         } catch (e: IllegalStateException) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(mapOf("error" to "cap"))
         }
-        return ResponseEntity.ok(SessionStateDto(token, session.status, new.map(::dto)))
+        return ResponseEntity.ok(SessionStateDto(token, session.status, new.map(::dto), session.visitorName))
     }
 
     /** Polling for broker replies once a human owns the session. */
@@ -88,7 +102,7 @@ class PublicAiChatController(
         if (!chat.isEnabled()) return disabled()
         val session = chat.getSession(token) ?: return notFound()
         val list = chat.messagesAfter(session.id!!, afterId)
-        return ResponseEntity.ok(SessionStateDto(token, session.status, list.map(::dto)))
+        return ResponseEntity.ok(SessionStateDto(token, session.status, list.map(::dto), session.visitorName))
     }
 
     private fun dto(m: AiChatMessage) = MessageDto(m.id!!, m.role!!, m.content!!, m.payload)
