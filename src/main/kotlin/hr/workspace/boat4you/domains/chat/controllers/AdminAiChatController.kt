@@ -9,6 +9,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.stereotype.Controller
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -48,6 +49,7 @@ class AdminAiChatController(
         val ip: String?,
     )
     data class ReplyRequest(val content: String? = null)
+    data class BulkDeleteRequest(val ids: List<Long>? = null)
 
     @GetMapping("/sessions")
     @ResponseBody
@@ -88,6 +90,27 @@ class AdminAiChatController(
         val content = request.content?.trim().orEmpty()
         if (content.isBlank()) return ResponseEntity.badRequest().build()
         return ResponseEntity.ok(chat.adminReply(session, content))
+    }
+
+    /** Delete one conversation (transcript included) — broker housekeeping. */
+    @DeleteMapping("/sessions/{id}")
+    @ResponseBody
+    fun delete(@PathVariable id: Long): ResponseEntity<Void> {
+        val session = sessions.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
+        chat.deleteSession(session)
+        return ResponseEntity.noContent().build()
+    }
+
+    /** Delete several conversations at once (checkbox selection in the inbox). */
+    @PostMapping("/sessions/bulk-delete")
+    @ResponseBody
+    fun bulkDelete(@RequestBody request: BulkDeleteRequest): ResponseEntity<Map<String, Int>> {
+        val ids = request.ids.orEmpty().distinct()
+        if (ids.isEmpty()) return ResponseEntity.badRequest().build()
+        val deleted = ids.count { id ->
+            sessions.findById(id).orElse(null)?.also { chat.deleteSession(it) } != null
+        }
+        return ResponseEntity.ok(mapOf("deleted" to deleted))
     }
 
     @PostMapping("/sessions/{id}/close")

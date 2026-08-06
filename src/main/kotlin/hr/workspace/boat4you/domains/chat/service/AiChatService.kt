@@ -58,6 +58,13 @@ class AiChatService(
 
     fun getSession(token: String): AiChatSession? = sessions.findByToken(token)
 
+    /** Broker housekeeping — drop a conversation for good (Mario 5.8.2026). */
+    @Transactional
+    fun deleteSession(session: AiChatSession) {
+        messages.deleteAllBySessionId(session.id!!)
+        sessions.delete(session)
+    }
+
     /** Late name capture — legacy sessions predate the pre-chat name step (Mario 30.7.2026). */
     fun setVisitorName(session: AiChatSession, name: String) {
         session.visitorName = name.trim().take(120).ifBlank { return }

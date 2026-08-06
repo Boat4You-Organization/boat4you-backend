@@ -19,4 +19,6 @@ interface AiChatMessageRepository : JpaRepository<AiChatMessage, Long> {
     fun findAllBySessionIdAndIdGreaterThanOrderByIdAsc(sessionId: Long, afterId: Long): List<AiChatMessage>
 
     fun countBySessionId(sessionId: Long): Long
+
+    fun deleteAllBySessionId(sessionId: Long)
 }
