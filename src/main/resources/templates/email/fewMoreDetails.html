@@ -279,6 +279,13 @@
                             th:text="${bankFeeNoticeLabel}">
                             Includes the mandatory 16€ bank transfer fee.
                           </div>
+                          <!-- Loyalty voucher transparency line — the amounts above
+                               already carry the reduction; hidden when no voucher. -->
+                          <div th:if="${voucherAppliedLabel != null}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:11px; color:#15803d; line-height:1.4; margin-bottom:4px;"
+                            th:text="${voucherAppliedLabel}">
+                            Voucher B4Y-XXXX-XXXX applied: −100.00€
+                          </div>
                           <div th:if="${dueNowDeadlineLabel != null and !dueNowDeadlineLabel.empty}"
                             style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#64748b; line-height:1.4; margin-bottom:12px;"
                             th:text="#{fewMoreDetails.bankAmountDueBy(${dueNowDeadlineLabel})}">

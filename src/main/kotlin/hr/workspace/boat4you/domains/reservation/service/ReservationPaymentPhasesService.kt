@@ -162,6 +162,31 @@ class ReservationPaymentPhasesService(
         return phases
     }
 
+    /**
+     * Absorbs a loyalty voucher into the phase schedule (Mario 10.8.2026:
+     * "sve od prve rate") — the first installment takes the whole hit, with a
+     * defensive cascade onto later phases for exotic partner plans whose first
+     * bucket is smaller than the voucher. Phases reduced to exactly zero are
+     * dropped so wire emails never show a 0-EUR row. Invariant:
+     * sum(after) == sum(before) − voucherValue (voucher never exceeds the
+     * total — redemption requires a 1500 EUR minimum).
+     */
+    fun applyVoucherAbsorption(
+        phases: List<Pair<LocalDate, Double>>,
+        voucherValue: Double,
+    ): List<Pair<LocalDate, Double>> {
+        if (voucherValue <= 0.0 || phases.isEmpty()) return phases
+
+        var remaining = voucherValue.roundDecimals()
+
+        return phases
+            .map { (deadline, amount) ->
+                val cut = minOf(amount, remaining).roundDecimals()
+                remaining = (remaining - cut).roundDecimals()
+                Pair(deadline, (amount - cut).roundDecimals())
+            }.filter { it.second > 0.0 }
+    }
+
     @Transactional(readOnly = true)
     fun getPaymentPhases(reservationId: Long): List<PaymentPhaseDto> {
         val dbReservation = reservationRepository.findById(reservationId).getOrElse { throw ReservationNotExistException() }

@@ -669,4 +669,58 @@ class ReservationPaymentPhasesServiceTest {
             result[2] shouldBe Pair(LocalDate.of(2027, Month.NOVEMBER, 30), 499.99)
         }
     }
+
+    @Nested
+    inner class VoucherAbsorption {
+        private val d1 = LocalDate.of(2026, Month.SEPTEMBER, 1)
+        private val d2 = LocalDate.of(2026, Month.OCTOBER, 15)
+        private val d3 = LocalDate.of(2027, Month.MARCH, 1)
+
+        @Test
+        fun `single phase absorbs the whole voucher`() {
+            val result = service.applyVoucherAbsorption(listOf(Pair(d1, 1500.0)), 100.0)
+            result.shouldHaveSize(1)
+            result[0] shouldBe Pair(d1, 1400.0)
+        }
+
+        @Test
+        fun `first of two phases absorbs it all, second untouched`() {
+            val result = service.applyVoucherAbsorption(listOf(Pair(d1, 750.0), Pair(d2, 750.0)), 100.0)
+            result.shouldHaveSize(2)
+            result[0] shouldBe Pair(d1, 650.0)
+            result[1] shouldBe Pair(d2, 750.0)
+        }
+
+        @Test
+        fun `three-phase partner plan only reduces the first`() {
+            val result = service.applyVoucherAbsorption(listOf(Pair(d1, 375.0), Pair(d2, 375.0), Pair(d3, 750.0)), 100.0)
+            result.shouldHaveSize(3)
+            result[0] shouldBe Pair(d1, 275.0)
+            result[1] shouldBe Pair(d2, 375.0)
+            result[2] shouldBe Pair(d3, 750.0)
+        }
+
+        @Test
+        fun `cascade when the first phase is smaller than the voucher, zeroed phase dropped`() {
+            val result = service.applyVoucherAbsorption(listOf(Pair(d1, 60.0), Pair(d2, 940.0), Pair(d3, 500.0)), 100.0)
+            result.shouldHaveSize(2)
+            result[0] shouldBe Pair(d2, 900.0)
+            result[1] shouldBe Pair(d3, 500.0)
+        }
+
+        @Test
+        fun `rounding invariant on ugly partner ratios`() {
+            val phases = listOf(Pair(d1, 533.33), Pair(d2, 533.33), Pair(d3, 533.34))
+            val result = service.applyVoucherAbsorption(phases, 100.0)
+            val before = phases.sumOf { it.second }
+            val after = result.sumOf { it.second }
+            (before - after) shouldBe 100.0
+        }
+
+        @Test
+        fun `zero voucher is a no-op`() {
+            val phases = listOf(Pair(d1, 750.0), Pair(d2, 750.0))
+            service.applyVoucherAbsorption(phases, 0.0) shouldBe phases
+        }
+    }
 }

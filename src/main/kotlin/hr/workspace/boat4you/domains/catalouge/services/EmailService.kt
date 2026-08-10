@@ -96,6 +96,7 @@ class EmailService(
         "email/preCharterReminder",
         "email/clientMessage",
         "email/chatBrokerNotification",
+        "email/voucherIssued",
     )
 
     private val templatesWithoutSharedFooter = setOf(

@@ -23,6 +23,7 @@ import hr.workspace.boat4you.domains.reservation.service.ReservationPaymentPhase
 import hr.workspace.boat4you.domains.reservation.service.ReservationSyncService
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import hr.workspace.boat4you.security.ANONYMOUS_USER_ID
+import hr.workspace.boat4you.domains.voucher.service.VoucherService
 import hr.workspace.boat4you.security.getAuthenticatedUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -60,6 +61,7 @@ class ReservationController(
     private val reservationRepository: ReservationRepository,
     private val reservationSyncService: ReservationSyncService,
     private val reservationDocumentService: hr.workspace.boat4you.domains.reservation.service.ReservationDocumentService,
+    private val voucherService: VoucherService,
 ) {
     private val log = org.slf4j.LoggerFactory.getLogger(this::class.java)
 
@@ -186,11 +188,14 @@ class ReservationController(
                 when (externalReservation.calculatedSysStatus) {
                     ReservationStatus.OPTION, ReservationStatus.OPTION_WAITING ->
                         reservationEmailService.sendOptionCreatedEmail(committed.id)
-                    ReservationStatus.RESERVATION ->
+                    ReservationStatus.RESERVATION -> {
                         // Partner auto-confirmed straight to RESERVATION — this is
                         // a SUCCESS, not a failure. Send the confirmation email
                         // instead of the option email.
                         reservationEmailService.sendConfirmationForReserved(committed, PaymentType.BANK_TRANSFER)
+                        runCatching { voucherService.issueForConfirmedReservation(committed.id) }
+                            .onFailure { log.error("Voucher issuance failed for reservation {}", committed.id, it) }
+                    }
                     else ->
                         // CANCELLED / UNKNOWN on a freshly-created option: keep
                         // the committed reservation, return 200, no email fits;

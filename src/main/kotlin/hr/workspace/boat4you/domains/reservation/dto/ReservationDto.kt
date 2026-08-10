@@ -16,4 +16,7 @@ data class ReservationDto(
     val status: OfferStatus,
     val expiresAt: LocalDateTime?,
     val reservationNumber: String?,
+    /** Loyalty voucher redeemed on this booking, when any — for UI display. */
+    val voucherCode: String? = null,
+    val voucherValue: BigDecimal? = null,
 )

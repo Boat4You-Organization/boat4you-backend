@@ -28,6 +28,7 @@ import hr.workspace.boat4you.domains.reservation.service.ReservationSyncService
 import jakarta.validation.Valid
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import hr.workspace.boat4you.security.ANONYMOUS_USER_ID
+import hr.workspace.boat4you.domains.voucher.service.VoucherService
 import hr.workspace.boat4you.security.getAuthenticatedUserId
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -72,6 +73,7 @@ internal class AdminReservationController(
     private val reservationRepository: ReservationRepository,
     private val reservationDocumentService: ReservationDocumentService,
     private val reservationMappers: ReservationMappers,
+    private val voucherService: VoucherService,
 ) {
     private val log = LoggerFactory.getLogger(AdminReservationController::class.java)
 
@@ -248,6 +250,8 @@ internal class AdminReservationController(
             reservationMutationService.confirmReservationManually(id, paymentPhaseIds)
 
         reservationEmailService.sendConfirmationForReserved(reservationResponse, PaymentType.BANK_TRANSFER)
+        runCatching { voucherService.issueForConfirmedReservation(id) }
+            .onFailure { log.error("Voucher issuance failed for reservation {}", id, it) }
 
         return ResponseEntity.ok(reservationResponse)
     }

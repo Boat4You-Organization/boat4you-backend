@@ -13,6 +13,25 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
     /** Trip-hub lookup — the token is the ONLY key the /trip PWA page holds. */
     fun findByTripToken(tripToken: String): Reservation?
 
+    /**
+     * All confirmed, customer-real bookings of a user — loyalty-voucher
+     * "is this their first booking" check. Fictitious (admin-only) rows are
+     * excluded; yacht-swap replacement chains are collapsed by the caller.
+     */
+    @Query(
+        """
+        SELECT r
+        FROM Reservation r
+        WHERE r.reservationFlow.user.id = :userId
+        AND r.sysStatus = :sysStatus
+        AND (r.externalStatus IS NULL OR r.externalStatus <> 'FICTITIOUS')
+    """,
+    )
+    fun findAllByUserIdAndSysStatus(
+        @Param("userId") userId: Long,
+        @Param("sysStatus") sysStatus: ReservationStatus,
+    ): List<Reservation>
+
     @Query(
         """
         SELECT r

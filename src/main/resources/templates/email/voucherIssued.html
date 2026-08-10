@@ -1,0 +1,229 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
+  xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:th="http://www.thymeleaf.org" lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="supported-color-schemes" content="light" />
+  <!--[if !mso]><!-->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <!--<![endif]-->
+  <title th:text="#{voucherIssued.subject(${voucherValueLabel})}">Your 100 € Boat4You voucher</title>
+
+  <!--[if gte mso 9]>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:AllowPNG />
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  <![endif]-->
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Nunito:wght@600;700&display=swap"
+    rel="stylesheet" type="text/css" />
+
+  <style type="text/css">
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; background-color: #f4f6fb; }
+    a { color: #2856ff; text-decoration: none; }
+    a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; }
+
+    @media only screen and (max-width: 620px) {
+      .container { width: 100% !important; max-width: 100% !important; }
+      .sheet { padding: 24px 20px !important; }
+      .gutter { padding-left: 12px !important; padding-right: 12px !important; }
+      .hero { padding: 18px !important; }
+      .footer { padding: 24px 20px !important; }
+      .footer-line { font-size: 11px !important; }
+      .code-block { font-size: 22px !important; letter-spacing: 2px !important; }
+    }
+  </style>
+</head>
+
+<body style="margin:0; padding:0; background-color:#f4f6fb; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; color:#0f172a;">
+
+  <!-- Preheader (hidden inbox preview text) -->
+  <div th:text="#{voucherIssued.preheader(${voucherValueLabel})}"
+    style="display:none; font-size:0; line-height:0; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+    A thank-you from Boat4You — 100 € off your next charter.
+  </div>
+
+  <!-- Outer wrapper -->
+  <table role="presentation" align="center" border="0" cellpadding="0" cellspacing="0" width="100%"
+    style="background-color:#f4f6fb;">
+    <tr>
+      <td align="center" style="padding:0 0 28px 0;">
+
+        <!-- Container 600px -->
+        <table role="presentation" class="container" border="0" cellpadding="0" cellspacing="0" width="600"
+          style="width:600px; max-width:600px;">
+
+          <!-- HEADER BAND (navy) -->
+          <tr>
+            <td bgcolor="#141857" align="left" style="background-color:#141857; padding:18px 28px;">
+              <img src="cid:boat4youLogoFull" alt="Boat4You" width="138" height="35" style="display:block; border:0; outline:none; text-decoration:none;" />
+            </td>
+          </tr>
+
+          <!-- Spacer header -> sheet -->
+          <tr>
+            <td style="height:16px; line-height:16px; font-size:0;">&nbsp;</td>
+          </tr>
+
+          <!-- WHITE SHEET -->
+          <tr>
+            <td class="gutter" style="padding:0 16px 0 16px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                style="background-color:#ffffff; border-radius:12px;">
+                <tr>
+                  <td class="sheet" style="padding:28px 32px;">
+
+                    <!-- HERO (dark navy) -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="background-color:#141857; border-radius:12px;">
+                      <tr>
+                        <td class="hero" style="padding:26px 22px;" align="center">
+                          <div
+                            style="font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif; font-size:40px; line-height:1; margin:0 0 12px 0;">
+                            🎁
+                          </div>
+                          <!-- Eyebrow -->
+                          <div th:text="#{voucherIssued.heroLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:1.4px; color:#fbbf24; text-transform:uppercase; margin:0 0 8px 0;">
+                            A thank-you for sailing with us
+                          </div>
+                          <!-- Headline -->
+                          <div th:text="#{voucherIssued.heroTitle(${voucherValueLabel})}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:22px; font-weight:700; color:#ffffff; line-height:1.3; letter-spacing:-0.3px; margin:0;">
+                            You've earned a 100 € voucher!
+                          </div>
+                          <!-- Sub -->
+                          <div th:text="#{voucherIssued.heroSub(${fullName})}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:14px; color:#ffffff; opacity:0.75; line-height:1.5; margin:8px 0 0 0;">
+                            Thank you for booking your first charter with Boat4You, Mario.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer hero -> body -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td style="height:24px; line-height:24px; font-size:0;">&nbsp;</td>
+                      </tr>
+                    </table>
+
+                    <!-- Intro paragraph -->
+                    <p th:text="#{voucherIssued.body1(${voucherValueLabel})}"
+                      style="margin:0 0 18px 0; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; line-height:1.65; color:#334155;">
+                      As a thank-you for your first booking, here is a 100 € voucher for your NEXT charter with
+                      Boat4You.
+                    </p>
+
+                    <!-- CODE BLOCK -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="margin:0 0 18px 0;">
+                      <tr>
+                        <td align="center"
+                          style="background-color:#eef3ff; border:2px dashed #2856ff; border-radius:12px; padding:18px 12px;">
+                          <div th:text="#{voucherIssued.codeIntro}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; font-weight:700; letter-spacing:1.2px; text-transform:uppercase; color:#64708a; margin:0 0 8px 0;">
+                            Your voucher code
+                          </div>
+                          <div class="code-block" th:text="${voucherCode}"
+                            style="font-family:'Courier New',Courier,monospace; font-size:26px; font-weight:700; letter-spacing:3px; color:#141857; margin:0;">
+                            B4Y-XXXX-XXXX
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Validity + minimum-spend rows -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="margin:0 0 18px 0;">
+                      <tr>
+                        <td
+                          style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:13.5px; line-height:1.7; color:#334155; padding:0 4px;">
+                          <span style="color:#2856ff; font-weight:700;">✓&nbsp;</span>
+                          <span th:text="#{voucherIssued.validUntil(${validToLabel})}">Valid until 10.02.2028.</span>
+                          <br />
+                          <span style="color:#2856ff; font-weight:700;">✓&nbsp;</span>
+                          <span th:text="#{voucherIssued.minSpend(${minTotalLabel})}">Redeemable on charters of 1500 € or more.</span>
+                          <br />
+                          <span style="color:#2856ff; font-weight:700;">✓&nbsp;</span>
+                          <span th:text="#{voucherIssued.howTo}">Enter the code in the "Have a voucher?" field at checkout — the discount comes straight off your first payment.</span>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- CTA button (bulletproof) -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center"
+                      style="margin:6px auto 4px auto;">
+                      <tr>
+                        <td align="center" bgcolor="#2856ff" style="border-radius:10px;">
+                          <a th:href="${publicUrl} + '/search'" target="_blank" th:text="#{voucherIssued.cta}"
+                            style="display:inline-block; padding:13px 30px; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:15px; font-weight:700; color:#ffffff; text-decoration:none; border-radius:10px;">
+                            Find your next charter
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- FOOTER (outside white sheet) -->
+          <tr>
+            <td class="footer" align="center" style="padding:28px 32px 0 32px;">
+
+              <!-- Footer logo — navy badge wrapping the cid:logo PNG used in the header. -->
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" align="center"
+                style="margin:0 auto 12px auto;">
+                <tr>
+                  <td bgcolor="#141857" style="background-color:#141857; padding:8px 14px; border-radius:8px;">
+                    <img src="cid:boat4youLogoFull" alt="Boat4You" width="100" height="25"
+                      style="display:block; border:0; outline:none; text-decoration:none;" />
+                  </td>
+                </tr>
+              </table>
+
+              <div class="footer-line"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#64748b; margin:0 0 8px 0;">
+                <a href="https://www.boat4you.com" target="_blank"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">www.boat4you.com</a>
+                <span style="color:#94a3b8;">&nbsp;·&nbsp;</span>
+                <a href="mailto:info@boat4you.com"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">info@boat4you.com</a>
+                <span style="color:#94a3b8;">&nbsp;·&nbsp;</span>
+                <a href="tel:+385913000009" style="color:#2856ff; font-weight:700; text-decoration:none;; white-space: nowrap;">+385&nbsp;91&nbsp;3000&nbsp;009</a>
+              </div>
+
+              <!-- Legal microcopy -->
+              <div class="footer-line" th:text="#{email.footer.legal(${currentYear})}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                © 2026 Boat4You · Cusmanich d.o.o., Split, Croatia
+              </div>
+              <div class="footer-line" th:text="#{email.footer.notice}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                You're receiving this because of activity on your Boat4You account.
+              </div>
+
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+
+</html>

@@ -24,4 +24,6 @@ data class CreateReservationDto(
     val phoneNumber: String?,
     val specialRequest: String?,
     val selectedExtras: Set<String>?,
+    /** Loyalty voucher code redeemed at checkout — optional, validated server-side. */
+    val voucherCode: String? = null,
 )

@@ -14,6 +14,7 @@ import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlowRepository
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.mapper.ReservationMappers
 import hr.workspace.boat4you.domains.reservation.model.ReservationResponseWrapper
+import hr.workspace.boat4you.domains.voucher.service.VoucherService
 import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
@@ -32,6 +33,7 @@ class ReservationMutationService(
     private val bookingNumberService: BookingNumberService,
     private val jdbcTemplate: JdbcTemplate,
     private val tripPushService: TripPushService,
+    private val voucherService: VoucherService,
 ) {
     private val log = LoggerFactory.getLogger(this.javaClass)
     /**
@@ -116,6 +118,15 @@ class ReservationMutationService(
         reservation.status = externalReservation.status
         reservation.externalStatus = externalReservation.externalStatus
         reservation.sysStatus = externalReservation.calculatedSysStatus
+
+        // A partner-side cancel arrives HERE (sync mirror), bypassing
+        // cancelReservation entirely — apply the same voucher bookkeeping.
+        if (reservation.sysStatus == ReservationStatus.CANCELLED) {
+            runCatching {
+                voucherService.revokeUnusedForSourceReservation(reservationId, "Source booking cancelled by partner")
+                reservation.reservationFlow?.id?.let { voucherService.releaseForFlow(it) }
+            }.onFailure { log.error("Voucher bookkeeping failed for partner-cancelled reservation {}", reservationId, it) }
+        }
 
         return reservationMappers.toReservationDto(reservationRepository.save(reservation))
     }
@@ -435,6 +446,14 @@ class ReservationMutationService(
         val reservationFlow = reservation.reservationFlow!!
         offerMutationService.updateOfferStatus(reservationFlow.offer!!.id!!, OfferStatus.FREE)
 
+        // Loyalty voucher bookkeeping: an unused voucher EARNED by this booking
+        // is revoked (cooling-off abuse guard); a voucher SPENT on this booking
+        // goes back to the customer. Both idempotent.
+        runCatching {
+            voucherService.revokeUnusedForSourceReservation(reservationId, "Source booking cancelled")
+            voucherService.releaseForFlow(reservationFlow.id!!)
+        }.onFailure { log.error("Voucher bookkeeping failed for cancelled reservation {}", reservationId, it) }
+
         // F1-056: cancellation-audit fields (cancelationRequest /
         // cancelationRequestAt) are stamped by
         // [markCancellationInitiated] BEFORE the partner call, so a
@@ -486,6 +505,9 @@ class ReservationMutationService(
         reservation.reservationFlow?.let { flow ->
             flow.status = ReservationFlowStatus.ABANDONED
             reservationFlowRepository.save(flow)
+            // A voucher spent on the now-expired option goes back to the customer.
+            runCatching { voucherService.releaseForFlow(flow.id!!) }
+                .onFailure { log.error("Voucher release failed for expired option {}", reservationId, it) }
         }
     }
 
@@ -545,6 +567,10 @@ class ReservationMutationService(
 
         flow.status = ReservationFlowStatus.ABANDONED
         reservationFlowRepository.save(flow)
+        // The flow committed with a redeemed voucher, then the partner
+        // createOption failed — give the voucher back.
+        runCatching { voucherService.releaseForFlow(reservationFlowId) }
+            .onFailure { log.error("Voucher release failed for abandoned flow {}", reservationFlowId, it) }
     }
 
     @Transactional

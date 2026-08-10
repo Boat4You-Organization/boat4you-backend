@@ -37,6 +37,7 @@ class ReservationEmailService(
     private val messageSource: MessageSource,
     private val charterAgreementService: CharterAgreementService,
     private val settingsService: hr.workspace.boat4you.domains.settings.services.AdminSettingsService,
+    private val voucherRepository: hr.workspace.boat4you.domains.voucher.jpa.VoucherRepository,
     @Value("\${server.host}") private val serverHost: String,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${server.host-admin-public}") private val serverHostAdminPublic: String,
@@ -246,6 +247,7 @@ class ReservationEmailService(
                 "dueNowLabel" to dueNowLabel,
                 "dueNowDeadlineLabel" to dueNowDeadlineLabel,
                 "bankFeeNoticeLabel" to bankFeeNoticeLabel,
+                "voucherAppliedLabel" to voucherAppliedLabel(reservation, currencySymbol, customerLocale),
                 "paymentPhases" to phaseViews,
                 "extrasInBase" to extrasInBase,
                 "extrasOnSite" to extrasOnSite,
@@ -463,6 +465,7 @@ class ReservationEmailService(
                 "totalPrice" to totalPriceLabel,
                 "paidAmountLabel" to paidAmountLabel,
                 "paymentMethodLabel" to paymentMethodLabel,
+                "voucherAppliedLabel" to voucherAppliedLabel(reservation, currencySymbol, customerLocale),
                 "paymentPhases" to phaseViews,
                 "extrasInBase" to extrasInBase,
                 "extrasOnSite" to extrasOnSite,
@@ -1088,5 +1091,27 @@ class ReservationEmailService(
             templateName = "email/yachtReplaced",
             variables = adminVariables,
         )
+    }
+
+    /**
+     * "Voucher B4Y-…: −100.00€" transparency line for the wire-instruction and
+     * confirmation emails. Null (row hidden) when no voucher was redeemed on
+     * this booking — the phase amounts already carry the reduction either way.
+     */
+    private fun voucherAppliedLabel(
+        reservation: Reservation,
+        currencySymbol: String,
+        customerLocale: java.util.Locale,
+    ): String? {
+        val voucher = reservation.reservationFlow?.id?.let { voucherRepository.findByUsedOnReservationFlowId(it) }
+            ?: return null
+
+        return runCatching {
+            messageSource.getMessage(
+                "email.voucherApplied",
+                arrayOf<Any>(voucher.code!!, "${voucher.value!!.money()}$currencySymbol"),
+                customerLocale,
+            )
+        }.getOrNull()
     }
 }

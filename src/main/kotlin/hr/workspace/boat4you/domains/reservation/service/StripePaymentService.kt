@@ -15,6 +15,7 @@ import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepo
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum
 import hr.workspace.boat4you.domains.settings.services.AdminSettingsService
+import hr.workspace.boat4you.domains.voucher.service.VoucherService
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -34,6 +35,7 @@ class StripePaymentService(
     private val reservationIntegrationService: ReservationIntegrationService,
     private val reservationEmailService: ReservationEmailService,
     private val stripeEventIdempotencyService: StripeEventIdempotencyService,
+    private val voucherService: VoucherService,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${application.stripe.enabled}") private val stripeEnabled: Boolean,
     // 3-letter ISO 4217. Stripe wants lowercase. EUR is the product default;
@@ -391,6 +393,8 @@ class StripePaymentService(
         val reservationResponse = reservationMutationService.confirmReservation(reservationId, externalReservation)
 
         reservationEmailService.sendConfirmationForReserved(reservationResponse, PaymentType.CARD)
+        runCatching { voucherService.issueForConfirmedReservation(reservationId) }
+            .onFailure { logger.error("Voucher issuance failed for reservation $reservationId", it) }
     }
 
     // B6: HALF_UP so the Stripe cents amount rounds to nearest (matters for the

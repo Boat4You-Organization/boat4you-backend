@@ -34,6 +34,7 @@ import hr.workspace.boat4you.domains.users.jpa.UserRegistrationStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import hr.workspace.boat4you.domains.users.services.UserInviteService
 import hr.workspace.boat4you.domains.users.services.UserMutationService
+import hr.workspace.boat4you.domains.voucher.service.VoucherService
 import org.openapitools.model.RoleEnum
 import org.openapitools.model.User
 import org.openapitools.model.UserRole
@@ -62,6 +63,7 @@ class ReservationFlowMutationService(
     private val reservationRepository: ReservationRepository,
     private val reservationMappers: ReservationMappers,
     private val bookingNumberService: BookingNumberService,
+    private val voucherService: VoucherService,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -201,6 +203,22 @@ class ReservationFlowMutationService(
             reservationFlow.reservationExtras.add(extra)
         }
 
+        // Loyalty voucher: atomically claim the code inside THIS transaction
+        // (rollback releases it) and let the FIRST installment absorb the
+        // discount below — Stripe amounts and every wire email read the phase
+        // rows, so the reduction propagates with no further changes.
+        val voucherValue =
+            createReservationDto.voucherCode
+                ?.takeIf { it.isNotBlank() }
+                ?.let {
+                    voucherService.redeem(
+                        code = it,
+                        flowId = reservationFlow.id!!,
+                        userId = reservationUser.id!!,
+                        clientTotal = reservationFlow.calculatedTotalPrice!!,
+                    )
+                }
+
         // Prefer partner-side payment plan from the offer (each agency configures
         // its own 1/2/3-instalment schedule); fall back to B4Y A/B/C rules when
         // partner sync didn't ship one. See ReservationPaymentPhasesService kdoc.
@@ -209,7 +227,13 @@ class ReservationFlowMutationService(
                 .calculatePaymentPhases(
                     offer = offer,
                     clientTotalPrice = reservationFlow.calculatedTotalPrice!!.toDouble(),
-                ).map {
+                ).let { phases ->
+                    if (voucherValue != null) {
+                        paymentPhasesService.applyVoucherAbsorption(phases, voucherValue.toDouble())
+                    } else {
+                        phases
+                    }
+                }.map {
                     ReservationPaymentPhase().apply {
                         deadline = it.first
                         amount = it.second.toBigDecimal()

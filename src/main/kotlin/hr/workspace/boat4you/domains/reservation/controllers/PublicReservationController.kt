@@ -12,6 +12,7 @@ import hr.workspace.boat4you.domains.reservation.service.ReservationFlowMutation
 import hr.workspace.boat4you.domains.reservation.service.ReservationIntegrationService
 import hr.workspace.boat4you.domains.reservation.service.ReservationMutationService
 import hr.workspace.boat4you.domains.reservation.service.ReservationPaymentPhasesService
+import hr.workspace.boat4you.domains.voucher.service.VoucherService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -46,6 +47,7 @@ class PublicReservationController(
     private val reservationEmailService: ReservationEmailService,
     private val paymentPhasesService: ReservationPaymentPhasesService,
     private val offerRepository: OfferRepository,
+    private val voucherService: VoucherService,
 ) {
     private val log = org.slf4j.LoggerFactory.getLogger(this::class.java)
 
@@ -95,11 +97,14 @@ class PublicReservationController(
                 when (externalReservation.calculatedSysStatus) {
                     ReservationStatus.OPTION, ReservationStatus.OPTION_WAITING ->
                         reservationEmailService.sendOptionCreatedEmail(committed.id)
-                    ReservationStatus.RESERVATION ->
+                    ReservationStatus.RESERVATION -> {
                         // Partner auto-confirmed straight to RESERVATION — this is
                         // a SUCCESS, not a failure. Send the confirmation email
                         // instead of the option email.
                         reservationEmailService.sendConfirmationForReserved(committed, PaymentType.BANK_TRANSFER)
+                        runCatching { voucherService.issueForConfirmedReservation(committed.id) }
+                            .onFailure { log.error("Voucher issuance failed for reservation {}", committed.id, it) }
+                    }
                     else ->
                         // CANCELLED / UNKNOWN on a freshly-created option: keep
                         // the committed reservation, return 200, no email fits;
@@ -177,14 +182,22 @@ class PublicReservationController(
         @Parameter(description = "Charter start date (YYYY-MM-DD)") @RequestParam(name = "dateFrom", required = true) dateFrom: LocalDate,
         @Parameter(description = "Charter end date (YYYY-MM-DD)") @RequestParam(name = "dateTo", required = true) dateTo: LocalDate,
         @Parameter(description = "Customer-facing total (after B4Y discount, before currency conversion)") @RequestParam(name = "clientTotalPrice", required = true) clientTotalPrice: BigDecimal,
+        @Parameter(description = "Applied loyalty-voucher value — first installment absorbs it, mirroring createReservation") @RequestParam(name = "voucherValue", required = false) voucherValue: BigDecimal? = null,
     ): ResponseEntity<List<PaymentPhaseDto>> {
         val offer = offerRepository.findByYachtIdAndDatesWithPaymentPlans(yachtId, dateFrom, dateTo).firstOrNull()
 
-        val phases =
+        val rawPhases =
             if (offer != null) {
                 paymentPhasesService.calculatePaymentPhases(offer, clientTotalPrice.toDouble())
             } else {
                 paymentPhasesService.calculatePaymentPhases(reservationStartDate = dateFrom, totalPrice = clientTotalPrice)
+            }
+
+        val phases =
+            if (voucherValue != null && voucherValue > BigDecimal.ZERO) {
+                paymentPhasesService.applyVoucherAbsorption(rawPhases, voucherValue.toDouble())
+            } else {
+                rawPhases
             }
 
         return ResponseEntity.ok(

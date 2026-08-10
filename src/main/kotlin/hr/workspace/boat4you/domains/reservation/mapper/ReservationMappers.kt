@@ -19,6 +19,7 @@ import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationExtra
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationView
 import hr.workspace.boat4you.domains.reservation.service.ReservationPaymentPhasesService
+import hr.workspace.boat4you.domains.voucher.jpa.VoucherRepository
 import org.springframework.stereotype.Component
 
 @Component
@@ -27,8 +28,11 @@ class ReservationMappers(
     private val paymentPhasesService: ReservationPaymentPhasesService,
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
     private val reservationDocumentService: hr.workspace.boat4you.domains.reservation.service.ReservationDocumentService,
+    private val voucherRepository: VoucherRepository,
 ) {
     fun toReservationDto(reservation: Reservation): ReservationDto {
+        val voucher = reservation.reservationFlow?.id?.let { voucherRepository.findByUsedOnReservationFlowId(it) }
+
         return ReservationDto(
             id = reservation.id!!,
             reservationFlowId = reservation.reservationFlow!!.id!!,
@@ -41,6 +45,8 @@ class ReservationMappers(
             status = reservation.status!!,
             expiresAt = reservation.optionExpiresAt,
             reservationNumber = reservation.reservationNumber,
+            voucherCode = voucher?.code,
+            voucherValue = voucher?.value,
         )
     }
 
