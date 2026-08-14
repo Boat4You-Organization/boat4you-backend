@@ -105,11 +105,23 @@ class CharterAgreementService(
         val clientCity = user.city?.takeIf { it.isNotBlank() } ?: EM_DASH
         val clientCountry = user.country?.takeIf { it.isNotBlank() } ?: EM_DASH
 
-        // Yacht — Mario rule: Manufacturer + Model + Name.
+        // Yacht — Mario rule: Manufacturer + Model + Name. Partner model names
+        // often already START with the manufacturer ("Fountaine Pajot Lucia
+        // 40", "Lagoon 42") — joining blindly printed the brand twice
+        // (found on 100184/2026, 14.8.2026), so the manufacturer prefix is
+        // skipped when the model carries it.
         val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModelName = yacht.model?.name?.takeIf { it.isNotBlank() }
         val yachtName = yacht.name?.takeIf { it.isNotBlank() }
-        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModelName, yachtName)
+        // Doubling shows up two ways: the model repeats the full manufacturer
+        // ("Fountaine Pajot Lucia 40") or just its brand word ("Bali 4.2" vs
+        // "Bali Catamarans") — compare first words so both collapse.
+        val manufacturerPrefix = yachtManufacturer?.takeIf { m ->
+            val modelFirstWord = yachtModelName?.trim()?.split(Regex("\\s+"))?.firstOrNull()
+            val manufacturerFirstWord = m.trim().split(Regex("\\s+")).firstOrNull()
+            modelFirstWord == null || !modelFirstWord.equals(manufacturerFirstWord, ignoreCase = true)
+        }
+        val yachtFullLabel = listOfNotNull(manufacturerPrefix, yachtModelName, yachtName)
             .joinToString(" ")
             .ifBlank { yachtName ?: EM_DASH }
 
@@ -126,14 +138,28 @@ class CharterAgreementService(
         // the PDF.
         val agency = yacht.agency
         val operatorName = agency?.name?.takeIf { it.isNotBlank() } ?: EM_DASH
-        val operatorAddress = listOfNotNull(
-            agency?.address?.takeIf { it.isNotBlank() },
-            listOfNotNull(
-                agency?.zip?.takeIf { it.isNotBlank() },
-                agency?.city?.takeIf { it.isNotBlank() },
-            ).joinToString(" ").takeIf { it.isNotBlank() },
-            agency?.country?.takeIf { it.isNotBlank() },
-        ).joinToString(", ").ifBlank { EM_DASH }
+        // Partner address fields are inconsistent: some agencies keep street
+        // only ("104, Saki Karagiorga Str."), others embed zip+city with a
+        // newline ("Kraljice Jelene 3\n23210 Biograd na Moru") while ALSO
+        // filling the separate zip/city columns — naive composition printed
+        // the city twice (found on Angelina Yachtcharter / Croatia Yachting,
+        // 14.8.2026). Flatten newlines and only append a part the address
+        // doesn't already contain.
+        val operatorStreet = agency?.address
+            ?.replace(Regex("\\s*\\r?\\n+\\s*"), ", ")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+        val operatorCity = agency?.city?.takeIf { it.isNotBlank() }
+        val operatorZip = agency?.zip?.takeIf { it.isNotBlank() }
+        val operatorCountry = agency?.country?.takeIf { it.isNotBlank() }
+        val zipCityPart = listOfNotNull(operatorZip, operatorCity)
+            .joinToString(" ")
+            .takeIf { it.isNotBlank() && (operatorCity == null || operatorStreet?.contains(operatorCity, ignoreCase = true) != true) }
+        val countryPart = operatorCountry
+            ?.takeIf { operatorStreet?.contains(it, ignoreCase = true) != true }
+        val operatorAddress = listOfNotNull(operatorStreet, zipCityPart, countryPart)
+            .joinToString(", ")
+            .ifBlank { EM_DASH }
         // Only name + registered address + VAT id appear on the agreement
         // (Mario 14.8.2026) — the Operator's base & 24h contact details are
         // deliberately NOT printed here; they go on the Charter Voucher issued
