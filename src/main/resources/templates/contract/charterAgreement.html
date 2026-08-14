@@ -586,10 +586,8 @@
             <div class="party-name" th:text="${operatorName}">Charter Company d.o.o.</div>
             <div class="party-line" th:text="${operatorAddress}">Registered address</div>
             <div class="party-line" th:if="${operatorVat != '&#8212;'}"><span class="label">Reg. / VAT no.</span> <span th:text="${operatorVat}">12345678</span></div>
-            <div class="party-line"><span class="label">Base &amp; 24h contact</span>
-                <span th:text="${operatorPhone}">+30 ...</span><span th:if="${operatorPhone != '&#8212;' and operatorEmail != '&#8212;'}"> / </span><span th:text="${operatorEmail}">base@example.com</span>
-            </div>
-            <div class="party-line muted">Owner and operator of the Yacht and provider of the charter.</div>
+            <div class="party-line muted">Owner and operator of the Yacht and provider of the charter.
+                Base and 24-hour contact details are provided on the Charter Voucher.</div>
         </td>
     </tr>
 </table>

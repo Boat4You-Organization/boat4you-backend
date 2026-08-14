@@ -134,11 +134,12 @@ class CharterAgreementService(
             ).joinToString(" ").takeIf { it.isNotBlank() },
             agency?.country?.takeIf { it.isNotBlank() },
         ).joinToString(", ").ifBlank { EM_DASH }
+        // Only name + registered address + VAT id appear on the agreement
+        // (Mario 14.8.2026) — the Operator's base & 24h contact details are
+        // deliberately NOT printed here; they go on the Charter Voucher issued
+        // after full payment (T&C 3.4), keeping the pre-payment document free
+        // of direct-contact leakage.
         val operatorVat = agency?.vatCode?.takeIf { it.isNotBlank() } ?: EM_DASH
-        val operatorPhone = (agency?.phone?.takeIf { it.isNotBlank() } ?: agency?.mobile)
-            ?.trim()
-            ?.takeIf { it.isNotBlank() } ?: EM_DASH
-        val operatorEmail = agency?.email?.takeIf { it.isNotBlank() } ?: EM_DASH
 
         // Security deposit — the offer's period-specific amount wins (it is
         // what the partner actually charges for THIS week); yacht-level
@@ -315,8 +316,6 @@ class CharterAgreementService(
             "operatorName" to operatorName,
             "operatorAddress" to operatorAddress,
             "operatorVat" to operatorVat,
-            "operatorPhone" to operatorPhone,
-            "operatorEmail" to operatorEmail,
 
             // Security deposit (payable directly to the Operator at check-in).
             "hasSecurityDeposit" to hasSecurityDeposit,
