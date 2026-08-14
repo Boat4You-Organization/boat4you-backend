@@ -542,16 +542,12 @@
 
 <!-- =========================== PAGE 1 =========================== -->
 
-<!-- Brand mark -->
+<!-- Brand mark — plain text wordmark. The previous inline SVG logo was
+     never drawn by openhtmltopdf (no SVG plugin registered), leaving a blank
+     band at the top of every shipped agreement; the DOCX template rework
+     (14.8.2026) uses a text header anyway. -->
 <div class="brand-mark">
-    <svg xmlns="http://www.w3.org/2000/svg" width="140" height="36" viewBox="0 0 138 35" aria-hidden="true">
-        <path fill="#BCD0FF" fill-rule="evenodd" clip-rule="evenodd"
-              d="M.242 19.553a13.096 13.096 0 0 1 1.43-8.906A13.025 13.025 0 0 1 6.47 5.765a12.963 12.963 0 0 1 13.184.074 13.027 13.027 0 0 1 4.744 4.934A13.088 13.088 0 0 1 24.002 24l-3.796-2.399.001-.002a8.568 8.568 0 0 0-2.85-11.892 8.49 8.49 0 0 0-8.633-.048 8.531 8.531 0 0 0-3.143 3.197 8.572 8.572 0 0 0 .164 8.665l-3.823 2.356a13.078 13.078 0 0 1-1.68-4.323Z" />
-        <path fill="#2856FF" fill-rule="evenodd" clip-rule="evenodd"
-              d="m13 19 11.4 7.48c1.104.724 1.431 2.238.733 3.38-.7 1.144-2.16 1.483-3.263.76L13 24.8l-8.87 5.82c-1.103.723-2.564.384-3.263-.76-.699-1.142-.37-2.656.733-3.38L13 19Z" />
-        <path fill="#141857" fill-rule="evenodd" clip-rule="evenodd"
-              d="M34.981 8.28v18.413h2.391l.116-2.126a5.26 5.26 0 0 0 1.451 1.574c.833.579 1.807.868 2.922.868 1.187 0 2.232-.29 3.135-.868.903-.579 1.602-1.385 2.098-2.42.514-1.035.77-2.236.77-3.604 0-1.385-.256-2.587-.77-3.604-.496-1.034-1.195-1.841-2.098-2.42-.903-.579-1.948-.868-3.135-.868-1.115 0-2.09.29-2.922.868a5.268 5.268 0 0 0-1.434 1.546v-7.36h-2.524Zm2.524 11.837c0 .912.16 1.719.478 2.42.319.684.762 1.228 1.328 1.631a3.364 3.364 0 0 0 1.94.579c.796 0 1.496-.193 2.098-.579a4.096 4.096 0 0 0 1.408-1.63c.354-.702.531-1.509.531-2.42 0-.913-.168-1.71-.505-2.395-.336-.701-.806-1.245-1.408-1.63-.602-.404-1.301-.606-2.098-.606a3.38 3.38 0 0 0-1.966.605c-.566.386-1.01.93-1.328 1.631-.319.702-.478 1.5-.478 2.394Zm55.025 2.341v4.235h2.523v-4.235h3.64V20.17h-3.64V8.28h-2.709L83.95 20.433v2.025h8.58Zm0-2.288h-5.711l5.711-8.286v8.286Zm22.065 5.971c1.009.579 2.178.868 3.506.868 1.293 0 2.435-.29 3.427-.868a6.314 6.314 0 0 0 2.364-2.446c.567-1.035.85-2.227.85-3.578 0-1.35-.283-2.543-.85-3.577a6.129 6.129 0 0 0-2.364-2.42c-1.01-.597-2.17-.895-3.48-.895-1.311 0-2.47.298-3.48.895a6.129 6.129 0 0 0-2.364 2.42c-.567 1.034-.85 2.227-.85 3.577s.283 2.543.85 3.578a6.498 6.498 0 0 0 2.391 2.446Zm5.631-2c-.62.387-1.328.58-2.125.58-.815 0-1.541-.193-2.178-.58a4.155 4.155 0 0 1-1.488-1.63c-.354-.684-.531-1.482-.531-2.394 0-.912.177-1.71.531-2.394a4.038 4.038 0 0 1 1.461-1.604c.62-.404 1.337-.605 2.152-.605.797 0 1.514.201 2.152.605.637.386 1.124.92 1.461 1.604.354.684.531 1.482.531 2.394 0 .912-.177 1.71-.531 2.394a4.03 4.03 0 0 1-1.435 1.63Zm15.237.645.126 1.908h2.337V13.54h-2.497v6.84c0 1.367-.301 2.428-.903 3.182-.602.754-1.443 1.131-2.523 1.131a3.983 3.983 0 0 1-1.674-.394c-.496-.246-.885-.684-1.169-1.316-.265-.63-.398-1.534-.398-2.709V13.54h-2.524v7.392c0 1.42.204 2.578.611 3.472.425.894 1.019 1.552 1.78 1.973.779.42 1.683.631 2.71.631 1.098 0 2.027-.263 2.789-.789a4.668 4.668 0 0 0 1.335-1.434Zm-34.385 7.484c-.389 0-.823-.07-1.301-.21-.46-.14-.939-.325-1.435-.553l.93-2.051c.39.175.726.306 1.009.394.301.088.54.132.718.132.442 0 .814-.123 1.115-.369.319-.245.576-.587.771-1.026l.829-1.94-5.797-13.106h2.683l4.317 10.252 4.236-10.252h2.71l-6.296 14.784c-.336.806-.69 1.508-1.062 2.104-.372.596-.832 1.052-1.381 1.368-.532.315-1.213.473-2.046.473Zm-19.905-5.26c-1.329 0-2.356-.334-3.082-1-.726-.684-1.089-1.658-1.089-2.92v-7.392h-2.258V13.54h2.258V9.437h2.524v4.104h3.772v2.157h-3.772v7.023c0 .65.16 1.149.478 1.5.336.333.814.5 1.434.5.177 0 .372-.035.585-.106.212-.07.469-.21.77-.42l.956 1.946a5.86 5.86 0 0 1-1.328.658c-.407.14-.823.21-1.248.21Zm-9.38-2.04.08 1.724h2.337l.027-7.155c.017-1.368-.186-2.517-.611-3.447-.408-.929-1.028-1.64-1.86-2.13-.832-.491-1.877-.737-3.134-.737-.904 0-1.692.14-2.365.421a5.014 5.014 0 0 0-1.726 1.105 6.21 6.21 0 0 0-1.195 1.578l2.23.842c.337-.596.754-1.035 1.25-1.315.513-.28 1.115-.421 1.806-.421.743 0 1.337.166 1.78.5.46.333.796.824 1.009 1.473.145.41.245.884.298 1.42h-3.566c-1.629 0-2.904.36-3.825 1.079-.903.701-1.354 1.727-1.354 3.077 0 1.263.434 2.254 1.301 2.973.886.701 2.116 1.052 3.693 1.052 1.576 0 2.744-.517 3.506-1.552.114-.155.22-.317.318-.488Zm-.027-4.169h-2.922c-1.222 0-2.08.193-2.576.579-.496.368-.744.885-.744 1.552 0 .614.23 1.096.69 1.447.478.333 1.134.5 1.966.5.726 0 1.355-.15 1.886-.448a3.325 3.325 0 0 0 1.248-1.315c.302-.561.452-1.201.452-1.92V20.8ZM55.678 27.01c-1.328 0-2.496-.29-3.506-.868a6.504 6.504 0 0 1-2.39-2.446c-.567-1.035-.85-2.227-.85-3.578 0-1.35.283-2.543.85-3.577a6.125 6.125 0 0 1 2.364-2.42c1.009-.597 2.169-.895 3.48-.895 1.31 0 2.47.298 3.48.895a6.125 6.125 0 0 1 2.363 2.42c.567 1.034.85 2.227.85 3.577s-.283 2.543-.85 3.578a6.31 6.31 0 0 1-2.364 2.446c-.992.579-2.134.868-3.426.868Zm0-2.288c.797 0 1.506-.193 2.126-.58a4.025 4.025 0 0 0 1.434-1.63c.354-.684.531-1.482.531-2.394 0-.912-.177-1.71-.531-2.394a3.788 3.788 0 0 0-1.461-1.604 3.94 3.94 0 0 0-2.152-.605c-.814 0-1.532.201-2.151.605-.62.386-1.107.92-1.461 1.604-.354.684-.532 1.482-.532 2.394 0 .912.178 1.71.532 2.394.354.684.85 1.227 1.487 1.63.638.387 1.364.58 2.178.58Z" />
-    </svg>
+    <span style="font-family: sans-serif; font-size: 17pt; font-weight: bold; letter-spacing: 3pt; color: #141857;">BOAT<span style="color: #2856ff;">4</span>YOU</span>
 </div>
 
 <!-- Document meta strip: eyebrow + title + ref + agreement date -->
@@ -568,20 +564,14 @@
     <div class="doc-rule"></div>
 </div>
 
-<!-- Parties -->
-<h2 class="section">Parties to the agreement</h2>
+<!-- Parties — template rework 14.8.2026: the charter contract is concluded
+     directly between the Charterer and the Operator (the yacht's charter
+     company, named with its full registered details); Boat4You appears as
+     booking intermediary only. -->
+<h2 class="section">Parties</h2>
 <table class="parties">
     <tr>
         <td class="left">
-            <div class="party-eyebrow">The Broker</div>
-            <div class="party-name" th:text="${brokerName}">Cusmanich d.o.o.</div>
-            <div class="party-line">trading as <strong th:text="${brokerTradingAs}">Boat4You</strong></div>
-            <div class="party-line" th:text="${brokerAddress}">Vrboran 37, 21000 Split, Croatia</div>
-            <div class="party-line"><span class="label">OIB</span> <span th:text="${brokerOib}">HR87394862517</span></div>
-            <div class="party-line"><span class="label">Email</span> <span th:text="${brokerEmail}">info@boat4you.com</span></div>
-            <div class="party-line"><span class="label">Phone</span> <span th:text="${brokerPhone}">+385 91 3000 009</span></div>
-        </td>
-        <td class="right">
             <div class="party-eyebrow">The Charterer</div>
             <div class="party-name" th:text="${clientFullName}">Client Name</div>
             <div class="party-line" th:if="${clientAddress != '&#8212;'}" th:text="${clientAddress}">Address line</div>
@@ -591,8 +581,36 @@
             <div class="party-line"><span class="label">Email</span> <span th:text="${clientEmail}">client@example.com</span></div>
             <div class="party-line" th:if="${clientPhone != '&#8212;'}"><span class="label">Phone</span> <span th:text="${clientPhone}">+385 ...</span></div>
         </td>
+        <td class="right">
+            <div class="party-eyebrow">The Operator (Charter Company)</div>
+            <div class="party-name" th:text="${operatorName}">Charter Company d.o.o.</div>
+            <div class="party-line" th:text="${operatorAddress}">Registered address</div>
+            <div class="party-line" th:if="${operatorVat != '&#8212;'}"><span class="label">Reg. / VAT no.</span> <span th:text="${operatorVat}">12345678</span></div>
+            <div class="party-line"><span class="label">Base &amp; 24h contact</span>
+                <span th:text="${operatorPhone}">+30 ...</span><span th:if="${operatorPhone != '&#8212;' and operatorEmail != '&#8212;'}"> / </span><span th:text="${operatorEmail}">base@example.com</span>
+            </div>
+            <div class="party-line muted">Owner and operator of the Yacht and provider of the charter.</div>
+        </td>
     </tr>
 </table>
+<table class="parties">
+    <tr>
+        <td class="left" style="width: 100%;">
+            <div class="party-eyebrow">The Broker</div>
+            <div class="party-line">
+                <strong th:text="${brokerName}">Cusmanich d.o.o.</strong>, trading as <strong th:text="${brokerTradingAs}">Boat4You</strong>
+                <span class="sep">&#160;&#183;&#160;</span><span th:text="${brokerAddress}">Vrboran 37, 21000 Split, Croatia</span>
+                <span class="sep">&#160;&#183;&#160;</span>OIB <span th:text="${brokerOib}">HR87394862517</span>
+                <span class="sep">&#160;&#183;&#160;</span><span th:text="${brokerEmail}">info@boat4you.com</span>
+                <span class="sep">&#160;&#183;&#160;</span><span th:text="${brokerPhone}">+385 91 3000 009</span>
+            </div>
+            <div class="party-line muted">Acting solely as booking intermediary, in the name and on behalf of the Operator.</div>
+        </td>
+    </tr>
+</table>
+<p class="pay-note">The charter contract for the use of the Yacht is concluded directly between
+    the Charterer and the Operator. Boat4You acts solely as booking intermediary, in the name and
+    on behalf of the Operator &#8212; see Terms &amp; Conditions, Sections 1, 2 and 16.</p>
 
 <!-- Yacht -->
 <h2 class="section">Yacht</h2>
@@ -602,6 +620,7 @@
     <tr><td class="label">Length</td><td class="value"><span th:text="${yachtLengthMeters}">14.20</span> m</td></tr>
     <tr><td class="label">Cabins</td><td class="value" th:text="${yachtCabins}">4</td></tr>
     <tr><td class="label">Charter type</td><td class="value" th:text="${charterType}">Bareboat charter</td></tr>
+    <tr><td class="label">Cruising area</td><td class="value" th:text="${pickupCountry}">Croatia</td></tr>
 </table>
 
 <!-- Charter period -->
@@ -649,16 +668,22 @@
         <td class="row-value" th:text="${ex.priceLabel}">1,540.00&#8364;</td>
     </tr>
     <tr class="total">
-        <td class="row-label">Total</td>
+        <td class="row-label">Total charter price</td>
         <td class="row-value" th:text="${totalPriceLabel}">4,750.00&#8364;</td>
     </tr>
 </table>
+<p class="pay-note">Prices are set by the Operator. All payments are received by the Broker
+    in the name and for the account of the Operator (Terms &amp; Conditions, Section 3).</p>
 
-<!-- Extras paid on-site at the marina — NOT part of the online payment
-     schedule above. 3-column layout: Item | When payable | Amount. -->
-<div th:if="${hasObligatoryExtras}">
-    <h2 class="section">Payable at the marina</h2>
-    <table class="extras">
+<!-- Security deposit + extras paid on-site at the base — NOT part of the
+     online payment schedule above. 3-column layout: Item | When payable | Amount. -->
+<div th:if="${hasObligatoryExtras or hasSecurityDeposit}">
+    <h2 class="section">Security deposit &amp; charges payable at the base</h2>
+    <p class="pay-note" th:if="${hasSecurityDeposit}">Security deposit:
+        <strong th:text="${securityDepositLabel}">3500.00&#8364;</strong>, payable directly to the
+        Operator at check-in (cash or credit card), refundable subject to the Operator&#8217;s
+        Charter Terms (Terms &amp; Conditions, Section 4).</p>
+    <table class="extras" th:if="${hasObligatoryExtras}">
         <tr>
             <th class="col-item">Item</th>
             <th class="col-when">When payable</th>
@@ -747,13 +772,16 @@
         </div>
         <p class="pay-note">Pay securely by card on your booking page using the link above.</p>
     </div>
+    <p class="pay-note">Payments are received by the Broker in the name and for the account of the
+        Operator. Upon receipt of the full charter price, the Broker issues the Charter Voucher,
+        which the Charterer presents to the Operator at check-in.</p>
 </div>
 
 <!-- Signatures -->
 <table class="signatures">
     <tr>
         <td class="left">
-            <div class="sig-eyebrow">For the Broker</div>
+            <div class="sig-eyebrow">For the Broker, in the name and on behalf of the Operator</div>
             <div class="sig-place">Split, <span th:text="${agreementDate}">01 January 2026</span></div>
             <img th:if="${signatureImageDataUrl}" th:src="${signatureImageDataUrl}"
                  class="signature-image" alt="Mario Kuzmanic signature" />
@@ -774,6 +802,8 @@
 </table>
 <div class="sig-note">
     Signed electronically. Valid and binding without a handwritten signature or stamp.
+    Payment of the deposit constitutes acceptance of this Agreement
+    (Terms &amp; Conditions, Section 19).
 </div>
 
 <!-- =========================== PAGE 2+ — TERMS &amp; CONDITIONS =========================== -->
@@ -781,208 +811,105 @@
 
 <div class="terms">
     <h1 class="tnc-title">Terms &amp; Conditions</h1>
-    <div class="tnc-meta">Annex to Charter Agreement #<span th:text="${reservationNumber}">000000/2026</span></div>
+    <div class="tnc-meta">Annex 1 to Charter Booking Agreement #<span th:text="${reservationNumber}">000000/2026</span></div>
     <div class="tnc-rule"></div>
 
     <p class="terms-intro">
-        These Terms and Conditions govern the charter agreement between the Broker
-        (Cusmanich d.o.o., trading as Boat4You) and the Charterer in respect of the
-        booking referenced above. By proceeding with payment, the Charterer
-        confirms acceptance of these terms in full.
+        These Terms govern the brokerage services of Cusmanich d.o.o., trading as
+        Boat4You (the &#8220;Broker&#8221;), and record the framework of the charter booked
+        with the Operator. By proceeding with payment, the Charterer accepts these
+        Terms in full.
     </p>
 
-    <h2><span class="num">1.</span>Charter fee and payment</h2>
-    <p><strong>1.1</strong> The charter fee covers the use of the yacht for the
-        charter period stated on page 1, including the equipment listed in the
-        yacht's standard inventory. Optional extras (skipper, hostess, transit
-        log, end-cleaning, fuel, water-toys, pets, etc.) are charged separately
-        and listed on the booking confirmation when applicable.</p>
-    <p><strong>1.2</strong> Payment is due in the currency stated on the
-        booking confirmation, by bank transfer to the account listed on page 1
-        of this agreement (or by credit card via the secure payment link the
-        Broker provides). All bank charges are borne by the Charterer.</p>
-    <p><strong>1.3</strong> The booking is final and binding once the deposit
-        payment is received. If the final balance is not paid by the deadline
-        stated in the payment schedule, the Broker reserves the right to
-        cancel the booking and retain amounts already paid in accordance with
-        Section 12 (Cancellation by the Charterer).</p>
+    <h2><span class="num">1.</span>Nature of this Agreement and role of the parties</h2>
+    <p><strong>1.1</strong> This Agreement records the booking of the Yacht described on page 1 and governs the brokerage services provided by the Broker. The Broker acts solely as a booking intermediary, in the name and on behalf of the Operator identified on page 1.</p>
+    <p><strong>1.2</strong> The contract for the charter of the Yacht (the &#8220;Charter Contract&#8221;) is concluded directly between the Charterer and the Operator. The Broker is not a party to the Charter Contract, does not own, operate, crew or maintain the Yacht, and does not perform the charter.</p>
+    <p><strong>1.3</strong> All obligations concerning the condition, seaworthiness, equipment, insurance, availability and performance of the Yacht, and the conduct of any crew provided, rest exclusively with the Operator.</p>
 
-    <h2><span class="num">2.</span>Security deposit</h2>
-    <p><strong>2.1</strong> A refundable security deposit is payable at the
-        latest at check-in, in the form and currency requested by the charter
-        agency operating the yacht. The amount of the deposit is shown on the
-        yacht specification sheet.</p>
-    <p><strong>2.2</strong> The security deposit is held by the charter agency
-        for the duration of the charter and refunded in full at check-out if
-        the yacht and all equipment are returned in the same condition as at
-        check-in, with no damage, no missing items and a full fuel tank.</p>
-    <p><strong>2.3</strong> The Charterer is liable for the full cost of any
-        damage, loss or repair up to the value of the security deposit. The
-        Broker is not a party to the deposit transaction and accepts no
-        liability for amounts retained by the charter agency.</p>
+    <h2><span class="num">2.</span>Operator&#8217;s Charter Terms</h2>
+    <p><strong>2.1</strong> The performance of the charter is governed by the Operator&#8217;s general terms and conditions of charter (the &#8220;Operator&#8217;s Charter Terms&#8221;), which are provided to the Charterer together with this Agreement or, at the latest, at check-in, where the Charterer confirms them in writing as part of the standard check-in procedure.</p>
+    <p><strong>2.2</strong> In the event of any conflict between this Agreement and the Operator&#8217;s Charter Terms concerning the Yacht or the performance of the charter, the Operator&#8217;s Charter Terms prevail. This Agreement prevails only in respect of the brokerage services.</p>
+    <p><strong>2.3</strong> On request, the Broker will supply the Charterer with a copy of the Operator&#8217;s Charter Terms before payment of the deposit.</p>
 
-    <h2><span class="num">3.</span>Check-in and check-out</h2>
-    <p><strong>3.1</strong> Check-in is at the time and location stated on
-        page 1. The Charterer must present a valid identity document, the
-        skipper licence and VHF certificate (where the charter is bareboat),
-        and a complete crew list as required by local maritime authorities.</p>
-    <p><strong>3.2</strong> The yacht is handed over after a joint inventory
-        check. The Charterer is responsible for verifying the inventory and
-        reporting any discrepancies before leaving the marina; later claims
-        cannot be entertained.</p>
-    <p><strong>3.3</strong> Check-out is at the time and location stated on
-        page 1. Late return entitles the charter agency to charge a penalty
-        equivalent to one additional charter day per started 24-hour period
-        of delay, plus any consequential losses suffered by the next charter.</p>
+    <h2><span class="num">3.</span>Charter fee and payment</h2>
+    <p><strong>3.1</strong> The charter fee is set by the Operator and covers the use of the Yacht for the charter period stated on page 1, including the equipment listed in the Yacht&#8217;s standard inventory. Optional extras and base charges (transit log, end cleaning, skipper, fuel, water toys and similar) are payable separately, as shown on page 1 or in the Operator&#8217;s price list.</p>
+    <p><strong>3.2</strong> Payment is due in the instalments and by the deadlines stated on page 1. All payments made to the Broker are received by the Broker in the name and for the account of the Operator and are applied to the charter fee. Bank and card-processing charges are borne by the Charterer as shown on page 1.</p>
+    <p><strong>3.3</strong> The booking is final and binding once the deposit payment is received. If the final balance is not received by its due date, the booking may be cancelled and cancellation charges applied in accordance with Section 13.</p>
+    <p><strong>3.4</strong> Upon receipt of the full charter fee, the Broker issues a Charter Voucher confirming the booking, including the Operator&#8217;s base and 24-hour contact details. The Voucher is presented to the Operator at check-in.</p>
 
-    <h2><span class="num">4.</span>Skipper licence and competence (bareboat charters)</h2>
-    <p><strong>4.1</strong> For bareboat charters the Charterer (or a
-        nominated skipper named in the booking) must hold a valid sailing
-        licence accepted by the competent [(${countryAdjective})] maritime
-        authority, together with a VHF radio operator certificate.</p>
-    <p><strong>4.2</strong> The Charterer warrants that the skipper has the
-        practical experience to handle the booked yacht in local conditions.
-        The charter agency may refuse to release the yacht if, at check-in,
-        the skipper's competence is reasonably judged to be inadequate; in
-        that case a professional skipper may be required at the Charterer's
-        expense.</p>
+    <h2><span class="num">4.</span>Security deposit</h2>
+    <p><strong>4.1</strong> A refundable security deposit in the amount stated on page 1 (or, failing that, in the Operator&#8217;s yacht specification) is payable directly to the Operator at the latest at check-in, in the form and currency requested by the Operator.</p>
+    <p><strong>4.2</strong> The deposit is held by the Operator and refunded at check-out in accordance with the Operator&#8217;s Charter Terms, provided the Yacht and its equipment are returned undamaged, complete and with the agreed fuel level.</p>
+    <p><strong>4.3</strong> The deposit generally corresponds to the insurance excess; the Charterer&#8217;s liability for damage and loss is governed by the Operator&#8217;s Charter Terms and the applicable insurance policy. The Broker is not a party to the deposit transaction and has no liability for amounts retained by the Operator.</p>
 
-    <h2><span class="num">5.</span>Skippered and crewed charters</h2>
-    <p><strong>5.1</strong> When a skipper, hostess or full crew is provided,
-        their daily fee is shown on the booking confirmation. The crew's food
-        and drink is paid by the Charterer (typically the equivalent of one
-        additional crew member's provisioning per day, settled directly with
-        the crew).</p>
-    <p><strong>5.2</strong> The skipper has final authority over the
-        navigation of the yacht, route planning and crew safety. The
-        Charterer is expected to follow the skipper's reasonable
-        instructions at all times.</p>
+    <h2><span class="num">5.</span>Check-in, documents and check-out</h2>
+    <p><strong>5.1</strong> Check-in and check-out take place at the times and location stated on page 1. At check-in the Charterer must present valid identity documents for all crew, a complete crew list as required by the local authorities, and &#8212; for bareboat charters &#8212; the skipper documents referred to in Section 6.</p>
+    <p><strong>5.2</strong> The Yacht is handed over after a joint inventory check between the Charterer and the Operator, recorded in the check-in protocol. The Charterer must verify the inventory and report any discrepancy or visible defect in the check-in protocol before leaving the marina.</p>
+    <p><strong>5.3</strong> Late return entitles the Operator to apply the late-return charges set out in the Operator&#8217;s Charter Terms, together with any documented consequential costs.</p>
 
-    <h2><span class="num">6.</span>Use of the yacht</h2>
-    <p><strong>6.1</strong> The yacht may be used solely for private leisure
-        cruising. Any commercial use, sub-charter, racing, instruction or
-        carriage of paying passengers is strictly prohibited and voids all
-        insurance cover.</p>
-    <p><strong>6.2</strong> The maximum number of persons on board (including
-        children and crew) must not exceed the figure stated on the yacht's
-        certificate of registry. The Charterer must keep the crew list
-        up-to-date with the local port authority at all times.</p>
-    <p><strong>6.3</strong> The Charterer must navigate within the cruising
-        area authorised by the [(${countryAdjective})] maritime authority and
-        the yacht's insurance policy. Crossing into foreign territorial
-        waters requires the prior written consent of the charter agency.</p>
+    <h2><span class="num">6.</span>Skipper qualifications (bareboat charters)</h2>
+    <p><strong>6.1</strong> For bareboat charters, the Charterer (or the nominated skipper named in the booking) must hold a sailing licence and, where required, a VHF radio operator certificate, valid and recognised by the competent maritime authority of the charter area. Recognition requirements differ by country; on request, the Broker will advise which certificates are accepted in the charter area, but responsibility for holding valid, recognised documents rests with the Charterer.</p>
+    <p><strong>6.2</strong> The Charterer warrants that the skipper has the practical experience required to handle the booked Yacht in local conditions. The Operator may refuse to release the Yacht if, at check-in, the required documents are missing or the skipper&#8217;s competence is reasonably judged inadequate; in that case a professional skipper may be required at the Charterer&#8217;s expense, in accordance with the Operator&#8217;s Charter Terms.</p>
 
-    <h2><span class="num">7.</span>Insurance</h2>
-    <p><strong>7.1</strong> The yacht is insured against hull damage, third
-        party liability and crew personal accident as required by local law.
-        The security deposit equals the insurance excess; losses below that
-        amount are borne by the Charterer.</p>
-    <p><strong>7.2</strong> Personal effects, electronic equipment, cash and
-        valuables of the Charterer and crew are <strong>not</strong> covered
-        by the yacht insurance. We recommend that the Charterer arranges
-        personal travel and cancellation insurance separately.</p>
-    <p><strong>7.3</strong> Damage caused by gross negligence, navigation
-        under the influence of alcohol or drugs, sailing in adverse weather
-        despite official warnings, or breach of the cruising area is not
-        covered by insurance and is fully payable by the Charterer.</p>
+    <h2><span class="num">7.</span>Skippered and crewed charters</h2>
+    <p><strong>7.1</strong> Where a skipper, hostess or other crew is booked, they are provided and engaged by the Operator. Their fees are shown on page 1 or in the Operator&#8217;s price list; their provisioning is paid by the Charterer unless otherwise stated.</p>
+    <p><strong>7.2</strong> The skipper has final authority over navigation, routing and the safety of the Yacht and the persons on board. The Charterer will follow the skipper&#8217;s reasonable instructions at all times.</p>
 
-    <h2><span class="num">8.</span>Maintenance, defects and repairs</h2>
-    <p><strong>8.1</strong> The Charterer must keep the yacht and all
-        equipment in good order during the charter, perform routine checks
-        of engine oil, coolant and bilges, and use the equipment with
-        ordinary care.</p>
-    <p><strong>8.2</strong> Any defect, damage or unusual noise must be
-        reported to the charter agency without undue delay. The agency will
-        organise repair as soon as reasonably practicable. Repairs ordered
-        by the Charterer without the agency's prior consent are not
-        reimbursable.</p>
-    <p><strong>8.3</strong> If a defect not caused by the Charterer
-        materially impairs the use of the yacht for more than 24 hours and
-        cannot be repaired locally, the Charterer is entitled to a pro-rata
-        refund of the charter fee for the affected period. Consequential
-        losses (flights, accommodation, etc.) are excluded.</p>
+    <h2><span class="num">8.</span>Use of the Yacht</h2>
+    <p><strong>8.1</strong> The Yacht may be used solely for private leisure cruising. Commercial use, sub-charter, carriage of paying passengers, instruction and participation in races (unless expressly agreed with the Operator) are prohibited.</p>
+    <p><strong>8.2</strong> The number of persons on board, including children, must not exceed the Yacht&#8217;s certified capacity, and the crew list must be kept accurate as required by the local authorities.</p>
+    <p><strong>8.3</strong> The Charterer must navigate within the cruising area permitted by the competent local authority and the Yacht&#8217;s insurance policy. Leaving that area, night sailing where restricted, or crossing into foreign territorial waters requires the Operator&#8217;s prior written consent.</p>
 
-    <h2><span class="num">9.</span>Weather and force majeure</h2>
-    <p><strong>9.1</strong> The Charterer must observe official weather
-        forecasts and follow port authority instructions. Sailing in winds
-        above the limits set by the charter agency or in waters declared
-        closed by the authorities is prohibited.</p>
-    <p><strong>9.2</strong> Time lost due to adverse weather, strikes,
-        government action, pandemics, war or other force majeure events does
-        not entitle the Charterer to a refund or extension of the charter,
-        unless the yacht itself becomes unusable for an extended period in
-        which case Section 8.3 applies.</p>
+    <h2><span class="num">9.</span>Insurance</h2>
+    <p><strong>9.1</strong> The Yacht is insured by the Operator against hull damage and third-party liability as required by the law of the charter area. The scope of cover, exclusions and the excess are set out in the Operator&#8217;s Charter Terms and insurance documents.</p>
+    <p><strong>9.2</strong> Personal effects and valuables of the Charterer and crew are not covered by the Yacht&#8217;s insurance. The Broker strongly recommends personal travel and charter-cancellation insurance.</p>
+    <p><strong>9.3</strong> Damage caused by gross negligence, operation under the influence of alcohol or drugs, sailing despite official weather warnings, or navigation outside the permitted area is typically excluded from insurance cover and is payable by the Charterer under the Operator&#8217;s Charter Terms.</p>
 
-    <h2><span class="num">10.</span>Pollution and environmental rules</h2>
-    <p><strong>10.1</strong> The Charterer must comply with all
-        environmental rules of [(${countryAdjective})] waters and any marine
-        protected area visited. Discharging waste, oil or chemicals into the
-        sea is strictly forbidden and subject to penalties imposed by the
-        local authorities, payable by the Charterer.</p>
+    <h2><span class="num">10.</span>Defects, repairs and remedies during the charter</h2>
+    <p><strong>10.1</strong> The Charterer must operate the Yacht with ordinary care and perform the routine daily checks described at check-in (engine oil, coolant, bilges, rigging and similar).</p>
+    <p><strong>10.2</strong> Any defect, damage or malfunction occurring during the charter must be reported to the Operator without undue delay, using the Operator&#8217;s base and 24-hour contact numbers stated on the Voucher and in the Yacht&#8217;s documents, with a copy to the Broker where practicable. The Operator will organise repair as soon as reasonably practicable. Repairs ordered by the Charterer without the Operator&#8217;s prior consent are not reimbursable.</p>
+    <p><strong>10.3</strong> Remedies for defects &#8212; including any pro-rata reduction or refund where a defect not caused by the Charterer materially impairs the use of the Yacht and cannot be remedied within a reasonable time (typically 24 hours) &#8212; are governed by the Operator&#8217;s Charter Terms and applicable law, and constitute claims against the Operator. At the Charterer&#8217;s request, the Broker will assist in submitting, documenting and following up such claims with the Operator.</p>
+    <p><strong>10.4</strong> Indirect and consequential losses (flights, accommodation, lost holiday time and similar) are excluded to the extent permitted by applicable law.</p>
 
-    <h2><span class="num">11.</span>Pets, smoking, parties</h2>
-    <p><strong>11.1</strong> Pets are allowed only on yachts explicitly
-        marked pet-friendly, with the agency's prior written consent and
-        upon payment of the applicable pet fee. Pets are the sole
-        responsibility of the Charterer; any damage they cause is deducted
-        from the security deposit.</p>
-    <p><strong>11.2</strong> Smoking is not permitted inside the yacht. Open
-        flames (candles, cigarettes) below deck are forbidden.</p>
-    <p><strong>11.3</strong> Loud parties on board, especially in marinas
-        and anchorages, are prohibited and may lead to immediate
-        termination of the charter without refund.</p>
+    <h2><span class="num">11.</span>Weather and force majeure</h2>
+    <p><strong>11.1</strong> The Charterer must observe official weather forecasts and the instructions of the local authorities. Time lost due to adverse weather, strikes, government action, epidemics, war or other events of force majeure does not entitle the Charterer to a refund or an extension of the charter, except as provided in the Operator&#8217;s Charter Terms or by mandatory law.</p>
 
-    <h2><span class="num">12.</span>Cancellation by the Charterer</h2>
-    <p><strong>12.1</strong> Cancellation must be communicated in writing to
-        the Broker. The cancellation fee depends on the timing of the
-        request, calculated against the total charter fee:</p>
-    <p>(a) more than 60 days before check-in: 30% of the charter fee.<br />
-       (b) 30&#8211;60 days before check-in: 50% of the charter fee.<br />
-       (c) 14&#8211;30 days before check-in: 80% of the charter fee.<br />
-       (d) less than 14 days before check-in: 100% of the charter fee.</p>
-    <p><strong>12.2</strong> If the cancelled charter is re-sold to another
-        client at the same price and for the same period, the Charterer is
-        refunded the difference between amounts paid and the cancellation
-        fee actually retained, less an administrative fee equal to 10% of
-        the charter fee.</p>
-    <p><strong>12.3</strong> Travel insurance covering charter cancellation
-        is strongly recommended.</p>
+    <h2><span class="num">12.</span>Local rules and conduct on board</h2>
+    <p><strong>12.1</strong> The Charterer must comply with the laws and environmental rules of the charter area, including waste-discharge rules and the rules of any marine protected area visited. Penalties imposed by the authorities as a result of the Charterer&#8217;s conduct are payable by the Charterer.</p>
+    <p><strong>12.2</strong> Pets are allowed only with the Operator&#8217;s prior written consent and against the applicable fee. Smoking below deck and open flames on board are prohibited. Conduct that endangers the Yacht, its crew or third parties may lead to termination of the charter by the Operator in accordance with the Operator&#8217;s Charter Terms.</p>
 
-    <h2><span class="num">13.</span>Cancellation by the Broker or the charter agency</h2>
-    <p><strong>13.1</strong> If the booked yacht becomes unavailable due to
-        loss, damage or any other reason outside the Broker's control, the
-        Broker will offer a replacement yacht of equivalent specification.
-        If no acceptable replacement is available, all amounts paid are
-        refunded in full and no further claim can be made.</p>
+    <h2><span class="num">13.</span>Cancellation by the Charterer</h2>
+    <p><strong>13.1</strong> Cancellation must be communicated to the Broker in writing (e-mail is sufficient). The date of receipt determines the applicable cancellation charge.</p>
+    <p><strong>13.2</strong> Cancellation charges are those of the Operator, as stated on the booking offer or confirmation. Unless stated otherwise there, the following default schedule applies, calculated on the total charter fee:<br/>(a)&#160;&#160;more than 60 days before check-in &#8212; 30% of the charter fee;<br/>(b)&#160;&#160;60 to 30 days before check-in &#8212; 50% of the charter fee;<br/>(c)&#160;&#160;30 to 14 days before check-in &#8212; 80% of the charter fee;<br/>(d)&#160;&#160;fewer than 14 days before check-in, no-show or termination after check-in &#8212; 100% of the charter fee.</p>
+    <p><strong>13.3</strong> Cancellation charges are applied and retained in the name and for the account of the Operator. If the cancelled period is re-sold to another client at the same price and for the same period, the Charterer is refunded the difference between the amounts paid and the charges actually retained, less an administrative fee of 10% of the charter fee.</p>
+    <p><strong>13.4</strong> The Broker strongly recommends charter-cancellation insurance.</p>
 
-    <h2><span class="num">14.</span>Liability</h2>
-    <p><strong>14.1</strong> The Broker acts as an intermediary between the
-        Charterer and the charter agency operating the yacht. Liability for
-        the technical condition of the yacht, the conduct of any crew
-        provided and the performance of services on the day of charter
-        rests with the charter agency. The Broker's liability is limited to
-        the charter fee actually paid by the Charterer.</p>
-    <p><strong>14.2</strong> The Broker is not liable for indirect or
-        consequential losses, including lost holiday time, missed flights,
-        accommodation costs or non-economic damage.</p>
+    <h2><span class="num">14.</span>Non-availability of the Yacht</h2>
+    <p><strong>14.1</strong> If the booked Yacht becomes unavailable for reasons not attributable to the Charterer, the Operator is obliged to provide a replacement yacht of equivalent or superior specification or, failing that, to refund all amounts paid for the charter. The Broker will use its best efforts to secure a suitable replacement &#8212; from the Operator or from another operator &#8212; and will promptly forward to the Charterer any refunds received on the Charterer&#8217;s behalf.</p>
+    <p><strong>14.2</strong> Where all amounts paid are refunded and no replacement is accepted, no further claim can be made against the Broker. Claims for additional loss, if any, are governed by the Operator&#8217;s Charter Terms and applicable law.</p>
 
-    <h2><span class="num">15.</span>Governing law and dispute resolution</h2>
-    <p><strong>15.1</strong> This agreement is governed by [(${countryAdjective})]
-        law. Any dispute arising out of or in connection with this
-        agreement that cannot be settled amicably shall be submitted to the
-        competent court in Split, Republic of Croatia, unless mandatory
-        consumer-protection rules of the Charterer's country of residence
-        require a different forum.</p>
-    <p><strong>15.2</strong> The Charterer is informed that, as a consumer
-        resident in the European Union, they may also submit complaints
-        through the European Online Dispute Resolution platform at
-        ec.europa.eu/consumers/odr.</p>
+    <h2><span class="num">15.</span>Complaints</h2>
+    <p><strong>15.1</strong> Complaints concerning the condition of the Yacht, its equipment or the performance of the charter must be submitted in writing to the Operator &#8212; at check-in in the check-in protocol, during the charter via the Operator&#8217;s contact numbers, and at the latest in the check-out protocol &#8212; with a copy to the Broker. Timely written notification at the base is a condition of the Operator&#8217;s complaint procedure; late claims may not be entertained.</p>
+    <p><strong>15.2</strong> The Broker will assist the Charterer in submitting, documenting and following up any such complaint with the Operator and will coordinate communication between the parties.</p>
+    <p><strong>15.3</strong> Complaints concerning the Broker&#8217;s own services (booking, payment processing, information provided) may be submitted in writing to info@boat4you.com. The Broker responds in writing within 15 days of receipt.</p>
 
-    <h2><span class="num">16.</span>Electronic signature</h2>
-    <p><strong>16.1</strong> This contract is signed electronically and is
-        valid and binding without a handwritten signature or stamp. Payment
-        of the deposit constitutes acceptance of these terms in full.</p>
+    <h2><span class="num">16.</span>Liability of the Broker</h2>
+    <p><strong>16.1</strong> The Broker&#8217;s obligations are limited to: accurately transmitting the booking and the Charterer&#8217;s information to the Operator; forwarding payments received in the name and for the account of the Operator; issuing the Charter Voucher; and providing the assistance described in Sections 14 and 15.</p>
+    <p><strong>16.2</strong> The Broker is not liable for the condition, seaworthiness, equipment, availability or performance of the Yacht, for the acts or omissions of the Operator or its crew, or for the accuracy of information supplied by the Operator, except where the Broker has failed to transmit such information with due care.</p>
+    <p><strong>16.3</strong> To the extent permitted by law, the Broker&#8217;s aggregate liability under this Agreement is limited to the charter fee actually paid by the Charterer, and indirect or consequential losses are excluded. Nothing in this Agreement excludes or limits liability that cannot be excluded or limited under applicable mandatory law.</p>
+
+    <h2><span class="num">17.</span>Personal data</h2>
+    <p><strong>17.1</strong> The Broker processes the personal data of the Charterer and crew for the purpose of the booking and shares it with the Operator and, where required, with port and maritime authorities. Details are set out in the Broker&#8217;s privacy policy at www.boat4you.com/privacy.</p>
+
+    <h2><span class="num">18.</span>Governing law and disputes</h2>
+    <p><strong>18.1</strong> This Agreement (the brokerage relationship) is governed by the law of the Republic of Croatia. The courts of Split, Croatia have jurisdiction, unless mandatory consumer-protection rules of the Charterer&#8217;s country of residence provide otherwise.</p>
+    <p><strong>18.2</strong> The Charter Contract between the Charterer and the Operator is governed by the law and jurisdiction stated in the Operator&#8217;s Charter Terms.</p>
+    <p><strong>18.3</strong> Consumers resident in the European Union may also submit complaints through the European Online Dispute Resolution platform at ec.europa.eu/consumers/odr.</p>
+
+    <h2><span class="num">19.</span>Electronic acceptance and annexes</h2>
+    <p><strong>19.1</strong> This Agreement is concluded electronically and is valid and binding without a handwritten signature or stamp. Payment of the deposit constitutes acceptance of this Agreement in full.</p>
+    <p><strong>19.2</strong> Annexes forming part of this Agreement: (1) the Operator&#8217;s Charter Terms; (2) the Yacht specification; (3) the Charter Voucher, issued after payment of the full charter price.</p>
+
 </div>
-
 </body>
 </html>

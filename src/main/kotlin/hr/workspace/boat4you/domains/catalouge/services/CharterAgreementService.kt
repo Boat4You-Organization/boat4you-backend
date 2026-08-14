@@ -117,6 +117,35 @@ class CharterAgreementService(
         val yachtLengthMeters = yacht.length?.toPlainString() ?: EM_DASH
         val yachtCabins = yacht.cabins?.toString() ?: EM_DASH
 
+        // Operator (charter agency) — the yacht's agency, named as a PARTY on
+        // the agreement (template rework 14.8.2026): the charter contract is
+        // concluded directly between the Charterer and the Operator, Boat4You
+        // acts as booking intermediary only. Data comes from the partner-API
+        // agency sync (~99% of active agencies carry address+email, ~96%
+        // phone); anything missing renders as an em dash rather than blocking
+        // the PDF.
+        val agency = yacht.agency
+        val operatorName = agency?.name?.takeIf { it.isNotBlank() } ?: EM_DASH
+        val operatorAddress = listOfNotNull(
+            agency?.address?.takeIf { it.isNotBlank() },
+            listOfNotNull(
+                agency?.zip?.takeIf { it.isNotBlank() },
+                agency?.city?.takeIf { it.isNotBlank() },
+            ).joinToString(" ").takeIf { it.isNotBlank() },
+            agency?.country?.takeIf { it.isNotBlank() },
+        ).joinToString(", ").ifBlank { EM_DASH }
+        val operatorVat = agency?.vatCode?.takeIf { it.isNotBlank() } ?: EM_DASH
+        val operatorPhone = (agency?.phone?.takeIf { it.isNotBlank() } ?: agency?.mobile)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() } ?: EM_DASH
+        val operatorEmail = agency?.email?.takeIf { it.isNotBlank() } ?: EM_DASH
+
+        // Security deposit — the offer's period-specific amount wins (it is
+        // what the partner actually charges for THIS week); yacht-level
+        // deposit is the fallback for flows whose offer link is gone.
+        val securityDeposit = flow.offer?.deposit ?: yacht.deposit
+        val hasSecurityDeposit = securityDeposit != null && securityDeposit.signum() > 0
+
         // Location + jurisdiction adjective.
         val pickupLocation = reservation.locationFrom?.name ?: EM_DASH
         val pickupCountryEntity = reservation.locationFrom?.country
@@ -263,7 +292,7 @@ class CharterAgreementService(
                 "priceLabel" to "${(e.price ?: BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol",
                 "unitLabel" to (e.unit?.name?.lowercase()?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: ""),
                 "payAtMarina" to true,
-                "settlementLabel" to "At marina",
+                "settlementLabel" to "At the base",
             )
         }
 
@@ -281,6 +310,19 @@ class CharterAgreementService(
             "clientAddress" to clientAddress,
             "clientCity" to clientCity,
             "clientCountry" to clientCountry,
+
+            // Operator (charter agency) — party to the charter contract.
+            "operatorName" to operatorName,
+            "operatorAddress" to operatorAddress,
+            "operatorVat" to operatorVat,
+            "operatorPhone" to operatorPhone,
+            "operatorEmail" to operatorEmail,
+
+            // Security deposit (payable directly to the Operator at check-in).
+            "hasSecurityDeposit" to hasSecurityDeposit,
+            "securityDepositLabel" to (
+                securityDeposit?.setScale(2, RoundingMode.HALF_UP)?.toPlainString()?.plus(currencySymbol) ?: EM_DASH
+            ),
 
             // Broker
             "brokerName" to "Cusmanich d.o.o.",
