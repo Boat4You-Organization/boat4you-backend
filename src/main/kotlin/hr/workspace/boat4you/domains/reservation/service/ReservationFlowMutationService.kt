@@ -140,6 +140,24 @@ class ReservationFlowMutationService(
                 createReservationDto = createReservationDto,
             ) ?: createUser(createReservationDto)
 
+        // The booking form is the only place most customers ever type a phone
+        // number, and it used to land on the flow alone — the profile stayed
+        // empty, so the admin user list showed no phone for anyone. Fill the
+        // profile the first time we learn the number; never overwrite one the
+        // customer set themselves. The email match matters: a logged-in
+        // non-admin resolves to THEMSELVES regardless of the form's email, so
+        // a broker or a customer booking for someone else must not get that
+        // other person's phone stamped onto their own profile.
+        val bookingPhone = createReservationDto.phoneNumber?.trim()
+        if (!bookingPhone.isNullOrEmpty() &&
+            reservationUser.phoneNumber.isNullOrBlank() &&
+            reservationUser.deletedAt == null &&
+            createReservationDto.email.equals(reservationUser.email, ignoreCase = true)
+        ) {
+            reservationUser.phoneNumber = bookingPhone
+            userRepository.save(reservationUser)
+        }
+
         val priceCalculated =
             priceCalculationService.calculatePrice(
                 yacht,
