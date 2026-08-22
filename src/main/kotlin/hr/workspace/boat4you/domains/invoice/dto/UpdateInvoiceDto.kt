@@ -16,6 +16,8 @@ data class UpdateInvoiceDto(
     val recipientVatCode: String,
     val invoiceLanguage: InvoiceLanguageEnum,
     val invoiceStatus: InvoiceStatus? = null,
+    /** Editable since 22.8.2026 (Mario) — blank/absent keeps the generated number. */
+    val invoiceNumber: String? = null,
     val invoiceItem: String,
     val includeVat: Boolean,
     val vatPercentage: Float,

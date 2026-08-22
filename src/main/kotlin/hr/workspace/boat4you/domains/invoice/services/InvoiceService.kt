@@ -135,6 +135,7 @@ class InvoiceService(
                 recipientVatCode = model.recipientVatCode
                 invoiceLanguage = model.invoiceLanguage
                 invoiceStatus = model.invoiceStatus ?: this.invoiceStatus
+                model.invoiceNumber?.trim()?.takeIf { it.isNotEmpty() }?.let { invoiceNumber = it }
                 invoiceItem = resolvedInvoiceItem
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage
