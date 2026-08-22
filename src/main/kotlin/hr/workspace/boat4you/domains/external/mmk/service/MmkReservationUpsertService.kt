@@ -213,6 +213,13 @@ class MmkReservationUpsertService(
     ) {
         val dateFrom = externalReservation.dateFrom!!
         val dateTo = externalReservation.dateTo!!
+        // Same-day (0-night) MMK blocks are not bookable weeks; synthesizing them
+        // produced duplicate (yacht, day, day, product, route) rows and tripped
+        // uq_offer_yacht_week_product_route, failing the whole agency-year sync.
+        if (!dateTo.isAfter(dateFrom)) {
+            log.debug("Skipping 0-night MMK OPTION block for yacht {} on {}", yacht.id, dateFrom)
+            return
+        }
         val targetDuration = ChronoUnit.DAYS.between(dateFrom, dateTo)
 
         val template = existingYachtOffers

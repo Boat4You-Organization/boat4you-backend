@@ -48,6 +48,10 @@ object ImageUtils {
     ): ByteArray? =
         try {
             val inputBytes = inputStream.readBytes()
+            // Empty body (partner returned 0 bytes) would trip OpenCV's
+            // `!buf.empty()` assertion inside imdecode — a dead-URL case the
+            // caller already logs with context, not a disk/NFS problem.
+            if (inputBytes.isEmpty()) return null
             MatOfByte(*inputBytes).use { matOfByte ->
                 Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR).use { image ->
                     if (image.empty()) {
@@ -68,6 +72,11 @@ object ImageUtils {
                     }
                 }
             }
+        } catch (e: org.opencv.core.CvException) {
+            // Undecodable payload (HTML error page, truncated file) — dead-URL
+            // class, reported by the caller with the URL. Keep ERROR for real faults.
+            log.warn("Undecodable image payload: {}", e.message?.lineSequence()?.firstOrNull())
+            null
         } catch (e: Exception) {
             log.error("Error converting image to WebP", e)
             null

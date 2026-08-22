@@ -22,7 +22,7 @@ class ExchangeRateService(
             .build()
 
     private val url =
-        "https://api.frankfurter.app/latest?from=EUR&to=AUD,BGN,BRL,CAD,CHF,CNY,CZK,DKK,GBP,HKD,HUF,IDR,ILS,INR,ISK,JPY,KRW,MXN,MYR,NOK,NZD,PHP,PLN,RON,SEK,SGD,THB,TRY,USD,ZAR"
+        "https://api.frankfurter.dev/v1/latest?from=EUR&to=AUD,BGN,BRL,CAD,CHF,CNY,CZK,DKK,GBP,HKD,HUF,IDR,ILS,INR,ISK,JPY,KRW,MXN,MYR,NOK,NZD,PHP,PLN,RON,SEK,SGD,THB,TRY,USD,ZAR"
 
     @Transactional
     fun updateExchangeRates() {

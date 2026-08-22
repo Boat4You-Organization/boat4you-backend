@@ -73,7 +73,15 @@ class MmkYachtOfferSyncService(
         var skippedYachtCount = 0
         var skippedLockedCount = 0
 
-        mmkOffers.groupBy { it.yachtId }.forEach { (yachtId, mmkOffers) ->
+        // 0-night offers (dateFrom == dateTo) are unbookable and collide on the
+        // natural key — drop them before grouping so one bad row can't skip a yacht.
+        val bookableOffers = mmkOffers.filter { o ->
+            val from = o.dateFrom.value?.toLocalDate()
+            val to = o.dateTo.value?.toLocalDate()
+            from != null && to != null && to.isAfter(from)
+        }
+
+        bookableOffers.groupBy { it.yachtId }.forEach { (yachtId, mmkOffers) ->
             // Defensive: MMK can send a yachtId we haven't mapped yet (e.g. partner
             // added a brand-new yacht between two yacht-sync runs, or yacht was removed
             // from agency before our External Mapping was reconciled). The old `mapping!!.systemId!!.find()!!`

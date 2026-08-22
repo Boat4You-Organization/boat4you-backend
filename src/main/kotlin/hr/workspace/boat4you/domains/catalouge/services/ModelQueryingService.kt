@@ -46,6 +46,11 @@ class ModelQueryingService(
         manufacturerExternalId: Long,
         manufacturerExternalSystemId: Int,
     ): Model? {
-        return modelRepository.findByNameIgnoreCaseAndExternalManufacturerId(name, manufacturerExternalId, manufacturerExternalSystemId)
+        // Oldest match wins when a model was forked into several rows (V9_45
+        // merged the known pairs) — a unique-result exception here used to abort
+        // the whole catalogue sync.
+        return modelRepository
+            .findAllByNameIgnoreCaseAndExternalManufacturerId(name, manufacturerExternalId, manufacturerExternalSystemId)
+            .minByOrNull { it.id ?: Long.MAX_VALUE }
     }
 }

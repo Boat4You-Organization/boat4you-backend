@@ -441,12 +441,15 @@ class NauSysCatalogueSyncService(
                 if (mapping != null) {
                     allModels.find { model -> model.id == mapping.systemId!! }!!
                 } else {
+                    // Oldest match wins if duplicates exist (unique-result crash here
+                    // aborted the whole catalogue sync 4x/day until V9_45 merged them).
                     val m =
-                        modelRepository.findByNameIgnoreCaseAndExternalManufacturerId(
-                            canonicalModelName,
-                            it.yachtBuilderId?.toLong() ?: -1L,
-                            ExternalSystemEnum.NAUSYS.value,
-                        )
+                        modelRepository
+                            .findAllByNameIgnoreCaseAndExternalManufacturerId(
+                                canonicalModelName,
+                                it.yachtBuilderId?.toLong() ?: -1L,
+                                ExternalSystemEnum.NAUSYS.value,
+                            ).minByOrNull { model -> model.id ?: Long.MAX_VALUE }
                     m ?: Model().apply { name = canonicalModelName }
                 }
 

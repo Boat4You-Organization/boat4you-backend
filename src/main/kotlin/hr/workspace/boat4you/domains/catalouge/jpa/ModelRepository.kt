@@ -47,11 +47,11 @@ interface ModelRepository : JpaRepository<Model, Long> {
         AND em.externalSystem.id = :manufacturerExternalSystemId
     """,
     )
-    fun findByNameIgnoreCaseAndExternalManufacturerId(
+    fun findAllByNameIgnoreCaseAndExternalManufacturerId(
         name: String,
         manufacturerExternalId: Long,
         manufacturerExternalSystemId: Int,
-    ): Model?
+    ): List<Model>
 
     @Query(
         """

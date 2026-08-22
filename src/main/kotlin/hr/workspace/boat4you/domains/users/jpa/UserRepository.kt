@@ -80,17 +80,19 @@ interface UserRepository :
      * Excludes soft-deleted accounts (anonymized email is undeliverable
      * and we shouldn't be sending mail to a deleted user anyway).
      */
+    // JPQL (not native): UserEntity carries a @Formula column that a native
+    // `SELECT *` cannot supply — Hibernate then fails with "Unable to find
+    // column position by name: fullNameByFormula" and the job died daily.
     @Query(
-        value = """
-        SELECT * FROM users
-        WHERE birthday IS NOT NULL
-        AND EXTRACT(MONTH FROM birthday) = :month
-        AND EXTRACT(DAY FROM birthday) = :day
-        AND deleted_at IS NULL
-        AND marketing_opt_out = false
-        AND entity_status = 'ACTIVE'
+        """
+        SELECT u FROM UserEntity u
+        WHERE u.birthday IS NOT NULL
+        AND EXTRACT(MONTH FROM u.birthday) = :month
+        AND EXTRACT(DAY FROM u.birthday) = :day
+        AND u.deletedAt IS NULL
+        AND u.marketingOptOut = false
+        AND u.entityStatus = hr.workspace.boat4you.common.jpa.EntityStatusEnum.ACTIVE
         """,
-        nativeQuery = true,
     )
     fun findAllByBirthdayMonthDay(
         month: Int,

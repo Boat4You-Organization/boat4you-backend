@@ -92,6 +92,15 @@ class MmkYachtOfferIntegrationServiceAsync(
                                 agency.id!!,
                                 offersResponse,
                             )
+                        } catch (e: org.springframework.web.client.HttpClientErrorException.BadRequest) {
+                            // MMK answers 400 for agencies with no supported product (canal /
+                            // river fleets we don't sell) — expected, not an error to page on.
+                            log.warn(
+                                "MMK rejected offers request (400) for agency: {} — skipped for {} - {}",
+                                agency.name,
+                                syncStartDate,
+                                syncEndDate,
+                            )
                         } catch (e: Exception) {
                             log.error(
                                 "Failed to sync offers for agency: {}, date range: {} - {}",
