@@ -123,9 +123,22 @@ class MmkYachtOfferSyncService(
                         // matching paired BOTH route variants of a week (one-way vs return)
                         // with the SAME row, so the second update collided with its
                         // sibling's key (nightly duplicate-key ERROR flood, 24.7.2026).
+                        // In-batch dedupe: MMK can return two offers for the same week/route
+                        // whose products both map to CharterType.UNKNOWN (Sunsail flotilla +
+                        // cabin, 23.8.2026). The existing-offer list is loaded before the loop,
+                        // so the second sibling never sees the first one's fresh INSERT and
+                        // collides on uq_offer_yacht_week_product_route — skipping the yacht.
+                        val seenKeys = mutableSetOf<String>()
                         mmkOffers.forEach { mmkOffer ->
                             val pairFromId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.startBaseId }?.systemId
                             val pairToId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.endBaseId }?.systemId
+                            val naturalKey =
+                                "${mmkOffer.dateFrom.value?.toLocalDate()}|${mmkOffer.dateTo.value?.toLocalDate()}|" +
+                                    "${CharterType.fromMmkValue(mmkOffer.product)}|$pairFromId|$pairToId"
+                            if (!seenKeys.add(naturalKey)) {
+                                log.debug("Skipping duplicate MMK offer (same natural key) for yacht {}: {}", systemYachtId, naturalKey)
+                                return@forEach
+                            }
                             val existingOffer =
                                 existingYachtOffers.find {
                                     it.dateFrom == mmkOffer.dateFrom.value?.toLocalDate() &&
@@ -430,9 +443,22 @@ class MmkYachtOfferSyncService(
                         // matching paired BOTH route variants of a week (one-way vs return)
                         // with the SAME row, so the second update collided with its
                         // sibling's key (nightly duplicate-key ERROR flood, 24.7.2026).
+                        // In-batch dedupe: MMK can return two offers for the same week/route
+                        // whose products both map to CharterType.UNKNOWN (Sunsail flotilla +
+                        // cabin, 23.8.2026). The existing-offer list is loaded before the loop,
+                        // so the second sibling never sees the first one's fresh INSERT and
+                        // collides on uq_offer_yacht_week_product_route — skipping the yacht.
+                        val seenKeys = mutableSetOf<String>()
                         mmkOffers.forEach { mmkOffer ->
                             val pairFromId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.startBaseId }?.systemId
                             val pairToId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.endBaseId }?.systemId
+                            val naturalKey =
+                                "${mmkOffer.dateFrom.value?.toLocalDate()}|${mmkOffer.dateTo.value?.toLocalDate()}|" +
+                                    "${CharterType.fromMmkValue(mmkOffer.product)}|$pairFromId|$pairToId"
+                            if (!seenKeys.add(naturalKey)) {
+                                log.debug("Skipping duplicate MMK offer (same natural key) for yacht {}: {}", systemYachtId, naturalKey)
+                                return@forEach
+                            }
                             val existingOffer =
                                 existingYachtOffers.find {
                                     it.dateFrom == mmkOffer.dateFrom.value?.toLocalDate() &&

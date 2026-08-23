@@ -165,6 +165,9 @@ class MmkYachtOfferIntegrationServiceAsync(
                     }
                 }
             }
+        } catch (e: org.springframework.web.client.HttpClientErrorException.BadRequest) {
+            // MMK answers 400 for agencies with no supported product (canal / river fleets).
+            log.warn("MMK rejected offers request (400) for agency: {} — skipped", agency.name)
         } catch (e: Exception) {
             log.error("Failed to sync offers for agency: {}", agency.name, e)
         }
@@ -326,6 +329,9 @@ class MmkYachtOfferIntegrationServiceAsync(
                     }
                 }
             }
+        } catch (e: org.springframework.web.client.HttpClientErrorException.BadRequest) {
+            // MMK answers 400 for agencies with no supported product (canal / river fleets).
+            log.warn("MMK rejected offers request (400) for agency: {} — skipped", agency.name)
         } catch (e: Exception) {
             log.error("Failed to sync offers for agency: {}", agency.name, e)
         }
