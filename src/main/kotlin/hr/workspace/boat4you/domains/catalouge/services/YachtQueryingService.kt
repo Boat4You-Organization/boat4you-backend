@@ -732,7 +732,7 @@ class YachtQueryingService(
         end: LocalDate?,
     ): Expression<BigDecimal>? {
         if (start == null || end == null) return null
-        val inRange = cb.and(cb.greaterThanOrEqualTo(dateFrom, start), cb.lessThanOrEqualTo(dateTo, end))
+        val inRange = coveringWeekPredicate(cb, days, dateFrom, dateTo, start, end)
         val perOfferTotal = cb.prod(perDay, cb.toBigDecimal(days))
         return cb.sum(
             cb.selectCase<BigDecimal>().`when`(inRange, perOfferTotal).otherwise(cb.literal(BigDecimal.ZERO)),
@@ -748,11 +748,33 @@ class YachtQueryingService(
         end: LocalDate?,
     ): Expression<Int>? {
         if (start == null || end == null) return null
-        val inRange = cb.and(cb.greaterThanOrEqualTo(dateFrom, start), cb.lessThanOrEqualTo(dateTo, end))
+        val inRange = coveringWeekPredicate(cb, days, dateFrom, dateTo, start, end)
         return cb.sum(
             cb.selectCase<Int>().`when`(inRange, days).otherwise(cb.literal(0)),
         )
     }
+
+    /**
+     * WEEKLY offers fully inside [start,end]. The duration restriction is what makes
+     * `coveringNights == requested` a reliable full-tiling test: partners also materialise
+     * overlapping 14/21-night rows for the same window (KARINA Elba 45, 23.8.2026 — a 28-night
+     * search summed 28+21+14+14+14 = 91 nights, the check failed and the card fell back to the
+     * cheapest week's per-day rate x 28, quoting a total no partner honours). Weeks are the
+     * tiling unit; an exact single-period offer still wins via the numberOfDays check in
+     * applyCoveringPeriodPrice.
+     */
+    private fun coveringWeekPredicate(
+        cb: CriteriaBuilder,
+        days: Expression<Int>,
+        dateFrom: Expression<LocalDate>,
+        dateTo: Expression<LocalDate>,
+        start: LocalDate,
+        end: LocalDate,
+    ) = cb.and(
+        cb.greaterThanOrEqualTo(dateFrom, start),
+        cb.lessThanOrEqualTo(dateTo, end),
+        cb.equal(days, WEEK_NIGHTS),
+    )
 
     /**
      * Replace a search row's single-week per-day price with the multi-week period price when the
