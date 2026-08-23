@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.toCustomerStatus
 import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.toDto
+import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import org.springframework.stereotype.Component
 
 @Component
@@ -54,6 +55,8 @@ class OfferMapper(
                     .filter { it.obligatory == true }
                     .map { it.extrasKey() }
                     .toSet(),
+            supersededExtrasKeys =
+                ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, offer.yacht?.yachtExtras.orEmpty()),
             extras =
                 filteredOfferExtras
                     .filter { it.first.shouldDisplay() }

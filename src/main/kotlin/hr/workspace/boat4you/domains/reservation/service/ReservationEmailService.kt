@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.reservation.service
 import hr.workspace.boat4you.common.services.resolveEmailLocale
 import hr.workspace.boat4you.domains.catalouge.services.CharterAgreementService
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
+import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDto
 import hr.workspace.boat4you.domains.reservation.enums.PaymentType
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
@@ -217,8 +218,13 @@ class ReservationEmailService(
         // check-in, water toys, skipper, …) without going back to the
         // boat page.
         val addedExtraIds = resvExtras.mapNotNull { it.extras?.id }.toSet()
+        // Wrong-period siblings of obligatory rows the booking carries (e.g.
+        // "Comfort Pack 2/3 weeks" on a one-week charter) stay out of the
+        // marina catalogue too. See ExtrasVariantResolver.
+        val supersededKeys = ExtrasVariantResolver.supersededByReservation(resvExtras, yacht.yachtExtras)
         val availableAtMarina: List<Map<String, Any?>> = yacht.yachtExtras
             .filter { it.extras?.id !in addedExtraIds }
+            .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }
             .map { ye ->
                 mapOf(
                     "name" to (ye.name ?: "—"),
@@ -436,8 +442,13 @@ class ReservationEmailService(
         val extrasInBase = resvExtras.filter { it.payableAtBase != true }.map(::extraToView)
         val extrasOnSite = resvExtras.filter { it.payableAtBase == true }.map(::extraToView)
         val addedExtraIds = resvExtras.mapNotNull { it.extras?.id }.toSet()
+        // Wrong-period siblings of obligatory rows the booking carries (e.g.
+        // "Comfort Pack 2/3 weeks" on a one-week charter) stay out of the
+        // marina catalogue too. See ExtrasVariantResolver.
+        val supersededKeys = ExtrasVariantResolver.supersededByReservation(resvExtras, yacht.yachtExtras)
         val availableAtMarina: List<Map<String, Any?>> = yacht.yachtExtras
             .filter { it.extras?.id !in addedExtraIds }
+            .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }
             .map { ye ->
                 mapOf(
                     "name" to (ye.name ?: "—"),

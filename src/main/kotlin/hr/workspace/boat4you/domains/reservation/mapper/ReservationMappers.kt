@@ -5,9 +5,11 @@ import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.enums.TranslationType
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.toDto
+import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.reservation.dto.MyReservationDetailsDto
@@ -211,6 +213,11 @@ class ReservationMappers(
             services =
                 yacht.yachtExtras
                     .filter { it.shouldDisplay() }
+                    // Wrong-period siblings of an obligatory row the booking
+                    // actually carries ("Comfort Pack 2/3 weeks" on a one-week
+                    // charter) never surface — the price calc no longer charges
+                    // them either. See ExtrasVariantResolver.
+                    .minus(supersededSiblings(reservationExtras, yacht))
                     .filter { it.appliesToPeriod(reservationView.reservationDateFrom!!.toLocalDate(), reservationView.reservationDateTo!!.toLocalDate()) }
                     // Partner sometimes returns multiple price rows for the same
                     // logical extra within a single booking period (e.g. "Preparation
@@ -367,6 +374,11 @@ class ReservationMappers(
             services =
                 yacht.yachtExtras
                     .filter { it.shouldDisplay() }
+                    // Wrong-period siblings of an obligatory row the booking
+                    // actually carries ("Comfort Pack 2/3 weeks" on a one-week
+                    // charter) never surface — the price calc no longer charges
+                    // them either. See ExtrasVariantResolver.
+                    .minus(supersededSiblings(reservationExtras, yacht))
                     .filter { it.appliesToPeriod(reservationView.reservationDateFrom!!.toLocalDate(), reservationView.reservationDateTo!!.toLocalDate()) }
                     // Partner sometimes returns multiple price rows for the same
                     // logical extra within a single booking period (e.g. "Preparation
@@ -380,4 +392,13 @@ class ReservationMappers(
                     .map { extrasMapper.toDto(it, currency) },
         )
     }
+    private fun supersededSiblings(
+        reservationExtras: List<ReservationExtra>,
+        yacht: Yacht,
+    ): Set<YachtExtra> {
+        val keys = ExtrasVariantResolver.supersededByReservation(reservationExtras, yacht.yachtExtras)
+        if (keys.isEmpty()) return emptySet()
+        return yacht.yachtExtras.filter { !it.name.isNullOrBlank() && it.extrasKey() in keys }.toSet()
+    }
+
 }

@@ -13,6 +13,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtraRepository
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
+import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysObligatoryExtrasService
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -55,6 +56,10 @@ class PriceCalculationService(
             }
         val yachtExtras = yachtExtraRepository.findAllByYacht(yacht)
         val offerExtras = offer.filterDuplicateExtras()
+        // Wrong-period siblings of an obligatory row the partner attached to THIS
+        // offer ("Comfort Pack 2/3 weeks" on a one-week charter) — never listed,
+        // never charged. See ExtrasVariantResolver.
+        val supersededYachtExtraKeys = ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, yachtExtras)
 
         // 1. calc take all yacht extras that are obligatory or selected extras
         val allYachtExtras =
@@ -74,6 +79,7 @@ class PriceCalculationService(
                             e in externalBasesExternalIds
                         }
                 }.filter { it.obligatory == true || selectedExtras.contains(it.extrasKey()) }
+                .filter { it.extrasKey() !in supersededYachtExtraKeys }
                 .map { yachtExtrasMapper.toInternalCalc(it) }
 
         val allOfferExtras =
@@ -248,7 +254,13 @@ class PriceCalculationService(
             (base.selectedExtrasInPrice + base.selectedExtrasAtBase).map { it.key }.toMutableSet()
         alreadyCounted += selectedExtras
 
-        val yachtExtrasByName = yachtExtraRepository.findAllByYacht(yacht).associateBy { it.name }
+        val allYachtExtras = yachtExtraRepository.findAllByYacht(yacht)
+        // Wrong-period siblings dropped from the base calc must not sneak back in
+        // through the partner re-quote (their keys are no longer in the base
+        // buckets, so alreadyCounted alone would let them through).
+        alreadyCounted += ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, allYachtExtras)
+
+        val yachtExtrasByName = allYachtExtras.associateBy { it.name }
 
         val promoted =
             obligatory.mapNotNull { o ->

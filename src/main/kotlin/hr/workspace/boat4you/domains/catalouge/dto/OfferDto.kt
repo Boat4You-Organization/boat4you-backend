@@ -25,6 +25,11 @@ data class OfferDto(
     // (inquiry-only) separate. Jackson serializes the enum by NAME.
     val status: ExternalReservationStatus? = null,
     val obligatoryExtrasKeys: Set<String> = emptySet(),
+    // Yacht-level obligatory rows that are wrong-period siblings of an
+    // obligatory row on THIS offer ("Comfort Pack 2 weeks" on a one-week
+    // charter). Clients hide these keys from the yacht services list; the
+    // price calc never charges them. See ExtrasVariantResolver.
+    val supersededExtrasKeys: Set<String> = emptySet(),
     val extras: Set<YachtExtrasDto> = emptySet(),
     val locationFrom: LocationDto?,
     val locationTo: LocationDto?,
