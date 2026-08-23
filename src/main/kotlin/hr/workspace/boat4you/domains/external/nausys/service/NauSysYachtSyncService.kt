@@ -446,7 +446,9 @@ class NauSysYachtSyncService(
             val externalEquipmentMatch =
                 allExternalEquipment.firstOrNull { eq -> eq.externalId == nausysEquipment.equipmentId!!.toLong() && eq.type == ExternalEquipmentType.EQUIPMENT }
             if (externalEquipmentMatch == null) {
-                log.error("Nausys equipment not found in Nausys external equipment: $nausysEquipment")
+                // Partner data gap (an equipmentId their yacht feed references but their
+                // equipment catalogue never returns, e.g. 1411503) — nothing we can fix here.
+                log.warn("Nausys equipment not found in Nausys external equipment: $nausysEquipment")
                 return@forEach
             }
             val boat4youEquipmentMatch =

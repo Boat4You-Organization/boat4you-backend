@@ -203,6 +203,13 @@ class NauSysReservationUpsertService(
     ) {
         val dateFrom = externalReservation.dateFrom!!
         val dateTo = externalReservation.dateTo!!
+        // Same-day (0-night) NauSys blocks are not bookable weeks; synthesizing
+        // them collides on uq_offer_yacht_week_product_route and rolled back the
+        // whole agency-year availability sync (Sailoe & co., 23.8.2026).
+        if (!dateTo.isAfter(dateFrom)) {
+            log.debug("Skipping 0-night NauSys OPTION block for yacht {} on {}", yacht.id, dateFrom)
+            return
+        }
         val targetDuration = ChronoUnit.DAYS.between(dateFrom, dateTo)
 
         val template = existingYachtOffers

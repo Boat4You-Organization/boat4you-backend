@@ -24,7 +24,8 @@ import kotlin.random.Random
  */
 private class TooManyRequestsRetryInterceptor : ClientHttpRequestInterceptor {
     private val log = LoggerFactory.getLogger(this::class.java)
-    private val backoffMs = longArrayOf(2_000, 5_000, 10_000)
+    // 5 attempts: the 01:30 offer sync fans out hard enough that 3 were exhausted once (23.8.2026).
+    private val backoffMs = longArrayOf(2_000, 5_000, 10_000, 20_000, 30_000)
 
     override fun intercept(
         request: HttpRequest,
