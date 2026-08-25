@@ -199,7 +199,7 @@ class ExternalSyncService(
 
         return LocationExternalGroup(
             countries = groupedLocations?.get(LocationType.COUNTRY)?.map { it.externalId },
-            countryCodes = groupedLocations?.get(LocationType.COUNTRY)?.map { it.countryCode },
+            countryCodes = groupedLocations?.get(LocationType.COUNTRY)?.mapNotNull { it.countryCode },
             regions = groupedLocations?.get(LocationType.REGION)?.map { it.externalId },
             locations = groupedLocations?.get(LocationType.MARINA)?.map { it.externalId },
         )

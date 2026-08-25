@@ -79,7 +79,12 @@ interface LocationViewRepository : JpaRepository<LocationView, Long> {
 
 data class ExternalLocationDto(
     val systemId: Long,
-    val countryCode: String,
+    // Nullable: cross-country partner regions ("Dubrovnik / Montenegro", region
+    // 188) have no single country_code. The non-null type made Hibernate's
+    // constructor projection throw for every dated Dubrovnik search since 6.8,
+    // killing the on-demand partner warm sync for [r-188, r-6]. Only COUNTRY
+    // rows' codes are ever consumed (LocationExternalGroup.countryCodes).
+    val countryCode: String?,
     val externalId: Long,
     val externalSystemId: Int,
     val locationType: LocationType,
