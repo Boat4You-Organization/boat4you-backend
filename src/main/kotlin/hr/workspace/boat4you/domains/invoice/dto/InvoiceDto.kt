@@ -8,9 +8,10 @@ import java.time.LocalDate
 
 data class InvoiceDto(
     val id: Long,
-    val reservationId: Long,
-    val reservationNumber: String,
-    val reservationFlowId: Long,
+    /** Null for manual invoices that aren't linked to a booking. */
+    val reservationId: Long? = null,
+    val reservationNumber: String? = null,
+    val reservationFlowId: Long? = null,
     val recipientType: InvoiceRecipientType,
     val recipientName: String,
     val recipientCity: String,

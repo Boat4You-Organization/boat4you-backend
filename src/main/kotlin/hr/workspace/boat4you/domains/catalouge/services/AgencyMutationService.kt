@@ -20,6 +20,37 @@ class AgencyMutationService(
     private val offerRepository: OfferRepository,
     private val searchViewRefreshService: SearchViewRefreshService,
 ) {
+    /**
+     * Manual agency entry from the admin invoice flow ("add a new agency if it
+     * isn't in the list", Mario 26.8.2026 — Greek boats each run their own
+     * company, so the recipient registry must be open-ended). Field mapping is
+     * explicit — `updateBlockWithModel` deliberately covers only the
+     * admin-tunable flags, while name/address are otherwise sync-owned.
+     * `skipExternalSystem = true` marks the row as ours: partner-mirror sync
+     * matches by external source ids and never touches manual rows.
+     */
+    fun createManualAgency(agency: AgencyDto): AgencyDto {
+        val entity =
+            hr.workspace.boat4you.domains.catalouge.jpa.Agency().apply {
+                name = agency.name
+                address = agency.address
+                city = agency.city
+                country = agency.country
+                zip = agency.zip
+                vatCode = agency.vatCode
+                web = agency.web
+                email = agency.email
+                phone = agency.phone
+                mobile = agency.mobile
+                iban = agency.iban
+                director = agency.director
+                active = true
+                skipExternalSystem = true
+            }
+
+        return agencyRepository.save(entity).toDto()
+    }
+
     fun updateAgency(
         id: Long,
         agency: AgencyDto,

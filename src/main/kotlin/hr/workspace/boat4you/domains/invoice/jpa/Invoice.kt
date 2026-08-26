@@ -21,10 +21,12 @@ import java.time.LocalDate
 @Entity
 @Table(name = "invoice")
 class Invoice : AbstractEntity<Long>() {
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    // Nullable since manual invoices (V9_48): admin-issued invoices for
+    // agencies/clients don't have to reference a reservation.
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
     @OnDelete(action = OnDeleteAction.RESTRICT)
-    @JoinColumn(name = "reservation_flow_id", nullable = false)
-    lateinit var reservationFlow: ReservationFlow
+    @JoinColumn(name = "reservation_flow_id", nullable = true)
+    var reservationFlow: ReservationFlow? = null
 
     @Column(name = "recipient_type", columnDefinition = "VARCHAR(63)", nullable = false)
     @Enumerated(EnumType.STRING)

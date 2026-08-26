@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.data.web.PageableDefault
 import org.springframework.data.web.PagedModel
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
@@ -57,6 +58,13 @@ internal class AdminAgencyController(
         @PathVariable id: Long,
     ): ResponseEntity<AgencyDto> {
         return ResponseEntity.ok(agencyQueryingService.getAgencyById(id))
+    }
+
+    @PostMapping
+    fun createAgency(
+        @RequestBody agency: AgencyDto,
+    ): ResponseEntity<AgencyDto> {
+        return ResponseEntity.status(HttpStatus.CREATED).body(agencyMutationService.createManualAgency(agency))
     }
 
     @PutMapping("/{id}")

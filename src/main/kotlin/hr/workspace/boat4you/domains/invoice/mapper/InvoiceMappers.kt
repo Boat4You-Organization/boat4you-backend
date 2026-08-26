@@ -11,13 +11,15 @@ class InvoiceMappers(
     private val reservationViewRepository: ReservationViewRepository,
 ) {
     fun toInvoiceDto(invoice: Invoice): InvoiceDto {
-        val reservationView = reservationViewRepository.findByReservationFlowId(invoice.reservationFlow.id!!)!!
+        // Manual invoices have no reservation — every booking-derived field
+        // below then falls back to the invoice's own recipient data.
+        val reservationView = invoice.reservationFlow?.id?.let { reservationViewRepository.findByReservationFlowId(it) }
 
         return InvoiceDto(
             id = invoice.id!!,
-            reservationId = reservationView.reservationId!!,
-            reservationNumber = reservationView.reservationNumber!!,
-            reservationFlowId = invoice.reservationFlow.id!!,
+            reservationId = reservationView?.reservationId,
+            reservationNumber = reservationView?.reservationNumber,
+            reservationFlowId = invoice.reservationFlow?.id,
             recipientType = invoice.recipientType,
             recipientName = invoice.recipientName,
             recipientCity = invoice.recipientCity,
@@ -25,7 +27,14 @@ class InvoiceMappers(
             recipientZipCode = invoice.recipientZipCode,
             recipientCountry = invoice.recipientCountry,
             recipientVatCode = invoice.recipientVatCode,
-            invoiceNumber = StringUtils.leftPad(invoice.invoiceNumber, 3, "0"),
+            // Yearly-scheme numbers ("100101/2026") pass through verbatim;
+            // legacy plain integers keep the historical 3-digit padding.
+            invoiceNumber =
+                if (invoice.invoiceNumber.contains('/')) {
+                    invoice.invoiceNumber
+                } else {
+                    StringUtils.leftPad(invoice.invoiceNumber, 3, "0")
+                },
             invoiceDate = invoice.invoiceDate,
             invoiceLanguage = invoice.invoiceLanguage,
             invoiceStatus = invoice.invoiceStatus,
@@ -35,10 +44,11 @@ class InvoiceMappers(
             priceWithoutVat = invoice.priceWithoutVat,
             vatAmount = invoice.vatAmount,
             totalPrice = invoice.totalPrice,
-            reservationCommission = reservationView.reservationCommission,
-            clientName = reservationView.agencyName ?: ("${reservationView.reservationFlowName} ${reservationView.reservationFlowSurname}"),
-            clientEmail = reservationView.agencyEmail ?: reservationView.reservationFlowEmail,
-            clientPhoneNumber = reservationView.agencyPhone ?: reservationView.reservationFlowPhone,
+            reservationCommission = reservationView?.reservationCommission,
+            clientName = reservationView?.let { it.agencyName ?: "${it.reservationFlowName} ${it.reservationFlowSurname}" }
+                ?: invoice.recipientName,
+            clientEmail = reservationView?.let { it.agencyEmail ?: it.reservationFlowEmail },
+            clientPhoneNumber = reservationView?.let { it.agencyPhone ?: it.reservationFlowPhone },
         )
     }
 }

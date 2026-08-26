@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.invoice.services
 import hr.workspace.boat4you.common.services.ifNotNull
 import hr.workspace.boat4you.common.services.initSpecification
 import hr.workspace.boat4you.common.services.nonBlankOrNull
+import hr.workspace.boat4you.domains.invoice.dto.CreateInvoiceDto
 import hr.workspace.boat4you.domains.invoice.dto.InvoiceDto
 import hr.workspace.boat4you.domains.invoice.dto.UpdateInvoiceDto
 import hr.workspace.boat4you.domains.invoice.enums.InvoiceLanguageEnum
@@ -45,6 +46,11 @@ class InvoiceService(
 ) {
     val DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy.")
 
+    companion object {
+        /** First number of every year in the `NNNNNN/GGGG` scheme (Mario, 26.8.2026). */
+        const val YEARLY_SEQUENCE_START = 100101L
+    }
+
     @Transactional(readOnly = true)
     fun getAllForAdmin(
         reservationId: Long?,
@@ -54,10 +60,69 @@ class InvoiceService(
         departureDate: LocalDate?,
         agencyId: Long?,
         invoiceStatus: InvoiceStatus?,
+        year: Int?,
         pageable: Pageable,
     ): Page<InvoiceDto> {
-        val pagedInvoices = findAllWithCriteria(reservationId, recipientType, recipientName, language, departureDate, agencyId, invoiceStatus, pageable)
+        val pagedInvoices = findAllWithCriteria(reservationId, recipientType, recipientName, language, departureDate, agencyId, invoiceStatus, year, pageable)
         return pagedInvoices.map { invoiceMappers.toInvoiceDto(it) }
+    }
+
+    /** Distinct invoice years (by invoice date), newest first — admin year tabs. */
+    @Transactional(readOnly = true)
+    fun getInvoiceYears(): List<Int> = invoiceRepository.findDistinctYears()
+
+    /**
+     * Manual invoice creation (admin). Numbering: blank number → next in the
+     * per-year sequence, guarded by a Postgres advisory lock so the scheduler
+     * job (cusma3) and admin API (cusma2) can't mint the same number.
+     */
+    @Transactional(readOnly = false)
+    fun createInvoice(model: CreateInvoiceDto): InvoiceDto {
+        val flow =
+            model.reservationId?.let { resId ->
+                val view =
+                    reservationViewRepository.findById(resId).getOrElse {
+                        throw InvoiceNotExistException()
+                    }
+                reservationFlowRepository.findById(view.reservationFlowId!!).getOrElse { null }
+            }
+
+        val number =
+            model.invoiceNumber?.trim()?.takeIf { it.isNotEmpty() }
+                ?: run {
+                    invoiceRepository.lockInvoiceNumbering()
+                    nextInvoiceNumber(model.invoiceDate.year)
+                }
+
+        val entity =
+            Invoice().apply {
+                reservationFlow = flow
+                recipientType = model.recipientType
+                recipientName = model.recipientName
+                recipientCity = model.recipientCity
+                recipientStreet = model.recipientStreet
+                recipientZipCode = model.recipientZipCode
+                recipientCountry = model.recipientCountry.englishName
+                recipientVatCode = model.recipientVatCode
+                invoiceNumber = number
+                invoiceDate = model.invoiceDate
+                invoiceLanguage = model.invoiceLanguage
+                invoiceStatus = InvoiceStatus.DRAFT
+                invoiceItem = model.invoiceItem
+                includeVat = model.includeVat
+                vatPercentage = model.vatPercentage
+                priceWithoutVat = model.priceWithoutVat
+                vatAmount = model.vatAmount
+                totalPrice = model.totalPrice
+            }
+
+        return invoiceRepository.save(entity).let { invoiceMappers.toInvoiceDto(it) }
+    }
+
+    /** Next free `NNNNNN/GGGG` for the year; caller must hold the numbering lock. */
+    private fun nextInvoiceNumber(year: Int): String {
+        val maxSequence = invoiceRepository.findMaxSequenceForYear(year) ?: (YEARLY_SEQUENCE_START - 1)
+        return "${maxSequence + 1}/$year"
     }
 
     @Transactional(readOnly = true)
@@ -77,7 +142,9 @@ class InvoiceService(
 
         val invoice = invoiceRepository.findById(invoiceId).getOrElse { throw InvoiceNotExistException() }
 
-        if (invoice.reservationFlow.user!!.id != currentUser.id) {
+        // Manual invoices (reservationFlow == null) are admin-only — no public
+        // user may ever match, so the null-safe chain below correctly denies.
+        if (invoice.reservationFlow?.user?.id != currentUser.id) {
             throw AccessDeniedException("User is not authenticated")
         }
 
@@ -116,8 +183,10 @@ class InvoiceService(
         // language are preserved.
         val resolvedInvoiceItem =
             if (model.invoiceLanguage != invoice.invoiceLanguage) {
-                reservationViewRepository
-                    .findByReservationFlowId(invoice.reservationFlow.id!!)
+                // Manual invoices (no reservation) keep the admin's own text on
+                // a language flip — there's no booking to regenerate from.
+                invoice.reservationFlow?.id
+                    ?.let { reservationViewRepository.findByReservationFlowId(it) }
                     ?.let { buildInvoiceItem(it, model.invoiceLanguage) }
                     ?: model.invoiceItem
             } else {
@@ -206,15 +275,21 @@ class InvoiceService(
     @Transactional(readOnly = false)
     fun generateInvoicesFromJob(): Int {
         val reservationsWithoutInvoices = invoiceRepository.findReservationsWithoutInvoices(LocalDate.now().atStartOfDay(), LocalDate.now().plusDays(1).atStartOfDay())
-        val lastInvoiceNumber = invoiceRepository.findLastInvoiceNumber(LocalDate.now())?.toLong() ?: 1
-        var nextInvoiceNumber = lastInvoiceNumber + 1
+        if (reservationsWithoutInvoices.isEmpty()) return 0
         val reservationFlowsMap = reservationFlowRepository.findByIdIn(reservationsWithoutInvoices.map { it.reservationFlowId!! }.toSet()).associateBy { it.id!! }
 
         val invoiceEntities = reservationsWithoutInvoices.map { it.toInvoiceEntity(reservationFlowsMap) }
 
+        // Yearly `NNNNNN/GGGG` numbering (start 100101 each year). One advisory
+        // lock for the whole batch; per-year counters continue from the DB max
+        // so job-generated and manually created invoices share one sequence.
+        invoiceRepository.lockInvoiceNumbering()
+        val yearCounters = mutableMapOf<Int, Long>()
         invoiceEntities.forEach {
-            it.invoiceNumber = nextInvoiceNumber.toString()
-            nextInvoiceNumber++
+            val year = it.invoiceDate.year
+            val next = yearCounters.getOrPut(year) { invoiceRepository.findMaxSequenceForYear(year) ?: (YEARLY_SEQUENCE_START - 1) } + 1
+            yearCounters[year] = next
+            it.invoiceNumber = "$next/$year"
         }
 
         val result = invoiceRepository.saveAll(invoiceEntities)
@@ -288,6 +363,7 @@ class InvoiceService(
         departureDate: LocalDate?,
         agencyId: Long?,
         invoiceStatus: InvoiceStatus?,
+        year: Int?,
         pageable: Pageable,
     ): Page<Invoice> =
         invoiceRepository.findAll(
@@ -297,9 +373,17 @@ class InvoiceService(
                 .and(languageCriteria(language))
                 .and(departureDateCriteria(departureDate))
                 .and(agencyIdCriteria(agencyId))
-                .and(invoiceStatusCriteria(invoiceStatus)),
+                .and(invoiceStatusCriteria(invoiceStatus))
+                .and(yearCriteria(year)),
             pageable,
         )
+
+    private fun yearCriteria(year: Int?): Specification<Invoice>? =
+        year?.let {
+            Specification { root, _, cb ->
+                cb.between(root.get(Invoice::invoiceDate.name), LocalDate.of(it, 1, 1), LocalDate.of(it, 12, 31))
+            }
+        }
 
     private fun reservationIdCriteria(reservationId: Long?): Specification<Invoice>? =
         reservationId?.let {

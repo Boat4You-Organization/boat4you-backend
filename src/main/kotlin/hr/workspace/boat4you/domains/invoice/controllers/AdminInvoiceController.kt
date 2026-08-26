@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.invoice.controllers
 
+import hr.workspace.boat4you.domains.invoice.dto.CreateInvoiceDto
 import hr.workspace.boat4you.domains.invoice.dto.InvoiceDto
 import hr.workspace.boat4you.domains.invoice.dto.UpdateInvoiceDto
 import hr.workspace.boat4you.domains.invoice.enums.InvoiceRecipientType
@@ -19,6 +20,7 @@ import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
@@ -44,13 +46,26 @@ internal class AdminInvoiceController(
         @RequestParam(name = "departureDate", required = false) departureDate: LocalDate? = null,
         @RequestParam(name = "agencyId", required = false) agencyId: Long? = null,
         @RequestParam(name = "invoiceStatus", required = false) invoiceStatus: InvoiceStatus? = null,
+        @RequestParam(name = "year", required = false) year: Int? = null,
         @PageableDefault(
             sort = ["created"],
             direction = Sort.Direction.DESC,
         ) pageable: Pageable,
     ): ResponseEntity<PagedModel<InvoiceDto>> {
-        val invoices = invoiceService.getAllForAdmin(reservationId, recipientType, recipientName, language, departureDate, agencyId, invoiceStatus, pageable)
+        val invoices = invoiceService.getAllForAdmin(reservationId, recipientType, recipientName, language, departureDate, agencyId, invoiceStatus, year, pageable)
         return ResponseEntity.ok(PagedModel(invoices))
+    }
+
+    @Operation(summary = "Distinct invoice years (by invoice date), newest first — drives the year tabs")
+    @GetMapping("/years")
+    fun getInvoiceYears(): ResponseEntity<List<Int>> = ResponseEntity.ok(invoiceService.getInvoiceYears())
+
+    @Operation(summary = "Create a manual invoice (agency or client; optional booking link)")
+    @PostMapping
+    fun createInvoice(
+        @RequestBody model: CreateInvoiceDto,
+    ): ResponseEntity<InvoiceDto> {
+        return ResponseEntity.status(HttpStatus.CREATED).body(invoiceService.createInvoice(model))
     }
 
     @Operation(summary = "Get invoice details by ID")

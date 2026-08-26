@@ -39,13 +39,35 @@ interface InvoiceRepository :
         startOfNextDay: LocalDateTime,
     ): List<ReservationView>
 
+    /**
+     * Highest sequence already allocated in the yearly `NNNNNN/GGGG` numbering
+     * scheme for the given year. Legacy plain-integer numbers (pre-2026 scheme)
+     * don't match the pattern and are ignored on purpose.
+     */
     @Query(
-        """
-        SELECT i.invoiceNumber FROM Invoice i
-        WHERE i.invoiceDate <= :onDate
-        ORDER BY i.id DESC
-        LIMIT 1
-    """,
+        value = """
+            SELECT MAX(CAST(split_part(invoice_number, '/', 1) AS BIGINT))
+            FROM invoice
+            WHERE invoice_number ~ '^[0-9]+/[0-9]{4}${'$'}'
+              AND split_part(invoice_number, '/', 2) = CAST(:year AS TEXT)
+        """,
+        nativeQuery = true,
     )
-    fun findLastInvoiceNumber(onDate: LocalDate): String?
+    fun findMaxSequenceForYear(year: Int): Long?
+
+    /**
+     * Transaction-scoped Postgres advisory lock serializing invoice-number
+     * allocation across BOTH JVMs (cusma2 API + cusma3 scheduler job) — two
+     * concurrent creators must not read the same MAX and mint duplicates.
+     * Released automatically at transaction end.
+     */
+    @Query(value = "SELECT CAST(pg_advisory_xact_lock(4272026) AS TEXT)", nativeQuery = true)
+    fun lockInvoiceNumbering(): String?
+
+    /** Distinct invoice years, newest first — drives the year tabs in admin. */
+    @Query(
+        value = "SELECT DISTINCT CAST(EXTRACT(YEAR FROM invoice_date) AS INTEGER) FROM invoice ORDER BY 1 DESC",
+        nativeQuery = true,
+    )
+    fun findDistinctYears(): List<Int>
 }
