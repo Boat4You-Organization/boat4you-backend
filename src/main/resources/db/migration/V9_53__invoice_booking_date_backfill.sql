@@ -1,0 +1,116 @@
+-- Booking dates for the standalone commission invoices — extracted from the
+-- operators' paper booking confirmations (CHARTER 2026 folder, session
+-- 'Računi agencijske provizije', 28.8.2026; per-record source audit in that
+-- session's scratchpad). Keyed by contract_number and guarded by IS NULL so
+-- platform-linked invoices keep their reservation_created_at value and the
+-- migration no-ops on databases without this data.
+
+UPDATE invoice SET booking_date = DATE '2025-04-17' WHERE contract_number = '100101/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-04-29' WHERE contract_number = '100102/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-06-10' WHERE contract_number = '100103/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-06-10' WHERE contract_number = '100104/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-06-10' WHERE contract_number = '100105/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-06-10' WHERE contract_number = '100106/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-16' WHERE contract_number = '100107/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-20' WHERE contract_number = '1001076/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-05-05' WHERE contract_number = '1001078/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-26' WHERE contract_number = '100108/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-05-27' WHERE contract_number = '1001086/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-01' WHERE contract_number = '1001089/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-08-09' WHERE contract_number = '100109/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-03-06' WHERE contract_number = '100110/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-07-09' WHERE contract_number = '1001101/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-07-08' WHERE contract_number = '1001102/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-07-22' WHERE contract_number = '1001103/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-07-25' WHERE contract_number = '1001104/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-07-27' WHERE contract_number = '1001105/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-07-29' WHERE contract_number = '1001106/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-08-18' WHERE contract_number = '1001107/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-08-24' WHERE contract_number = '1001109/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-08-04' WHERE contract_number = '100111/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-08-23' WHERE contract_number = '100112/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-08-13' WHERE contract_number = '100113/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-08-23' WHERE contract_number = '100114/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-08-06' WHERE contract_number = '100115/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-08-30' WHERE contract_number = '100116/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-08-30' WHERE contract_number = '100117/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-09-08' WHERE contract_number = '100118/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-09-05' WHERE contract_number = '100119/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-09-20' WHERE contract_number = '100120/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-10-03' WHERE contract_number = '100121/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-10-01' WHERE contract_number = '100122/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-10-06' WHERE contract_number = '100123/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-06' WHERE contract_number = '100124/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-03' WHERE contract_number = '100125/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-03' WHERE contract_number = '100126/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-14' WHERE contract_number = '100127/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-03' WHERE contract_number = '100128/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-06' WHERE contract_number = '100129/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-15' WHERE contract_number = '100130/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-14' WHERE contract_number = '100131/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-17' WHERE contract_number = '100132/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-23' WHERE contract_number = '100133/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-11-25' WHERE contract_number = '100134/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-12-01' WHERE contract_number = '100135/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-12-01' WHERE contract_number = '100136/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-12-05' WHERE contract_number = '100137/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-12-08' WHERE contract_number = '100138/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-12-11' WHERE contract_number = '100139/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-12-12' WHERE contract_number = '100140/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-12-19' WHERE contract_number = '100141/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2025-12-22' WHERE contract_number = '100142/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-01-05' WHERE contract_number = '100143/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-01-09' WHERE contract_number = '100144/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-01-12' WHERE contract_number = '100145/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-01-15' WHERE contract_number = '100146/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-01-15' WHERE contract_number = '100147/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-01-16' WHERE contract_number = '100148/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-01-22' WHERE contract_number = '100149/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-01-26' WHERE contract_number = '100150/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-01-26' WHERE contract_number = '100151/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-02' WHERE contract_number = '100152/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-02' WHERE contract_number = '100153/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-10' WHERE contract_number = '100154/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-06' WHERE contract_number = '100155/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-12' WHERE contract_number = '100156/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-09' WHERE contract_number = '100157/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-17' WHERE contract_number = '100158/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-24' WHERE contract_number = '100159/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-23' WHERE contract_number = '100160/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-27' WHERE contract_number = '100161/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-02-24' WHERE contract_number = '100162/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-03-06' WHERE contract_number = '100163/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-03-09' WHERE contract_number = '100165/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-03-10' WHERE contract_number = '100166/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-03-10' WHERE contract_number = '100167/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-03-18' WHERE contract_number = '100168/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-03-20' WHERE contract_number = '100169/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-03-28' WHERE contract_number = '100170/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-03-28' WHERE contract_number = '100171/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-01' WHERE contract_number = '100172/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-02' WHERE contract_number = '100173/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-06' WHERE contract_number = '100174/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-21' WHERE contract_number = '100175/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-25' WHERE contract_number = '100177/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-29' WHERE contract_number = '100179/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-05-01' WHERE contract_number = '100180/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-30' WHERE contract_number = '100181/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-30' WHERE contract_number = '100182/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-04-30' WHERE contract_number = '100183/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-05-18' WHERE contract_number = '100184/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-05-25' WHERE contract_number = '100185/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-05-28' WHERE contract_number = '100187/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-01' WHERE contract_number = '100188/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-15' WHERE contract_number = '100190/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-15' WHERE contract_number = '100191/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-19' WHERE contract_number = '100192/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-19' WHERE contract_number = '100193/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-24' WHERE contract_number = '100194/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-25' WHERE contract_number = '100195/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-25' WHERE contract_number = '100196/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-06-25' WHERE contract_number = '100197/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-07-01' WHERE contract_number = '100198/2026' AND booking_date IS NULL;
+UPDATE invoice SET booking_date = DATE '2026-07-02' WHERE contract_number = '100199/2026' AND booking_date IS NULL;
+
+-- 106 rows; 100164/2026 intentionally left NULL (the operator's proposal
+-- carries no issue date — only a PDF-metadata creation date, not used).
