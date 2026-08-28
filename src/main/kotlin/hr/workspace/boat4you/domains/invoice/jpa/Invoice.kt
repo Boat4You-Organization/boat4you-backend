@@ -75,6 +75,10 @@ class Invoice : AbstractEntity<Long>() {
     @Column(name = "charter_date_to", columnDefinition = "DATE")
     var charterDateTo: LocalDate? = null
 
+    /** Departure country of the charter (English name, e.g. "Croatia"). */
+    @Column(name = "charter_country", columnDefinition = "VARCHAR(63)")
+    var charterCountry: String? = null
+
     @Column(name = "invoice_date", columnDefinition = "VARCHAR(255)", nullable = false)
     lateinit var invoiceDate: LocalDate
 

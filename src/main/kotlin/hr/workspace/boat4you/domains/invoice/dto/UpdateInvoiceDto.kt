@@ -26,6 +26,7 @@ data class UpdateInvoiceDto(
     /** Absent keeps the stored dates (same guard as invoiceNumber/contractNumber). */
     val charterDateFrom: LocalDate? = null,
     val charterDateTo: LocalDate? = null,
+    val charterCountry: String? = null,
     val includeVat: Boolean,
     val vatPercentage: Float,
     val priceWithoutVat: BigDecimal,

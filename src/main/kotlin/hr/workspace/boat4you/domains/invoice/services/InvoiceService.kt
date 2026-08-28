@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.invoice.services
 
+import hr.workspace.boat4you.domains.catalouge.enums.CountryIsoEnum
 import hr.workspace.boat4you.common.services.ifNotNull
 import hr.workspace.boat4you.common.services.initSpecification
 import hr.workspace.boat4you.common.services.nonBlankOrNull
@@ -115,6 +116,7 @@ class InvoiceService(
                 invoiceItem = model.invoiceItem
                 charterDateFrom = model.charterDateFrom
                 charterDateTo = model.charterDateTo
+                charterCountry = model.charterCountry?.trim()?.takeIf { it.isNotEmpty() }
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage
                 priceWithoutVat = model.priceWithoutVat
@@ -225,6 +227,7 @@ class InvoiceService(
                 model.contractNumber?.let { contractNumber = it.trim().takeIf { s -> s.isNotEmpty() } }
                 model.charterDateFrom?.let { charterDateFrom = it }
                 model.charterDateTo?.let { charterDateTo = it }
+                model.charterCountry?.let { charterCountry = it.trim().takeIf { c -> c.isNotEmpty() } }
                 invoiceItem = resolvedInvoiceItem
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage
@@ -371,6 +374,10 @@ class InvoiceService(
             invoiceDate = view.reservationDateFrom!!.toLocalDate()
             charterDateFrom = view.reservationDateFrom!!.toLocalDate()
             charterDateTo = view.reservationDateTo?.toLocalDate()
+            charterCountry =
+                view.locationFromCountry?.let { code ->
+                    runCatching { CountryIsoEnum.valueOf(code).englishName }.getOrNull() ?: code
+                }
             invoiceLanguage = language
             includeVat = isAgencyInCroatia
             this.vatPercentage = vatPercentage

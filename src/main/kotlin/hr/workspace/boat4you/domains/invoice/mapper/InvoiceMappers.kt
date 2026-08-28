@@ -38,6 +38,7 @@ class InvoiceMappers(
             contractNumber = invoice.contractNumber,
             charterDateFrom = invoice.charterDateFrom,
             charterDateTo = invoice.charterDateTo,
+            charterCountry = invoice.charterCountry,
             invoiceDate = invoice.invoiceDate,
             invoiceLanguage = invoice.invoiceLanguage,
             invoiceStatus = invoice.invoiceStatus,

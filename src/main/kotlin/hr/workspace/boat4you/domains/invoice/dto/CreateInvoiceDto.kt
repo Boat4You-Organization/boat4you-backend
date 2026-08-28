@@ -32,6 +32,7 @@ data class CreateInvoiceDto(
     /** Charter departure / return; both optional (standalone invoices may omit). */
     val charterDateFrom: LocalDate? = null,
     val charterDateTo: LocalDate? = null,
+    val charterCountry: String? = null,
     val includeVat: Boolean,
     val vatPercentage: Float,
     val priceWithoutVat: BigDecimal,
