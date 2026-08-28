@@ -33,6 +33,7 @@ data class CreateInvoiceDto(
     val charterDateFrom: LocalDate? = null,
     val charterDateTo: LocalDate? = null,
     val charterCountry: String? = null,
+    val bookingDate: LocalDate? = null,
     val includeVat: Boolean,
     val vatPercentage: Float,
     val priceWithoutVat: BigDecimal,

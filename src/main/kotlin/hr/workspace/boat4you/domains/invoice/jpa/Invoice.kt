@@ -75,6 +75,10 @@ class Invoice : AbstractEntity<Long>() {
     @Column(name = "charter_date_to", columnDefinition = "DATE")
     var charterDateTo: LocalDate? = null
 
+    /** Date the operator issued the booking confirmation (Mario's inquiry-statistics axis). */
+    @Column(name = "booking_date", columnDefinition = "DATE")
+    var bookingDate: LocalDate? = null
+
     /** Departure country of the charter (English name, e.g. "Croatia"). */
     @Column(name = "charter_country", columnDefinition = "VARCHAR(63)")
     var charterCountry: String? = null

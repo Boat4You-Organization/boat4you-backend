@@ -117,6 +117,7 @@ class InvoiceService(
                 charterDateFrom = model.charterDateFrom
                 charterDateTo = model.charterDateTo
                 charterCountry = model.charterCountry?.trim()?.takeIf { it.isNotEmpty() }
+                bookingDate = model.bookingDate
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage
                 priceWithoutVat = model.priceWithoutVat
@@ -228,6 +229,7 @@ class InvoiceService(
                 model.charterDateFrom?.let { charterDateFrom = it }
                 model.charterDateTo?.let { charterDateTo = it }
                 model.charterCountry?.let { charterCountry = it.trim().takeIf { c -> c.isNotEmpty() } }
+                model.bookingDate?.let { bookingDate = it }
                 invoiceItem = resolvedInvoiceItem
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage
@@ -374,6 +376,7 @@ class InvoiceService(
             invoiceDate = view.reservationDateFrom!!.toLocalDate()
             charterDateFrom = view.reservationDateFrom!!.toLocalDate()
             charterDateTo = view.reservationDateTo?.toLocalDate()
+            bookingDate = view.reservationCreatedAt?.toLocalDate()
             charterCountry =
                 view.locationFromCountry?.let { code ->
                     runCatching { CountryIsoEnum.valueOf(code).englishName }.getOrNull() ?: code

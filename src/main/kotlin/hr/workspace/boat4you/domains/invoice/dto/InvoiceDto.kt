@@ -25,6 +25,7 @@ data class InvoiceDto(
     val charterDateFrom: LocalDate? = null,
     val charterDateTo: LocalDate? = null,
     val charterCountry: String? = null,
+    val bookingDate: LocalDate? = null,
     val invoiceDate: LocalDate,
     val invoiceLanguage: InvoiceLanguageEnum,
     val invoiceStatus: InvoiceStatus,
