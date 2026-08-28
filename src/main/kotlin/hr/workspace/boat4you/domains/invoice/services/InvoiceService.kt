@@ -56,6 +56,7 @@ class InvoiceService(
         reservationId: Long?,
         recipientType: InvoiceRecipientType?,
         recipientName: String?,
+        search: String?,
         language: LanguageEnum?,
         departureDate: LocalDate?,
         agencyId: Long?,
@@ -63,7 +64,7 @@ class InvoiceService(
         year: Int?,
         pageable: Pageable,
     ): Page<InvoiceDto> {
-        val pagedInvoices = findAllWithCriteria(reservationId, recipientType, recipientName, language, departureDate, agencyId, invoiceStatus, year, pageable)
+        val pagedInvoices = findAllWithCriteria(reservationId, recipientType, recipientName, search, language, departureDate, agencyId, invoiceStatus, year, pageable)
         return pagedInvoices.map { invoiceMappers.toInvoiceDto(it) }
     }
 
@@ -105,6 +106,7 @@ class InvoiceService(
                 recipientCountry = model.recipientCountry.englishName
                 recipientVatCode = model.recipientVatCode
                 invoiceNumber = number
+                contractNumber = model.contractNumber?.trim()?.takeIf { it.isNotEmpty() }
                 invoiceDate = model.invoiceDate
                 invoiceLanguage = model.invoiceLanguage
                 invoiceStatus = InvoiceStatus.DRAFT
@@ -205,6 +207,7 @@ class InvoiceService(
                 invoiceLanguage = model.invoiceLanguage
                 invoiceStatus = model.invoiceStatus ?: this.invoiceStatus
                 model.invoiceNumber?.trim()?.takeIf { it.isNotEmpty() }?.let { invoiceNumber = it }
+                contractNumber = model.contractNumber?.trim()?.takeIf { it.isNotEmpty() }
                 invoiceItem = resolvedInvoiceItem
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage
@@ -336,6 +339,9 @@ class InvoiceService(
 
         return Invoice().apply {
             this.reservationFlow = reservationFlow
+            // Auto invoices file under the reservation number — that IS the
+            // contract number for bookings made through the platform.
+            contractNumber = view.reservationNumber
             // We currently have no way of knowing the intended recipient type when generating an invoice. Defaulting to COMPANY
             recipientType = InvoiceRecipientType.COMPANY
             recipientName = view.agencyName ?: ""
@@ -359,6 +365,7 @@ class InvoiceService(
         reservationId: Long?,
         recipientType: InvoiceRecipientType?,
         recipientName: String?,
+        search: String?,
         language: LanguageEnum?,
         departureDate: LocalDate?,
         agencyId: Long?,
@@ -370,6 +377,7 @@ class InvoiceService(
             initSpecification(reservationIdCriteria(reservationId))
                 .and(recipientTypeCriteria(recipientType))
                 .and(recipientNameCriteria(recipientName))
+                .and(searchCriteria(search))
                 .and(languageCriteria(language))
                 .and(departureDateCriteria(departureDate))
                 .and(agencyIdCriteria(agencyId))
@@ -413,6 +421,23 @@ class InvoiceService(
             Specification { root, _, cb ->
                 cb.and(
                     cb.like(cb.upper(root.get(Invoice::recipientName.name)), "%${it.uppercase(Locale.getDefault())}%"),
+                )
+            }
+        }
+
+    /**
+     * One search box for the admin listing: matches the recipient (agency)
+     * name, Mario's contract number, or the invoice number — case-insensitive
+     * substring on any of the three.
+     */
+    private fun searchCriteria(search: String?): Specification<Invoice>? =
+        search.nonBlankOrNull()?.let {
+            val pattern = "%${it.uppercase(Locale.getDefault())}%"
+            Specification { root, _, cb ->
+                cb.or(
+                    cb.like(cb.upper(root.get(Invoice::recipientName.name)), pattern),
+                    cb.like(cb.upper(root.get(Invoice::contractNumber.name)), pattern),
+                    cb.like(cb.upper(root.get(Invoice::invoiceNumber.name)), pattern),
                 )
             }
         }

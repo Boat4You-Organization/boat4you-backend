@@ -35,6 +35,7 @@ class InvoiceMappers(
                 } else {
                     StringUtils.leftPad(invoice.invoiceNumber, 3, "0")
                 },
+            contractNumber = invoice.contractNumber,
             invoiceDate = invoice.invoiceDate,
             invoiceLanguage = invoice.invoiceLanguage,
             invoiceStatus = invoice.invoiceStatus,

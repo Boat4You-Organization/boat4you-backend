@@ -26,6 +26,8 @@ data class CreateInvoiceDto(
     val invoiceLanguage: InvoiceLanguageEnum,
     /** Blank/absent → next number in the yearly `NNNNNN/GGGG` sequence. */
     val invoiceNumber: String? = null,
+    /** Paper contract / booking-confirmation number the invoice belongs to. */
+    val contractNumber: String? = null,
     val invoiceItem: String,
     val includeVat: Boolean,
     val vatPercentage: Float,

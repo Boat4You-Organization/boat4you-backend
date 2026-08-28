@@ -20,6 +20,8 @@ data class InvoiceDto(
     val recipientCountry: String,
     val recipientVatCode: String,
     val invoiceNumber: String,
+    /** Paper contract / booking-confirmation number the invoice belongs to. */
+    val contractNumber: String? = null,
     val invoiceDate: LocalDate,
     val invoiceLanguage: InvoiceLanguageEnum,
     val invoiceStatus: InvoiceStatus,

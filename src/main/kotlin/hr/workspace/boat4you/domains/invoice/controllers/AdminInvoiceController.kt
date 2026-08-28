@@ -42,6 +42,8 @@ internal class AdminInvoiceController(
         @RequestParam(name = "reservationId", required = false) reservationId: Long? = null,
         @RequestParam(name = "recipientType", required = false) recipientType: InvoiceRecipientType? = null,
         @RequestParam(name = "recipientName", required = false) recipientName: String? = null,
+        // One-box search: recipient name OR contract number OR invoice number.
+        @RequestParam(name = "search", required = false) search: String? = null,
         @RequestParam(name = "language", required = false) language: LanguageEnum? = null,
         @RequestParam(name = "departureDate", required = false) departureDate: LocalDate? = null,
         @RequestParam(name = "agencyId", required = false) agencyId: Long? = null,
@@ -52,7 +54,7 @@ internal class AdminInvoiceController(
             direction = Sort.Direction.DESC,
         ) pageable: Pageable,
     ): ResponseEntity<PagedModel<InvoiceDto>> {
-        val invoices = invoiceService.getAllForAdmin(reservationId, recipientType, recipientName, language, departureDate, agencyId, invoiceStatus, year, pageable)
+        val invoices = invoiceService.getAllForAdmin(reservationId, recipientType, recipientName, search, language, departureDate, agencyId, invoiceStatus, year, pageable)
         return ResponseEntity.ok(PagedModel(invoices))
     }
 

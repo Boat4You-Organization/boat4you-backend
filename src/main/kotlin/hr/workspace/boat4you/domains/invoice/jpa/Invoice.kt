@@ -53,6 +53,12 @@ class Invoice : AbstractEntity<Long>() {
     @Column(name = "invoice_number", columnDefinition = "VARCHAR(255)", nullable = false)
     lateinit var invoiceNumber: String
 
+    // Mario's paper contract / booking-confirmation number (V9_49) — the key
+    // he files charters under. Auto-generated invoices carry the reservation
+    // number here; manual ones whatever the admin typed.
+    @Column(name = "contract_number", columnDefinition = "VARCHAR(63)", nullable = true)
+    var contractNumber: String? = null
+
     @Column(name = "invoice_date", columnDefinition = "VARCHAR(255)", nullable = false)
     lateinit var invoiceDate: LocalDate
 
