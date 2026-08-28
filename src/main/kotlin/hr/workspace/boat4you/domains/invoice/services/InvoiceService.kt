@@ -207,7 +207,9 @@ class InvoiceService(
                 invoiceLanguage = model.invoiceLanguage
                 invoiceStatus = model.invoiceStatus ?: this.invoiceStatus
                 model.invoiceNumber?.trim()?.takeIf { it.isNotEmpty() }?.let { invoiceNumber = it }
-                contractNumber = model.contractNumber?.trim()?.takeIf { it.isNotEmpty() }
+                // Absent field keeps the stored number (stale admin bundles /
+                // partial PUTs must not wipe it); an explicit blank clears it.
+                model.contractNumber?.let { contractNumber = it.trim().takeIf { s -> s.isNotEmpty() } }
                 invoiceItem = resolvedInvoiceItem
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage

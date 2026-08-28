@@ -18,7 +18,8 @@ data class UpdateInvoiceDto(
     val invoiceStatus: InvoiceStatus? = null,
     /** Editable since 22.8.2026 (Mario) — blank/absent keeps the generated number. */
     val invoiceNumber: String? = null,
-    /** Paper contract / booking-confirmation number; blank clears it. */
+    /** Paper contract / booking-confirmation number; absent keeps the stored
+     *  value, explicit blank clears it. */
     val contractNumber: String? = null,
     val invoiceItem: String,
     val includeVat: Boolean,
