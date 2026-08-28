@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.invoice.enums.InvoiceLanguageEnum
 import hr.workspace.boat4you.domains.invoice.enums.InvoiceRecipientType
 import hr.workspace.boat4you.domains.invoice.enums.InvoiceStatus
 import java.math.BigDecimal
+import java.time.LocalDate
 
 data class UpdateInvoiceDto(
     val recipientType: InvoiceRecipientType,
@@ -22,6 +23,9 @@ data class UpdateInvoiceDto(
      *  value, explicit blank clears it. */
     val contractNumber: String? = null,
     val invoiceItem: String,
+    /** Absent keeps the stored dates (same guard as invoiceNumber/contractNumber). */
+    val charterDateFrom: LocalDate? = null,
+    val charterDateTo: LocalDate? = null,
     val includeVat: Boolean,
     val vatPercentage: Float,
     val priceWithoutVat: BigDecimal,

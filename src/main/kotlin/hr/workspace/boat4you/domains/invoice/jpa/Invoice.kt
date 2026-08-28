@@ -59,6 +59,22 @@ class Invoice : AbstractEntity<Long>() {
     @Column(name = "contract_number", columnDefinition = "VARCHAR(63)", nullable = true)
     var contractNumber: String? = null
 
+    /**
+     * Numeric-friendly sort key for the Booking column: the digits before the
+     * "/" left-padded to 12, so 100198/2026 < 1001089/2026 sorts numerically
+     * instead of lexicographically (contract numbers mix 6- and 7-digit
+     * forms straight off Mario's paper contracts). Read-only DB formula —
+     * the listing sorts on this when the admin clicks the Booking header.
+     */
+    @org.hibernate.annotations.Formula("lpad(coalesce(split_part(contract_number, '/', 1), ''), 12, '0')")
+    var contractNumberSort: String? = null
+
+    @Column(name = "charter_date_from", columnDefinition = "DATE")
+    var charterDateFrom: LocalDate? = null
+
+    @Column(name = "charter_date_to", columnDefinition = "DATE")
+    var charterDateTo: LocalDate? = null
+
     @Column(name = "invoice_date", columnDefinition = "VARCHAR(255)", nullable = false)
     lateinit var invoiceDate: LocalDate
 

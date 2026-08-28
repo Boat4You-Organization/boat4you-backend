@@ -29,6 +29,9 @@ data class CreateInvoiceDto(
     /** Paper contract / booking-confirmation number the invoice belongs to. */
     val contractNumber: String? = null,
     val invoiceItem: String,
+    /** Charter departure / return; both optional (standalone invoices may omit). */
+    val charterDateFrom: LocalDate? = null,
+    val charterDateTo: LocalDate? = null,
     val includeVat: Boolean,
     val vatPercentage: Float,
     val priceWithoutVat: BigDecimal,

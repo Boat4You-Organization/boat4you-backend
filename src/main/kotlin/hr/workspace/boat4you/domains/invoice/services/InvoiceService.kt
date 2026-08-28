@@ -23,7 +23,9 @@ import hr.workspace.boat4you.security.getAuthenticatedUserId
 import jakarta.persistence.criteria.JoinType
 import org.openapitools.model.LanguageEnum
 import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Sort
 import org.springframework.data.jpa.domain.Specification
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.stereotype.Service
@@ -64,7 +66,7 @@ class InvoiceService(
         year: Int?,
         pageable: Pageable,
     ): Page<InvoiceDto> {
-        val pagedInvoices = findAllWithCriteria(reservationId, recipientType, recipientName, search, language, departureDate, agencyId, invoiceStatus, year, pageable)
+        val pagedInvoices = findAllWithCriteria(reservationId, recipientType, recipientName, search, language, departureDate, agencyId, invoiceStatus, year, remapSort(pageable))
         return pagedInvoices.map { invoiceMappers.toInvoiceDto(it) }
     }
 
@@ -111,12 +113,23 @@ class InvoiceService(
                 invoiceLanguage = model.invoiceLanguage
                 invoiceStatus = InvoiceStatus.DRAFT
                 invoiceItem = model.invoiceItem
+                charterDateFrom = model.charterDateFrom
+                charterDateTo = model.charterDateTo
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage
                 priceWithoutVat = model.priceWithoutVat
                 vatAmount = model.vatAmount
                 totalPrice = model.totalPrice
             }
+
+        // Linked invoices default the charter period to the booking's own dates
+        // when the creator didn't type them explicitly.
+        if (entity.charterDateFrom == null && flow?.id != null) {
+            reservationViewRepository.findByReservationFlowId(flow.id!!)?.let { v ->
+                entity.charterDateFrom = v.reservationDateFrom?.toLocalDate()
+                entity.charterDateTo = v.reservationDateTo?.toLocalDate()
+            }
+        }
 
         return invoiceRepository.save(entity).let { invoiceMappers.toInvoiceDto(it) }
     }
@@ -210,6 +223,8 @@ class InvoiceService(
                 // Absent field keeps the stored number (stale admin bundles /
                 // partial PUTs must not wipe it); an explicit blank clears it.
                 model.contractNumber?.let { contractNumber = it.trim().takeIf { s -> s.isNotEmpty() } }
+                model.charterDateFrom?.let { charterDateFrom = it }
+                model.charterDateTo?.let { charterDateTo = it }
                 invoiceItem = resolvedInvoiceItem
                 includeVat = model.includeVat
                 vatPercentage = model.vatPercentage
@@ -354,6 +369,8 @@ class InvoiceService(
             recipientVatCode = view.agencyVatCode ?: ""
             this.invoiceItem = invoiceItem
             invoiceDate = view.reservationDateFrom!!.toLocalDate()
+            charterDateFrom = view.reservationDateFrom!!.toLocalDate()
+            charterDateTo = view.reservationDateTo?.toLocalDate()
             invoiceLanguage = language
             includeVat = isAgencyInCroatia
             this.vatPercentage = vatPercentage
@@ -361,6 +378,24 @@ class InvoiceService(
             vatAmount = if (isAgencyInCroatia) vatAmountIfApplicable else BigDecimal.ZERO
             totalPrice = agencyCommission
         }
+    }
+
+    /**
+     * The Booking column sorts NUMERICALLY: contract numbers mix 6- and
+     * 7-digit forms (100198/2026 vs 1001089/2026 — straight off Mario's paper
+     * contracts), so the raw string order is wrong. The entity exposes a
+     * zero-padded @Formula sort key; swap it in transparently whenever the
+     * client asks to sort by contractNumber.
+     */
+    private fun remapSort(pageable: Pageable): Pageable {
+        if (pageable.sort.none { it.property == Invoice::contractNumber.name }) return pageable
+        val mapped =
+            Sort.by(
+                pageable.sort.map { order ->
+                    if (order.property == Invoice::contractNumber.name) order.withProperty(Invoice::contractNumberSort.name) else order
+                }.toList(),
+            )
+        return PageRequest.of(pageable.pageNumber, pageable.pageSize, mapped)
     }
 
     private fun findAllWithCriteria(
@@ -472,7 +507,10 @@ class InvoiceService(
                     )
 
                 query.distinct(true)
-                cb.exists(subquery)
+                // Direct charter_date_from match covers standalone invoices;
+                // the reservation-view EXISTS keeps legacy linked rows that
+                // predate the charter_date columns.
+                cb.or(cb.equal(root.get<LocalDate>(Invoice::charterDateFrom.name), departureDate), cb.exists(subquery))
             }
         }
 
