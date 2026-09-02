@@ -71,7 +71,10 @@ class ReservationSyncService(
         )
     }
 
-    @Transactional
+    // Deliberately no @Transactional: the partner lookups below (fetchNausysYachtId /
+    // fetchMmkYachtId) must not run inside an open DB transaction. The annotation that
+    // used to sit here was inert anyway — self-invocation from syncActiveReservations
+    // never went through the Spring proxy — so removing it changes no behaviour.
     internal fun processReservation(reservation: Reservation): ProcessResult {
         val flow = reservation.reservationFlow ?: return ProcessResult.SKIPPED
         val localYacht = flow.yacht ?: return ProcessResult.SKIPPED
