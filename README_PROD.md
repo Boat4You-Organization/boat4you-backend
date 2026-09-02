@@ -146,25 +146,52 @@ tail -f /home/cusma3/boat4you/logs/<logfile>   # VM3
 
 ## Scheduled Jobs
 
-All scheduled jobs run exclusively on **VM3**. They handle external data synchronisation (NauSYS, MMK), invoice generation, and customer email notifications.
-All values are in the server timezone.
+All scheduled jobs run exclusively on **VM3** (`data-sync` profile, ShedLock JDBC `usingDbTime()`, scheduling pool of 8 threads). They handle external data synchronisation (NauSYS, MMK), invoice generation, retention and customer notifications.
+**All times are UTC** (VM3 `timedatectl` = Etc/UTC; only `ExchangeRateSyncJob` sets `zone=` explicitly). Table regenerated from the `@Scheduled` / `@SchedulerLock` annotations on 2.9.2026; "measured" = journal `took N ms` lines, 7-day window.
 
-| Job class                               | Method                               | Cron expression      | Schedule                                                 |
-|-----------------------------------------|--------------------------------------|----------------------|----------------------------------------------------------|
-| `NausysSyncJob`                         | `runCatalogueSync`                   | `0 0 1 * * ?`        | Every day at 01:00                                       |
-| `NausysSyncJob`                         | `runYachtSync`                       | `0 30 1 * * ?`       | Every day at 01:30                                       |
-| `NausysSyncJob`                         | `availabilitySync`                   | `0 20 3,12 * * *`    | Every day at 03:20 and 12:20                             |
-| `MmkSyncJob`                            | `runCatalogueSync`                   | `0 0 6 * * ?`        | Every day at 06:00                                       |
-| `MmkSyncJob`                            | `runYachtSync`                       | `0 10 6 * * ?`       | Every day at 06:10                                       |
-| `MmkSyncJob`                            | `runYachtOfferSync`                  | `0 30 6 * * ?`       | Every day at 06:30                                       |
-| `MmkSyncJob`                            | `runYachtLangSync`                   | `0 20 7 * * ?`       | Every day at 07:20                                       |
-| `MmkSyncJob`                            | `availabilitySync`                   | `0 10 8 * * ?`       | Every day at 08:10                                       |
-| `DeleteExpiredReservationsAndOffersJob` | `deleteExpiredReservationsAndOffers` | `0 0 6 * * ?`        | Every day at 06:00                                       |
-| `GenerateInvoiceJob`                    | `runJob`                             | `0 7 0/2 ? * *`      | Every 2 hours at 7 minutes past (00:07, 02:07, 04:07, …) |
-| `ExchangeRateSyncJob`                   | `updateExchangeRates`                | `0 0 17 * * *` (UTC) | Every day at 17:00 UTC                                   |
-| `PaymentPendingNotificationJob`         | `run1DayInAdvance`                   | `0 0 12 ? * *`       | Every day at 12:00                                       |
-| `PaymentPendingNotificationJob`         | `run3DaysInAdvance`                  | `0 10 12 ? * *`      | Every day at 12:10                                       |
-| `OptionExpiryJob`                       | `send24HourOptionExpirationReminder` | `0 0 * * * *`        | Every hour (on the hour)                                 |
-| `OptionExpiryJob`                       | `send48HourOptionExpirationReminder` | `0 5 * * * *`        | Every hour at 5 minutes past                             |
-| `OptionExpiryJob`                       | `syncExpiredOptions`                 | `0 */30 * * * ?`     | Every 30 minutes                                         |
-| `ImageDownloadJob`                      | `runImageDownload`                   | `0 50 */2 * * ?`     | Every 2 hours at 50 minutes past                         |
+> The "06:15 backup" that appears in code comments and notes is the **NauSys backup-sync** cron (`NausysSyncJob.runYachtBackupSync`), **not a database backup** — VM4 has no in-VM backup job (no cron/timer/pg_dump); DB snapshots are hoster-side.
+
+### Timetable (de-conflicted 2.9.2026)
+
+The single NauSys credential is throttled on *concurrent* calls, so NauSys jobs are strictly sequential: the nightly block **23:00 → ≈05:15** (catalogue 23:00, yachts+offers 23:20, then the first availability pass and the offer retry-queue drain are *chained* at the end of the same run), then MMK **06:00–07:50**, MMK availability **08:40 / 12:40 / 16:40 / 20:40**, NauSys availability **10:20 / 16:20 / 22:20**. `NausysSyncJob` additionally holds an in-JVM `nausysBusy` gate so a late-running night makes the next NauSys job wait/skip instead of running in parallel.
+**Safe restart/deploy windows for VM3:** 07:50–08:40, 13:00–16:15, 17:10–20:35, 21:05–22:15 UTC.
+
+| Job class | Method | Cron (UTC) | Lock (`lockAtMostFor`) | Schedule / measured |
+|---|---|---|---|---|
+| `NausysSyncJob` | `runCatalogueSync` | `0 0 23 * * ?` | `nausysCatalogueSync` PT2H | 23:00; 0.5–1 min |
+| `NausysSyncJob` | `runYachtSync` | `0 20 23 * * ?` | `nausysYachtSync` PT7H | 23:20; yachts 11–15 min + offers 300–345 min, then chained availability pass (4–6 min) + retry-queue drain → ends ≈04:45–05:15 |
+| `NausysSyncJob` | `runCatalogueBackupSync` | `0 0 6,10,15 * * ?` | `nausysCatalogueBackupSync` PT1H | no-op unless catalogue marker >24 h |
+| `NausysSyncJob` | `runYachtBackupSync` | `0 15 6,10,15 * * ?` | `nausysYachtBackupSync` PT2H | always drains `nausys_offer_sync_retry`; yachts/offers only if marker >24 h and no night still running |
+| `NausysSyncJob` | `availabilitySync` | `0 20 10,16,22 * * *` | `nausysAvailabilitySync` PT1H | 3.8–6.2 min; 4th pass/day is chained into `runYachtSync` |
+| `DeleteExpiredReservationsAndOffersJob` | `deleteExpiredReservationsAndOffers` | `0 30 5 * * ?` | `deleteExpiredReservationsAndOffers` PT1H | 05:30; ~1 s |
+| `MmkSyncJob` | `runCatalogueSync` | `0 0 6 * * ?` | `mmkCatalogueSync` PT1H | 06:00; ~5 s |
+| `MmkSyncJob` | `runYachtSync` | `0 10 6 * * ?` | `mmkYachtSync` PT1H | 06:10; 5.5–9 min |
+| `MmkSyncJob` | `runYachtOfferSync` | `0 30 6 * * ?` | `mmkYachtOfferSync` PT2H | 06:30; 11–16 min |
+| `MmkSyncJob` | `runCatalogueBackupSync` | `0 0 7,11,16 * * ?` | `mmkCatalogueBackupSync` PT1H | no-op unless marker >24 h |
+| `MmkSyncJob` | `runYachtBackupSync` | `0 10 7,11,16 * * ?` | `mmkYachtBackupSync` PT1H | no-op unless marker >24 h |
+| `MmkSyncJob` | `runYachtLangSync` | `0 20 7 * * ?` | `mmkYachtLangSync` PT1H | 07:20; 8–27 min |
+| `MmkSyncJob` | `runYachtLangBackupSync` | `0 0 8,12,17 * * ?` | `mmkYachtLangBackupSync` PT1H | no-op unless marker >24 h |
+| `MmkSyncJob` | `availabilitySync` | `0 40 8,12,16,20 * * ?` | `mmkAvailabilitySync` PT1H | 10–40 min (08:40 run longest, ≤09:20) |
+| `MmkStaleReverifyJob` | `runNightlyReverify` | `0 25 9 * * ?` | `mmkStaleOfferReverify` PT4H | 09:25; 6–10 min |
+| `AvailabilityIntegrityDetectorJob` | `check` | `0 55 9 * * ?` | `availabilityIntegrityDetector` PT30M | 09:55; ~2 s (after all morning syncs) |
+| `ConsistencyVerifierJob` | `runWeekly` | `0 0 10 * * SUN` | `consistencyVerifier` PT4H | Sunday 10:00; ~6 min |
+| `GenerateInvoiceJob` | `runJob` | `0 7 0/2 ? * *` | `generateInvoice` PT1H | every 2 h at :07; seconds |
+| `ExchangeRateSyncJob` | `updateExchangeRates` | `0 0 17 * * *` (`zone=UTC`) | `exchangeRateSync` PT30M | 17:00; ~15 s |
+| `PaymentPendingNotificationJob` | `run1DayInAdvance` | `0 2 12 ? * *` | `paymentPendingNotification1Day` PT30M | 12:02 |
+| `PaymentPendingNotificationJob` | `run3DaysInAdvance` | `0 12 12 ? * *` | `paymentPendingNotification3Days` PT30M | 12:12 |
+| `OptionExpiryJob` | `send24HourOptionExpirationReminder` | `0 0 * * * *` | `optionExpirySend24h` PT30M | hourly :00 |
+| `OptionExpiryJob` | `send48HourOptionExpirationReminder` | `0 5 * * * *` | `optionExpirySend48h` PT30M | hourly :05 |
+| `OptionExpiryJob` | `send72HourOptionExpirationReminder` | `0 25 * * * *` | `optionExpirySend72h` PT30M | hourly :25 |
+| `OptionExpiryJob` | `syncExpiredOptions` | `0 */30 * * * ?` | `optionExpirySync` PT20M | every 30 min |
+| `ReservationSyncJob` | `runYachtSwapSync` | `0 15 * * * *` | `reservationYachtSwapSync` PT45M | hourly :15; 0–1 min (partner calls) |
+| `BirthdayEmailJob` | `sendBirthdayWishes` | `0 0 9 * * *` | `birthdayEmail` PT30M | 09:00 |
+| `PreCharterReminderJob` | `run` | `0 32 9 ? * *` | `preCharterReminder` PT45M | 09:32 |
+| `TripPushJob` | `run` | `0 40 9 ? * *` | `tripPushReminders` PT45M | 09:40 |
+| `TripChatAutomationJob` | `run` | `0 45 9 ? * *` | `tripChatAutomation` PT45M | 09:45 |
+| `TripPhotoRetentionJob` | `run` | `0 50 9 ? * *` | `tripPhotoRetention` PT30M | 09:50 |
+| `VoucherExpiryJob` | `expireOverdueVouchers` | `0 25 3 * * *` | `voucherExpiry` PT10M | 03:25 |
+| `InquiryRetentionJob` | `purgeOldInquiries` | `0 30 3 * * *` | `inquiryRetentionPurge` PT30M | 03:30 |
+| `RetentionReaperJob` | `runNightly` | `0 40 3 * * ?` | `retentionReaper` PT2H | 03:40; ~17 s |
+| `ImageDownloadJob` | `runImageDownload` | `0 50 */2 * * ?` | `imageDownload` PT2H | every 2 h at :50; 0–2 min |
+| `SearchViewRefreshJob` | `refresh` | `0 */5 * * * *` | `refreshYachtSearchView` PT8M (`lockAtLeastFor` PT30S) | every 5 min; ~45 s |
+| `TripChatStreamRegistry` | `heartbeat` | `fixedDelay` | — | SSE keep-alive, not a cron |

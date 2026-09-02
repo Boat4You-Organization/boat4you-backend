@@ -3048,7 +3048,8 @@ components:
           enum:
             - SEPARATE_PAYMENT
             - ADVANCE_PAYMENT
-          description: Type of payment calculation for the equipment (e.g., SEPARATE_PAYMENT or ADVANCE_PAYMENT).
+            - INCLUDED_IN_PRICE
+          description: Type of payment calculation for the equipment (SEPARATE_PAYMENT, ADVANCE_PAYMENT or INCLUDED_IN_PRICE).
         condition:
           $ref: '#/components/schemas/RestInternationalText'
         amount:
@@ -3525,7 +3526,8 @@ components:
           enum:
             - SEPARATE_PAYMENT
             - ADVANCE_PAYMENT
-          description: Payment calculation type.
+            - INCLUDED_IN_PRICE
+          description: Payment calculation type (SEPARATE_PAYMENT, ADVANCE_PAYMENT or INCLUDED_IN_PRICE).
         condition:
           $ref: '#/components/schemas/RestInternationalText'
         amount:

@@ -16,9 +16,10 @@ class DeleteExpiredReservationsAndOffersJob(
 
     /**
      * Deletes old reservations for reservation and offer
-     * Triggers at 6:00 AM every day.
+     * Triggers at 05:30 UTC every day — after the nightly NauSys block (23:00→≈05:15)
+     * and before the MMK block starts at 06:00 (de-conflicted timetable 2.9.2026).
      */
-    @Scheduled(cron = "0 0 6 * * ?")
+    @Scheduled(cron = "0 30 5 * * ?")
     @SchedulerLock(name = "deleteExpiredReservationsAndOffers", lockAtMostFor = "PT1H")
     fun deleteExpiredReservationsAndOffers() {
         log.info("Deleting expired reservations and offers")

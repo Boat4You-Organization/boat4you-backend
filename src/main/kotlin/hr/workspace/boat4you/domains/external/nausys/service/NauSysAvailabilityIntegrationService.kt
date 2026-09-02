@@ -3,11 +3,13 @@ package hr.workspace.boat4you.domains.external.nausys.service
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.external.config.SyncConfigurationProperties
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.exceptions.NauSysRateLimitedException
 import hr.workspace.boat4you.domains.external.nausys.client.NauSysAuditedClient
 import hr.workspace.boat4you.domains.external.service.PartnerAccessGuard
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpServerErrorException
 import java.time.LocalDate
 
 @Service
@@ -46,6 +48,16 @@ class NauSysAvailabilityIntegrationService(
                     nauSysAvailabilitySyncService.syncYachtAvailability(agency.id!!, nausysResponse, year)
                     partnerAccessGuard.recordSuccess(nausysSystemId, agencyExternalId.toLong())
                 } catch (ex: Exception) {
+                    // A partner-side throttle / outage is NOT an agency problem: never let it
+                    // count toward the 2-strike pause (which would silence the agency's
+                    // occupancy feed for 24 h). The next pass (≤6 h) re-probes it.
+                    if (ex is NauSysRateLimitedException || ex is HttpServerErrorException) {
+                        log.warn(
+                            "NauSYS availability transient failure for agency=${agency.id} (${agency.name}) " +
+                                "extId=$agencyExternalId year=$year — no strike, retried next pass: $ex",
+                        )
+                        continue
+                    }
                     val strikes = partnerAccessGuard.recordFailure(nausysSystemId, agencyExternalId.toLong())
                     if (strikes >= partnerAccessGuard.giveUpThreshold) {
                         log.warn(

@@ -16,6 +16,10 @@ import java.util.Objects
 class ServiceCallCacheService(
     private val serviceCallCacheRepository: ServiceCallCacheRepository,
 ) {
+    companion object {
+        const val YACHT_SEARCH_WARM_TTL_HOURS = 3L
+    }
+
     fun shouldCallOffer(
         yachtId: Long,
         dateFrom: LocalDate,
@@ -42,7 +46,11 @@ class ServiceCallCacheService(
         if (maxCreatedAt == null) {
             return true
         }
-        if (maxCreatedAt < Instant.now().minus(1, ChronoUnit.HOURS)) {
+        // 3 h (was 1 h): 8.8–22k freeYachtsSearch attempts/day for only 1.8–2.9k distinct
+        // ranges — each range was re-warmed 5–8×/day. Availability is resolved live from
+        // external_reservations and prices come from the nightly sync, so a longer warm
+        // TTL costs nothing in booking honesty (NauSys 429 plan P6a, 2.9.2026).
+        if (maxCreatedAt < Instant.now().minus(YACHT_SEARCH_WARM_TTL_HOURS, ChronoUnit.HOURS)) {
             return true
         }
         return false
@@ -90,6 +98,9 @@ class ServiceCallCacheService(
         val sortedLocations = locations.sorted()
         return Objects.hash(startDate, endDate, sortedLocations).toLong()
     }
+
+    /** Newest marker for a scheduled-sync method (hashCode 0), or null when never written. */
+    fun lastScheduledSync(method: MethodCacheEnum): Instant? = serviceCallCacheRepository.findByMethodAndHashCode(method, 0L)
 
     fun shouldRunScheduledSync(method: MethodCacheEnum): Boolean {
         val maxCreatedAt =

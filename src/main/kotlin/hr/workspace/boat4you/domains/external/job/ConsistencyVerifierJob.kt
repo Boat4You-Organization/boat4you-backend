@@ -72,8 +72,8 @@ class ConsistencyVerifierJob(
         val eligibleIds: Set<Long>,
     )
 
-    /** Sunday 09:30 — after the whole morning sync chain (06:00–08:30) settles. */
-    @Scheduled(cron = "0 30 9 * * SUN")
+    /** Sunday 10:00 UTC — after the whole morning sync chain (MMK 06:00–09:25, integrity 09:55) settles; ends ≤10:06, before the 10:20 NauSys availability pass. */
+    @Scheduled(cron = "0 0 10 * * SUN")
     @SchedulerLock(name = "consistencyVerifier", lockAtMostFor = "PT4H")
     fun runWeekly() {
         runCatching { verifyAndMail() }
