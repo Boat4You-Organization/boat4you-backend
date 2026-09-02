@@ -1,7 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
 import org.slf4j.LoggerFactory
-import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -24,9 +23,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  * without spawning N refreshes).
  *
  * Concurrent-refresh safety: PostgreSQL serialises REFRESH MATERIALIZED VIEW
- * CONCURRENTLY (a second concurrent attempt errors out), so even if our cron
- * tick and on-demand path collide the loser just logs a warning — the next
- * tick picks up. The matview is never left in a bad state.
+ * CONCURRENTLY (the second attempt waits for the first one's lock), so even if
+ * our cron tick and on-demand path collide the loser waits up to the session
+ * lock_timeout of 180 s set by YachtSearchViewRefresher (was: failed at the
+ * role default 15 s and logged a warning). The matview is never left in a bad
+ * state. The refresher also keeps the CONCURRENTLY diff in memory, which is
+ * what made this path work again on cusma2 (its Hikari connectionInitSql caps
+ * temp files at 1 GB; the old 64 MB-hash diff spilled ~1.8 GB and failed).
  *
  * NOT @Profile("data-sync"): must run on the api node (cusma2) where the
  * admin mutation endpoints land. The cron job (SearchViewRefreshJob) keeps its
@@ -35,7 +38,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 @Service
 class SearchViewRefreshService(
-    private val jdbcTemplate: JdbcTemplate,
+    private val refresher: YachtSearchViewRefresher,
 ) {
     private val log = LoggerFactory.getLogger(this.javaClass)
     private val pending = AtomicBoolean(false)
@@ -55,10 +58,9 @@ class SearchViewRefreshService(
             return
         }
         executor.schedule({
-            val start = System.currentTimeMillis()
             try {
-                jdbcTemplate.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY public.yacht_search_view")
-                log.info("on-demand refresh: yacht_search_view in {} ms", System.currentTimeMillis() - start)
+                val ms = refresher.refresh()
+                log.info("on-demand refresh: yacht_search_view in {} ms", ms)
             } catch (e: Exception) {
                 log.warn("on-demand refresh of yacht_search_view failed — cron will catch up", e)
             } finally {
