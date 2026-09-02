@@ -1,5 +1,97 @@
 # Backend deploy notes
 
+## 2026-09-03 — 🔄 Part 4: sync reliability + data completeness (merge fb90905; branches part4/nausys 7b2897f, part4/matview 5af2997, part4/txhikari 388ea24, part4/logging 9d6d316) — ⏳ DEPLOYING
+
+Goal (Mario): "sync must run undisturbed and we must have ALL the data". Fleet-audit backend findings, each
+investigated read-only against prod logs/DB first, then implemented in 4 isolated worktrees and merged.
+
+**1. NauSys resilience + data completeness (`domains/external/nausys/**`, V9_54)**
+- Company 1981 (Set Sail) failed every night since 28.8: NauSys sends `calculationType: INCLUDED_IN_PRICE`, our
+  generated enum only knew ADVANCE_PAYMENT/SEPARATE_PAYMENT → whole response unparseable → 0 intervals synced,
+  449 offers frozen at 2026-11-23, no 2027 season. Fix: spec enum extended + a dedicated NauSys ObjectMapper that
+  maps ANY unknown enum string to null with a once-per-JVM WARN (12 generated enums were equally fragile).
+- 429 storm (cusma2 6-13k/day, cusma3 200-400/day; agency 132 Dream Yacht = 692 yachts aborted 2 nights running):
+  retries were nested (interceptor 5 × @Retryable 3 = up to 18 HTTP attempts, ~3.7 min sleeps, Retry-After ignored).
+  Now ONE retry layer: interceptor honours `Retry-After`, ladder 1/2/5/10/20 s + jitter, throws typed
+  `NauSysRateLimitedException` (extends ExternalSystemException → friendly EXTERNAL_* to clients) when exhausted;
+  `@Retryable` on getFreeYachts/getFreeYachtsSearchForAsync has `noRetryFor` it. WARN only on first-of-chain and
+  exhaustion (intermediate retries INFO). `NauSysRateLimitStats` counter logged per sync run.
+- Per-JVM concurrency gate (fair Semaphore) on bulk endpoints (freeYachts, freeYachtsSearch, allYachts,
+  getOccupancyByYear); booking endpoints bypass. **Env: `NAUSYS_MAX_CONCURRENT=2` on cusma2, `=1` on cusma3**
+  (`NAUSYS_GATE_WAIT_MS` optional, default 20000). Fleet total 3 in-flight vs the empirically failing 7.
+- Per-interval failure isolation: a failed week no longer aborts the agency; the interval is upserted into the new
+  table **`nausys_offer_sync_retry` (V9_54)** and drained at the end of the nightly run and at the 06:15/10:15/15:15
+  backup slots (15 min × attempts backoff, give up after 6 with ERROR). Survives scheduler restarts.
+- Availability sync: 429/5xx are no longer a PartnerAccessGuard strike (a transient could pause an agency 24 h).
+- Location-warm TTL 1 h → 3 h (8.8-22k freeYachtsSearch/day for only 1.8-2.9k distinct requests). Prices on warmed
+  searches may lag up to 3 h; availability is live from external_reservations.
+- **Schedule (UTC, effective after the cusma3 restart):** nausysCatalogueSync 01:00→**23:00**, nausysYachtSync
+  01:30→**23:20** with lockAtMostFor PT4H→**PT7H** (runs 5-5.7 h; the old lock expired mid-run); the first
+  availability pass is **chained** after the offer sync (the 04:20 slot that ran in parallel with it is removed),
+  others 10:20/16:20/22:20; deleteExpiredReservationsAndOffers 06:00→05:30; availabilityIntegrityDetector
+  06:40→09:55; mmkStaleOfferReverify 09:15→09:25; consistencyVerifier SUN 09:30→10:00. In-JVM `nausysBusy` gate
+  makes NauSys jobs sequential; backup slot skips a second full sync while the nightly one is still running.
+  README_PROD.md job table regenerated. **cusma3 safe restart windows (new timetable): 07:50-08:40, 13:00-16:15,
+  17:10-20:35, 21:05-22:15 UTC.** "06:15 backup" in old notes = NauSys backup-sync cron, NOT a DB backup.
+
+**2. yacht_search_view refresh (cusma4 load) (`domains/catalouge/**`, R__1_03)**
+- Every 5 min REFRESH CONCURRENTLY diffed 1.7M rows with work_mem 32 MB → ~1.8 GB temp files per run,
+  **530 GB/day of temp writes**, 288 × ~50 s/day; the admin on-demand refresh from cusma2 has been failing since 9.7
+  (1 GB temp_file_limit). Now `YachtSearchViewRefresher` runs the refresh with session `work_mem=768MB`,
+  `lock_timeout=180s`, `jit=off` (diff measured to fit in 741 MB → zero temp), cron **/10 with a change-aware skip
+  (pg_stat counters of the 8 source tables), on-demand path reuses it.
+- R__1_03 (repeatable → re-runs on the first cusma2 start): dead correlated `count(*) FROM yacht_extras` removed from
+  recommended_score (1.7M index probes / 73M heap fetches per refresh; column unused since the agency_recommended
+  sort — build 23 s → ~4 s); head/tail rewritten to **build-and-swap** (`_build` relation + indexes built first,
+  then DROP+RENAME inside the transaction — readers block only ms instead of failing at lock_timeout for ~45 s);
+  two dead indexes dropped (offer_status_idx: 4 scans/12 d, agency_id_idx: 12 scans/12 d). Verified on prod:
+  no dependent views on the matview; owner boat4you_owner, GRANT SELECT to boat4you_app kept.
+
+**3. Transactions vs partner HTTP (`ExternalSyncService`, `ReservationSyncService`, retryable clients)**
+- The only confirmed prod leak/kill source: per-yacht warm held a read-only JPA tx + advisory-lock connection across
+  the MMK/NauSys call (idle-in-transaction kills at ~01:00 nightly). Now: short read tx resolves the target, partner
+  call runs tx-free, writes stay REQUIRES_NEW. Inert `@Transactional` on `processReservation` removed (self-invoked).
+  Audit rows no longer wrapped in an extra TransactionTemplate (2 connections → 1 per audit).
+- JDBC URL accepts `${DB_JDBC_PARAMS:}`. **Env: cusma2 `DB_JDBC_PARAMS=?socketTimeout=300&tcpKeepAlive=true`
+  (NOT cusma3 — REFRESH may run 400 s); cusma3 `SPRING_DATASOURCE_HIKARI_LEAK_DETECTION_THRESHOLD=180000`
+  (181/182 "leaks" were the >60 s refresh).** Stale "5 min" comments → 180 s (role idle_in_transaction timeout).
+
+**4. Logging / PII (`ExternalAvailabilityReconcileService`, MMK services, `LogMasking`, `ApiErrorHandler`)**
+- "Skip absent-reconcile … ZERO reservations" (4,660 WARN/day) → outcome enum + ONE run-summary INFO line per run
+  (agencies, calls, empty per year with ids, unmappedNonEmpty, removed, breakerTripped); WARN only for the two real
+  signals (partner rows but none mapped; breaker tripped — now WITH the agency id). Delete semantics untouched
+  (the EMPTY-guard protects 4 flapping MMK companies).
+- MMK per-request wire log (59 % of the scheduler journal, POST bodies with client names) OFF by default; **env
+  `MMK_WIRE_LOG=true`** re-enables for incidents (bodies of POST/PUT redacted to byte counts).
+- PII: inquiry acknowledgement log masks the e-mail; `service_call.request_body` for NauSys createInfo drops
+  email/phone/mobile/passport/birthday/address/zip/skype/instagram (name/surname/countryId kept).
+- Per-row INFO/WARN (offer flips, synthesized disappearances, image failures, yacht skips, unpriced offers) → DEBUG
+  with counters in the run summaries; expected client 4xx (yacht not active etc.) → INFO with URI; taskExecutor
+  saturation WARN throttled to 1/min with cumulative count.
+
+**Tests:** 51 new (deserialization, retry interceptor, gate, retry policy reflection, per-interval isolation + queue
+drain, NausysSyncJob gate, Testcontainers repo + refresher, tx-boundary Testcontainers, reconcile outcomes,
+summaries, masking) — all green. Full suite: 185 tests, 31 failures — all PRE-EXISTING and unrelated (date-dependent
+ReservationPaymentPhasesServiceTest ×26, ReservationOptionsCombinationProviderTests ×2, NauSysDateTimeWrapperTests,
+MatchersTests, Boat4youWsApplicationTests context needs DB creds); see follow-ups.
+
+**Pre-deploy baseline (cusma4, 2.9. 23:20 UTC):** temp_files 127,212 / temp_bytes 6,823,181,029,017; yacht_search_view
+seq_scan 170,356, n_tup_ins 2,112,776 / del 1,961,957, dead 173,924; idx_yacht_extras_yacht_id idx_scan 5,686,314,327;
+matview 1587 MB, 11 indexes; agency 1981: 449 offers, max date_from 2026-11-23. Journals 24 h: cusma2 6,984 "NauSys
+429" lines / 397 exhausted / 367 saturated; cusma3 200 × 429, sync errors 132+1981, 4,624 skip lines, 20,403 MMK wire
+lines, 30 leak WARNs, refresh 288 × 51 s.
+
+**Deploy order:** cusma2 first (applies V9_54 + re-runs R__1_03 → ~30-40 s extra cusma4 CPU at startup, searches keep
+serving), env vars above, health check; then cusma3 with its env vars **only in a safe window** (old timetable is
+live until its restart: busy 01:00-07:30 UTC + :20/:40 availability slots). Rollback = `webservice.jar.prev` (table is
+additive; old code ignores it; R__1_03 old checksum would re-run the old definition on rollback).
+
+**Follow-ups (not in this batch):** ReservationIntegrationService/OptionExpiry tx split (TX P2/P3), Stripe webhook
+promote outside tx (P7, money path — Mario's call), expired rows out of the matview (item 6), service_call GDPR
+purge on account deletion, data-fix of 36 MMK + 16 NauSys frozen over-blocking rows (V9_55, after the summary names
+the agencies), warm marker written even when the warm failed (now 3 h skip), date-dependent unit tests, cusma4
+pg_stat_statements at the next PG restart, PG 18.1 → 18.6.
+
 ## 2026-09-02/03 — OPS: cusma2 heap 4096→3072 MB, needrestart list-mode ×5, NTP ×5, logrotate, jar cleanup — ✅ APPLIED
 
 Fleet audit (2.9.2026) found 9 kernel OOM kills of the API JVM on cusma2 in 12 days (anon-rss 5.6 GB at
