@@ -22,14 +22,12 @@ import org.openapitools.client.nausys.model.RestYachtReservationsRequest
 import org.springframework.retry.annotation.Backoff
 import org.springframework.retry.annotation.Retryable
 import org.springframework.stereotype.Component
-import org.springframework.transaction.support.TransactionTemplate
 import kotlin.collections.joinToString
 
 @Component
 class NauSysRetryableClient(
     private val nauSysClient: NauSysClient,
     private val serviceCallAuditService: ServiceCallAuditService,
-    private val transactionTemplate: TransactionTemplate,
     private val objectMapper: ObjectMapper,
 ) {
     companion object {
@@ -75,15 +73,13 @@ class NauSysRetryableClient(
             runCatching {
                 nauSysClient.defaultApi.freeYachtsSearch(request)
             }
-        transactionTemplate.execute<Unit> {
-            serviceCallAuditService.serviceCallAudit(
-                "freeYachtsSearch",
-                response,
-                response.getOrNull()?.status,
-                ExternalSystemEnum.NAUSYS,
-                serializeExcludingCredentials(request),
-            )
-        }
+        serviceCallAuditService.serviceCallAudit(
+            "freeYachtsSearch",
+            response,
+            response.getOrNull()?.status,
+            ExternalSystemEnum.NAUSYS,
+            serializeExcludingCredentials(request),
+        )
         return response.getOrThrow()
     }
 

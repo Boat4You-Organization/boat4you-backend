@@ -13,13 +13,11 @@ import org.openapitools.client.mmk.model.ReservationResponse
 import org.springframework.retry.annotation.Backoff
 import org.springframework.retry.annotation.Retryable
 import org.springframework.stereotype.Component
-import org.springframework.transaction.support.TransactionTemplate
 
 @Component
 class MmkRetryableClient(
     private val mmkClient: MmkClient,
     private val serviceCallAuditService: ServiceCallAuditService,
-    private val transactionTemplate: TransactionTemplate,
     private val objectMapper: ObjectMapper,
 ) {
     companion object {
@@ -182,15 +180,13 @@ class MmkRetryableClient(
                     maxYearOfBuild = maxYearOfBuild,
                 )
             }
-        transactionTemplate.execute<Unit> {
-            serviceCallAuditService.serviceCallAudit(
-                "getOffers",
-                response,
-                null,
-                ExternalSystemEnum.MMK,
-                "dateFrom: $dateFrom, dateTo: $dateTo, flexibility: $flexibility, companyId: $companyId, country: $country, productName: $productName, baseFromId: $baseFromId, baseToId: $baseToId, sailingAreaId: $sailingAreaId, yachtId: $yachtId, modelId: $modelId, currency: $currency, tripDuration: $tripDuration, minCabins: $minCabins, maxCabins: $maxCabins, minBerths: $minBerths, maxBerths: $maxBerths, minHeads: $minHeads, maxHeads: $maxHeads, minLength: $minLength, maxLength: $maxLength, showOptions: $showOptions, passengersOnBoard: $passengersOnBoard, kind: $kind, minYearOfBuild: $minYearOfBuild, maxYearOfBuild: $maxYearOfBuild",
-            )
-        }
+        serviceCallAuditService.serviceCallAudit(
+            "getOffers",
+            response,
+            null,
+            ExternalSystemEnum.MMK,
+            "dateFrom: $dateFrom, dateTo: $dateTo, flexibility: $flexibility, companyId: $companyId, country: $country, productName: $productName, baseFromId: $baseFromId, baseToId: $baseToId, sailingAreaId: $sailingAreaId, yachtId: $yachtId, modelId: $modelId, currency: $currency, tripDuration: $tripDuration, minCabins: $minCabins, maxCabins: $maxCabins, minBerths: $minBerths, maxBerths: $maxBerths, minHeads: $minHeads, maxHeads: $maxHeads, minLength: $minLength, maxLength: $maxLength, showOptions: $showOptions, passengersOnBoard: $passengersOnBoard, kind: $kind, minYearOfBuild: $minYearOfBuild, maxYearOfBuild: $maxYearOfBuild",
+        )
         return response.getOrThrow()
     }
 
