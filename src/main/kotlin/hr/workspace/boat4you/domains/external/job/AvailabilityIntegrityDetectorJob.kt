@@ -35,7 +35,10 @@ class AvailabilityIntegrityDetectorJob(
         private const val CONTRADICTION_WARN_THRESHOLD = 25
     }
 
-    @Scheduled(cron = "0 40 6 * * ?")
+    // 09:55 UTC: after the MMK availability run (08:40, worst case ≤09:20) and the stale
+    // reverify (09:25) — measures the settled state instead of a sync in flight (the old
+    // 06:40 slot ran in the middle of the MMK offer sync and produced a false ALERT 1.9.2026).
+    @Scheduled(cron = "0 55 9 * * ?")
     @SchedulerLock(name = "availabilityIntegrityDetector", lockAtMostFor = "PT30M")
     fun check() {
         val contradictions =

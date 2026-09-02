@@ -26,7 +26,9 @@ class MmkStaleReverifyJob(
     // After the 06:30 offer sweep window: heals any week the availability sync marked
     // UNAVAILABLE whose partner reservation has since disappeared (cancellations), and any
     // other stray — per-yacht exact-date MMK calls are the only trusted "week is gone" signal.
-    @Scheduled(cron = "0 15 9 * * ?")
+    // 09:25 UTC (was 09:15): the 08:40 MMK availability run measured up to 09:20, so the two
+    // MMK consumers no longer call the partner in parallel.
+    @Scheduled(cron = "0 25 9 * * ?")
     @SchedulerLock(name = "mmkStaleOfferReverify", lockAtMostFor = "PT4H")
     fun runNightlyReverify() {
         log.info("Starting nightly MMK stale-offer reverify")

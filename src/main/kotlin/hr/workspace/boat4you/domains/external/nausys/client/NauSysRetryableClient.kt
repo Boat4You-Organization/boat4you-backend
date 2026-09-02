@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.external.exceptions.ExternalCancellationExc
 import hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException
+import hr.workspace.boat4you.domains.external.exceptions.NauSysRateLimitedException
 import hr.workspace.boat4you.domains.external.service.ServiceCallAuditService
 import org.openapitools.client.nausys.model.RestFreeYachtList
 import org.openapitools.client.nausys.model.RestFreeYachtsRequest
@@ -38,7 +39,10 @@ class NauSysRetryableClient(
     }
 
     @Retryable(
-        value = [Exception::class],
+        retryFor = [Exception::class],
+        // 429 handling lives in the RestClient interceptor (single retry layer);
+        // once it gives up, do NOT multiply the attempts here (was 3 × 6 = 18).
+        noRetryFor = [NauSysRateLimitedException::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
         // F3-005: random=true jitters backoff between `delay` and
         // `delay * multiplier`, breaking lockstep retries when many
@@ -61,7 +65,8 @@ class NauSysRetryableClient(
     }
 
     @Retryable(
-        value = [Exception::class],
+        retryFor = [Exception::class],
+        noRetryFor = [NauSysRateLimitedException::class],
         maxAttempts = DEFAULT_MAX_RETRIES,
         backoff = Backoff(delay = DEFAULT_DELAY, multiplier = DEFAULT_MULTIPLIER, random = true),
     )

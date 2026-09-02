@@ -9,7 +9,9 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.external.config.SyncConfigurationProperties
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.exceptions.NauSysRateLimitedException
 import hr.workspace.boat4you.domains.external.model.ReservationOptionsGroup
+import hr.workspace.boat4you.domains.external.model.SyncInterval
 import hr.workspace.boat4you.domains.external.nausys.client.NauSysRetryableClient
 import hr.workspace.boat4you.domains.external.nausys.config.NauSysAuthProvider
 import hr.workspace.boat4you.domains.external.nausys.model.NauSysDateWrapper
@@ -22,10 +24,13 @@ import org.openapitools.client.nausys.model.RestFreeYachtsRequest
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.ResourceAccessException
 import java.time.LocalDate
 import java.util.concurrent.CompletableFuture
 
 private const val OFFER_SYNC_HORIZON_MONTHS = 18L
+private const val DEFAULT_DRAIN_ROWS = 500
 
 @Service
 class NauSysYachtOfferIntegrationService(
@@ -37,6 +42,7 @@ class NauSysYachtOfferIntegrationService(
     private val nauSysYachtOfferSyncService: NauSysYachtOfferSyncService,
     private val syncConfigurationProperties: SyncConfigurationProperties,
     private val nauSysRetryableClient: NauSysRetryableClient,
+    private val retryQueue: NausysOfferSyncRetryQueue,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -113,56 +119,133 @@ class NauSysYachtOfferIntegrationService(
                         endDate = syncEndDate,
                     )
 
-                intervals.forEach { interval ->
-                    val freeYachtRequest =
-                        RestFreeYachtsRequest(
-                            credentials = nauSysAuthProvider.auth,
-                            periodFrom = NauSysDateWrapper(interval.start.format(NauSysDateWrapper.DATE_FORMATTER)),
-                            periodTo = NauSysDateWrapper(interval.end.format(NauSysDateWrapper.DATE_FORMATTER)),
-                            yachts = nausysYachtIds,
-                            extendedDataSet = "PAYMENT_PLAN,OBLIGATORY_SERVICES,ADDITIONAL_EXTRAS",
-                            // Include yachts currently under option (from any agency). Without this
-                            // flag NauSys silently omits them, and end-users see a yacht that is in
-                            // fact pre-reserved as if it were FREE. The returned `status` on each
-                            // RestFreeYacht (OPTION / UNDER_OPTION / FREE / ...) is mapped by
-                            // OfferStatus.fromNausysValue in NauSysYachtOfferSyncService.updateOffer.
-                            ignoreOptions = true,
-                        )
-                    val response = nauSysRetryableClient.getFreeYachts(freeYachtRequest)
-                    // syncOffers only performs in-response reconciliation now: for each yacht that
-                    // IS in the response but missing this exact (dateFrom, dateTo), existing FREE
-                    // offers for that week are flipped to OPTION_WAITING + SYNTHETIC_DISAPPEARANCE.
-                    // The previous "absent-from-response" pass was removed — with single-credential
-                    // NauSys, absence is too ambiguous (credential scoping vs. actual option) and
-                    // produced widespread false positives on cross-agency yachts. If the response
-                    // is empty, we still call syncOffers but it becomes effectively a no-op.
-                    try {
-                        log.trace(
-                            "3 - Syncing offers for agency: ${agency.id}, interval: $interval, " +
-                                "returned yachts: ${response.freeYachts?.size ?: 0}, requested: ${nausysYachtIds.size}",
-                        )
-                        nauSysYachtOfferSyncService.syncOffers(
-                            agency,
-                            response,
-                            allAgencyYachts,
-                            interval.start,
-                            interval.end,
-                            // Supplemental 7-day Sat->Sat query on a min-stay season (>7d): NauSys may
-                            // not quote a 7-day price even though the boat is free, so do NOT let the
-                            // disappearance pass flip genuinely-free weeks to pre-reserved.
-                            skipDisappearance =
-                                reservationInterval.duration == 7 && reservationOptionsGroup.key.minimalDuration > 7,
-                        )
-                    } catch (e: Exception) {
-                        log.error(
-                            "Error syncing offers for agency: ${agency.id}, interval: $interval, error: ${e.message}",
-                            e,
-                        )
-                    }
+                syncIntervals(
+                    agency,
+                    allAgencyYachts,
+                    nausysYachtIds,
+                    intervals,
+                    // Supplemental 7-day Sat->Sat query on a min-stay season (>7d): NauSys may
+                    // not quote a 7-day price even though the boat is free, so do NOT let the
+                    // disappearance pass flip genuinely-free weeks to pre-reserved.
+                    skipDisappearance = reservationInterval.duration == 7 && reservationOptionsGroup.key.minimalDuration > 7,
+                )
+            }
+        }
+    }
+
+    /**
+     * Fetches + syncs one week interval at a time. The partner call is INSIDE the
+     * per-interval try so one failed week (429 budget exhausted, 5xx, parse error)
+     * no longer aborts the rest of the agency for the night — it is queued in
+     * `nausys_offer_sync_retry` and re-fetched by [drainRetryQueue].
+     */
+    internal fun syncIntervals(
+        agency: Agency,
+        allAgencyYachts: List<Yacht>,
+        nausysYachtIds: List<Long>,
+        intervals: List<SyncInterval>,
+        skipDisappearance: Boolean,
+    ) {
+        intervals.forEach { interval ->
+            try {
+                val response = nauSysRetryableClient.getFreeYachts(freeYachtsRequest(nausysYachtIds, interval.start, interval.end))
+                // syncOffers only performs in-response reconciliation now: for each yacht that
+                // IS in the response but missing this exact (dateFrom, dateTo), existing FREE
+                // offers for that week are flipped to OPTION_WAITING + SYNTHETIC_DISAPPEARANCE.
+                // The previous "absent-from-response" pass was removed — with single-credential
+                // NauSys, absence is too ambiguous (credential scoping vs. actual option) and
+                // produced widespread false positives on cross-agency yachts. If the response
+                // is empty, we still call syncOffers but it becomes effectively a no-op.
+                log.trace(
+                    "3 - Syncing offers for agency: ${agency.id}, interval: $interval, " +
+                        "returned yachts: ${response.freeYachts?.size ?: 0}, requested: ${nausysYachtIds.size}",
+                )
+                nauSysYachtOfferSyncService.syncOffers(
+                    agency,
+                    response,
+                    allAgencyYachts,
+                    interval.start,
+                    interval.end,
+                    skipDisappearance = skipDisappearance,
+                )
+            } catch (e: Exception) {
+                runCatching {
+                    retryQueue.enqueue(agency.id!!, interval.start, interval.end, nausysYachtIds, skipDisappearance, e)
+                }.onFailure { qe -> log.error("Could not enqueue NauSYS offer retry for agency ${agency.id} $interval", qe) }
+                if (isTransientPartnerFailure(e)) {
+                    log.warn("NauSYS offers for agency ${agency.id} interval $interval deferred to the retry queue: $e")
+                } else {
+                    log.error("Error syncing offers for agency: ${agency.id}, interval: $interval, error: ${e.message} — queued for retry", e)
                 }
             }
         }
     }
+
+    private fun freeYachtsRequest(
+        nausysYachtIds: List<Long>,
+        from: LocalDate,
+        to: LocalDate,
+    ) = RestFreeYachtsRequest(
+        credentials = nauSysAuthProvider.auth,
+        periodFrom = NauSysDateWrapper(from.format(NauSysDateWrapper.DATE_FORMATTER)),
+        periodTo = NauSysDateWrapper(to.format(NauSysDateWrapper.DATE_FORMATTER)),
+        yachts = nausysYachtIds,
+        extendedDataSet = "PAYMENT_PLAN,OBLIGATORY_SERVICES,ADDITIONAL_EXTRAS",
+        // Include yachts currently under option (from any agency). Without this
+        // flag NauSys silently omits them, and end-users see a yacht that is in
+        // fact pre-reserved as if it were FREE. The returned `status` on each
+        // RestFreeYacht (OPTION / UNDER_OPTION / FREE / ...) is mapped by
+        // OfferStatus.fromNausysValue in NauSysYachtOfferSyncService.updateOffer.
+        ignoreOptions = true,
+    )
+
+    /**
+     * Re-fetches queued (agency, interval) rows whose `next_attempt_at` has passed.
+     * Called at the end of the nightly run (once cusma2's morning warm peak is over)
+     * and in the 06:15 / 10:15 / 15:15 backup slots. Success deletes the row; a
+     * failure pushes it 15 min × attempts out and gives up after 6 attempts.
+     */
+    fun drainRetryQueue(maxRows: Int = DEFAULT_DRAIN_ROWS) {
+        val rows = retryQueue.due(maxRows)
+        if (rows.isEmpty()) {
+            log.info("NauSYS offer retry queue: nothing due")
+            return
+        }
+        log.info("NauSYS offer retry queue: draining ${rows.size} rows")
+        var ok = 0
+        var failed = 0
+        var gaveUp = 0
+        for (row in rows) {
+            val agency = agencyRepository.findById(row.agencyId!!).orElse(null)
+            if (agency == null) {
+                log.warn("NauSYS offer retry: agency ${row.agencyId} no longer exists — dropping row ${row.id}")
+                retryQueue.markSuccess(row)
+                continue
+            }
+            val from = row.periodFrom!!
+            val to = row.periodTo!!
+            try {
+                val response = nauSysRetryableClient.getFreeYachts(freeYachtsRequest(row.yachtExternalIdList(), from, to))
+                nauSysYachtOfferSyncService.syncOffers(
+                    agency,
+                    response,
+                    yachtRepository.findWithReservationOptionsByAgency(agency),
+                    from,
+                    to,
+                    skipDisappearance = row.skipDisappearance,
+                )
+                retryQueue.markSuccess(row)
+                ok++
+            } catch (e: Exception) {
+                if (retryQueue.markFailure(row, e)) gaveUp++ else failed++
+                log.warn("NauSYS offer retry failed agency=${agency.id} $from→$to (attempt ${row.attempts}): $e")
+            }
+        }
+        log.info("NauSYS offer retry queue: ok=$ok failed=$failed gaveUp=$gaveUp")
+    }
+
+    private fun isTransientPartnerFailure(e: Throwable): Boolean =
+        e is NauSysRateLimitedException || e is HttpServerErrorException || e is ResourceAccessException
 
     fun calcSyncEndDate(reservationOptionsGroup: ReservationOptionsGroup): LocalDate {
         // Cap how far ahead we generate intervals — bounded by the operator's
