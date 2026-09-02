@@ -50,7 +50,9 @@ class YachtImageIntegrationServiceAsync(
             if (imageBytes == null) {
                 deadUrls[externalImageUrl] = Instant.now()
                 val reason = image.exceptionOrNull()?.message ?: "downloaded bytes are not a decodable image"
-                log.warn("Failed to download image for yacht $yachtId from URL: $externalImageUrl because of: $reason")
+                // Per-URL detail at DEBUG; YachtImageIntegrationService WARNs one summary per run
+                // (count + failing yachts + top hosts) — ~2k dead-URL lines/week otherwise.
+                log.debug("Failed to download image for yacht $yachtId from URL: $externalImageUrl because of: $reason")
                 return CompletableFuture.completedFuture(ImageSyncOutcome.FAILED)
             }
             val result = fileSystemService.saveImage(imageBytes, "y-$yachtId")
@@ -60,7 +62,7 @@ class YachtImageIntegrationServiceAsync(
                     // validation reject (size cap, undecodable) — deterministic per URL,
                     // retrying every run can't succeed; back off like a dead URL
                     deadUrls[externalImageUrl] = Instant.now()
-                    log.warn("Failed to save image for yacht $yachtId from URL: $externalImageUrl because of: ${cause.message}")
+                    log.debug("Failed to save image for yacht $yachtId from URL: $externalImageUrl because of: ${cause.message}")
                 } else {
                     // local disk/NFS problem, not a dead partner URL — stay loud, retry next run
                     log.error("Failed to save image for yacht $yachtId: ${cause?.message}")

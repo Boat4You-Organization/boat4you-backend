@@ -10,6 +10,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
+import hr.workspace.boat4you.domains.external.service.AvailabilityUpsertCounters
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.RESERVATION_YACHT_EXTERNAL_MAPPING_KEY
@@ -54,6 +55,7 @@ class MmkReservationUpsertService(
         externalSystem: ExternalSystem,
         yachtId: Long,
         mmkReservation: AvailabilityResponse,
+        counters: AvailabilityUpsertCounters = AvailabilityUpsertCounters(),
     ) {
         val yacht = yachtRepository.findById(yachtId).orElse(null) ?: return
 
@@ -82,7 +84,7 @@ class MmkReservationUpsertService(
             }
 
         updateReservation(externalReservation, mmkReservation, yacht)
-        updateOffer(existingYachtOffers, externalReservation, yacht)
+        updateOffer(existingYachtOffers, externalReservation, yacht, counters)
 
         if (reservationMapping == null) {
             val reservationType = ExternalReservation::class.simpleName.toString()
@@ -153,6 +155,7 @@ class MmkReservationUpsertService(
         existingYachtOffers: List<Offer>,
         externalReservation: ExternalReservation,
         yacht: Yacht,
+        counters: AvailabilityUpsertCounters,
     ) {
         val dateFrom = externalReservation.dateFrom ?: return
         val dateTo = externalReservation.dateTo ?: return
@@ -166,12 +169,13 @@ class MmkReservationUpsertService(
                 // Synthesize a visible OPTION row only when NO offer overlaps at all.
                 val overlapping = offersRepository.findAllByYachtAndDateRangeOverlap(yacht, dateFrom, dateTo)
                 if (overlapping.isEmpty()) {
-                    synthesizeOptionOffer(yacht, externalReservation, existingYachtOffers)
+                    synthesizeOptionOffer(yacht, externalReservation, existingYachtOffers, counters)
                 } else {
                     overlapping.filter { it.status == OfferStatus.FREE }.forEach { offer ->
                         offer.status = OfferStatus.OPTION
                         offersRepository.save(offer)
-                        log.info(
+                        counters.flippedToOption++
+                        log.debug(
                             "MMK offer ${offer.id} (yacht ${yacht.id} ${offer.dateFrom}→${offer.dateTo}) flipped to " +
                                 "OPTION (overlaps OPTION $dateFrom→$dateTo, external_reservation ${externalReservation.id})",
                         )
@@ -187,7 +191,8 @@ class MmkReservationUpsertService(
                     if (offer.status != OfferStatus.UNAVAILABLE) {
                         offer.status = OfferStatus.UNAVAILABLE
                         offersRepository.save(offer)
-                        log.info(
+                        counters.setUnavailable++
+                        log.debug(
                             "MMK offer ${offer.id} (yacht ${yacht.id} ${offer.dateFrom}→${offer.dateTo}) set to " +
                                 "UNAVAILABLE (overlaps ${externalReservation.status} $dateFrom→$dateTo)",
                         )
@@ -210,6 +215,7 @@ class MmkReservationUpsertService(
         yacht: Yacht,
         externalReservation: ExternalReservation,
         existingYachtOffers: List<Offer>,
+        counters: AvailabilityUpsertCounters,
     ) {
         val dateFrom = externalReservation.dateFrom!!
         val dateTo = externalReservation.dateTo!!
@@ -232,7 +238,9 @@ class MmkReservationUpsertService(
             }
 
         if (template == null) {
-            log.warn(
+            // Counted; the run summary WARNs once with a yacht-id sample instead of ~900 lines/week.
+            counters.cannotSynthesize(yacht.id)
+            log.debug(
                 "Cannot synthesize MMK OPTION offer for yacht ${yacht.id} $dateFrom→$dateTo: " +
                     "no FREE template offer exists. Yacht will not surface in search for this week.",
             )
@@ -266,7 +274,8 @@ class MmkReservationUpsertService(
                 this.agencyCommission = template.agencyCommission
             }
         offersRepository.save(synthetic)
-        log.info(
+        counters.synthesized++
+        log.debug(
             "Synthesized MMK SYNTHETIC_OPTION offer for yacht ${yacht.id} $dateFrom→$dateTo " +
                 "(template offer ${template.id}, external_reservation ${externalReservation.id})",
         )

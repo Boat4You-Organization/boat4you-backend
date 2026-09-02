@@ -30,6 +30,7 @@ import hr.workspace.boat4you.security.exceptions.InternalLoginException
 import hr.workspace.boat4you.security.exceptions.OAuthEmailMissingException
 import hr.workspace.boat4you.security.exceptions.PasswordException
 import jakarta.persistence.PersistenceException
+import jakarta.servlet.http.HttpServletRequest
 import org.openapitools.model.ErrorSchema
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -134,9 +135,14 @@ internal class ApiErrorHandler {
         )
     }
 
+    // Expected client-side 4xx (stale links, bots probing removed yachts/images): INFO with the
+    // request URI so they stay traceable without inflating WARN counts (15k+/week on cusma2).
     @ExceptionHandler(YachtDoesNotExistException::class)
-    fun handleYachtDoesNotExistException(e: YachtDoesNotExistException): ResponseEntity<ErrorSchema> {
-        logger.warn("YachtDoesNotExistException")
+    fun handleYachtDoesNotExistException(
+        e: YachtDoesNotExistException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorSchema> {
+        logger.info("YachtDoesNotExistException uri={}", request.requestURI)
         return ResponseEntity(
             ErrorSchema(
                 ApiErrorCodes.YACHT_DOES_NOT_EXIST.code,
@@ -147,8 +153,11 @@ internal class ApiErrorHandler {
     }
 
     @ExceptionHandler(YachtNotActiveException::class)
-    fun handleYachtNotActiveException(e: YachtNotActiveException): ResponseEntity<ErrorSchema> {
-        logger.warn("YachtNotActiveException")
+    fun handleYachtNotActiveException(
+        e: YachtNotActiveException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorSchema> {
+        logger.info("YachtNotActiveException uri={}", request.requestURI)
         return ResponseEntity(
             ErrorSchema(
                 ApiErrorCodes.YACHT_NOT_ACTIVE.code,
@@ -159,8 +168,11 @@ internal class ApiErrorHandler {
     }
 
     @ExceptionHandler(AgencyNotActiveException::class)
-    fun handleAgencyNotActiveException(e: AgencyNotActiveException): ResponseEntity<ErrorSchema> {
-        logger.warn("AgencyNotActiveException")
+    fun handleAgencyNotActiveException(
+        e: AgencyNotActiveException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorSchema> {
+        logger.info("AgencyNotActiveException uri={}", request.requestURI)
         return ResponseEntity(
             ErrorSchema(
                 ApiErrorCodes.AGENCY_NOT_ACTIVE.code,
@@ -195,12 +207,15 @@ internal class ApiErrorHandler {
     }
 
     @ExceptionHandler(ImageNotFoundException::class)
-    fun handleImageNotFoundException(e: ImageNotFoundException): ResponseEntity<ErrorSchema> {
+    fun handleImageNotFoundException(
+        e: ImageNotFoundException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ErrorSchema> {
         // F5-010: previously silent (TODO comment) — combined with F4-010
         // (FileSystemService path concatenation) and F1-021 (path traversal
         // canonicalization), zero audit trail on path probing.
-        // F5-004: not-found → 404.
-        logger.warn("ImageNotFoundException")
+        // F5-004: not-found → 404. The URI keeps the probing trail auditable at INFO.
+        logger.info("ImageNotFoundException uri={}", request.requestURI)
         return ResponseEntity(
             ErrorSchema(
                 ApiErrorCodes.IMAGE_NOT_FOUND.code,

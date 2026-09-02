@@ -106,6 +106,8 @@ class MmkYachtSyncService(
         val allLocationMappings =
             externalMappingService.getCachedAllMappingsByType(Location::class.simpleName.toString(), externalSystem)
         val syncedYachts = mutableSetOf<Long>()
+        var skippedNoProducts = 0
+        var skippedVesselType = 0
 
         mmkYachts.forEach { mmkYacht ->
             // Track every partner-reported id up front (before shouldSkip) —
@@ -113,8 +115,16 @@ class MmkYachtSyncService(
             // the partner catalogue but we choose to skip our own update
             // (e.g. unsupported product mix), it must NOT be deactivated.
             mmkYacht.id?.let { syncedYachts.add(it) }
-            if (shouldSkip(mmkYacht)) {
-                return@forEach
+            when (skipReason(mmkYacht)) {
+                SkipReason.NO_VALID_PRODUCTS -> {
+                    skippedNoProducts++
+                    return@forEach
+                }
+                SkipReason.VESSEL_TYPE -> {
+                    skippedVesselType++
+                    return@forEach
+                }
+                null -> Unit
             }
 
             val mapping = allMappings.find { mapping -> mapping.externalId == mmkYacht.id!! }
@@ -203,7 +213,8 @@ class MmkYachtSyncService(
             yachtRepository.findAllByAgencyAndExternalIdNotIn(agency, syncedYachts.toList())
         log.warn(
             "MMK take-back for agency ${agency.id} ${agency.name}: partner returned " +
-                "${syncedYachts.size} yachts; deactivating ${yachtsToDeactivate.size} no longer in catalogue.",
+                "${syncedYachts.size} yachts (skipped: noProducts=$skippedNoProducts vesselType=$skippedVesselType); " +
+                "deactivating ${yachtsToDeactivate.size} no longer in catalogue.",
         )
         yachtsToDeactivate.forEach {
             it.sysActive = false
@@ -737,22 +748,28 @@ class MmkYachtSyncService(
         reservationOptionRepository.save(reservationOption)
     }
 
+    enum class SkipReason { NO_VALID_PRODUCTS, VESSEL_TYPE }
+
     // Also used by ConsistencyVerifierJob so the weekly inventory counts the
     // partner fleet with the exact same eligibility rules the sync applies.
-    fun shouldSkip(mmkYacht: org.openapitools.client.mmk.model.Yacht): Boolean {
+    fun shouldSkip(mmkYacht: org.openapitools.client.mmk.model.Yacht): Boolean = skipReason(mmkYacht) != null
+
+    /** Why a partner yacht is not synced, or null when it is eligible. Per-yacht detail is DEBUG
+     * (~2.8k lines/week); the per-agency take-back line carries the counts. */
+    fun skipReason(mmkYacht: org.openapitools.client.mmk.model.Yacht): SkipReason? {
         val filteredProducts =
             mmkYacht.products?.filter { MMK_ALLOWED_PRODUCTS.contains(it.name.lowercase()) }
         if (filteredProducts.isNullOrEmpty()) {
-            log.info("Skipping MMK yacht ${mmkYacht.id} due to no valid products")
-            return true
+            log.debug("Skipping MMK yacht ${mmkYacht.id} due to no valid products")
+            return SkipReason.NO_VALID_PRODUCTS
         }
 
         val vesselType = VesselType.fromMmkYachtType(mmkYacht.kind)
         if (VesselType.shouldSkipVesselType(vesselType)) {
-            log.info("Skipping MMK yacht ${mmkYacht.id} with vessel type $vesselType mmkType ${mmkYacht.kind}")
-            return true
+            log.debug("Skipping MMK yacht ${mmkYacht.id} with vessel type $vesselType mmkType ${mmkYacht.kind}")
+            return SkipReason.VESSEL_TYPE
         }
-        return false
+        return null
     }
 
     @Transactional

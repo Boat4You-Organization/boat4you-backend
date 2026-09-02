@@ -5,6 +5,8 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.service.AvailabilitySyncResult
+import hr.workspace.boat4you.domains.external.service.AvailabilityUpsertCounters
 import hr.workspace.boat4you.domains.external.service.ExternalAvailabilityReconcileService
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.service.ReservationNaturalKey
@@ -46,7 +48,8 @@ class NauSysAvailabilitySyncService(
         agencyId: Long,
         nausysResponse: RestYachtReservationOccupancyList,
         year: Int,
-    ) {
+        agencyLabel: String = "agency=$agencyId",
+    ): AvailabilitySyncResult {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
         val yachtMappings =
             externalMappingService.getAllMappingsByTypeAndExtendedType(
@@ -62,11 +65,12 @@ class NauSysAvailabilitySyncService(
         // reconcile may touch (per-yacht-present guard).
         val seenKeys = mutableSetOf<ReservationNaturalKey>()
         val seenYachtIds = mutableSetOf<Long>()
+        val counters = AvailabilityUpsertCounters()
         nausysResponse.reservations?.forEach { nausysReservation ->
             val yacht = getYacht(yachtMappings, agencyYachts, nausysReservation) ?: return@forEach
             val yachtId = yacht.id ?: return@forEach
             // SHORT transaction per reservation (separate bean → proxy applies).
-            nauSysReservationUpsertService.upsertReservation(externalSystem, yachtId, nausysReservation)
+            nauSysReservationUpsertService.upsertReservation(externalSystem, yachtId, nausysReservation, counters)
             seenYachtIds.add(yachtId)
             ReservationNaturalKey.of(
                 yachtId,
@@ -80,7 +84,8 @@ class NauSysAvailabilitySyncService(
         // hold for this agency's yachts that NauSYS no longer returns (by natural key) was cancelled
         // at the partner — drop it. Empty key set = no-data → deletes nothing. Runs only after the
         // upsert loop completes.
-        externalAvailabilityReconcileService.reconcileAbsent(agencyYachts, seenKeys, seenYachtIds, year)
+        val outcome = externalAvailabilityReconcileService.reconcileAbsent(agencyYachts, seenKeys, seenYachtIds, year, agencyLabel)
+        return AvailabilitySyncResult(nausysResponse.reservations?.size ?: 0, seenKeys.size, outcome, counters)
     }
 
     private fun getYacht(

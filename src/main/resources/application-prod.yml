@@ -47,6 +47,8 @@ application:
       bearer: ${MMK_TOKEN:?MMK_TOKEN required}
       connect-timeout-ms: ${MMK_CONNECT_TIMEOUT_MS:5000}
       read-timeout-ms: ${MMK_READ_TIMEOUT_MS:60000}
+      # Incident-only wire trace; see application.yml. Set MMK_WIRE_LOG=true in the env file + restart.
+      wire-log: ${MMK_WIRE_LOG:false}
   email:
     # Customer-visible From. Falls through to the env var first so we can
     # rotate without a redeploy; default keeps the boat4you mailbox.

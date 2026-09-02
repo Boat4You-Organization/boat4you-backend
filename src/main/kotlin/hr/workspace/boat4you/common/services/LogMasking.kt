@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.common.services
 
+import com.fasterxml.jackson.databind.node.ObjectNode
+
 /**
  * PII-masking helpers for log lines. Logs are shipped to operator
  * dashboards and ELK-style aggregation tools, both of which can fall
@@ -11,6 +13,16 @@ package hr.workspace.boat4you.common.services
  * helpers they now show `j***@example.com` instead.
  */
 object LogMasking {
+    /**
+     * Client (end-customer) fields stripped from the partner request body before it is stored
+     * in `service_call.request_body` (60-day retention, outside the GDPR Art.17 delete flow).
+     * `name`, `surname` and `countryId` are deliberately KEPT so a disputed partner booking
+     * can still be matched to the customer. Covers both NauSys client shapes
+     * (`RestClient.zip` and `RestClient2.zipCode`).
+     */
+    val CLIENT_PII_FIELDS: List<String> =
+        listOf("email", "phone", "mobile", "passportNumber", "birthday", "address", "zip", "zipCode", "skype", "instagram")
+
     /**
      * Mask an email for log emission. Keeps the first character of
      * the local part (for manual correlation within a day) and the
@@ -31,5 +43,14 @@ object LogMasking {
         val firstChar = email[0]
         val domain = email.substring(atIndex)
         return "$firstChar***$domain"
+    }
+
+    /**
+     * Removes [CLIENT_PII_FIELDS] from the `client` subtree of a serialized partner request
+     * (in place). No-op when there is no `client` object. Returns [node] for chaining.
+     */
+    fun redactClientPii(node: ObjectNode): ObjectNode {
+        (node.get("client") as? ObjectNode)?.remove(CLIENT_PII_FIELDS)
+        return node
     }
 }

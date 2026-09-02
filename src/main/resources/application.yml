@@ -183,6 +183,10 @@ application:
       # cusma3 (scheduler) 1 — set via NAUSYS_MAX_CONCURRENT. See NauSysRestClientConfig.
       max-concurrent: ${NAUSYS_MAX_CONCURRENT:2}
       gate-wait-ms: ${NAUSYS_GATE_WAIT_MS:20000}
+    mmk:
+      # Per-request MMK wire trace (MmkRestClientConfig). Off by default: it was 59 % of the
+      # scheduler journal and the POST body carries the client's name. Flip for incidents only.
+      wire-log: ${MMK_WIRE_LOG:false}
   # Cross-source duplicate ("twin") canonicalization — serve the canonical
   # copy of a same-boat group on the detail endpoints. Off by default; the
   # prod profile enables it with a pilot allow-list. See TwinCanonicalProperties.

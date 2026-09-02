@@ -4,6 +4,8 @@ import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.external.config.SyncConfigurationProperties
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.mmk.client.MmkAuditedClient
+import hr.workspace.boat4you.domains.external.service.AvailabilitySyncResult
+import hr.workspace.boat4you.domains.external.service.AvailabilitySyncRunSummary
 import hr.workspace.boat4you.domains.external.service.PartnerAccessGuard
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -24,6 +26,7 @@ class MmkAvailabilityIntegrationService(
     fun syncYachtAvailability() {
         val agencies = agencyRepository.findAllActiveByPrimarySyncProviderAndHasYacht(mmkSystemId)
         val syncYears = getSyncYears()
+        val summary = AvailabilitySyncRunSummary("MMK").apply { this.agencies = agencies.size }
         agencies.forEach { agency ->
             val agencyExternalId = agency.getExternalId()
             if (agencyExternalId == null) {
@@ -38,9 +41,13 @@ class MmkAvailabilityIntegrationService(
                 try {
                     // Retry only the FETCH (outside the @Transactional sync) and only for
                     // TRANSIENT errors — a hard "Illegal access" refusal is not retried.
+                    summary.calls++
                     val response =
                         withRetry(year, agencyExternalId) { mmkAuditedClient.getAvailability(year, agencyExternalId) }
-                    mmkAvailabilitySyncService.syncYachtAvailability(agency.id!!, response, year)
+                    val agencyLabel = "agency=${agency.id} (${agency.name}) companyId=$agencyExternalId"
+                    val result = mmkAvailabilitySyncService.syncYachtAvailability(agency.id!!, response, year, agencyLabel)
+                    summary.record(agency.id!!, year, result)
+                    logAgencyYear(agencyLabel, year, result)
                     partnerAccessGuard.recordSuccess(mmkSystemId, agencyExternalId)
                     if (agency.availabilityBlocked) {
                         // Access is back — un-hide the agency's yachts.
@@ -68,6 +75,29 @@ class MmkAvailabilityIntegrationService(
                     log.error("Error syncing availability for agency $agencyExternalId for year $year after retries", e)
                 }
             }
+        }
+        log.info(summary.toLogLine())
+        if (summary.upsert.cannotSynthesize > 0) {
+            log.warn(
+                "MMK availability: ${summary.upsert.cannotSynthesize} OPTION rows could not be synthesized (no FREE template " +
+                    "offer) — yachts (sample) ${summary.upsert.cannotSynthesizeYachtIds}",
+            )
+        }
+    }
+
+    /** Per-agency attribution line (replaces the MMK wire log as the way to see what each company
+     * returned — see MmkRestClientConfig). WARN only for the real mapping-drift signal. */
+    private fun logAgencyYear(
+        agencyLabel: String,
+        year: Int,
+        result: AvailabilitySyncResult,
+    ) {
+        log.info("MMK availability: $agencyLabel year=$year rows=${result.partnerRows} mapped=${result.mappedRows}")
+        if (result.unmappedNonEmpty) {
+            log.warn(
+                "MMK availability: $agencyLabel year=$year returned ${result.partnerRows} reservations but NONE map " +
+                    "to our yachts — check the agency's yacht mappings",
+            )
         }
     }
 

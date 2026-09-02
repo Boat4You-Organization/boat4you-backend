@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import com.google.i18n.phonenumbers.NumberParseException
 import com.google.i18n.phonenumbers.PhoneNumberUtil
+import hr.workspace.boat4you.common.services.LogMasking
 import hr.workspace.boat4you.common.services.toLocale
 import hr.workspace.boat4you.domains.branding.Brand
 import hr.workspace.boat4you.domains.branding.BrandRegistry
@@ -169,11 +170,12 @@ class InquiryEmailService(
             fromOverride = "${resolvedBrand.displayName} <${resolvedBrand.fromAddress}>",
             locale = clientLocale,
         )
+        // Masked: the recipient is the customer's e-mail (PII); inquiry.id is the correlation key.
         log.info(
             "Queued inquiry acknowledgement email for inquiry id={} brand={} to {} (force={})",
             inquiry.id,
             resolvedBrand.id,
-            recipient,
+            LogMasking.maskEmail(recipient),
             force,
         )
     }
