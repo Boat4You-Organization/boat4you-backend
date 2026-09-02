@@ -1,5 +1,24 @@
 # Backend deploy notes
 
+## 2026-09-02/03 — OPS: cusma2 heap 4096→3072 MB, needrestart list-mode ×5, NTP ×5, logrotate, jar cleanup — ✅ APPLIED
+
+Fleet audit (2.9.2026) found 9 kernel OOM kills of the API JVM on cusma2 in 12 days (anon-rss 5.6 GB at
+kill = 4 GB heap + ~1.6 GB off-heap on a 5.8 GB box). Changes applied live at 22:00 UTC:
+- `boat4you.service` ExecStart `-Xmx4096m` → `-Xmx3072m` (backup `boat4you.service.bak-20260902`), controlled
+  restart, API up in 12 s. If the app ever throws java.lang.OutOfMemoryError under this heap, that is the
+  signal to fix the in-process caches (Ehcache entry-sized pools, OpenCV per-request native work) — see
+  FLEET-AUDIT-2026-09-02-v2.md backend section — not to raise Xmx again.
+- needrestart set to list-only (`/etc/needrestart/conf.d/50-no-auto-restart.conf`) on cusma1-5:
+  unattended-upgrades was restarting the API (06:42), scheduler (06:51), nfs-server and PostgreSQL (6× in
+  7 days) unsupervised in the 06:00-07:00 UTC window. Security patches still install; service restarts are now
+  a manual decision.
+- NTP: all 5 boxes had never synchronized since boot (clocks 66-169 s behind; DHCP-pushed Hetzner NTP
+  unreachable). `/etc/systemd/timesyncd.conf.d/ntp.conf` → ntp1-3.hetzner.de + pool fallback. All synced.
+- journald capped at 500 MB on all 5; logrotate installed on cusma1/2/3 (nginx access.log on cusma2 was a
+  single 2.17 GB file); 24 stale jar copies removed on cusma2 and 25 on cusma3 (kept webservice.jar,
+  webservice.jar.prev, webservice_old.jar). Disk: cusma2 76→44 %, cusma3 73→46 %.
+- Deploy scripts should stop leaving `webservice.jar.bak.*` copies behind — keep at most `.prev`.
+
 ## 2026-07-12 — Retention reaper + fix silent 06:00 rollback (BE 918a1d7+41bcf6c, V9_37, DEPLOYED, backlog DRAINED)
 
 **New nightly 03:40 job (cusma3, ShedLock `retentionReaper`)** deletes in bounded batches,
