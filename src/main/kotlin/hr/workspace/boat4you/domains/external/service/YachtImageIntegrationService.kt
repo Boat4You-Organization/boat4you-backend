@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.PageRequest
 import org.springframework.stereotype.Service
+import java.net.URI
 import java.util.concurrent.CompletableFuture
 import kotlin.collections.chunked
 import kotlin.collections.map
@@ -58,6 +59,7 @@ class YachtImageIntegrationService(
         var failed = 0
         var skipped = 0
         val failedYachts = mutableSetOf<Long>()
+        val failedHosts = mutableMapOf<String, Int>()
         images.chunked(batchSize).forEach { batch ->
             val futures =
                 batch.map { yachtImage ->
@@ -74,6 +76,8 @@ class YachtImageIntegrationService(
                     ImageSyncOutcome.FAILED -> {
                         failed++
                         failedYachts.add(yachtImage.yacht!!.id!!)
+                        val host = runCatching { URI(yachtImage.externalUrl!!).host }.getOrNull() ?: "?"
+                        failedHosts.merge(host, 1, Int::plus)
                     }
                     ImageSyncOutcome.SKIPPED -> skipped++
                     ImageSyncOutcome.SUCCESS -> {}
@@ -81,8 +85,10 @@ class YachtImageIntegrationService(
             }
         }
         if (failed > 0 || skipped > 0) {
+            // Per-URL failures are DEBUG in the async worker; this is the one WARN per run.
+            val topHosts = failedHosts.entries.sortedByDescending { it.value }.take(3).joinToString { "${it.key}=${it.value}" }
             log.warn(
-                "Image sync: $failed of ${images.size} images failed for ${failedYachts.size} yachts; " +
+                "Image sync: $failed of ${images.size} images failed for ${failedYachts.size} yachts (top hosts: $topHosts); " +
                     "$skipped skipped as known-dead (re-probed after 7 days)",
             )
         }

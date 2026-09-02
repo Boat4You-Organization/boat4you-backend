@@ -6,6 +6,7 @@ import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder
 import org.springframework.boot.http.client.ClientHttpRequestFactorySettings
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpMethod
 import org.springframework.web.client.RestClient
 import java.time.Duration
 
@@ -19,6 +20,12 @@ class MmkRestClientConfig(
     private val connectTimeoutMs: Long,
     @Value("\${application.external.mmk.read-timeout-ms:60000}")
     private val readTimeoutMs: Long,
+    // Incident switch (env MMK_WIRE_LOG=true): per-request wire diagnostics. OFF by default —
+    // the always-on variant was 59 % of the cusma3 scheduler journal (~35k lines/day) and the
+    // POST body carries the customer's name. Per-agency attribution of availability responses
+    // now comes from MmkAvailabilityIntegrationService's INFO line instead.
+    @Value("\${application.external.mmk.wire-log:false}")
+    private val wireLog: Boolean,
 ) {
     private val log = LoggerFactory.getLogger(MmkRestClientConfig::class.java)
 
@@ -37,18 +44,32 @@ class MmkRestClientConfig(
                 // can compare against a working competitor request when the
                 // server returns a generic 4xx like "Yacht not available in
                 // period." with no further hints. Authorization header is
-                // intentionally NOT logged. Body is small (Reservation /
-                // params), so logging it inline is acceptable here.
-                val bodyStr = if (body.isNotEmpty()) String(body, Charsets.UTF_8) else "<empty>"
-                log.info(
-                    "MMK request: {} {} headers={} body={}",
-                    request.method,
-                    request.uri,
-                    request.headers.filterKeys { it.lowercase() != "authorization" },
-                    bodyStr,
-                )
+                // intentionally NOT logged. Only GET bodies (always empty) are
+                // printed; a POST/PUT body (Reservation.clientName = PII) is
+                // reduced to its size. Logged at INFO so the env switch alone
+                // turns the trace on without raising B4Y_LOG_LEVEL for the whole app.
+                if (wireLog) {
+                    val bodyStr =
+                        when {
+                            body.isEmpty() -> "<empty>"
+                            request.method == HttpMethod.GET -> String(body, Charsets.UTF_8)
+                            else -> "<${body.size} bytes, redacted>"
+                        }
+                    log.info(
+                        "MMK request: {} {} headers={} body={}",
+                        request.method,
+                        request.uri,
+                        request.headers.filterKeys { it.lowercase() != "authorization" },
+                        bodyStr,
+                    )
+                }
                 val response = execution.execute(request, body)
-                log.info("MMK response: status={} headers={}", response.statusCode, response.headers)
+                if (wireLog) {
+                    log.info("MMK response: status={} headers={}", response.statusCode, response.headers)
+                } else if (!response.statusCode.is2xxSuccessful) {
+                    // Non-2xx stays visible without the switch — one line, no headers/body.
+                    log.warn("MMK {} {} -> {}", request.method, request.uri, response.statusCode)
+                }
                 response
             }.baseUrl(mmkBaseUrl)
             .defaultHeaders {

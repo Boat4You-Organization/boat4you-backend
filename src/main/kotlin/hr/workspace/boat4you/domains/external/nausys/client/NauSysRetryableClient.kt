@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.external.nausys.client
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
+import hr.workspace.boat4you.common.services.LogMasking
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.exceptions.ExternalCancellationException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException
@@ -239,6 +240,10 @@ class NauSysRetryableClient(
         node.remove("username")
         node.remove("password")
         node.remove("credentials")
+        // createInfo carries the end customer (email, phone, passport, birthday, address…) —
+        // that must not sit in service_call.request_body for 60 days outside the GDPR delete
+        // flow. name/surname/countryId stay for dispute matching (LogMasking.CLIENT_PII_FIELDS).
+        LogMasking.redactClientPii(node)
 
         return objectMapper.writeValueAsString(node)
     }

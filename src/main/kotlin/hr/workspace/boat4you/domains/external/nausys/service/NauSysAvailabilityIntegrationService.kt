@@ -4,6 +4,8 @@ import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.external.config.SyncConfigurationProperties
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.nausys.client.NauSysAuditedClient
+import hr.workspace.boat4you.domains.external.service.AvailabilitySyncResult
+import hr.workspace.boat4you.domains.external.service.AvailabilitySyncRunSummary
 import hr.workspace.boat4you.domains.external.service.PartnerAccessGuard
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -25,6 +27,7 @@ class NauSysAvailabilityIntegrationService(
         val agencies = agencyRepository.findAllActiveByPrimarySyncProviderAndHasYacht(nausysSystemId)
         val syncYears = getSyncYears()
         log.info("Doing sync for ${agencies.size} agencies")
+        val summary = AvailabilitySyncRunSummary("NauSYS").apply { this.agencies = agencies.size }
         agencies.forEach { agency ->
             val agencyExternalId = agency.getExternalId()?.toInt()
             if (agencyExternalId == null) {
@@ -37,13 +40,12 @@ class NauSysAvailabilityIntegrationService(
 
             for (year in syncYears) {
                 try {
+                    summary.calls++
                     val nausysResponse = nauSysAuditedClient.getOccupancyByYear(agencyExternalId, year)
-                    val reservationCount = nausysResponse.reservations?.size ?: 0
-                    log.info(
-                        "NauSYS availability: agency=${agency.id} (${agency.name}) extId=$agencyExternalId " +
-                            "year=$year reservations=$reservationCount",
-                    )
-                    nauSysAvailabilitySyncService.syncYachtAvailability(agency.id!!, nausysResponse, year)
+                    val agencyLabel = "agency=${agency.id} (${agency.name}) extId=$agencyExternalId"
+                    val result = nauSysAvailabilitySyncService.syncYachtAvailability(agency.id!!, nausysResponse, year, agencyLabel)
+                    summary.record(agency.id!!, year, result)
+                    logAgencyYear(agencyLabel, year, result)
                     partnerAccessGuard.recordSuccess(nausysSystemId, agencyExternalId.toLong())
                 } catch (ex: Exception) {
                     val strikes = partnerAccessGuard.recordFailure(nausysSystemId, agencyExternalId.toLong())
@@ -61,6 +63,28 @@ class NauSysAvailabilityIntegrationService(
                     )
                 }
             }
+        }
+        log.info(summary.toLogLine())
+        if (summary.upsert.cannotSynthesize > 0) {
+            log.warn(
+                "NauSYS availability: ${summary.upsert.cannotSynthesize} OPTION rows could not be synthesized (no FREE template " +
+                    "offer) — yachts (sample) ${summary.upsert.cannotSynthesizeYachtIds}",
+            )
+        }
+    }
+
+    /** Per-agency attribution line; WARN only for the real mapping-drift signal (rows but none mapped). */
+    private fun logAgencyYear(
+        agencyLabel: String,
+        year: Int,
+        result: AvailabilitySyncResult,
+    ) {
+        log.info("NauSYS availability: $agencyLabel year=$year reservations=${result.partnerRows} mapped=${result.mappedRows}")
+        if (result.unmappedNonEmpty) {
+            log.warn(
+                "NauSYS availability: $agencyLabel year=$year returned ${result.partnerRows} reservations but NONE map " +
+                    "to our yachts — check the agency's yacht mappings",
+            )
         }
     }
 

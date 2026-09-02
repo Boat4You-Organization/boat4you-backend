@@ -348,7 +348,9 @@ class NauSysYachtOfferSyncService(
         if (OfferStatus.fromNausysValue(nausysOffer.status) == OfferStatus.FREE &&
             (nausysClientPrice == null || nausysClientPrice <= BigDecimal.ZERO)
         ) {
-            log.warn(
+            // Per-offer detail at DEBUG (44k WARN/week on cusma2); the per-agency summary in
+            // syncOffers already counts these as skipped.
+            log.debug(
                 "Skipping unpriced FREE NauSys offer for yacht=${yacht.id} " +
                     "${nausysOffer.periodFrom?.value}..${nausysOffer.periodTo?.value} (clientPrice=$nausysClientPrice)",
             )

@@ -5,6 +5,8 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.service.AvailabilitySyncResult
+import hr.workspace.boat4you.domains.external.service.AvailabilityUpsertCounters
 import hr.workspace.boat4you.domains.external.service.ExternalAvailabilityReconcileService
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.service.ReservationNaturalKey
@@ -46,7 +48,8 @@ class MmkAvailabilitySyncService(
         agencyId: Long,
         mmkResponse: List<AvailabilityResponse>,
         year: Int,
-    ) {
+        agencyLabel: String = "agency=$agencyId",
+    ): AvailabilitySyncResult {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
         val yachtMappings =
             externalMappingService.getAllMappingsByTypeAndExtendedType(
@@ -62,11 +65,12 @@ class MmkAvailabilitySyncService(
         // reconcile may touch (per-yacht-present guard).
         val seenKeys = mutableSetOf<ReservationNaturalKey>()
         val seenYachtIds = mutableSetOf<Long>()
+        val counters = AvailabilityUpsertCounters()
         mmkResponse.forEach { mmkReservation ->
             val yacht = getYacht(yachtMappings, agencyYachts, mmkReservation) ?: return@forEach
             val yachtId = yacht.id ?: return@forEach
             // SHORT transaction per reservation (separate bean → proxy applies).
-            mmkReservationUpsertService.upsertReservation(externalSystem, yachtId, mmkReservation)
+            mmkReservationUpsertService.upsertReservation(externalSystem, yachtId, mmkReservation, counters)
             seenYachtIds.add(yachtId)
             ReservationNaturalKey.of(
                 yachtId,
@@ -79,7 +83,8 @@ class MmkAvailabilitySyncService(
         // Mirror MMK: /availability is the COMPLETE set per (agency, year), so any reservation we
         // hold for this agency's yachts that MMK no longer returns (by natural key) was cancelled —
         // drop it. Empty key set = no-data → deletes nothing. Runs only after the upsert loop.
-        externalAvailabilityReconcileService.reconcileAbsent(agencyYachts, seenKeys, seenYachtIds, year)
+        val outcome = externalAvailabilityReconcileService.reconcileAbsent(agencyYachts, seenKeys, seenYachtIds, year, agencyLabel)
+        return AvailabilitySyncResult(mmkResponse.size, seenKeys.size, outcome, counters)
     }
 
     private fun getYacht(

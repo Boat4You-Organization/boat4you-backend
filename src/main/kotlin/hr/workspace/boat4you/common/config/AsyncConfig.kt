@@ -11,6 +11,7 @@ import java.util.concurrent.RejectedExecutionHandler
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 @Configuration
 @EnableAsync
@@ -19,6 +20,10 @@ class AsyncConfig(
     private val imageSyncBatch: Int?,
 ) {
     private val log = org.slf4j.LoggerFactory.getLogger(AsyncConfig::class.java)
+
+    companion object {
+        private const val SATURATION_WARN_INTERVAL_MS = 60_000L
+    }
 
     @Bean(name = ["taskExecutor"])
     fun taskExecutor(): Executor {
@@ -49,13 +54,24 @@ class AsyncConfig(
         // this pool, because a dropped task's future never completes
         // (that combination previously froze cache-warm threads for the
         // full 5-minute orTimeout while they held a DB connection).
+        // Saturation comes in bursts (1,940 WARN/week on cusma2, all in a few minutes each):
+        // count every drop but WARN at most once per minute with the cumulative total.
+        val dropped = AtomicLong()
+        val lastWarnAtMs = AtomicLong()
         executor.setRejectedExecutionHandler { _, exec ->
-            log.warn(
-                "taskExecutor saturated (active={}, pool={}, queue={}); dropping task — partner sync will retry on next cache miss (F1-064)",
-                exec.activeCount,
-                exec.poolSize,
-                exec.queue.size,
-            )
+            val total = dropped.incrementAndGet()
+            val now = System.currentTimeMillis()
+            val last = lastWarnAtMs.get()
+            if (now - last >= SATURATION_WARN_INTERVAL_MS && lastWarnAtMs.compareAndSet(last, now)) {
+                log.warn(
+                    "taskExecutor saturated (active={}, pool={}, queue={}); dropping task — {} dropped since start, " +
+                        "partner sync will retry on next cache miss (F1-064); next warning in >= 1 min",
+                    exec.activeCount,
+                    exec.poolSize,
+                    exec.queue.size,
+                    total,
+                )
+            }
         }
         executor.initialize()
         return executor

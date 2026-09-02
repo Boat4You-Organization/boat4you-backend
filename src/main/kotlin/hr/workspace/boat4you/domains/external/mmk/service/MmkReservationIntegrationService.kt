@@ -67,7 +67,8 @@ class MmkReservationIntegrationService(
                 clientName = reservationData.getFullName(),
                 yachtId = reservationData.externalYachtId,
             )
-        log.info("Creating MMK reservation for yachtId: ${reservationData.externalYachtId} with request: $reservationRequest")
+        // No `$reservationRequest`: its toString carries clientName (PII) into the log.
+        log.info("Creating MMK option yachtId={} {}→{}", reservationData.externalYachtId, reservationData.startDate, reservationData.endDate)
 
         return try {
             val reservationResponse = mmkRetryableClient.createOption(reservationRequest)

@@ -107,6 +107,9 @@ class ExternalAvailabilityReconcileService(
      * Both sides build the key through the SAME conversion the upsert writes with, so a just-synced
      * valid row is byte-identical to its response key and can never look "absent". Must run only
      * after a SUCCESSFUL fetch (the integration loop's per-(agency,year) try/catch ensures this).
+     *
+     * Returns a [ReconcileOutcome] so the caller can summarise a whole run in one line; only the
+     * circuit breaker (a real signal) still WARNs here, now with [agencyLabel] for attribution.
      */
     @Transactional
     fun reconcileAbsent(
@@ -114,10 +117,12 @@ class ExternalAvailabilityReconcileService(
         seenKeys: Set<ReservationNaturalKey>,
         seenYachtIds: Set<Long>,
         year: Int,
-    ) {
+        agencyLabel: String,
+    ): ReconcileOutcome {
         if (seenKeys.isEmpty()) {
-            log.warn("Skip absent-reconcile (year=$year): partner returned ZERO reservations — treated as no-data, not all-free")
-            return
+            // Plausible no-data (small agency / future year), ~4,650×/day in prod → not a WARN.
+            log.debug("Skip absent-reconcile ($agencyLabel year=$year): partner returned ZERO reservations — treated as no-data, not all-free")
+            return ReconcileOutcome.Empty
         }
         val yearStart = LocalDate.of(year, 1, 1)
         val yearEnd = LocalDate.of(year + 1, 1, 1)
@@ -125,7 +130,7 @@ class ExternalAvailabilityReconcileService(
         // PER-YACHT-PRESENT guard: a yacht missing from the response is "no data for this yacht" →
         // none of its rows may be deleted (prevents yacht-mapping drift wiping a yacht's bookings).
         val yachtIds = agencyYachts.mapNotNull { it.id }.filter { it in seenYachtIds }
-        if (yachtIds.isEmpty()) return
+        if (yachtIds.isEmpty()) return ReconcileOutcome.NoPresentYachts
 
         val inScope = externalReservationRepository.findAllByYachtIdsAndYearOverlap(yachtIds, yearStart, yearEnd)
         // START-YEAR OWNERSHIP: only rows that START in this year are candidates, so a later year's
@@ -138,18 +143,18 @@ class ExternalAvailabilityReconcileService(
                 // longer returns. An unkeyable (corrupt) row is left untouched.
                 key != null && key !in seenKeys
             }
-        if (toRemove.isEmpty()) return
+        if (toRemove.isEmpty()) return ReconcileOutcome.NothingAbsent
 
         // CIRCUIT BREAKER: a real cancellation wave is tiny vs total occupancy; a LARGE absent
         // fraction almost always = a truncated-but-parseable response. Refuse to mass-delete.
         val maxDeletable = PartnerWithdrawalGuard.maxWithdrawable(inScope.size)
         if (toRemove.size > maxDeletable) {
             log.warn(
-                "Skip absent-reconcile (year=$year): would delete ${toRemove.size} of ${inScope.size} in-scope " +
+                "Skip absent-reconcile ($agencyLabel year=$year): would delete ${toRemove.size} of ${inScope.size} in-scope " +
                     "external_reservations (over cap $maxDeletable) — likely a partial/truncated partner response, " +
                     "not real cancellations. Deleting nothing; will retry on the next complete response.",
             )
-            return
+            return ReconcileOutcome.Breaker(toRemove.size, inScope.size, maxDeletable)
         }
 
         if (shadowMode) {
@@ -159,15 +164,19 @@ class ExternalAvailabilityReconcileService(
                         "${res.dateFrom}->${res.dateTo} ${res.status} (absent from partner response)",
                 )
             }
-            log.info("[SHADOW] Absent-reconcile year=$year: WOULD remove ${toRemove.size} of ${inScope.size} (no deletions; shadow mode ON)")
-            return
+            log.info(
+                "[SHADOW] Absent-reconcile ($agencyLabel year=$year): WOULD remove ${toRemove.size} of ${inScope.size} " +
+                    "(no deletions; shadow mode ON)",
+            )
+            return ReconcileOutcome.Shadow(toRemove.size, inScope.size)
         }
 
         toRemove.forEach { removeReservationCascade(it) }
         log.info(
-            "Absent-reconcile year=$year: removed ${toRemove.size} of ${inScope.size} external_reservations " +
+            "Absent-reconcile ($agencyLabel year=$year): removed ${toRemove.size} of ${inScope.size} external_reservations " +
                 "no longer returned by the partner",
         )
+        return ReconcileOutcome.Removed(toRemove.size, inScope.size)
     }
 
     /**
