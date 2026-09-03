@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-09-03 — 🔄 Part 4: sync reliability + data completeness (merge fb90905; branches part4/nausys 7b2897f, part4/matview 5af2997, part4/txhikari 388ea24, part4/logging 9d6d316) — ⏳ DEPLOYING
+## 2026-09-03 — 🔄 Part 4: sync reliability + data completeness (merge fb90905; branches part4/nausys 7b2897f, part4/matview 5af2997, part4/txhikari 388ea24, part4/logging 9d6d316) — ✅ LIVE cusma2 (2.9. 23:57 UTC) + cusma3 (3.9. 07:53 UTC)
 
 Goal (Mario): "sync must run undisturbed and we must have ALL the data". Fleet-audit backend findings, each
 investigated read-only against prod logs/DB first, then implemented in 4 isolated worktrees and merged.
@@ -80,6 +80,8 @@ seq_scan 170,356, n_tup_ins 2,112,776 / del 1,961,957, dead 173,924; idx_yacht_e
 matview 1587 MB, 11 indexes; agency 1981: 449 offers, max date_from 2026-11-23. Journals 24 h: cusma2 6,984 "NauSys
 429" lines / 397 exhausted / 367 saturated; cusma3 200 × 429, sync errors 132+1981, 4,624 skip lines, 20,403 MMK wire
 lines, 30 leak WARNs, refresh 288 × 51 s.
+
+**Deployed:** cusma2 2026-09-02 23:57 UTC (V9_54 + R__1_03 rerun 18 s, API 200 after 35 s, matview 1587 → 841 MB, 11 → 9 indexes); cusma3 2026-09-03 07:53 UTC in the old-timetable gap after the MMK lang sync (started 13 s, Flyway "up to date", env vars verified in /proc/PID/environ, no WARN/ERROR at start). cusma4 temp_bytes at cusma3 restart: 7,031,264,295,214 (+191 GB overnight = the OLD 5-min refresh still running on cusma3; expect flat from here). Both `.prev` = 28.8 build.
 
 **Deploy order:** cusma2 first (applies V9_54 + re-runs R__1_03 → ~30-40 s extra cusma4 CPU at startup, searches keep
 serving), env vars above, health check; then cusma3 with its env vars **only in a safe window** (old timetable is
