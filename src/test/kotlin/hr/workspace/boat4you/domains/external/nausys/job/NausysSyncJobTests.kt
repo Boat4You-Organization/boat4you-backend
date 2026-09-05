@@ -17,6 +17,7 @@ import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.springframework.scheduling.annotation.Scheduled
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -29,15 +30,14 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class NausysSyncJobTests {
-    // Mockito matchers return null; route them through a generic helper (no mockito-kotlin on the classpath).
-    @Suppress("UNCHECKED_CAST")
-    private fun <T> any(): T = ArgumentMatchers.any<T>() ?: null as T
-
     private val offers: NauSysYachtOfferIntegrationService = mock(NauSysYachtOfferIntegrationService::class.java)
     private val yachts: NauSysYachtIntegrationService = mock(NauSysYachtIntegrationService::class.java)
     private val catalogue: NauSysCatalogueIntegrationService = mock(NauSysCatalogueIntegrationService::class.java)
     private val availability: NauSysAvailabilityIntegrationService = mock(NauSysAvailabilityIntegrationService::class.java)
     private val cache: ServiceCallCacheService = mock(ServiceCallCacheService::class.java)
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> anyK(): T = ArgumentMatchers.any<T>() ?: null as T
 
     private val job =
         NausysSyncJob(offers, yachts, catalogue, availability, cache, NauSysRateLimitStats()).apply {
@@ -118,7 +118,7 @@ class NausysSyncJobTests {
 
     @Test
     fun `near-term refresh syncs the 12-week window, marks it, drains the queue and releases the gate`() {
-        `when`(offers.yachtOfferSync(any())).thenReturn(NauSysOfferSyncRunSummary())
+        `when`(offers.yachtOfferSync(anyK())).thenReturn(NauSysOfferSyncRunSummary())
 
         job.runNearTermOfferRefresh()
 
@@ -136,25 +136,25 @@ class NausysSyncJobTests {
     fun `near-term refresh skips when another NauSys sync holds the gate past the wait budget`() {
         job.nausysBusy.set(true)
         job.runNearTermOfferRefresh()
-        verify(offers, never()).yachtOfferSync(any())
+        verify(offers, never()).yachtOfferSync(anyK())
         verify(offers, never()).drainRetryQueue()
         assertTrue(job.nausysBusy.get(), "skipping must not clear a gate it does not own")
     }
 
     @Test
     fun `near-term refresh waits for the gate and then runs`() {
-        `when`(offers.yachtOfferSync(any())).thenReturn(NauSysOfferSyncRunSummary())
+        `when`(offers.yachtOfferSync(anyK())).thenReturn(NauSysOfferSyncRunSummary())
         job.nausysBusy.set(true)
         job.nearTermWaitMaxMs = 10_000
         job.sleep = { job.nausysBusy.set(false) } // the running sync finishes during the first poll
         job.runNearTermOfferRefresh()
-        verify(offers, times(1)).yachtOfferSync(any())
+        verify(offers, times(1)).yachtOfferSync(anyK())
         assertFalse(job.nausysBusy.get())
     }
 
     @Test
     fun `a failing near-term refresh releases the gate and writes no marker`() {
-        `when`(offers.yachtOfferSync(any())).thenThrow(IllegalStateException("boom"))
+        `when`(offers.yachtOfferSync(anyK())).thenThrow(IllegalStateException("boom"))
         assertFailsWith<IllegalStateException> { job.runNearTermOfferRefresh() }
         verify(cache, never()).saveScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_NEAR_TERM_OFFER)
         verify(offers, never()).drainRetryQueue()
@@ -165,6 +165,8 @@ class NausysSyncJobTests {
     fun `nightly lock covers the measured 6h39m run and the near-term job has its own cron and lock`() {
         val nightly = NausysSyncJob::class.java.getMethod("runYachtSync").getAnnotation(SchedulerLock::class.java)
         assertEquals("PT10H", nightly.lockAtMostFor)
+        // The backup slots treat a STARTED marker as "still in flight" for exactly as long as the lock lasts.
+        assertEquals(Duration.parse(nightly.lockAtMostFor), NausysSyncJob.STARTED_MARKER_FRESHNESS)
 
         val nearTerm = NausysSyncJob::class.java.getMethod("runNearTermOfferRefresh")
         assertEquals("0 40 10,16 * * *", nearTerm.getAnnotation(Scheduled::class.java).cron)
@@ -187,6 +189,9 @@ class NausysSyncJobTests {
         assertTrue(job.nightlyOfferSyncStillRunning())
 
         `when`(cache.lastScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_YACHT_OFFER_STARTED)).thenReturn(Instant.now().minus(9, ChronoUnit.HOURS))
-        assertFalse(job.nightlyOfferSyncStillRunning(), "a crashed night older than 8 h must not block the backup forever")
+        assertTrue(job.nightlyOfferSyncStillRunning(), "a 9 h night is still inside the PT10H lock and must count as in flight")
+
+        `when`(cache.lastScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_YACHT_OFFER_STARTED)).thenReturn(Instant.now().minus(11, ChronoUnit.HOURS))
+        assertFalse(job.nightlyOfferSyncStillRunning(), "a crashed night older than 10 h must not block the backup forever")
     }
 }

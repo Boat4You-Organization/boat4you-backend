@@ -66,8 +66,12 @@ class NausysSyncJob(
     internal var today: () -> LocalDate = { LocalDate.now() }
 
     companion object {
-        /** A STARTED marker younger than this with no newer FINISHED marker = a night still running. */
-        val STARTED_MARKER_FRESHNESS: Duration = Duration.ofHours(8)
+        /**
+         * A STARTED marker younger than this with no newer FINISHED marker = a night still running.
+         * Kept equal to the nightly `nausysYachtSync` lock (PT10H): a night that legitimately runs
+         * 8–10 h must still count as in flight for the backup slots (other JVM / after a restart).
+         */
+        val STARTED_MARKER_FRESHNESS: Duration = Duration.ofHours(10)
 
         /** Near-term refresh horizon: the 12 weeks customers actually book in (Mario 5.9.2026). */
         const val NEAR_TERM_HORIZON_DAYS = 84L
@@ -196,7 +200,7 @@ class NausysSyncJob(
             }
             if (serviceCallCacheService.shouldRunScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_YACHT_OFFER)) {
                 if (nightlyOfferSyncStillRunning()) {
-                    log.info("NauSYS offer backup sync skipped: the nightly offer sync started <8h ago and has not finished (other JVM / restart)")
+                    log.info("NauSYS offer backup sync skipped: the nightly offer sync started <10h ago and has not finished (other JVM / restart)")
                     return
                 }
                 log.info("Syncing NauSYS offers")
@@ -211,7 +215,7 @@ class NausysSyncJob(
         }
     }
 
-    /** STARTED marker newer than the FINISHED one and younger than 8 h → a night is (or was, until a crash) in flight. */
+    /** STARTED marker newer than the FINISHED one and younger than 10 h → a night is (or was, until a crash) in flight. */
     internal fun nightlyOfferSyncStillRunning(): Boolean {
         val startedAt = serviceCallCacheService.lastScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_YACHT_OFFER_STARTED) ?: return false
         val finishedAt = serviceCallCacheService.lastScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_YACHT_OFFER)
@@ -232,12 +236,11 @@ class NausysSyncJob(
      * source — the full interval-grid getFreeYachts re-pull ran 4x/day.
      *
      * This reverses the 13.6 intraday rule ("sync kao MMK"). To RESTORE intraday
-     * price re-pricing (if daily prices prove too stale for some agency), just
-     * un-comment the two annotations below.
-     * Was: @Scheduled(cron = "0 0 8,13,18 * * ?")
+     * price re-pricing (if daily prices prove too stale for some agency), re-add
+     * `@Scheduled(cron = "0 0 8,13,18 * * ?")` and
+     * `@SchedulerLock(name = "nausysOfferIntradaySync", lockAtMostFor = "PT2H")`
+     * to the method below (kept as KDoc text: ktlint forbids EOL comments under a KDoc).
      */
-    // @Scheduled(cron = "0 0 8,13,18 * * ?")
-    // @SchedulerLock(name = "nausysOfferIntradaySync", lockAtMostFor = "PT2H")
     fun runIntradayOfferSync() {
         log.info("Starting NauSYS intraday offer sync")
         val startTime = System.currentTimeMillis()
@@ -259,7 +262,9 @@ class NausysSyncJob(
     @Scheduled(cron = "0 20 10,16,22 * * *")
     @SchedulerLock(name = "nausysAvailabilitySync", lockAtMostFor = "PT1H")
     fun availabilitySync() {
-        if (!awaitNausysGate(availabilityWaitMaxMs, "availability sync")) return
+        if (!acquireGate("availability sync", availabilityWaitMaxMs)) {
+            return
+        }
         val before = rateLimitStats.snapshot()
         try {
             runAvailabilityPass("scheduled")
@@ -283,7 +288,9 @@ class NausysSyncJob(
     @Scheduled(cron = "0 40 10,16 * * *")
     @SchedulerLock(name = "nausysNearTermOfferRefresh", lockAtMostFor = "PT3H")
     fun runNearTermOfferRefresh() {
-        if (!awaitNausysGate(nearTermWaitMaxMs, "near-term offer refresh")) return
+        if (!acquireGate("near-term offer refresh", nearTermWaitMaxMs)) {
+            return
+        }
         val before = rateLimitStats.snapshot()
         val startTime = System.currentTimeMillis()
         val horizonEnd = today().plusDays(NEAR_TERM_HORIZON_DAYS)
@@ -303,12 +310,13 @@ class NausysSyncJob(
     }
 
     /**
-     * Acquires [nausysBusy], polling while another NauSys job holds it; false (one INFO line)
-     * once [maxWaitMs] is used up. The caller owns the gate on true and must release it in a finally.
+     * Takes [nausysBusy], polling every [availabilityWaitPollMs] while another NauSys job
+     * holds it, for at most [maxWaitMs]. Returns false (one INFO line) when the budget is
+     * spent; the caller then skips its slot without touching a gate it does not own.
      */
-    private fun awaitNausysGate(
-        maxWaitMs: Long,
+    private fun acquireGate(
         job: String,
+        maxWaitMs: Long,
     ): Boolean {
         val deadline = System.currentTimeMillis() + maxWaitMs
         while (!nausysBusy.compareAndSet(false, true)) {

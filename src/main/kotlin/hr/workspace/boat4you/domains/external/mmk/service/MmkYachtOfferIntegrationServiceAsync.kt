@@ -104,7 +104,6 @@ class MmkYachtOfferIntegrationServiceAsync(
                     val syncEndDate = LocalDateTime.of(endDate, LocalTime.MAX)
                     log.trace("Syncing MMK offer for date range: {} - {}", syncStartDate, syncEndDate)
 
-
                     calls++
                     val offersResponse =
                         mmkRetryableClient
