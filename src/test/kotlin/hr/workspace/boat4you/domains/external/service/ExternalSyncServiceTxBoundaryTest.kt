@@ -12,6 +12,7 @@ import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferIntegrati
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferIntegrationServiceAsync
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationServiceAsync
+import hr.workspace.boat4you.domains.external.nausys.service.NausysSearchSyncRetryQueue
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
@@ -104,6 +105,11 @@ class ExternalSyncServiceTxBoundaryTest {
 
     @MockitoBean
     private lateinit var nauSysYachtOfferIntegrationServiceAsync: NauSysYachtOfferIntegrationServiceAsync
+
+    // Constructor dependency of the imported real ExternalSyncService (search-warm retry
+    // queue, 5.9.2026); not exercised by the per-yacht path under test.
+    @MockitoBean
+    private lateinit var nausysSearchSyncRetryQueue: NausysSearchSyncRetryQueue
 
     // Mockito's any() returns null, which Kotlin rejects for non-null params
     // (LocalDate) at the call site; the generic indirection defers the check.

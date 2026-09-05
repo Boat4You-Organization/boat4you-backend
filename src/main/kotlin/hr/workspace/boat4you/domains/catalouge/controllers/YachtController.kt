@@ -16,10 +16,10 @@ import hr.workspace.boat4you.domains.catalouge.services.YachtQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtTwinCanonicalService
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import hr.workspace.boat4you.domains.external.service.ExternalSyncService
+import hr.workspace.boat4you.domains.external.service.SearchWarmPolicy
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import hr.workspace.boat4you.security.ANONYMOUS_USER_ID
 import hr.workspace.boat4you.security.getAuthenticatedUserId
-import org.springframework.security.core.context.SecurityContextHolder
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.springframework.core.io.Resource
@@ -27,6 +27,7 @@ import org.springframework.data.web.PagedModel
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RequestHeader
@@ -118,8 +119,11 @@ class YachtController(
         // (authentication.authorities), null-safe so anonymous public searches
         // (authentication may be absent) never NPE — absent/again non-admin → false.
         val isAdmin =
-            SecurityContextHolder.getContext().authentication
-                ?.authorities?.any { it.authority == "SYSTEM_ADMIN" } ?: false
+            SecurityContextHolder
+                .getContext()
+                .authentication
+                ?.authorities
+                ?.any { it.authority == "SYSTEM_ADMIN" } ?: false
         val searchParams =
             YachtSearchParamObject(
                 locationIds = locations,
@@ -167,16 +171,22 @@ class YachtController(
             }
         }
 
-        // On-demand partner availability sync for ANY dated search with
-        // locations (Deploy 4: the old `!= 7L` skip starved the most common
-        // Sat-Sat query of fresh data). The 1h ServiceCallCacheService gate
-        // inside syncYachtOffers (shouldCallYachtSearch) still throttles repeat
-        // calls, and honesty no longer depends on this completing because
-        // availability is resolved live against external_reservations at query
-        // time, so an in-flight or cache-skipped sync never yields a false
-        // "available for your exact week".
+        // Mario, 5.9.2026: search is served from the DB; freshness comes from the
+        // scheduler (nightly NauSys/MMK offer grid + the near-term intraday refresh
+        // on cusma3), not from this request. Weekly ranges (7/14/21/28 d, any start
+        // day) are already in the grid, so they fire NO partner warm at all — the
+        // live freeYachtsSearch only burned the NauSys quota the scheduler shares.
+        // Non-weekly ranges still warm asynchronously behind the 3 h
+        // ServiceCallCacheService marker; a failed NauSys warm is parked in
+        // nausys_search_sync_retry and replayed on cusma3 instead of being
+        // retried here. Honesty never depended on this completing: availability
+        // is resolved live against external_reservations at query time, so a
+        // skipped or in-flight warm never yields a false "available for your
+        // exact week".
         if (startDate != null && endDate != null && locations != null) {
-            externalSyncService.syncYachtOffers(startDate, endDate, locations)
+            if (SearchWarmPolicy.shouldWarm(startDate, endDate)) {
+                externalSyncService.syncYachtOffers(startDate, endDate, locations)
+            }
         }
 
         // Replacement flow — admin toggled "Include unavailable yachts" in

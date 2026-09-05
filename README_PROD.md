@@ -153,16 +153,19 @@ All scheduled jobs run exclusively on **VM3** (`data-sync` profile, ShedLock JDB
 
 ### Timetable (de-conflicted 2.9.2026)
 
-The single NauSys credential is throttled on *concurrent* calls, so NauSys jobs are strictly sequential: the nightly block **23:00 → ≈05:15** (catalogue 23:00, yachts+offers 23:20, then the first availability pass and the offer retry-queue drain are *chained* at the end of the same run), then MMK **06:00–07:50**, MMK availability **08:40 / 12:40 / 16:40 / 20:40**, NauSys availability **10:20 / 16:20 / 22:20**. `NausysSyncJob` additionally holds an in-JVM `nausysBusy` gate so a late-running night makes the next NauSys job wait/skip instead of running in parallel.
+The single NauSys credential is throttled on *concurrent* calls, so NauSys jobs are strictly sequential: the nightly block **23:00 → ≈05:15** (catalogue 23:00, yachts+offers 23:20, then the first availability pass and the retry-queue drains — agency queue, then search queue — are *chained* at the end of the same run), then MMK **06:00–07:50**, MMK availability **08:40 / 12:40 / 16:40 / 20:40**, NauSys availability **10:20 / 16:20 / 22:20**. `NausysSyncJob` additionally holds an in-JVM `nausysBusy` gate so a late-running night makes the next NauSys job wait/skip instead of running in parallel (the nightly and backup runs wait up to 15 min for the gate, availability up to 45 min).
+
+**Search warm (Mario, 5.9.2026 — search is served from the DB, freshness via the scheduler):** a dated + located public search on VM2 fires **no partner warm at all** when the range is a multiple of 7 days (7/14/21/28 d, any start day — the nightly grid already has those intervals; `SearchWarmPolicy`). Non-weekly ranges still warm asynchronously (NauSys + MMK, 3 h marker), but VM2 never retries NauSys itself: a 429 / 5xx / timeout parks the (dates, NauSys filter) request in `nausys_search_sync_retry` (V9_55), which only VM3 drains — every 15 min via `runSearchRetryDrain` and chained after the agency-queue drain in the nightly / backup runs.
 **Safe restart/deploy windows for VM3:** 07:50–08:40, 13:00–16:15, 17:10–20:35, 21:05–22:15 UTC.
 
 | Job class | Method | Cron (UTC) | Lock (`lockAtMostFor`) | Schedule / measured |
 |---|---|---|---|---|
 | `NausysSyncJob` | `runCatalogueSync` | `0 0 23 * * ?` | `nausysCatalogueSync` PT2H | 23:00; 0.5–1 min |
-| `NausysSyncJob` | `runYachtSync` | `0 20 23 * * ?` | `nausysYachtSync` PT7H | 23:20; yachts 11–15 min + offers 300–345 min, then chained availability pass (4–6 min) + retry-queue drain → ends ≈04:45–05:15 |
+| `NausysSyncJob` | `runYachtSync` | `0 20 23 * * ?` | `nausysYachtSync` PT7H | 23:20 (waits ≤15 min for the `nausysBusy` gate); yachts 11–15 min + offers 300–345 min, then chained availability pass (4–6 min) + retry-queue drains (agency queue, then search queue) → ends ≈04:45–05:15 |
 | `NausysSyncJob` | `runCatalogueBackupSync` | `0 0 6,10,15 * * ?` | `nausysCatalogueBackupSync` PT1H | no-op unless catalogue marker >24 h |
-| `NausysSyncJob` | `runYachtBackupSync` | `0 15 6,10,15 * * ?` | `nausysYachtBackupSync` PT2H | always drains `nausys_offer_sync_retry`; yachts/offers only if marker >24 h and no night still running |
+| `NausysSyncJob` | `runYachtBackupSync` | `0 15 6,10,15 * * ?` | `nausysYachtBackupSync` PT2H | waits ≤15 min for the gate; always drains `nausys_offer_sync_retry` then `nausys_search_sync_retry`; yachts/offers only if marker >24 h and no night still running |
 | `NausysSyncJob` | `availabilitySync` | `0 20 10,16,22 * * *` | `nausysAvailabilitySync` PT1H | 3.8–6.2 min; 4th pass/day is chained into `runYachtSync` |
+| `NausysSyncJob` | `runSearchRetryDrain` | `0 5,20,35,50 * * * *` | `nausysSearchRetryDrain` PT10M | every 15 min; drains `nausys_search_sync_retry` (≤25 rows, oldest `next_attempt_at` first, 15 min × attempts back-off, give up after 6 with WARN; stops early on a 429 or after 8 min); skipped (INFO) while another NauSys job holds `nausysBusy`, so a no-op during the nightly block; silent when nothing is due |
 | `DeleteExpiredReservationsAndOffersJob` | `deleteExpiredReservationsAndOffers` | `0 30 5 * * ?` | `deleteExpiredReservationsAndOffers` PT1H | 05:30; ~1 s |
 | `MmkSyncJob` | `runCatalogueSync` | `0 0 6 * * ?` | `mmkCatalogueSync` PT1H | 06:00; ~5 s |
 | `MmkSyncJob` | `runYachtSync` | `0 10 6 * * ?` | `mmkYachtSync` PT1H | 06:10; 5.5–9 min |

@@ -8,15 +8,19 @@ import hr.workspace.boat4you.domains.catalouge.jpa.LocationViewRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferIntegrationService
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferIntegrationServiceAsync
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationServiceAsync
+import hr.workspace.boat4you.domains.external.nausys.service.NausysSearchSyncRetryQueue
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
+import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.ResourceAccessException
 import java.time.LocalDate
 
 // Deliberately NOT @Transactional anywhere in this class: both warm paths
@@ -40,6 +44,7 @@ class ExternalSyncService(
     private val externalMappingService: ExternalMappingService,
     private val serviceCallCacheService: ServiceCallCacheService,
     private val yachtSyncMutex: YachtSyncMutex,
+    private val nausysSearchSyncRetryQueue: NausysSearchSyncRetryQueue,
     transactionManager: PlatformTransactionManager,
 ) {
     private val log = LoggerFactory.getLogger(ExternalSyncService::class.java)
@@ -71,13 +76,9 @@ class ExternalSyncService(
             // full 5 minutes and the cache marker below was never written —
             // the same ranges re-warmed forever. Partner clients carry their own
             // read timeouts + retry caps, so each call is bounded.
-            nauSysYachtOfferIntegrationServiceAsync.syncOffersForDateRangeBlocking(
-                startDate,
-                endDate,
-                nausysGroup.countries,
-                nausysGroup.regions,
-                nausysGroup.locations,
-            )
+            // A NauSys failure is parked for the scheduler (warmNauSys) and does
+            // NOT stop the MMK part or the 3 h marker below.
+            warmNauSys(startDate, endDate, nausysGroup)
             mmkYachtOfferIntegrationServiceAsync.syncOffersForDateRangeBlocking(
                 startDate,
                 endDate,
@@ -90,6 +91,55 @@ class ExternalSyncService(
             log.error("Failed to sync yacht offers for locations {}: {}", locations, e.message, e)
         }
     }
+
+    /**
+     * Live NauSys part of the search warm. Mario, 5.9.2026: search is served from the
+     * DB and the API node must not retry NauSys itself — 681 of 1,362 warms/day failed
+     * with 429/502 and were only logged, while the same quota starved the scheduler. A
+     * transient failure (429 budget, 5xx, timeout, any ExternalSystemException) is
+     * upserted into nausys_search_sync_retry and replayed on cusma3; everything else is
+     * a real error. In both cases the caller still runs MMK and writes the 3 h marker,
+     * so the range is not re-warmed from the request path before the scheduler had
+     * its turn (no hammering).
+     */
+    private fun warmNauSys(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        group: LocationExternalGroup,
+    ) {
+        if (group.countries.isNullOrEmpty() && group.regions.isNullOrEmpty() && group.locations.isNullOrEmpty()) {
+            // None of the searched `did` tokens maps to a NauSys location (MMK-only
+            // marinas/regions): an all-null filter would be a WORLD-WIDE
+            // freeYachtsSearch (2000 rows, the heaviest NauSys call) that cannot
+            // contain the searched place — and, queued, would be replayed 6×.
+            return
+        }
+        try {
+            nauSysYachtOfferIntegrationServiceAsync.syncOffersForDateRangeBlocking(
+                startDate,
+                endDate,
+                group.countries,
+                group.regions,
+                group.locations,
+            )
+        } catch (e: Exception) {
+            if (!isTransientNauSysFailure(e)) {
+                log.error("NauSYS search warm $startDate→$endDate failed (not retried): {}", e.message, e)
+                return
+            }
+            try {
+                nausysSearchSyncRetryQueue.enqueue(startDate, endDate, group.countries, group.regions, group.locations, e)
+                log.warn("NauSYS search warm $startDate→$endDate deferred to nausys_search_sync_retry (drained on the scheduler): $e")
+            } catch (queueError: Exception) {
+                log.error("NauSYS search warm $startDate→$endDate failed ($e) and could not be queued for retry", queueError)
+            }
+        }
+    }
+
+    // Same classifier as NauSysYachtOfferIntegrationService.isTransientPartnerFailure
+    // (NauSysRateLimitedException is an ExternalSystemException) plus the base class,
+    // so the REST-layer partner exceptions count as transient too. 4xx stay errors.
+    private fun isTransientNauSysFailure(e: Throwable): Boolean = e is ExternalSystemException || e is HttpServerErrorException || e is ResourceAccessException
 
     // Tx-free like the location-path warm above. Until 2.9.2026 this carried
     // @Transactional(readOnly = true) for the lazy entity chain, which kept
