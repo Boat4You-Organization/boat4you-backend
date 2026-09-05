@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.external.nausys.service.NauSysAvailabilityI
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysCatalogueIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationService
+import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationServiceAsync
 import hr.workspace.boat4you.domains.external.service.ServiceCallCacheService
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
@@ -27,7 +28,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  (chained) offer retry-queue drain, expected to finish ≈04:45–05:15.
  *  10:20 / 16:20 / 22:20 availability passes; 06:15 / 10:15 / 15:15 backup
  *  slots (no-op unless a marker is >24 h old; they always drain the retry
- *  queue). Note: the "06:15 backup" is this NauSys BACKUP-SYNC, not a DB backup.
+ *  queues). Note: the "06:15 backup" is this NauSys BACKUP-SYNC, not a DB backup.
+ *  Every 15 min (:05 :20 :35 :50) the search retry drain replays failed
+ *  on-demand search warms parked by the API node (Mario, 5.9.2026: search is
+ *  served from the DB, only the scheduler retries NauSys); it skips while
+ *  another NauSys job holds the gate.
  *
  * [nausysBusy] is the in-JVM sequencing gate: ShedLock only stops two nodes
  * from running the SAME job, not two different NauSys jobs on this node.
@@ -41,16 +46,23 @@ class NausysSyncJob(
     private val nauSysAvailabilityIntegrationService: NauSysAvailabilityIntegrationService,
     private val serviceCallCacheService: ServiceCallCacheService,
     private val rateLimitStats: NauSysRateLimitStats,
+    private val nauSysYachtOfferIntegrationServiceAsync: NauSysYachtOfferIntegrationServiceAsync,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
-    /** True while any NauSys sync (yachts/offers/backup/availability) is running in this JVM. */
+    /** True while any NauSys sync (yachts/offers/backup/availability/search-retry drain) is running in this JVM. */
     internal val nausysBusy = AtomicBoolean(false)
 
     // How long availabilitySync waits for a running offer/backup sync (inside its PT1H lock).
     internal var availabilityWaitPollMs: Long = 30_000
     internal var availabilityWaitMaxMs: Long = 45 * 60_000
     internal var sleep: (Long) -> Unit = Thread::sleep
+
+    // How long the nightly (23:20) and backup (:15) runs wait for the gate. They used to
+    // skip outright; since 5.9.2026 the 15-min search retry drain fires at :20 / :05 too
+    // and may legitimately hold the gate for seconds (or a few minutes) at 23:20:00 —
+    // a skip there would cancel the whole night, so they wait like availabilitySync.
+    internal var gateWaitMaxMs: Long = 15 * 60_000
 
     companion object {
         /** A STARTED marker younger than this with no newer FINISHED marker = a night still running. */
@@ -126,8 +138,7 @@ class NausysSyncJob(
     // ShedLock does not stop the thread, it just frees the name.
     @SchedulerLock(name = "nausysYachtSync", lockAtMostFor = "PT7H")
     fun runYachtSync() {
-        if (!nausysBusy.compareAndSet(false, true)) {
-            log.info("NauSYS yacht sync skipped: another NauSys sync is running")
+        if (!acquireGate("yacht sync", gateWaitMaxMs)) {
             return
         }
         val before = rateLimitStats.snapshot()
@@ -164,8 +175,7 @@ class NausysSyncJob(
     @Scheduled(cron = "0 15 6,10,15 * * ?")
     @SchedulerLock(name = "nausysYachtBackupSync", lockAtMostFor = "PT2H")
     fun runYachtBackupSync() {
-        if (!nausysBusy.compareAndSet(false, true)) {
-            log.info("NauSYS yacht backup sync skipped: another NauSys sync is running")
+        if (!acquireGate("yacht backup sync", gateWaitMaxMs)) {
             return
         }
         val before = rateLimitStats.snapshot()
@@ -243,13 +253,8 @@ class NausysSyncJob(
     @Scheduled(cron = "0 20 10,16,22 * * *")
     @SchedulerLock(name = "nausysAvailabilitySync", lockAtMostFor = "PT1H")
     fun availabilitySync() {
-        val deadline = System.currentTimeMillis() + availabilityWaitMaxMs
-        while (!nausysBusy.compareAndSet(false, true)) {
-            if (System.currentTimeMillis() >= deadline) {
-                log.info("NauSYS availability sync skipped: another NauSys sync still running after ${availabilityWaitMaxMs / 1000} s wait")
-                return
-            }
-            sleep(availabilityWaitPollMs)
+        if (!acquireGate("availability sync", availabilityWaitMaxMs)) {
+            return
         }
         val before = rateLimitStats.snapshot()
         try {
@@ -279,6 +284,7 @@ class NausysSyncJob(
         log.info("Syncing NauSYS availability took ${System.currentTimeMillis() - startTime} ms")
     }
 
+    /** Agency queue (nausys_offer_sync_retry) first, then the search queue (nausys_search_sync_retry); gate already held by the caller. */
     private fun runRetryDrain(trigger: String) {
         val startTime = System.currentTimeMillis()
         try {
@@ -287,6 +293,70 @@ class NausysSyncJob(
             log.error("NauSYS offer retry drain ($trigger) failed", e)
         }
         log.info("NauSYS offer retry drain ($trigger) took ${System.currentTimeMillis() - startTime} ms")
+        val searchStart = System.currentTimeMillis()
+        try {
+            val summary = nauSysYachtOfferIntegrationServiceAsync.drainSearchRetryQueue()
+            log.info("NauSYS search retry drain ($trigger): ${describe(summary)} took ${System.currentTimeMillis() - searchStart} ms")
+        } catch (e: Exception) {
+            log.error("NauSYS search retry drain ($trigger) failed", e)
+        }
+    }
+
+    /**
+     * Replays failed on-demand search warms parked by the API node in
+     * `nausys_search_sync_retry` (Mario, 5.9.2026: search is served from the DB, the
+     * API node never retries NauSys itself — only this scheduler does). Every 15 min at
+     * :05 :20 :35 :50, ≤25 rows oldest `next_attempt_at` first, 15 min × attempts
+     * back-off, give up after 6 (WARN). Skips (no wait) while another NauSys job holds
+     * the gate, so during the nightly block it is a no-op; one INFO summary line only
+     * when something was due.
+     */
+    @Scheduled(cron = "0 5,20,35,50 * * * *")
+    @SchedulerLock(name = "nausysSearchRetryDrain", lockAtMostFor = "PT10M")
+    fun runSearchRetryDrain() {
+        if (!nausysBusy.compareAndSet(false, true)) {
+            log.info("NauSYS search retry drain skipped: another NauSys sync is running")
+            return
+        }
+        val before = rateLimitStats.snapshot()
+        val startTime = System.currentTimeMillis()
+        try {
+            val summary = nauSysYachtOfferIntegrationServiceAsync.drainSearchRetryQueue()
+            if (summary.due > 0) {
+                val delta = rateLimitStats.snapshot().since(before)
+                log.info(
+                    "NauSYS search retry drain (scheduled): ${describe(summary)} took ${System.currentTimeMillis() - startTime} ms, " +
+                        "429s this run = ${delta.tooManyRequests}",
+                )
+            }
+        } catch (e: Exception) {
+            log.error("NauSYS search retry drain (scheduled) failed", e)
+        } finally {
+            nausysBusy.set(false)
+        }
+    }
+
+    private fun describe(summary: NauSysYachtOfferIntegrationServiceAsync.SearchRetryDrainSummary): String =
+        "due=${summary.due} ok=${summary.ok} failed=${summary.failed} gaveUp=${summary.gaveUp} notAttempted=${summary.notAttempted}"
+
+    /**
+     * Takes [nausysBusy], polling every [availabilityWaitPollMs] while another NauSys job
+     * holds it, for at most [maxWaitMs]. Returns false (one INFO line) when the budget is
+     * spent; the caller then skips its slot without touching a gate it does not own.
+     */
+    private fun acquireGate(
+        job: String,
+        maxWaitMs: Long,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + maxWaitMs
+        while (!nausysBusy.compareAndSet(false, true)) {
+            if (System.currentTimeMillis() >= deadline) {
+                log.info("NauSYS $job skipped: another NauSys sync still running after ${maxWaitMs / 1000} s wait")
+                return false
+            }
+            sleep(availabilityWaitPollMs)
+        }
+        return true
     }
 
     private fun logRateLimitSummary(
