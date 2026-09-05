@@ -46,4 +46,19 @@ class SearchWarmPolicyTests {
     fun `a zero length range counts as weekly (the controller rejects it before the policy anyway)`() {
         assertTrue(SearchWarmPolicy.isWeeklyRange(anchor, anchor))
     }
+
+    @Test
+    fun `ranges that already started never warm, weekly or not`() {
+        val today = LocalDate.of(2026, 9, 5)
+        // 5-day and 12-day ranges from the past: nothing left to sell, nothing to refresh.
+        assertTrue(SearchWarmPolicy.isPast(today.minusDays(1), today))
+        assertFalse(SearchWarmPolicy.shouldWarm(today.minusDays(30), today.minusDays(25), today))
+        assertFalse(SearchWarmPolicy.shouldWarm(today.minusDays(1), today.plusDays(11), today))
+        // Starting today or later is fine for a non-weekly range …
+        assertFalse(SearchWarmPolicy.isPast(today, today))
+        assertTrue(SearchWarmPolicy.shouldWarm(today, today.plusDays(12), today))
+        assertTrue(SearchWarmPolicy.shouldWarm(today.plusDays(60), today.plusDays(65), today))
+        // … and a weekly range in the future still does not warm (D1).
+        assertFalse(SearchWarmPolicy.shouldWarm(today.plusDays(7), today.plusDays(14), today))
+    }
 }

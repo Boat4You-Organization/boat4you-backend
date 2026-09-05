@@ -25,8 +25,19 @@ object SearchWarmPolicy {
         end: LocalDate,
     ): Boolean = ChronoUnit.DAYS.between(start, end) % WEEK_DAYS == 0L
 
+    /**
+     * A range that has already started cannot be sold, so there is nothing to refresh:
+     * 5.9.2026 access-log sample — 43 of 53 non-weekly warms in 5 minutes were for PAST
+     * dates (stale sister-site/crawler URLs). Those now serve whatever the DB has.
+     */
+    fun isPast(
+        start: LocalDate,
+        today: LocalDate = LocalDate.now(),
+    ): Boolean = start.isBefore(today)
+
     fun shouldWarm(
         start: LocalDate,
         end: LocalDate,
-    ): Boolean = !isWeeklyRange(start, end)
+        today: LocalDate = LocalDate.now(),
+    ): Boolean = !isWeeklyRange(start, end) && !isPast(start, today)
 }

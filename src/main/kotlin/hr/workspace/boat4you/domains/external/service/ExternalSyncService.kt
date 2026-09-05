@@ -22,6 +22,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.client.HttpServerErrorException
 import org.springframework.web.client.ResourceAccessException
 import java.time.LocalDate
+import java.util.concurrent.ConcurrentHashMap
 
 // Deliberately NOT @Transactional anywhere in this class: both warm paths
 // below wait on partner HTTP calls, and an ambient transaction pins a Hikari
@@ -53,8 +54,31 @@ class ExternalSyncService(
     // (open-in-view=false); closed before the partner call starts.
     private val readTx = TransactionTemplate(transactionManager).apply { isReadOnly = true }
 
+    // Identical warms that are already running. A paginated sister-site search fires the
+    // same (dates, locations) request once per page within the same second (5.9.2026:
+    // 5× for one 12-day range); the 3 h marker is only written when the first one
+    // FINISHES, so every duplicate used to reach NauSys/MMK. Keyed by the same hash as
+    // the marker; in-JVM only (each node dedupes its own burst, which is where they occur).
+    private val inFlightSearchWarms: MutableSet<Long> = ConcurrentHashMap.newKeySet()
+
     @Async("taskExecutor")
     fun syncYachtOffers(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        locations: List<String>,
+    ) {
+        val key = serviceCallCacheService.createSyncYachtOffersHashSorted(startDate, endDate, locations)
+        if (!inFlightSearchWarms.add(key)) {
+            return
+        }
+        try {
+            syncYachtOffersGuarded(startDate, endDate, locations)
+        } finally {
+            inFlightSearchWarms.remove(key)
+        }
+    }
+
+    private fun syncYachtOffersGuarded(
         startDate: LocalDate,
         endDate: LocalDate,
         locations: List<String>,

@@ -20,6 +20,13 @@ back to the earliest overlapping one (yacht still shown); the final price is re-
   is skipped entirely (previously an UNFILTERED world-wide freeYachtsSearch — the single heaviest wasted call).
 - Per-yacht warm on the yacht page and the booking flow are unchanged.
 
+**1b. Two more warm filters (added 11:30 UTC after watching 5 min of live traffic):** 226 of 365 dated requests
+carried a start date in the PAST (stale sister-site/crawler URLs) and one paginated 12-day sister search fired the
+identical warm 5× within a second. `SearchWarmPolicy.shouldWarm` now also requires `start >= today`, and
+`ExternalSyncService` keeps an in-JVM set of in-flight warm keys (same hash as the 3 h marker) so a duplicate that
+arrives while the first is still running returns immediately. Together with D1 this removes ~90 % of the remaining
+non-weekly warms (measured: 43 past + 4 duplicates of 53 non-weekly warms in 5 min).
+
 **2. Search retry drain (scheduler only, `NausysSyncJob.runSearchRetryDrain`)** — cron `0 5,20,35,50 * * * *`,
 ShedLock `nausysSearchRetryDrain` PT10M, ≤25 rows oldest `next_attempt_at` first, back-off 15 min × attempts, give up
 after 6 (WARN), stops early on a 429 or after 5 min, skips (DEBUG) while another NauSys job holds `nausysBusy`; also

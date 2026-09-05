@@ -27,7 +27,11 @@ import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpServerErrorException
 import org.springframework.web.client.ResourceAccessException
 import java.time.LocalDate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 /**
  * D2 (Mario, 5.9.2026): the location-path warm never retries NauSys from the API node.
@@ -186,5 +190,33 @@ class ExternalSyncServiceSearchWarmTests {
         verify(nausysAsync, never()).syncOffersForDateRangeBlocking(any(), any(), any(), any(), any())
         verifyNothingEnqueued()
         verifyMmkAndMarker()
+    }
+
+    @Test
+    fun `an identical warm that is still in flight is not started twice`() {
+        // A paginated sister-site search fires the same (dates, locations) warm once per
+        // page within a second; only the first may reach the partners.
+        val nausysEntered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        doAnswer {
+            nausysEntered.countDown()
+            release.await(5, TimeUnit.SECONDS)
+            null
+        }.`when`(nausysAsync).syncOffersForDateRangeBlocking(any(), any(), any(), any(), any())
+
+        val first = thread { service.syncYachtOffers(from, to, locations) }
+        assertTrue(nausysEntered.await(5, TimeUnit.SECONDS), "first warm did not reach NauSys")
+
+        service.syncYachtOffers(from, to, locations) // duplicate while the first is in flight
+        release.countDown()
+        first.join(5_000)
+
+        verify(nausysAsync, times(1)).syncOffersForDateRangeBlocking(any(), any(), any(), any(), any())
+        verify(mmkAsync, times(1)).syncOffersForDateRangeBlocking(any(), any(), any(), any(), any())
+        verify(cache, times(1)).saveYachtSearch(from, to, locations)
+
+        // Once finished, the same request may warm again (subject to the 3 h marker).
+        service.syncYachtOffers(from, to, locations)
+        verify(nausysAsync, times(2)).syncOffersForDateRangeBlocking(any(), any(), any(), any(), any())
     }
 }
