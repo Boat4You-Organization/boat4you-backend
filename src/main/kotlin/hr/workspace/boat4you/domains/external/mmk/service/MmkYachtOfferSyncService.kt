@@ -56,11 +56,13 @@ class MmkYachtOfferSyncService(
      * sync paths on `delete from offer_extras`). A yacht another sync is currently writing
      * is skipped and heals on the next run; one yacht's failure no longer rolls back the
      * whole agency batch.
+     *
+     * @return per-offer outcome counters for the caller's run summary (Part 4 logging: counted, not logged).
      */
     fun syncOffersForAgency(
         agencyId: Long,
         mmkOffers: List<org.openapitools.client.mmk.model.Offer>,
-    ) {
+    ): MmkOfferUpsertCounters {
         val allAgencyYachts = yachtRepository.findAllByAgencyId(agencyId)
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
         val allMappings =
@@ -69,17 +71,19 @@ class MmkYachtOfferSyncService(
                 externalSystem,
                 YACHT_AGENCY_EXTERNAL_MAPPING_KEY + agencyId,
             )
+        var upsertedCount = 0
         var skippedCount = 0
         var skippedYachtCount = 0
         var skippedLockedCount = 0
 
         // 0-night offers (dateFrom == dateTo) are unbookable and collide on the
         // natural key — drop them before grouping so one bad row can't skip a yacht.
-        val bookableOffers = mmkOffers.filter { o ->
-            val from = o.dateFrom.value?.toLocalDate()
-            val to = o.dateTo.value?.toLocalDate()
-            from != null && to != null && to.isAfter(from)
-        }
+        val bookableOffers =
+            mmkOffers.filter { o ->
+                val from = o.dateFrom.value?.toLocalDate()
+                val to = o.dateTo.value?.toLocalDate()
+                from != null && to != null && to.isAfter(from)
+            }
 
         bookableOffers.groupBy { it.yachtId }.forEach { (yachtId, mmkOffers) ->
             // Defensive: MMK can send a yachtId we haven't mapped yet (e.g. partner
@@ -153,7 +157,7 @@ class MmkYachtOfferSyncService(
                                 } else {
                                     updateOffer(existingOffer, yacht, mmkOffer)
                                 }
-                            if (!updated) skippedCount++
+                            if (updated) upsertedCount++ else skippedCount++
                         }
                     }
                 if (!ran) skippedLockedCount++
@@ -170,6 +174,12 @@ class MmkYachtOfferSyncService(
         }
         if (skippedYachtCount > 0) {
             log.warn("MMK offer sync for agency $agencyId: skipped $skippedYachtCount yachts due to missing Yacht mappings")
+        }
+        return MmkOfferUpsertCounters().apply {
+            upserted = upsertedCount
+            skippedMissingLocation = skippedCount
+            skippedMissingYachtMapping = skippedYachtCount
+            skippedLocked = skippedLockedCount
         }
     }
 
@@ -310,11 +320,12 @@ class MmkYachtOfferSyncService(
             // See MmkYachtSyncService for rationale — MMK `payableInBase=false`
             // means "outside base", not "included". fromMmkPayableInBase
             // defaults non-crew extras to ON_SITE.
-            val mmkPaymentType = ExtraPaymentType.fromMmkPayableInBase(
-                name = mmkExtra.name,
-                price = mmkPrice,
-                payableInBase = mmkExtra.payableInBase ?: false,
-            )
+            val mmkPaymentType =
+                ExtraPaymentType.fromMmkPayableInBase(
+                    name = mmkExtra.name,
+                    price = mmkPrice,
+                    payableInBase = mmkExtra.payableInBase ?: false,
+                )
             if (extraAlreadyOnOffer != null) {
                 extraAlreadyOnOffer.extras = boat4youExtrasMatch
                 extraAlreadyOnOffer.price = mmkPrice

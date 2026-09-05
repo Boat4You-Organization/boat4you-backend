@@ -23,7 +23,7 @@ class NauSysYachtOfferIntegrationServiceAsync(
          * 15-min gate wait of the nightly run so a slow NauSys can never make the drain
          * outlive the slot; rows not reached simply wait for the next 15-min run.
          */
-        val DRAIN_BUDGET: Duration = Duration.ofMinutes(8)
+        val DRAIN_BUDGET: Duration = Duration.ofMinutes(5)
     }
 
     /** One drain run of `nausys_search_sync_retry`; `notAttempted` = due rows left for the next slot (budget or 429 stop). */

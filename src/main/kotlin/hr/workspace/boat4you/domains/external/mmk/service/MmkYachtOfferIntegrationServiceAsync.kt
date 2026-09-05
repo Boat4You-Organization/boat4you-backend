@@ -12,6 +12,7 @@ import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.service.YachtGroupingProvider
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.YACHT_AGENCY_EXTERNAL_MAPPING_KEY
 import org.openapitools.client.mmk.model.Flexibility
+import org.openapitools.client.mmk.model.Offer
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
@@ -35,11 +36,46 @@ class MmkYachtOfferIntegrationServiceAsync(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
+    companion object {
+        /** Near-term refresh horizon: the 12 weeks customers actually book in (Mario 5.9.2026). */
+        const val NEAR_TERM_HORIZON_DAYS = 84L
+
+        /**
+         * The nightly's date windows, unchanged: `offerMaxYears + 1` one-year slices anchored on
+         * the 1st of the current month (prod offer-max-years = 1 → ~24 months).
+         */
+        fun fullHorizonWindows(
+            today: LocalDate,
+            offerMaxYears: Int,
+        ): List<ClosedRange<LocalDate>> =
+            (0..offerMaxYears).map { i ->
+                val start = today.plusYears(i.toLong()).withDayOfMonth(1)
+                start..start.plusYears(1).minusDays(1)
+            }
+
+        fun nearTermWindow(today: LocalDate): ClosedRange<LocalDate> = today..today.plusDays(NEAR_TERM_HORIZON_DAYS)
+    }
+
+    /**
+     * One agency's offer sweep: one `/offers` call (`flexibility=6`) per reservation-option
+     * group × [windows] entry, upserted via [MmkYachtOfferSyncService.syncOffersForAgency].
+     * The nightly passes [fullHorizonWindows] with [clipToWindow] = false (byte-identical to
+     * the pre-5.9.2026 loop). The near-term refresh passes [nearTermWindow] with
+     * [clipToWindow] = true — Mario 5.9.2026: weekly searches are served from the DB, so the
+     * bookable 12 weeks are re-pulled from the scheduler twice a day; the clip drops offers
+     * starting outside the window before the upsert because the MMK spec does not say whether
+     * `flexibility=6` hard-clips to dateFrom/dateTo, and nothing outside the window may be touched.
+     */
     @Async("taskExecutor")
     fun syncOffersForAgencyYachts(
         agency: Agency,
         agencyExternalId: Long,
-    ): CompletableFuture<Unit> {
+        windows: List<ClosedRange<LocalDate>>,
+        clipToWindow: Boolean,
+    ): CompletableFuture<MmkAgencyOfferSyncResult> {
+        var calls = 0
+        var failures = 0
+        val upsert = MmkOfferUpsertCounters()
         try {
             val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
             // for each agency, get all yachts. Some agencies have a lot of yachts, but we should be ok with size of this
@@ -61,36 +97,40 @@ class MmkYachtOfferIntegrationServiceAsync(
                         .toList()
 
                 // handle just sat-sat checkin-checkouts
-                for (i in 0..syncConfigurationProperties.offerMaxYears) {
-                    val startDate = LocalDate.now().plusYears(i.toLong()).withDayOfMonth(1)
-                    val endDate = startDate.plusYears(1).minusDays(1)
+                windows.forEach { window ->
+                    val startDate = window.start
+                    val endDate = window.endInclusive
                     val syncStartDate = LocalDateTime.of(startDate, LocalTime.MIN)
                     val syncEndDate = LocalDateTime.of(endDate, LocalTime.MAX)
                     log.trace("Syncing MMK offer for date range: {} - {}", syncStartDate, syncEndDate)
 
+                    calls++
                     val offersResponse =
-                        mmkRetryableClient.getOffersForAsync(
-                            dateFrom =
-                                MmkDateTimeWrapper(
-                                    syncStartDate.format(MmkDateTimeWrapper.READ_FORMATTER),
-                                ),
-                            dateTo =
-                                MmkDateTimeWrapper(
-                                    syncEndDate.format(MmkDateTimeWrapper.READ_FORMATTER),
-                                ),
-                            flexibility = Flexibility._6,
-                            companyId = listOf(agencyExternalId),
-                            yachtId = mmkYachtIds,
-                        )
+                        mmkRetryableClient
+                            .getOffersForAsync(
+                                dateFrom =
+                                    MmkDateTimeWrapper(
+                                        syncStartDate.format(MmkDateTimeWrapper.READ_FORMATTER),
+                                    ),
+                                dateTo =
+                                    MmkDateTimeWrapper(
+                                        syncEndDate.format(MmkDateTimeWrapper.READ_FORMATTER),
+                                    ),
+                                flexibility = Flexibility._6,
+                                companyId = listOf(agencyExternalId),
+                                yachtId = mmkYachtIds,
+                            ).clipped(window, clipToWindow)
 
                     if (offersResponse.isNotEmpty()) {
                         try {
                             // No outer transaction on purpose: syncOffersForAgency opens its
                             // own short per-yacht transactions (advisory-locked) — a suspended
                             // outer tx would just pin a second Hikari connection for the batch.
-                            mmkYachtOfferSyncService.syncOffersForAgency(
-                                agency.id!!,
-                                offersResponse,
+                            upsert.addAll(
+                                mmkYachtOfferSyncService.syncOffersForAgency(
+                                    agency.id!!,
+                                    offersResponse,
+                                ),
                             )
                         } catch (e: org.springframework.web.client.HttpClientErrorException.BadRequest) {
                             // MMK answers 400 for agencies with no supported product (canal /
@@ -102,6 +142,7 @@ class MmkYachtOfferIntegrationServiceAsync(
                                 syncEndDate,
                             )
                         } catch (e: Exception) {
+                            failures++
                             log.error(
                                 "Failed to sync offers for agency: {}, date range: {} - {}",
                                 agency.name,
@@ -128,30 +169,37 @@ class MmkYachtOfferIntegrationServiceAsync(
                         while (month <= lastMonth) {
                             val monthStart = month.atDay(1)
                             val monthEnd = month.atEndOfMonth()
+                            calls++
                             val monthlyResponse =
-                                mmkRetryableClient.getOffersForAsync(
-                                    dateFrom =
-                                        MmkDateTimeWrapper(
-                                            LocalDateTime.of(monthStart, LocalTime.MIN)
-                                                .format(MmkDateTimeWrapper.READ_FORMATTER),
-                                        ),
-                                    dateTo =
-                                        MmkDateTimeWrapper(
-                                            LocalDateTime.of(monthEnd, LocalTime.MAX)
-                                                .format(MmkDateTimeWrapper.READ_FORMATTER),
-                                        ),
-                                    flexibility = Flexibility._5,
-                                    tripDuration = listOf(groupKey.minimalDuration),
-                                    companyId = listOf(agencyExternalId),
-                                    yachtId = mmkYachtIds,
-                                )
+                                mmkRetryableClient
+                                    .getOffersForAsync(
+                                        dateFrom =
+                                            MmkDateTimeWrapper(
+                                                LocalDateTime
+                                                    .of(monthStart, LocalTime.MIN)
+                                                    .format(MmkDateTimeWrapper.READ_FORMATTER),
+                                            ),
+                                        dateTo =
+                                            MmkDateTimeWrapper(
+                                                LocalDateTime
+                                                    .of(monthEnd, LocalTime.MAX)
+                                                    .format(MmkDateTimeWrapper.READ_FORMATTER),
+                                            ),
+                                        flexibility = Flexibility._5,
+                                        tripDuration = listOf(groupKey.minimalDuration),
+                                        companyId = listOf(agencyExternalId),
+                                        yachtId = mmkYachtIds,
+                                    ).clipped(window, clipToWindow)
                             if (monthlyResponse.isNotEmpty()) {
                                 try {
-                                    mmkYachtOfferSyncService.syncOffersForAgency(
-                                        agency.id!!,
-                                        monthlyResponse,
+                                    upsert.addAll(
+                                        mmkYachtOfferSyncService.syncOffersForAgency(
+                                            agency.id!!,
+                                            monthlyResponse,
+                                        ),
                                     )
                                 } catch (e: Exception) {
+                                    failures++
                                     log.error(
                                         "Failed to sync non-Saturday monthly offers for agency: {}, month: {}",
                                         agency.name,
@@ -169,11 +217,18 @@ class MmkYachtOfferIntegrationServiceAsync(
             // MMK answers 400 for agencies with no supported product (canal / river fleets).
             log.warn("MMK rejected offers request (400) for agency: {} — skipped", agency.name)
         } catch (e: Exception) {
+            failures++
             log.error("Failed to sync offers for agency: {}", agency.name, e)
         }
 
-        return CompletableFuture.completedFuture(Unit)
+        return CompletableFuture.completedFuture(MmkAgencyOfferSyncResult(calls, failures, upsert))
     }
+
+    /** Near-term only ([clip] = true): keep offers starting inside [window]; the nightly keeps everything. */
+    private fun List<Offer>.clipped(
+        window: ClosedRange<LocalDate>,
+        clip: Boolean,
+    ): List<Offer> = if (clip) filter { it.dateFrom.value?.toLocalDate()?.let { d -> d in window } == true } else this
 
     /**
      * Sync offers for exact date range — fire-and-forget wrapper for callers

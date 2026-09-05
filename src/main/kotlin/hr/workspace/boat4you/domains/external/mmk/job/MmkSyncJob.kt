@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.external.mmk.job
 
 import hr.workspace.boat4you.domains.external.enums.MethodCacheEnum
+import hr.workspace.boat4you.domains.external.mmk.config.MmkRequestStats
 import hr.workspace.boat4you.domains.external.mmk.service.MmkAvailabilityIntegrationService
 import hr.workspace.boat4you.domains.external.mmk.service.MmkCatalogueIntegrationService
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtIntegrationService
@@ -21,6 +22,7 @@ class MmkSyncJob(
     private val mmkYachtOfferIntegrationService: MmkYachtOfferIntegrationService,
     private val mmkAvailabilityIntegrationService: MmkAvailabilityIntegrationService,
     private val serviceCallCacheService: ServiceCallCacheService,
+    private val mmkRequestStats: MmkRequestStats,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -77,9 +79,9 @@ class MmkSyncJob(
     fun runYachtOfferSync() {
         log.info("Syncing MMK yacht offers")
         val startTimeOffer = System.currentTimeMillis()
-        mmkYachtOfferIntegrationService.yachtOfferSync()
+        val summary = mmkYachtOfferIntegrationService.yachtOfferSync()
         serviceCallCacheService.saveScheduledSync(MethodCacheEnum.SCHEDULED_MMK_YACHT_OFFER)
-        log.info("Syncing MMK yacht offers took ${System.currentTimeMillis() - startTimeOffer} ms")
+        log.info("Syncing MMK yacht offers took ${System.currentTimeMillis() - startTimeOffer} ms — ${summary.toLogLine()}")
     }
 
     @Scheduled(cron = "0 10 7,11,16 * * ?")
@@ -139,5 +141,26 @@ class MmkSyncJob(
         val startTime = System.currentTimeMillis()
         mmkAvailabilityIntegrationService.syncYachtAvailability()
         log.info("Syncing MMK yachts availability took ${System.currentTimeMillis() - startTime} ms")
+    }
+
+    /**
+     * Near-term (12-week) offer refresh. Mario 5.9.2026: the search endpoint no longer warms
+     * partners for weekly ranges — search is served from the DB — so the bookable window is
+     * re-pulled from the scheduler twice a day. Same per-agency sweep as [runYachtOfferSync]
+     * bounded to today .. today + 84 days ([MmkYachtOfferIntegrationService.nearTermOfferSync]).
+     * 10:50 / 16:50 UTC, offset from the 06:30 full sweep and the NauSys near-term at :40.
+     * Does NOT write SCHEDULED_MMK_YACHT_OFFER — that marker gates the 11:10 / 16:10 backup
+     * re-run of a failed 06:30 sweep. The 16:50 slot can overlap the tail of the 16:40
+     * availability sync (10–40 min); both write paths are per-yacht mutex-guarded, so that is a
+     * load overlap, not a correctness one.
+     */
+    @Scheduled(cron = "0 50 10,16 * * *")
+    @SchedulerLock(name = "mmkNearTermOfferRefresh", lockAtMostFor = "PT2H")
+    fun runNearTermOfferRefresh() {
+        val before = mmkRequestStats.snapshot()
+        val startTime = System.currentTimeMillis()
+        val summary = mmkYachtOfferIntegrationService.nearTermOfferSync()
+        val delta = mmkRequestStats.snapshot().since(before)
+        log.info("${summary.toLogLine()} took=${System.currentTimeMillis() - startTime} ms 429s=${delta.tooManyRequests}")
     }
 }

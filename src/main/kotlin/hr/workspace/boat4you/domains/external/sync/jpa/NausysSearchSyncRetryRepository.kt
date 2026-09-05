@@ -21,7 +21,13 @@ interface NausysSearchSyncRetryRepository : JpaRepository<NausysSearchSyncRetry,
      * from the JVM (not SQL `now()`) so they follow the same Instant↔timestamp
      * convention as the entity reads — mixing the two skews by the JVM/DB zone offset.
      */
-    @Modifying
+        /**
+     * Attempt accounting: the INSERT records the failed live warm as attempt 1, so a row gets
+     * 1 live attempt + 5 scheduler replays before the drain gives up (MAX_ATTEMPTS = 6). Every
+     * further live failure of the same request (same dates + filter) bumps attempts too, so a
+     * range that keeps failing on the API node is retired sooner rather than replayed forever.
+     */
+@Modifying
     @Query(
         nativeQuery = true,
         value = """
