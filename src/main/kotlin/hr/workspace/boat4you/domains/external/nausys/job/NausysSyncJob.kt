@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.external.enums.MethodCacheEnum
 import hr.workspace.boat4you.domains.external.nausys.config.NauSysRateLimitStats
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysAvailabilityIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysCatalogueIntegrationService
+import hr.workspace.boat4you.domains.external.nausys.service.NauSysOfferSyncRunSummary
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationService
 import hr.workspace.boat4you.domains.external.service.ServiceCallCacheService
@@ -15,6 +16,7 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -24,10 +26,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  * runs):
  *
  *  23:00 catalogue → 23:20 yachts + offers → (chained) availability pass →
- *  (chained) offer retry-queue drain, expected to finish ≈04:45–05:15.
+ *  (chained) offer retry-queue drain, expected to finish ≈04:45–06:15 (measured
+ *  6 h 39 m on 4/5.9.2026).
  *  10:20 / 16:20 / 22:20 availability passes; 06:15 / 10:15 / 15:15 backup
  *  slots (no-op unless a marker is >24 h old; they always drain the retry
  *  queue). Note: the "06:15 backup" is this NauSys BACKUP-SYNC, not a DB backup.
+ *  10:40 / 16:40 near-term 12-week offer refresh (Mario 5.9.2026: search is served
+ *  from the DB, weekly ranges no longer warm partners live) — waits ≤30 min on
+ *  the gate, then chains the retry-queue drain.
  *
  * [nausysBusy] is the in-JVM sequencing gate: ShedLock only stops two nodes
  * from running the SAME job, not two different NauSys jobs on this node.
@@ -48,13 +54,23 @@ class NausysSyncJob(
     internal val nausysBusy = AtomicBoolean(false)
 
     // How long availabilitySync waits for a running offer/backup sync (inside its PT1H lock).
+    // The poll interval is shared with the near-term refresh wait.
     internal var availabilityWaitPollMs: Long = 30_000
     internal var availabilityWaitMaxMs: Long = 45 * 60_000
     internal var sleep: (Long) -> Unit = Thread::sleep
 
+    // How long the near-term offer refresh waits for a running NauSys job (inside its PT3H lock).
+    internal var nearTermWaitMaxMs: Long = 30 * 60_000
+
+    /** Clock for the near-term horizon; overridable in tests. */
+    internal var today: () -> LocalDate = { LocalDate.now() }
+
     companion object {
         /** A STARTED marker younger than this with no newer FINISHED marker = a night still running. */
         val STARTED_MARKER_FRESHNESS: Duration = Duration.ofHours(8)
+
+        /** Near-term refresh horizon: the 12 weeks customers actually book in (Mario 5.9.2026). */
+        const val NEAR_TERM_HORIZON_DAYS = 84L
     }
 
     /**
@@ -121,10 +137,10 @@ class NausysSyncJob(
      * retry-queue drain. 23:20 UTC (was 01:30).
      */
     @Scheduled(cron = "0 20 23 * * ?")
-    // PT7H: measured full runs are 5.0–5.7 h (yachts 11–15 min + offers 300–345 min).
-    // The old PT4H released the lock at 05:30 while the job was still running —
-    // ShedLock does not stop the thread, it just frees the name.
-    @SchedulerLock(name = "nausysYachtSync", lockAtMostFor = "PT7H")
+    // PT10H: the full run measured 6 h 39 m on 4/5.9.2026 (yachts 11–15 min + offers up to
+    // 400 min + chained availability/drain); PT7H would have freed the name mid-run, exactly
+    // like the old PT4H did at 05:30 — ShedLock does not stop the thread, it just frees the name.
+    @SchedulerLock(name = "nausysYachtSync", lockAtMostFor = "PT10H")
     fun runYachtSync() {
         if (!nausysBusy.compareAndSet(false, true)) {
             log.info("NauSYS yacht sync skipped: another NauSys sync is running")
@@ -243,14 +259,7 @@ class NausysSyncJob(
     @Scheduled(cron = "0 20 10,16,22 * * *")
     @SchedulerLock(name = "nausysAvailabilitySync", lockAtMostFor = "PT1H")
     fun availabilitySync() {
-        val deadline = System.currentTimeMillis() + availabilityWaitMaxMs
-        while (!nausysBusy.compareAndSet(false, true)) {
-            if (System.currentTimeMillis() >= deadline) {
-                log.info("NauSYS availability sync skipped: another NauSys sync still running after ${availabilityWaitMaxMs / 1000} s wait")
-                return
-            }
-            sleep(availabilityWaitPollMs)
-        }
+        if (!awaitNausysGate(availabilityWaitMaxMs, "availability sync")) return
         val before = rateLimitStats.snapshot()
         try {
             runAvailabilityPass("scheduled")
@@ -258,6 +267,58 @@ class NausysSyncJob(
             nausysBusy.set(false)
             logRateLimitSummary("availability sync", before)
         }
+    }
+
+    /**
+     * Near-term (12-week) offer refresh. Mario 5.9.2026: the search endpoint no longer warms
+     * partners for weekly ranges (7/14/21/28 days) — search is served from the DB — so intraday
+     * price/availability freshness of the bookable window has to come from the scheduler.
+     * Re-runs the nightly's per-agency grid with interval generation capped at today + 84 days
+     * (identical disappearance semantics inside the processed intervals; nothing outside the
+     * window is read or written), then drains the offer retry queue. 10:40 / 16:40 UTC; waits
+     * up to 30 min (poll 30 s) for a running NauSys job, otherwise skips to the next slot.
+     * Writes only SCHEDULED_NAUSYS_NEAR_TERM_OFFER — the nightly's OFFER / OFFER_STARTED
+     * markers gate the backup slot's full re-run and must stay untouched.
+     */
+    @Scheduled(cron = "0 40 10,16 * * *")
+    @SchedulerLock(name = "nausysNearTermOfferRefresh", lockAtMostFor = "PT3H")
+    fun runNearTermOfferRefresh() {
+        if (!awaitNausysGate(nearTermWaitMaxMs, "near-term offer refresh")) return
+        val before = rateLimitStats.snapshot()
+        val startTime = System.currentTimeMillis()
+        val horizonEnd = today().plusDays(NEAR_TERM_HORIZON_DAYS)
+        var summary: NauSysOfferSyncRunSummary? = null
+        try {
+            summary = nauSysYachtOfferIntegrationService.yachtOfferSync(horizonEnd)
+            serviceCallCacheService.saveScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_NEAR_TERM_OFFER)
+            runRetryDrain("near-term")
+        } finally {
+            nausysBusy.set(false)
+            val delta = rateLimitStats.snapshot().since(before)
+            log.info(
+                "NauSYS near-term offer refresh (<= $horizonEnd): ${summary?.toLogLine() ?: "aborted"} " +
+                    "took=${System.currentTimeMillis() - startTime} ms 429s=${delta.tooManyRequests} gaveUp=${delta.exhausted}",
+            )
+        }
+    }
+
+    /**
+     * Acquires [nausysBusy], polling while another NauSys job holds it; false (one INFO line)
+     * once [maxWaitMs] is used up. The caller owns the gate on true and must release it in a finally.
+     */
+    private fun awaitNausysGate(
+        maxWaitMs: Long,
+        job: String,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + maxWaitMs
+        while (!nausysBusy.compareAndSet(false, true)) {
+            if (System.currentTimeMillis() >= deadline) {
+                log.info("NauSYS $job skipped: another NauSys sync still running after ${maxWaitMs / 1000} s wait")
+                return false
+            }
+            sleep(availabilityWaitPollMs)
+        }
+        return true
     }
 
     fun runOfferSync() {

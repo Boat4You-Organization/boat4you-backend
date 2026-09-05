@@ -87,7 +87,7 @@ class NauSysYachtOfferSyncService(
         // absence of a 7-day offer means "not 7-day bookable", NOT "no longer free".
         // Flipping would wrongly show genuinely-free weeks as pre-reserved.
         skipDisappearance: Boolean = false,
-    ) {
+    ): Int {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
         val allMappings =
             externalMappingService.getCachedAllMappingsByTypeAndExtendedType(
@@ -101,6 +101,8 @@ class NauSysYachtOfferSyncService(
         var skippedCount = 0
         var skippedYachtCount = 0
         var skippedLockedCount = 0
+        // Disappearance flips made in this call; returned so the run summary can report "removed".
+        var disappeared = 0
 
         nausysOffers.freeYachts?.groupBy { it.yachtId }?.forEach { (yachtId, nausysYachtOffers) ->
             // Defensive: same NPE risk as MmkYachtOfferSyncService — partner may
@@ -185,8 +187,8 @@ class NauSysYachtOfferSyncService(
                                     it.status != OfferStatus.UNAVAILABLE &&
                                     it.extStatus != NauSysAvailabilitySyncService.SYNTHETIC_OPTION_EXT_STATUS &&
                                     it.extStatus != SYNTHETIC_DISAPPEARANCE_EXT_STATUS
-                            }
-                            .forEach { offer ->
+                            }.forEach { offer ->
+                                disappeared++
                                 if (offer.status == OfferStatus.FREE) {
                                     offer.status = OfferStatus.OPTION_WAITING
                                     offer.extStatus = SYNTHETIC_DISAPPEARANCE_EXT_STATUS
@@ -216,6 +218,7 @@ class NauSysYachtOfferSyncService(
         if (skippedYachtCount > 0) {
             log.warn("NauSys offer sync for agency ${agency.id}: skipped $skippedYachtCount yachts due to missing Yacht mappings")
         }
+        return disappeared
     }
 
     /**
@@ -467,9 +470,11 @@ class NauSysYachtOfferSyncService(
             // before embarkation"). Mirror MMK obligatory mapper which copies
             // `mmkExtra.description` — we do the same so the "small print"
             // surfaces under the extras name on /boat detail and admin offer.
-            val nausysCondition = nausysExtra.condition?.let {
-                it.textEN ?: it.textHR ?: it.textIT ?: it.textDE
-            }?.takeIf { it.isNotBlank() }
+            val nausysCondition =
+                nausysExtra.condition
+                    ?.let {
+                        it.textEN ?: it.textHR ?: it.textIT ?: it.textDE
+                    }?.takeIf { it.isNotBlank() }
 
             val equipmentAlreadyOnOffer =
                 offer.offerExtras.find { ex ->
@@ -478,10 +483,11 @@ class NauSysYachtOfferSyncService(
 
             val obligPrice = nausysExtra.totalPrice?.toBigDecimal()
             val obligPayable = nausysExtra.calculationType?.value == "SEPARATE_PAYMENT"
-            val obligPaymentType = hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
-                calculationType = nausysExtra.calculationType?.value,
-                price = obligPrice,
-            )
+            val obligPaymentType =
+                hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
+                    calculationType = nausysExtra.calculationType?.value,
+                    price = obligPrice,
+                )
             if (equipmentAlreadyOnOffer != null) {
                 equipmentAlreadyOnOffer.extras = boat4youEquipmentMatch
                 equipmentAlreadyOnOffer.price = obligPrice
@@ -522,9 +528,11 @@ class NauSysYachtOfferSyncService(
                 allExtras.firstOrNull { eq ->
                     Matchers.extrasNameMatch(eq.getMatchKeysList(), externalEquipmentMatch.name)
                 }
-            val nausysCondition = nausysExtra.condition?.let {
-                it.textEN ?: it.textHR ?: it.textIT ?: it.textDE
-            }?.takeIf { it.isNotBlank() }
+            val nausysCondition =
+                nausysExtra.condition
+                    ?.let {
+                        it.textEN ?: it.textHR ?: it.textIT ?: it.textDE
+                    }?.takeIf { it.isNotBlank() }
 
             val equipmentAlreadyOnOffer =
                 offer.offerExtras.find { ex ->
@@ -533,10 +541,11 @@ class NauSysYachtOfferSyncService(
 
             val addPrice = nausysExtra.totalPrice?.toBigDecimal()
             val addPayable = nausysExtra.calculationType?.value == "SEPARATE_PAYMENT"
-            val addPaymentType = hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
-                calculationType = nausysExtra.calculationType?.value,
-                price = addPrice,
-            )
+            val addPaymentType =
+                hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
+                    calculationType = nausysExtra.calculationType?.value,
+                    price = addPrice,
+                )
             if (equipmentAlreadyOnOffer != null) {
                 equipmentAlreadyOnOffer.extras = boat4youEquipmentMatch
                 equipmentAlreadyOnOffer.price = addPrice

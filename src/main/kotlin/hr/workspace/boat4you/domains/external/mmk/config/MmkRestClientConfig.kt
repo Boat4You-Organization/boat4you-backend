@@ -7,6 +7,7 @@ import org.springframework.boot.http.client.ClientHttpRequestFactorySettings
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
+import org.springframework.http.HttpStatus
 import org.springframework.web.client.RestClient
 import java.time.Duration
 
@@ -26,6 +27,7 @@ class MmkRestClientConfig(
     // now comes from MmkAvailabilityIntegrationService's INFO line instead.
     @Value("\${application.external.mmk.wire-log:false}")
     private val wireLog: Boolean,
+    private val mmkRequestStats: MmkRequestStats,
 ) {
     private val log = LoggerFactory.getLogger(MmkRestClientConfig::class.java)
 
@@ -33,9 +35,11 @@ class MmkRestClientConfig(
     fun mmkRestClient(): RestClient {
         // F3-001: bound the time a partner can hold a request thread.
         // Same rationale as NauSys — see NauSysRestClientConfig comment.
-        val settings = ClientHttpRequestFactorySettings.defaults()
-            .withConnectTimeout(Duration.ofMillis(connectTimeoutMs))
-            .withReadTimeout(Duration.ofMillis(readTimeoutMs))
+        val settings =
+            ClientHttpRequestFactorySettings
+                .defaults()
+                .withConnectTimeout(Duration.ofMillis(connectTimeoutMs))
+                .withReadTimeout(Duration.ofMillis(readTimeoutMs))
         return RestClient
             .builder()
             .requestFactory(ClientHttpRequestFactoryBuilder.detect().build(settings))
@@ -64,6 +68,8 @@ class MmkRestClientConfig(
                     )
                 }
                 val response = execution.execute(request, body)
+                // Counted, not logged: the sync jobs print "429s this run" in their summary line.
+                if (response.statusCode.value() == HttpStatus.TOO_MANY_REQUESTS.value()) mmkRequestStats.tooManyRequests.incrementAndGet()
                 if (wireLog) {
                     log.info("MMK response: status={} headers={}", response.statusCode, response.headers)
                 } else if (!response.statusCode.is2xxSuccessful) {

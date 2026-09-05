@@ -46,21 +46,37 @@ class NauSysYachtOfferIntegrationService(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
-    fun yachtOfferSync() {
-        log.info("Starting NauSYS offer sync")
+    /**
+     * Full per-agency offer grid (Saturday weeks + min-stay slots for every allowed
+     * check-in/out pair) up to [horizonEnd].
+     *
+     * @param horizonEnd upper bound for generated intervals. `null` (the nightly) keeps the
+     * 18-month / season-end cap unchanged. The near-term refresh passes today + 12 weeks:
+     * Mario 5.9.2026 — search is served from the DB (weekly ranges no longer warm partners
+     * live), so intraday price/availability freshness for the bookable window comes from
+     * re-running this same grid, bounded, twice a day. Nothing outside the bound is read
+     * or written: every write in [NauSysYachtOfferSyncService.syncOffers] is keyed to one
+     * generated (dateFrom, dateTo) interval, so disappearance semantics are identical.
+     */
+    fun yachtOfferSync(horizonEnd: LocalDate? = null): NauSysOfferSyncRunSummary {
+        log.info("Starting NauSYS offer sync${horizonEnd?.let { " (horizon <= $it)" } ?: ""}")
+        val summary = NauSysOfferSyncRunSummary()
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
 
         val agencies =
             agencyRepository.findAllActiveByPrimarySyncProviderAndHasYacht(ExternalSystemEnum.NAUSYS.value.toLong())
+        summary.agencies = agencies.size
         log.info("Doing sync for ${agencies.size} agencies")
         agencies.forEach { agency ->
             try {
-                syncOffersForYachts(agency, externalSystem)
+                syncOffersForYachts(agency, externalSystem, horizonEnd, summary)
             } catch (e: Exception) {
+                summary.agencyFailures++
                 log.error("Error while syncing Nausys Offers ${agency.id}", e)
             }
         }
-        log.info("Finished NauSYS offer sync")
+        log.info("Finished NauSYS offer sync: ${summary.toLogLine()}")
+        return summary
     }
 
     /***
@@ -72,6 +88,8 @@ class NauSysYachtOfferIntegrationService(
     private fun syncOffersForYachts(
         agency: Agency,
         externalSystem: ExternalSystem,
+        horizonEnd: LocalDate?,
+        summary: NauSysOfferSyncRunSummary,
     ) {
         // for each agency, get all yachts. Some agencies have a lot of yachts, but we should be ok with size of this
         val allAgencyYachts = yachtRepository.findWithReservationOptionsByAgency(agency)
@@ -91,9 +109,11 @@ class NauSysYachtOfferIntegrationService(
                     .map { m -> m.externalId!! }
                     .toList()
 
-            val syncEndDate = calcSyncEndDate(reservationOptionsGroup.key)
+            val syncEndDate = calcSyncEndDate(reservationOptionsGroup.key, horizonEnd)
 
-            log.info(
+            // DEBUG (was INFO): per-group / per-slot lines are per-row noise under the Part 4
+            // logging discipline; the run is summarised in one line by the caller.
+            log.debug(
                 "1 - Doing sync for agency ${agency.id} startDate ${reservationOptionsGroup.key.start} syncEndDate $syncEndDate " +
                     "yachtsCount ${nausysYachtIds.size} yachts ${
                         yachtsInGroup.map { y -> y.id }.joinToString { "," }
@@ -103,7 +123,7 @@ class NauSysYachtOfferIntegrationService(
             val reservationIntervals =
                 ReservationOptionsCombinationProvider.generateValidCombinations(reservationOptionsGroup.key)
             reservationIntervals.forEach { reservationInterval ->
-                log.info(
+                log.debug(
                     "2 - Doing sync for agency ${agency.id} and reservationInterval $reservationInterval " +
                         "yachtsCount ${nausysYachtIds.size} yachts ${
                             yachtsInGroup.map { y -> y.id }.joinToString { "," }
@@ -128,6 +148,7 @@ class NauSysYachtOfferIntegrationService(
                     // not quote a 7-day price even though the boat is free, so do NOT let the
                     // disappearance pass flip genuinely-free weeks to pre-reserved.
                     skipDisappearance = reservationInterval.duration == 7 && reservationOptionsGroup.key.minimalDuration > 7,
+                    summary = summary,
                 )
             }
         }
@@ -139,16 +160,20 @@ class NauSysYachtOfferIntegrationService(
      * no longer aborts the rest of the agency for the night — it is queued in
      * `nausys_offer_sync_retry` and re-fetched by [drainRetryQueue].
      */
+    @Suppress("LongParameterList") // the trailing summary keeps the 5-arg call sites (and their tests) intact
     internal fun syncIntervals(
         agency: Agency,
         allAgencyYachts: List<Yacht>,
         nausysYachtIds: List<Long>,
         intervals: List<SyncInterval>,
         skipDisappearance: Boolean,
+        summary: NauSysOfferSyncRunSummary = NauSysOfferSyncRunSummary(),
     ) {
         intervals.forEach { interval ->
+            summary.intervals++
             try {
                 val response = nauSysRetryableClient.getFreeYachts(freeYachtsRequest(nausysYachtIds, interval.start, interval.end))
+                summary.offersReturned += response.freeYachts?.size ?: 0
                 // syncOffers only performs in-response reconciliation now: for each yacht that
                 // IS in the response but missing this exact (dateFrom, dateTo), existing FREE
                 // offers for that week are flipped to OPTION_WAITING + SYNTHETIC_DISAPPEARANCE.
@@ -160,15 +185,17 @@ class NauSysYachtOfferIntegrationService(
                     "3 - Syncing offers for agency: ${agency.id}, interval: $interval, " +
                         "returned yachts: ${response.freeYachts?.size ?: 0}, requested: ${nausysYachtIds.size}",
                 )
-                nauSysYachtOfferSyncService.syncOffers(
-                    agency,
-                    response,
-                    allAgencyYachts,
-                    interval.start,
-                    interval.end,
-                    skipDisappearance = skipDisappearance,
-                )
+                summary.disappeared +=
+                    nauSysYachtOfferSyncService.syncOffers(
+                        agency,
+                        response,
+                        allAgencyYachts,
+                        interval.start,
+                        interval.end,
+                        skipDisappearance = skipDisappearance,
+                    )
             } catch (e: Exception) {
+                summary.deferred++
                 runCatching {
                     retryQueue.enqueue(agency.id!!, interval.start, interval.end, nausysYachtIds, skipDisappearance, e)
                 }.onFailure { qe -> log.error("Could not enqueue NauSYS offer retry for agency ${agency.id} $interval", qe) }
@@ -244,16 +271,22 @@ class NauSysYachtOfferIntegrationService(
         log.info("NauSYS offer retry queue: ok=$ok failed=$failed gaveUp=$gaveUp")
     }
 
-    private fun isTransientPartnerFailure(e: Throwable): Boolean =
-        e is NauSysRateLimitedException || e is HttpServerErrorException || e is ResourceAccessException
+    private fun isTransientPartnerFailure(e: Throwable): Boolean = e is NauSysRateLimitedException || e is HttpServerErrorException || e is ResourceAccessException
 
-    fun calcSyncEndDate(reservationOptionsGroup: ReservationOptionsGroup): LocalDate {
+    /**
+     * @param horizonEnd explicit cap (near-term refresh: today + 12 weeks). `null` = the
+     * nightly's 18-month cap. Either way the operator's season `end` stays the real upper bound.
+     */
+    fun calcSyncEndDate(
+        reservationOptionsGroup: ReservationOptionsGroup,
+        horizonEnd: LocalDate? = null,
+    ): LocalDate {
         // Cap how far ahead we generate intervals — bounded by the operator's
         // published season `end`, but extended to 18 months. The old cap
         // (offerMaxYears = 1yr) never reached the autumn-of-next-year seasons
         // NauSys actually publishes (e.g. Sep/Oct 2027), so the scheduled sync
         // skipped them entirely. The season `end` remains the real upper bound.
-        val horizonCap = LocalDate.now().plusMonths(OFFER_SYNC_HORIZON_MONTHS)
+        val horizonCap = horizonEnd ?: LocalDate.now().plusMonths(OFFER_SYNC_HORIZON_MONTHS)
         return if (reservationOptionsGroup.end.isAfter(horizonCap)) horizonCap else reservationOptionsGroup.end
     }
 

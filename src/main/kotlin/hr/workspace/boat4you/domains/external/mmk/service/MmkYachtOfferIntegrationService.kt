@@ -23,17 +23,45 @@ class MmkYachtOfferIntegrationService(
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
-    fun yachtOfferSync() {
-        log.info("Starting MMK offer sync")
+    /** Nightly full horizon — month-anchored one-year slices, unchanged (see [fullHorizonWindows]). */
+    fun yachtOfferSync(): MmkOfferSyncRunSummary =
+        syncAgencies(
+            MmkYachtOfferIntegrationServiceAsync.fullHorizonWindows(LocalDate.now(), syncConfigurationProperties.offerMaxYears),
+            clipToWindow = false,
+            label = "nightly",
+        )
+
+    /**
+     * Near-term refresh: today .. today + 84 days, clipped to the window. Mario 5.9.2026 —
+     * weekly searches no longer warm MMK live (search is served from the DB), so the bookable
+     * 12 weeks are re-pulled from the scheduler at 10:50 / 16:50 UTC.
+     */
+    fun nearTermOfferSync(today: LocalDate = LocalDate.now()): MmkOfferSyncRunSummary =
+        syncAgencies(
+            listOf(MmkYachtOfferIntegrationServiceAsync.nearTermWindow(today)),
+            clipToWindow = true,
+            label = "near-term",
+        )
+
+    private fun syncAgencies(
+        windows: List<ClosedRange<LocalDate>>,
+        clipToWindow: Boolean,
+        label: String,
+    ): MmkOfferSyncRunSummary {
+        log.info("Starting MMK offer sync ($label) windows=${windows.map { "${it.start}..${it.endInclusive}" }}")
+        val summary = MmkOfferSyncRunSummary(label)
 
         val agencies =
             agencyRepository.findAllActiveByPrimarySyncProviderAndHasYacht(ExternalSystemEnum.MMK.value.toLong())
+        summary.agencies = agencies.size
         agencies.chunked(3).forEachIndexed { index, agencyBatch ->
             val futures =
                 agencyBatch.map { agency ->
                     mmkYachtOfferIntegrationServiceAsync.syncOffersForAgencyYachts(
                         agency,
                         agency.getExternalId()!!,
+                        windows,
+                        clipToWindow,
                     )
                 }
             // 15-minute per-batch timeout: a single hung agency call (partner
@@ -45,18 +73,24 @@ class MmkYachtOfferIntegrationService(
             // MmkYachtOfferIntegrationServiceAsync), so timing-out here just
             // means "give up on the slow ones and move on".
             try {
-                CompletableFuture.allOf(*futures.toTypedArray())
+                CompletableFuture
+                    .allOf(*futures.toTypedArray())
                     .orTimeout(15, java.util.concurrent.TimeUnit.MINUTES)
                     .join()
             } catch (e: Exception) {
+                summary.timedOutBatches++
                 log.error(
                     "MMK offer sync batch $index timed out or failed — agencies in batch: " +
                         agencyBatch.joinToString(", ") { "${it.id}/${it.name}" },
                     e,
                 )
             }
-            log.info("Finished processing batch $index of ${agencies.size} agencies")
+            // Agencies that did finish (even inside a timed-out batch) still count.
+            futures.forEach { future -> runCatching { future.getNow(null) }.getOrNull()?.let(summary::record) }
+            // DEBUG (was INFO, ~270 lines/run): the run is summarised in one line by the job.
+            log.debug("Finished processing batch $index of ${agencies.size} agencies")
         }
+        return summary
     }
 
     // make option to sync yacht offers by exact dates, or by month and flexibility 5??
