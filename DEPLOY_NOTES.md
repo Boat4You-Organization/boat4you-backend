@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-09-05 — 🔎 Part 5: search served from the DB, freshness via the scheduler (merges 89d8201 + 6c4bac9; branches part5/search e3aee6c, part5/nearterm 83a12f3+7330a3e) — ⏳ DEPLOYING
+## 2026-09-05 — 🔎 Part 5: search served from the DB, freshness via the scheduler (merges 89d8201 + 6c4bac9; branches part5/search e3aee6c, part5/nearterm 83a12f3+7330a3e; + e02f9a1 past-date/in-flight filters) — ✅ LIVE cusma2 (11:09, 2nd cut 11:21 UTC) + cusma3 (13:05 UTC)
 
 **Why (Mario, 5.9.2026):** "We already pull prices nightly, availability 3×/day and options — why does every search ask
 the partner again? Show it from the DB." Verified before deciding: the nightly stores, per agency, every interval
@@ -62,6 +62,8 @@ lock assertions, MMK near-term, interval provider). Full suite: see below.
 JAVA_TOOL_OPTIONS" in the journal), health `GET /public/settings/card-surcharge` 200; then cusma3 ONLY in a safe window
 (13:00–16:15 UTC today; from now on 10:40–≈12:00 and 16:40–≈18:00 are near-term refresh windows). Rollback = `webservice.jar.prev`
 (V9_55 is additive; old code ignores the table).
+
+**Deployed:** cusma2 2026-09-05 11:09 UTC (V9_55 applied, "Picked up JAVA_TOOL_OPTIONS", MALLOC_ARENA_MAX=2 in environ, NMT baseline) and again 11:21 UTC with the past-date/in-flight cut (jar md5 d4ef8466093d58726b7e92e930b7ebf4; rollback chain `.prev` = Part 4 jar, `.prev2` = first Part 5 cut); cusma3 2026-09-05 13:05 UTC in the 13:00-16:15 gap (MMK availability finished 12:53), started in 16 s, Flyway "up to date", env verified, no WARN/ERROR. Measured effect on the API node: live partner warms from search ~20/min → 3.6/min (weekly rule) → 0-1/min (all rules), 194 dated+did requests in 5 min without a single partner call; YACHT_SEARCH markers per 10 min 69 → 1-13.
 
 **Verify after 24 h:** cusma2 async warm runs ≈ only non-weekly ranges (expect −70 %+ vs 1,362/day) and
 "Error while syncing NauSYS yac" ≈ 0; `nausys_search_sync_retry` drains (`select count(*), max(attempts)`); near-term
