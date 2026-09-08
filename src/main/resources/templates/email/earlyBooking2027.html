@@ -35,10 +35,19 @@
       <td align="center" style="padding:28px 12px;">
         <table role="presentation" class="container" width="600" cellpadding="0" cellspacing="0" style="width:600px; max-width:600px;">
 
-          <!-- Logo header -->
+          <!-- Logo header — dark band so the light logo reads clearly -->
           <tr>
-            <td align="center" style="padding:0 0 18px 0;">
-              <img src="cid:boat4youLogoFull" alt="Boat4you" width="160" style="display:block; width:160px; height:auto;" />
+            <td align="center" style="padding:0 0 16px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="background-color:#16233a; border-radius:14px; padding:18px 10px 14px 10px;">
+                    <img src="cid:boat4youLogoFull" alt="Boat4you" width="170" style="display:block; width:170px; height:auto; margin:0 auto;" />
+                    <p style="margin:8px 0 0 0; font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:#8fb0d8; font-weight:600;">
+                      Europe Yachts Charter · Split, Croatia
+                    </p>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
 
@@ -49,16 +58,25 @@
               <p style="margin:0 0 6px 0; font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:#2856ff; font-weight:700;">
                 Early booking · Summer 2027
               </p>
-              <h1 style="margin:0 0 16px 0; font-size:26px; line-height:1.25; color:#0f172a;">
+              <h1 th:if="${pastGuest}" style="margin:0 0 16px 0; font-size:26px; line-height:1.25; color:#0f172a;">
+                Let&rsquo;s go again — Summer 2027 just opened
+              </h1>
+              <h1 th:unless="${pastGuest}" style="margin:0 0 16px 0; font-size:26px; line-height:1.25; color:#0f172a;">
                 Summer 2027 just opened — the best boats go first
               </h1>
 
               <p style="margin:0 0 14px 0; font-size:15px; line-height:1.6;">
                 Dear <span th:text="${name}">sailor</span>,
               </p>
-              <p style="margin:0 0 18px 0; font-size:15px; line-height:1.6;">
-                Early booking for <strong>Summer 2027</strong> has just started — and the first weeks
-                are always when the best catamarans and the best dates get taken. Book now and get:
+              <p th:if="${pastGuest}" style="margin:0 0 18px 0; font-size:15px; line-height:1.6;">
+                <strong>You sailed with us — let&rsquo;s do it again!</strong> Early booking for
+                <strong>Summer 2027</strong> has just started, and as a returning guest you get
+                the first pick of the fleet plus extra perks:
+              </p>
+              <p th:unless="${pastGuest}" style="margin:0 0 18px 0; font-size:15px; line-height:1.6;">
+                <strong>You contacted us about a charter</strong> — this is the moment it pays off best:
+                early booking for <strong>Summer 2027</strong> has just started, and the first weeks are
+                always when the best catamarans and dates get taken. Book now and get:
               </p>
 
               <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px 0;">
@@ -73,7 +91,8 @@
                   <td align="center" style="border-radius:10px; background-color:#2856ff;">
                     <a th:href="${browseUrl}" href="https://www.boat4you.com/en/search"
                        style="display:inline-block; padding:14px 34px; font-size:16px; font-weight:700; color:#ffffff; border-radius:10px;">
-                      Browse boats &amp; 2027 prices →
+                      <span th:if="${pastGuest}">Let&rsquo;s go again — see 2027 boats →</span>
+                      <span th:unless="${pastGuest}">Browse boats &amp; 2027 prices →</span>
                     </a>
                   </td>
                 </tr>

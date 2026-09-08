@@ -58,6 +58,11 @@ class CampaignRecipient {
     @Column(name = "token", nullable = false, unique = true, length = 63)
     lateinit var token: String
 
+    /** GUEST = sailed with us before; PROSPECT = inquired only. Drives the
+     *  email copy variant. */
+    @Column(name = "segment", nullable = false, length = 31)
+    var segment: String = "PROSPECT"
+
     @Column(name = "status", nullable = false, length = 31)
     @Enumerated(EnumType.STRING)
     var status: CampaignRecipientStatus = CampaignRecipientStatus.PENDING

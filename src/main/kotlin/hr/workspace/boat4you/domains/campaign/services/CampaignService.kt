@@ -12,7 +12,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.util.UUID
 
-data class RecipientImport(val email: String, val name: String? = null)
+data class RecipientImport(val email: String, val name: String? = null, val segment: String? = null)
 
 data class ImportResult(
     val imported: Int,
@@ -64,6 +64,7 @@ class CampaignService(
                     this.email = email
                     this.recipientName = r.name?.trim()?.takeIf { it.isNotEmpty() }?.take(255)
                     this.token = UUID.randomUUID().toString().replace("-", "")
+                    this.segment = if (r.segment?.trim()?.uppercase() == "GUEST") "GUEST" else "PROSPECT"
                     this.status = if (isSuppressed) CampaignRecipientStatus.SUPPRESSED else CampaignRecipientStatus.PENDING
                 },
             )

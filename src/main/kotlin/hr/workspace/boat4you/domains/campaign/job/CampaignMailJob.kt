@@ -67,6 +67,7 @@ class CampaignMailJob(
                     templateName = "email/earlyBooking2027",
                     variables = mapOf(
                         "name" to firstNameOf(r.recipientName),
+                        "pastGuest" to (r.segment == "GUEST"),
                         "browseUrl" to browseUrl,
                         "unsubscribeUrl" to unsubscribeUrl,
                     ),
