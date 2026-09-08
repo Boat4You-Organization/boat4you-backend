@@ -33,9 +33,9 @@ class CampaignMailJob(
     private val batchSize: Int,
     @Value("\${application.campaign.subject:Early Booking for Summer 2027 is open — save up to 20%}")
     private val subject: String,
-    @Value("\${application.campaign.reply-to:charter@europe-yachts.com}")
+    @Value("\${application.campaign.reply-to:info@boat4you.com}")
     private val replyTo: String,
-    @Value("\${application.campaign.from-override:}")
+    @Value("\${application.campaign.from-override:Boat4you - Europe Yachts Charter <info@boat4you.com>}")
     private val fromOverride: String,
     @Value("\${application.campaign.unsubscribe-base-url:https://api.boat4you.com}")
     private val unsubscribeBaseUrl: String,
