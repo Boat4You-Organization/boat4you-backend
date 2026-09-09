@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Profile
+import org.springframework.core.io.Resource
 import org.springframework.mail.MailException
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
@@ -46,6 +47,8 @@ class CampaignMailJob(
      *  once Mario approves the test email). */
     @Value("\${application.campaign.enabled:false}")
     private val enabled: Boolean,
+    @Value("classpath:data/images/early-booking-hero.jpg")
+    private val heroImage: Resource,
 ) {
     private val logger = LoggerFactory.getLogger(this::class.java.name)
 
@@ -73,6 +76,7 @@ class CampaignMailJob(
                     ),
                     replyTo = replyTo,
                     fromOverride = fromOverride.takeIf { it.isNotBlank() },
+                    extraInlineImages = mapOf("campaignHero" to heroImage),
                     extraHeaders = mapOf(
                         // RFC 8058 one-click unsubscribe — required by
                         // Gmail/Yahoo for bulk senders since 2024.
