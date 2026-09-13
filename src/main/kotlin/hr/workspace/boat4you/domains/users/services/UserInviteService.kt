@@ -1,6 +1,6 @@
 package hr.workspace.boat4you.domains.users.services
 
-import hr.workspace.boat4you.common.services.resolveEmailLocale
+import hr.workspace.boat4you.common.services.toLocale
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.users.exceptions.UserInviteException
 import hr.workspace.boat4you.domains.users.exceptions.UserInviteExceptionType
@@ -22,6 +22,7 @@ import java.security.SecureRandom
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.util.Locale
 import kotlin.apply
 import kotlin.collections.filter
 import kotlin.collections.forEach
@@ -86,7 +87,12 @@ class UserInviteService(
             val recipientAddress =
                 if (fullName != "there") "$fullName <${dbUser.email}>" else dbUser.email
 
-            val locale = resolveEmailLocale(dbUser.language, forceEnglish)
+            // Strictly the recipient's own language, never the ambient request locale:
+            // when an admin re-invites a guest from the back office, LocaleContextHolder
+            // holds the ADMIN's Accept-Language, which would send a Spanish customer a
+            // Croatian e-mail. This matches what this method already documents above
+            // ("Falls back to English if not set").
+            val locale = if (forceEnglish) Locale.ENGLISH else dbUser.language?.toLocale() ?: Locale.ENGLISH
             val subject = messageSource.getMessage("userInvite.subject", null, locale)
 
             val emailVariables =
