@@ -149,12 +149,17 @@ internal class UserController(
     }
 
     @PreAuthorize("hasAnyRole('SYSTEM_ADMIN')")
-    override fun inviteUsers(ids: List<Long>): ResponseEntity<Unit> {
-        // Admin-driven invite: always render in English regardless of recipient
-        // language. Mario rule (3.5.2026): admin-triggered invites are
-        // operational/team comms — guest-facing emails (booking flow) use
-        // user.language (captured from front-end Accept-Language).
-        return ResponseEntity(userInviteService.inviteUsers(ids, forceEnglish = true), HttpStatus.OK)
+    override fun inviteUsers(
+        ids: List<Long>,
+        forceEnglish: Boolean?,
+    ): ResponseEntity<Unit> {
+        // Default stays English — Mario rule (3.5.2026): admin-triggered invites are
+        // operational/team comms and do not depend on guest UX.
+        // The admin "Resend invitation" button (13.9.2026) passes forceEnglish=false:
+        // that user is a paying guest whose original invite came from the booking flow
+        // in their own language, so the resend must match it. Recipients with no
+        // language captured still fall back to English inside resolveEmailLocale.
+        return ResponseEntity(userInviteService.inviteUsers(ids, forceEnglish = forceEnglish ?: true), HttpStatus.OK)
     }
 
     /**

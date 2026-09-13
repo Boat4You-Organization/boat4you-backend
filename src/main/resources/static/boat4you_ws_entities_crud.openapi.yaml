@@ -596,6 +596,17 @@ paths:
             items:
               type: integer
               format: int64
+        - name: forceEnglish
+          in: query
+          description: >-
+            Render the invite e-mail in English regardless of the recipient's language.
+            Defaults to true (historic admin behaviour — team/operational invites, Mario
+            rule 3.5.2026). Pass false when re-inviting a paying guest so the e-mail is in
+            the language they booked in; recipients without a language still get English.
+          required: false
+          example: false
+          schema:
+            type: boolean
       responses:
         '200':
           description: successful operation
