@@ -1,5 +1,35 @@
 # Backend deploy notes
 
+## 2026-09-13 — 📧 Users: resend the sign-up invite (`9401056` + `75e1e81`) — ✅ LIVE cusma2 19:20 UTC
+
+**Why (Mario):** a guest paid through the booking flow but never registered. The booking flow
+invites them once (`ReservationFlowMutationService` → `UserInviteService.inviteUsers`) and the
+link expires after 7 days (`application.invites.user.expiration`), so there was no way back in.
+
+**1. `forceEnglish` is now an optional query param on `PUT /users/invite/{ids}`** (openapi +
+`UserController`). Omitted → `true`, i.e. the historic admin behaviour is untouched (Mario rule
+3.5.2026: admin invites are team/operational comms and stay English). The new admin
+"Resend invite" button passes `false`, so a paying guest gets the mail in the language they
+booked in. No new migration; `inviteUsers` already regenerated code + timestamp on every call
+and only refuses `ACCEPTED`, so a resend also revives an expired link.
+
+**2. Fixed while wiring it up — the invite locale followed the REQUEST, not the recipient.**
+`resolveEmailLocale(user.language, forceEnglish)` falls back to `LocaleContextHolder` when the
+user has no language stored. On the booking-flow invite that is the guest's own request, so it
+was harmless; on an admin-triggered resend it is the ADMIN's `Accept-Language` — a Spanish
+customer would have received a Croatian e-mail. `UserInviteService` now resolves strictly from
+`user.language` with an English fallback, which is what its own KDoc already promised. This
+matters in practice: 20 of 22 active users have no language stored.
+
+All 9 locales carry `userInvite.subject` and the template is fully localised, so sending in the
+recipient's language is safe.
+
+**Deploy:** jar `8000458cca410b68394b908c3d5e66fd` → cusma2 only (API-only change; the scheduler
+never serves `/users/**`). Restart 19:20 UTC, Flyway "up to date", API 200 after 27 s, no ERROR.
+`PUT /users/invite/34?forceEnglish=false` unauthenticated → 403 (route + param accepted).
+Rollback `webservice.jar.prev`. **cusma3 is intentionally one commit behind** — fold this jar in
+with the next scheduler deploy (safe windows 07:50-08:40, 13:00-16:15, 17:50-20:35, 21:05-22:15 UTC).
+
 ## 2026-09-05 — 🔎 Part 5: search served from the DB, freshness via the scheduler (merges 89d8201 + 6c4bac9; branches part5/search e3aee6c, part5/nearterm 83a12f3+7330a3e; + e02f9a1 past-date/in-flight filters) — ✅ LIVE cusma2 (11:09, 2nd cut 11:21 UTC) + cusma3 (13:05 UTC)
 
 **Why (Mario, 5.9.2026):** "We already pull prices nightly, availability 3×/day and options — why does every search ask
