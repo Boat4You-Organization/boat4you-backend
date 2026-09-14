@@ -1374,16 +1374,27 @@ class YachtQueryingService(
         // home marina even while the boat spends a season elsewhere (LODIRE,
         // 14.9.2026: MMK `homeBase` = Alimos/Athens, yet every Sept-Oct offer
         // departs Skiathos, ~300 km away — the detail page told the client to
-        // collect the boat in Athens). Bookable offers decide; among them the
-        // most recently synced row wins, since a base change writes a NEW offer
-        // (the route is part of the upsert key) and the superseded one is never
-        // deleted. Undated requests keep the home base.
+        // collect the boat in Athens). The search listing was already right;
+        // its view rows are per offer.
+        //
+        // Which offer speaks for the week: a ROUND TRIP one. Where the boat
+        // physically sits is where a return charter starts and ends, while
+        // one-way rows are derived options — and a base change leaves the
+        // superseded route behind for ever, because the route is part of the
+        // offer upsert key and nothing deletes what the partner stopped
+        // sending. Row age can't break the tie either (verified 14.9: the
+        // stale Skiathos>Alimos row for 24.10 outranks the valid
+        // Alimos>Alimos one by id). Bookable rows are preferred, then round
+        // trips; undated requests keep the home base.
         val periodLocation =
             if (dateFrom != null && dateTo != null) {
                 val located = offerDto.filter { it.locationFrom != null }
-                located
+                val bookable = located
                     .filter { it.status == ExternalReservationStatus.FREE }
                     .ifEmpty { located }
+                bookable
+                    .filter { it.locationFrom?.id != null && it.locationFrom?.id == it.locationTo?.id }
+                    .ifEmpty { bookable }
                     .maxByOrNull { it.id ?: 0L }
                     ?.locationFrom
             } else {
