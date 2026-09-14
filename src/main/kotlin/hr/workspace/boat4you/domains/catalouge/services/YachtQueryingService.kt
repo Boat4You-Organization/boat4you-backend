@@ -1392,11 +1392,19 @@ class YachtQueryingService(
                 val bookable = located
                     .filter { it.status == ExternalReservationStatus.FREE }
                     .ifEmpty { located }
-                bookable
-                    .filter { it.locationFrom?.id != null && it.locationFrom?.id == it.locationTo?.id }
-                    .ifEmpty { bookable }
-                    .maxByOrNull { it.id ?: 0L }
-                    ?.locationFrom
+                val roundTrips =
+                    bookable.filter { it.locationFrom?.id != null && it.locationFrom?.id == it.locationTo?.id }
+                val homeBaseId = yacht.location?.id?.let { "l-$it" }
+                // A yacht may legitimately be offered from several bases at
+                // once (Nela: Nikiana, Lefkas and Sami all run return charters
+                // the same week). While the home base still runs one, keep it —
+                // null here means "no override", so the label stays put instead
+                // of shuffling between equally valid marinas.
+                if (homeBaseId != null && roundTrips.any { it.locationFrom?.id == homeBaseId }) {
+                    null
+                } else {
+                    roundTrips.ifEmpty { bookable }.maxByOrNull { it.id ?: 0L }?.locationFrom
+                }
             } else {
                 null
             }
