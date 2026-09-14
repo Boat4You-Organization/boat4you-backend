@@ -1386,6 +1386,19 @@ class YachtQueryingService(
         // stale Skiathos>Alimos row for 24.10 outranks the valid
         // Alimos>Alimos one by id). Bookable rows are preferred, then round
         // trips; undated requests keep the home base.
+        // ONE row per charter period, same rule as /standard-offers and /offers
+        // (Mario 14.9.2026). The detail payload feeds the booking panel and the
+        // availability strip, so leaving the duplicates here put two identical
+        // 6.318 EUR cards on LODIRE's 26.9 week and let the panel select the
+        // stale Alimos>Skiathos row.
+        val homeBaseIdForPick = yacht.location?.id?.let { "l-$it" }
+        val offerDtoForPeriods =
+            offerDto
+                .groupBy { it.dateFrom to it.dateTo }
+                .values
+                .mapNotNull { pickOfferForPeriod(it, homeBaseIdForPick) }
+                .sortedBy { it.dateFrom }
+
         // Pick-up location for a DATED request: the offer that speaks for that
         // week decides, not the yacht's home base. Partners keep the master
         // record on the home marina even while the boat spends a season
@@ -1396,10 +1409,10 @@ class YachtQueryingService(
         // period, and stable for canonical/SEO.
         val periodLocation =
             if (dateFrom != null && dateTo != null) {
-                val homeBaseId = yacht.location?.id?.let { "l-$it" }
-                pickOfferForPeriod(offerDto.filter { it.locationFrom != null }, homeBaseId)
+                offerDtoForPeriods
+                    .firstOrNull { it.locationFrom != null }
                     ?.locationFrom
-                    ?.takeIf { it.id != homeBaseId }
+                    ?.takeIf { it.id != homeBaseIdForPick }
             } else {
                 null
             }
@@ -1443,7 +1456,7 @@ class YachtQueryingService(
         val result =
             yachtMapper.toDetailsDto(
                 yacht,
-                offerDto,
+                offerDtoForPeriods,
                 yachtExtras,
                 currency,
                 language,
