@@ -1369,6 +1369,27 @@ class YachtQueryingService(
                 offers.map { offerMapper.toDto(it, currency) }
             }
 
+        // Pick-up location for a DATED request comes from that week's offers,
+        // not the yacht's home base. Partners keep the master record on the
+        // home marina even while the boat spends a season elsewhere (LODIRE,
+        // 14.9.2026: MMK `homeBase` = Alimos/Athens, yet every Sept-Oct offer
+        // departs Skiathos, ~300 km away — the detail page told the client to
+        // collect the boat in Athens). Bookable offers decide; among them the
+        // most recently synced row wins, since a base change writes a NEW offer
+        // (the route is part of the upsert key) and the superseded one is never
+        // deleted. Undated requests keep the home base.
+        val periodLocation =
+            if (dateFrom != null && dateTo != null) {
+                val located = offerDto.filter { it.locationFrom != null }
+                located
+                    .filter { it.status == ExternalReservationStatus.FREE }
+                    .ifEmpty { located }
+                    .maxByOrNull { it.id ?: 0L }
+                    ?.locationFrom
+            } else {
+                null
+            }
+
         val agencyId = yacht.agency?.id
         val locationId = yacht.location?.id
         val yachtExtras =
@@ -1412,6 +1433,7 @@ class YachtQueryingService(
                 yachtExtras,
                 currency,
                 language,
+                periodLocation,
             )
 
         return result

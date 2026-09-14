@@ -134,6 +134,15 @@ class YachtMapper(
         yachtExtras: List<YachtExtra>,
         currency: CurrencyEnum?,
         language: LanguageEnum,
+        /**
+         * Pick-up location of the offers for the REQUESTED period, resolved by
+         * the caller. Wins over the yacht's home base because partners keep the
+         * master record on the home marina while the boat operates from a
+         * seasonal base (LODIRE 14.9.2026: MMK `homeBase` = Alimos/Athens, but
+         * its Sept-Oct offers all depart Skiathos). Null for undated requests,
+         * where the home base is the honest answer.
+         */
+        periodLocation: LocationDto? = null,
     ): YachtDetailsDto {
         val model = result.model
         val manufacturer = model?.manufacturer
@@ -159,7 +168,7 @@ class YachtMapper(
                 // Fallback: if yacht has no location_id (OSH/MMK legacy — DESSUS, ADRIATIC PEARL,
                 // CATWALK, MADAME EL GRANDE...), pull the pick-up location from the first offer so
                 // the detail page matches the listing (which filters by offer.location_from anyway).
-                result.location?.toDto() ?: offerDtos?.firstOrNull()?.locationFrom
+                periodLocation ?: result.location?.toDto() ?: offerDtos?.firstOrNull()?.locationFrom
             }
 
         val extras =
