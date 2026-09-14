@@ -44,7 +44,7 @@ class OfferQueryingService(
         dateTo: LocalDate,
         currency: CurrencyEnum?,
     ): List<OfferDto> {
-        getValidYacht(yachtId) // Validates yacht existence and active status
+        val validYacht = getValidYacht(yachtId) // Validates yacht existence and active status
 
         val offers =
             offerRepository.findOffersByYachtIdAndDateFromAndDateToAndOfferType(
@@ -69,12 +69,27 @@ class OfferQueryingService(
                 LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS),
             )
 
+        // ONE row per charter period (Mario 14.9.2026). The same week can carry
+        // several rows — legitimate one-way variants between neighbouring bases,
+        // plus routes the partner has stopped sending but which survive because
+        // the route is part of the offer upsert key. The calendar rendered them
+        // as duplicate week cards and the booking panel could pick the stale one
+        // (LODIRE: two 6.318 EUR cards for 26.9, the selected one departing
+        // Alimos/Athens while the boat sat in Skiathos). `pickOfferForPeriod`
+        // keeps the row that speaks for the week; nothing is deleted, so a
+        // one-way variant is still there for a broker who needs it.
+        val homeBaseId = validYacht.location?.id?.let { "l-$it" }
         val mappedOffers =
-            offers.map { offer ->
-                val hasLiveOption =
-                    liveOptions.any { r -> halfOpenOverlap(offer.dateFrom, offer.dateTo, r.dateFrom, r.dateTo) }
-                offerMapper.toDto(offer, currency, hasLiveOption)
-            }
+            offers
+                .map { offer ->
+                    val hasLiveOption =
+                        liveOptions.any { r -> halfOpenOverlap(offer.dateFrom, offer.dateTo, r.dateFrom, r.dateTo) }
+                    offerMapper.toDto(offer, currency, hasLiveOption)
+                }
+                .groupBy { it.dateFrom to it.dateTo }
+                .values
+                .mapNotNull { pickOfferForPeriod(it, homeBaseId) }
+                .sortedBy { it.dateFrom }
 
         // Gap-fill (7.6.2026): a reserved week that never got a priced offer row
         // is absent from `offers`, leaving a hole in the detail calendar (a week
@@ -183,11 +198,21 @@ class OfferQueryingService(
                 LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS),
             )
 
-        return offers.map { offer ->
-            val hasLiveOption =
-                liveOptions.any { r -> halfOpenOverlap(offer.dateFrom, offer.dateTo, r.dateFrom, r.dateTo) }
-            offerMapper.toDto(offer, currency, hasLiveOption)
-        }
+        // One row per period here too, so the sister forms price and caption the
+        // same week the detail calendar shows. The widened window still returns
+        // the NEIGHBOURING weeks (different dateFrom/dateTo) the client-side
+        // overlap pick needs — only same-week route duplicates collapse.
+        val homeBaseId = yacht.location?.id?.let { "l-$it" }
+        return offers
+            .map { offer ->
+                val hasLiveOption =
+                    liveOptions.any { r -> halfOpenOverlap(offer.dateFrom, offer.dateTo, r.dateFrom, r.dateTo) }
+                offerMapper.toDto(offer, currency, hasLiveOption)
+            }
+            .groupBy { it.dateFrom to it.dateTo }
+            .values
+            .mapNotNull { pickOfferForPeriod(it, homeBaseId) }
+            .sortedBy { it.dateFrom }
     }
 
     fun getPriceForOfferWithExtras(

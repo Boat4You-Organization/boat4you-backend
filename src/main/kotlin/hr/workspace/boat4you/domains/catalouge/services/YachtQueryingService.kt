@@ -1386,25 +1386,20 @@ class YachtQueryingService(
         // stale Skiathos>Alimos row for 24.10 outranks the valid
         // Alimos>Alimos one by id). Bookable rows are preferred, then round
         // trips; undated requests keep the home base.
+        // Pick-up location for a DATED request: the offer that speaks for that
+        // week decides, not the yacht's home base. Partners keep the master
+        // record on the home marina even while the boat spends a season
+        // elsewhere (LODIRE 14.9.2026: MMK homeBase = Alimos/Athens, yet every
+        // Sept-Oct offer departs Skiathos ~300 km away). Same selection rule as
+        // the detail calendar, so page header and week cards cannot disagree.
+        // Undated requests keep the home base — the honest answer without a
+        // period, and stable for canonical/SEO.
         val periodLocation =
             if (dateFrom != null && dateTo != null) {
-                val located = offerDto.filter { it.locationFrom != null }
-                val bookable = located
-                    .filter { it.status == ExternalReservationStatus.FREE }
-                    .ifEmpty { located }
-                val roundTrips =
-                    bookable.filter { it.locationFrom?.id != null && it.locationFrom?.id == it.locationTo?.id }
                 val homeBaseId = yacht.location?.id?.let { "l-$it" }
-                // A yacht may legitimately be offered from several bases at
-                // once (Nela: Nikiana, Lefkas and Sami all run return charters
-                // the same week). While the home base still runs one, keep it —
-                // null here means "no override", so the label stays put instead
-                // of shuffling between equally valid marinas.
-                if (homeBaseId != null && roundTrips.any { it.locationFrom?.id == homeBaseId }) {
-                    null
-                } else {
-                    roundTrips.ifEmpty { bookable }.maxByOrNull { it.id ?: 0L }?.locationFrom
-                }
+                pickOfferForPeriod(offerDto.filter { it.locationFrom != null }, homeBaseId)
+                    ?.locationFrom
+                    ?.takeIf { it.id != homeBaseId }
             } else {
                 null
             }
