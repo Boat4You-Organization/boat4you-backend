@@ -1,5 +1,49 @@
 # Backend deploy notes
 
+## 2026-09-18 — 🔴 cusma2 load incident: bounded image resizes + unknown `did` no longer widens — ⏳ DEPLOYING
+
+**Incident (14.-18.9.2026):** the API node was kernel-OOM-killed 9× in 3 days (14.9. 05:54, 13:49, 14:33, 19:52,
+21:40; 15.9. 00:38, 01:37, 15:58; 16.9. 21:04 — always at anon-rss ≈5.6 GB on a 5.8 GB box with -Xmx3072m) and kept
+exhausting the Hikari pool (9,120 timeouts on 16.9., 1,133 on 18.9.; 5,892 in two hours on 15.9. evening → 5,691
+SSR fetch failures on Europe Yachts alone). systemd restarts the API in ~20 s, so users saw bursts of 500/502.
+
+**Root cause 1 — OOM = unbounded concurrent OpenCV resizes, NOT a leak and NOT the heap.** A 60 s tracer
+(`/home/cusma2/memtrace.sh` → `memtrace.log`) caught the 16.9. kill: RSS 2,301 MB → 5,236 MB inside ONE minute while
+NMT total (2,015 MB), heap committed (1,584 MB) and thread count stayed flat and the request rate was normal.
+`GET /public/image/{id}?width=N` `imread`s the FULL original (up to 7360×5520 ≈ 120 MB of native BGR memory per
+request) and nothing bounded how many run at once: nginx logged 100-459 image requests in flight in a single second
+(91 at the 15.9. 01:37 kill). Tomcat allows 200. MALLOC_ARENA_MAX=2 (Part 5) had already cut the slow native creep;
+this is the burst. Fix: `YachtImageService` takes a fair `Semaphore` around the OpenCV call only —
+`application.images.max-concurrent-resizes` (env `IMAGE_MAX_CONCURRENT_RESIZES`, default **4**; cusma2 has 2 cores),
+waits at most `application.images.resize-wait-ms` (env `IMAGE_RESIZE_WAIT_MS`, default **2000**), bounds the parked
+threads to 8 per permit (32) and otherwise sheds with **503 + `Retry-After: 2`** (`ImageResizeBusyException`, error
+code `IMAGE_RESIZE_BUSY` 1603). One throttled WARN per minute with the cumulative count ("Image resize gate
+saturated…"). `server.tomcat.threads.max: 200` is now pinned explicitly (it is Spring's default — documentation, not
+tuning). Paired ops change on cusma2 (same day, live before this jar): **nginx disk cache for `/public/image/`**
+(`proxy_cache b4yimg`, 5 GB, `proxy_cache_lock on`, serves stale on 5xx; backup `boat4you.conf.bak.pre-imgcache`) —
+each (id, width) variant reaches the JVM once, so the gate should rarely engage. Know-how: a shed image is a broken
+`<img>` for that page view (browsers ignore Retry-After; CDNs and crawlers honour it) — if the WARN fires steadily,
+raise the permits via env before anything else.
+
+**Root cause 2 — DB load: an unknown `did` WIDENED the search to the whole catalogue.** `did=l-l-19` returned 897
+yachts (all HR catamarans) instead of the 2 in marina l-19; `did=l-9999999` returned all 13,609 in 2.3 s.
+`YachtDistributionService`/`YachtRelaxSuggestionService` already answered zero rows; the search path did not.
+Europe Yachts + Croatia Yachting double-prefixed the marina id on every yacht detail render (`l-` + an id the detail
+endpoint already returns prefixed) → **216,955 such whole-catalogue queries in 5 days** on a 2-core DB. Fix:
+`YachtQueryingService.resolveSearchDidScope()` — tokens supplied but none resolves → `cb.disjunction()` (verified in
+Hibernate 6.6 sources that it renders a real `1 <> 1`, not an empty junction that gets dropped); some resolve → as
+before; the admin replacement flow returns an empty page for the same case; one-char tokens no longer 500. A throttled
+WARN ("unresolvable did …") is the only signal that a landing page went blank because of a stale id.
+**Audit before deploy (lead):** all 24 country and 65 of 68 region tokens seen in 2 days of production traffic
+resolve; the three that do not are `r-1`, `r-2` (174 requests, old crawled URLs + a hard-coded Istria `r-1` in
+Croatia Charter's itinerary extras → fixed to `r-193`) and `r-191` (2 requests). Web-side fixes ship separately
+(see the six sister repos + boat4you-web, same date).
+
+**Tests:** `YachtSearchDidScopeTests` (7), `YachtImageResizeGateTests` (5; cap, waiter bound, timeout → busy,
+permit released on failure) + the two warm-policy classes — 22 green; ktlint clean on touched files.
+**Deploy:** cusma2 (API) → verify `X-Cache-Status`, a resized image, `did=l-l-19` → 0 rows, `did=l-19` → 2;
+cusma3 in a safe window for jar parity (no scheduler behaviour change). Rollback `webservice.jar.prev`.
+
 ## 2026-09-13 — 📧 Users: resend the sign-up invite (`9401056` + `75e1e81`) — ✅ LIVE cusma2 19:20 UTC
 
 **Why (Mario):** a guest paid through the booking flow but never registered. The booking flow

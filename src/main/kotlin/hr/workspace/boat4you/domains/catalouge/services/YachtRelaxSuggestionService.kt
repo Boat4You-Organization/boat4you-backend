@@ -172,7 +172,9 @@ class YachtRelaxSuggestionService(
                     'l' -> LocationType.MARINA
                     else -> return@flatMap emptyList()
                 }
-                val numeric = id.substring(2).toIntOrNull() ?: return@flatMap emptyList()
+                // `drop(2)`, not `substring(2)`: a one-character token (`did=l`) is an unknown
+                // destination like any other, not a 500 (16.9.2026 cusma2 load incident review).
+                val numeric = id.drop(2).toIntOrNull() ?: return@flatMap emptyList()
                 when (type) {
                     LocationType.MARINA -> locationRepository.findById(numeric.toLong())
                         .map { listOfNotNull(it.id) }.orElse(emptyList())
@@ -190,7 +192,8 @@ class YachtRelaxSuggestionService(
         if (locationIds.isNullOrEmpty()) return null
         return locationIds
             .filter { it.firstOrNull() == 'c' }
-            .mapNotNull { it.substring(2).toLongOrNull() }
+            // `drop(2)` for the same reason as in [resolveMarinaIds]: `did=c` must not throw.
+            .mapNotNull { it.drop(2).toLongOrNull() }
             .mapNotNull { countryRepository.findById(it).orElse(null)?.code2?.uppercase() }
             .distinct()
     }

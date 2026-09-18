@@ -8,6 +8,7 @@ import hr.workspace.boat4you.common.services.LogMasking
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageNotFoundException
+import hr.workspace.boat4you.domains.catalouge.exceptions.ImageResizeBusyException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalCancellationException
@@ -35,6 +36,7 @@ import org.openapitools.model.ErrorSchema
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataAccessException
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
@@ -55,6 +57,12 @@ import java.sql.SQLException
 @Suppress("TooManyFunctions")
 internal class ApiErrorHandler {
     private val logger: Logger = LoggerFactory.getLogger(this::class.java.name)
+
+    companion object {
+        /** Long enough for the resize gate to drain a burst, short enough that the CDN still
+         *  fills its cache on the retry rather than serving a hole. */
+        private const val RESIZE_RETRY_AFTER_SECONDS = "2"
+    }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
     fun handleHttpMessageNotReadableException(e: HttpMessageNotReadableException): ResponseEntity<ErrorSchema> {
@@ -223,6 +231,24 @@ internal class ApiErrorHandler {
             ),
             HttpStatus.NOT_FOUND,
         )
+    }
+
+    @ExceptionHandler(ImageResizeBusyException::class)
+    fun handleImageResizeBusyException(e: ImageResizeBusyException): ResponseEntity<ErrorSchema> {
+        // 16.9.2026 cusma2 load incident: the bounded OpenCV resize gate shed this request. That
+        // is a capacity signal, not a crash — 503 + Retry-After so the CDN and well-behaved
+        // crawlers back off instead of retrying immediately. Deliberately NOT logged here:
+        // YachtImageService already logs the saturation throttled (once a minute, cumulative
+        // count), and one line per shed request would be the same flood the incident produced.
+        return ResponseEntity
+            .status(HttpStatus.SERVICE_UNAVAILABLE)
+            .header(HttpHeaders.RETRY_AFTER, RESIZE_RETRY_AFTER_SECONDS)
+            .body(
+                ErrorSchema(
+                    ApiErrorCodes.IMAGE_RESIZE_BUSY.code,
+                    ApiErrorCodes.IMAGE_RESIZE_BUSY.message,
+                ),
+            )
     }
 
     @ExceptionHandler(ReservationFlowNotExists::class)

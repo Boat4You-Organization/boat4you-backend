@@ -205,7 +205,9 @@ class YachtDistributionService(
         val countryCodes =
             locationIds
                 .filter { it.firstOrNull() == 'c' }
-                .mapNotNull { it.substring(2).toLongOrNull() }
+                // `drop(2)`, not `substring(2)`: a one-character token (`did=c`) is an unknown
+                // destination like any other, not a 500 (16.9.2026 cusma2 load incident review).
+                .mapNotNull { it.drop(2).toLongOrNull() }
                 .mapNotNull { countryRepository.findById(it).orElse(null)?.code2?.uppercase() }
                 .distinct()
         // Empty lists (only invalid prefixes / unknown ids) stay non-null so the
@@ -227,7 +229,8 @@ class YachtDistributionService(
                 // to the indexed country-code filter instead of a marina list.
                 else -> return emptyList()
             }
-        val numeric = locationId.substring(2).toIntOrNull() ?: return emptyList()
+        // `drop(2)` for the same reason as in [resolveDidScope]: `did=l` must not throw.
+        val numeric = locationId.drop(2).toIntOrNull() ?: return emptyList()
         return when (type) {
             // Mirror YachtQueryingService.getMarinas: a marina can exist twice (one row
             // per provider, "Marina Kastela" vs "Marina Kaštela"). Expand to every

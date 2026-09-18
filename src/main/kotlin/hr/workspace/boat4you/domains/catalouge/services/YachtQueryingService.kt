@@ -53,6 +53,7 @@ import jakarta.persistence.criteria.CriteriaQuery
 import jakarta.persistence.criteria.Expression
 import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root
+import org.slf4j.LoggerFactory
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.core.io.Resource
 import org.springframework.data.domain.Page
@@ -63,6 +64,7 @@ import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.util.concurrent.atomic.AtomicLong
 
 @Service
 @Transactional(readOnly = true)
@@ -128,7 +130,25 @@ class YachtQueryingService(
                 "radar",
                 "heating",
             )
+
+        /**
+         * Throttle for the unresolvable-`did` WARN (16.9.2026 cusma2 load incident). The refusal
+         * fires per request, and a crawler that found a stale landing page sends thousands of
+         * them, so log once a minute with the running total instead of one line each.
+         */
+        private const val DID_REFUSAL_WARN_INTERVAL_MS = 60_000L
+
+        /** Enough tokens to identify the offending URL without printing a whole crawler's list. */
+        private const val DID_REFUSAL_LOGGED_TOKENS = 5
+
+        /** `did` tokens are `c-54` / `r-12` / `l-9001`; anything else in them came from the query
+         *  string and must not reach the log as-is (a CRLF would forge a line). */
+        private val UNSAFE_DID_CHARS = Regex("[^A-Za-z0-9_-]")
     }
+
+    private val log = LoggerFactory.getLogger(this::class.java)
+    private val didRefusals = AtomicLong()
+    private val lastDidWarnAtMs = AtomicLong()
 
     // Cache the heaviest query in the system — the search listing page. It's a
     // criteria query over the 380MB yacht_search_view with GROUP BY + status
@@ -828,16 +848,25 @@ class YachtQueryingService(
         page: Int,
         size: Int,
     ): PageImpl<YachtSearchResponseDto> {
+        // Blanks included, same rule as [resolveSearchDidScope].
+        val didTokens = searchParams.locationIds.orEmpty()
         val locationIds =
-            searchParams.locationIds
-                ?.flatMap { getMarinas(it).mapNotNull { m -> m.id } }
-                ?.distinct()
-                .orEmpty()
+            didTokens
+                .flatMap { getMarinas(it).mapNotNull { m -> m.id } }
+                .distinct()
+        val pageSize = size.coerceAtMost(MAX_PAGE_SIZE)
+        // Same rule as `buildYachtSearchPredicates` (16.9.2026 cusma2 load incident): a
+        // destination the caller DID ask for but that resolves to nothing must restrict to
+        // nothing. `locationIdsEmpty` below means "no destination filter at all", so without
+        // this guard an unknown/malformed `did` would hand the admin the WHOLE catalogue.
+        if (didTokens.isNotEmpty() && locationIds.isEmpty()) {
+            warnUnresolvableDid(didTokens)
+            return PageImpl(emptyList(), org.springframework.data.domain.PageRequest.of(page, pageSize), 0)
+        }
         val agencyIds = searchParams.agencyIds.orEmpty()
         val vesselTypeValues = searchParams.vesselTypes?.map { it.name }.orEmpty()
         val startDate = searchParams.startDate ?: LocalDate.now()
         val endDate = searchParams.endDate ?: startDate.plusDays(7)
-        val pageSize = size.coerceAtMost(MAX_PAGE_SIZE)
         val pageOffset = page * pageSize
 
         val rows =
@@ -960,31 +989,22 @@ class YachtQueryingService(
         // accidentally matched Location.id=8 (ACI Marina Trogir) and pulled
         // unrelated Croatian yachts into Greek region searches. The marina
         // selector closes that gap at the data layer instead.
-        val countryDidCodes =
-            searchParams.locationIds
-                ?.filter { it.firstOrNull() == 'c' }
-                ?.mapNotNull { it.substring(2).toLongOrNull() }
-                ?.mapNotNull { countryRepository.findById(it).orElse(null)?.code2?.uppercase() }
-                ?.distinct()
-                .orEmpty()
-        val allMarinas =
-            searchParams.locationIds
-                ?.filterNot { it.firstOrNull() == 'c' }
-                ?.flatMap { locationId ->
-                    getMarinas(locationId).mapNotNull { it.id }
-                }?.distinct()
-                .orEmpty()
+        val did = resolveSearchDidScope(searchParams.locationIds)
         val didPredicates = mutableListOf<Predicate>()
-        if (allMarinas.isNotEmpty()) {
-            didPredicates.add(root.get<String>("locationFrom").`in`(allMarinas))
-            didPredicates.add(root.get<String>("locationTo").`in`(allMarinas))
+        if (did.marinaIds.isNotEmpty()) {
+            didPredicates.add(root.get<String>("locationFrom").`in`(did.marinaIds))
+            didPredicates.add(root.get<String>("locationTo").`in`(did.marinaIds))
         }
-        if (countryDidCodes.isNotEmpty()) {
-            didPredicates.add(root.get<String>("countryCode").`in`(countryDidCodes))
-            didPredicates.add(root.get<String>("countryCodeTo").`in`(countryDidCodes))
+        if (did.countryCodes.isNotEmpty()) {
+            didPredicates.add(root.get<String>("countryCode").`in`(did.countryCodes))
+            didPredicates.add(root.get<String>("countryCodeTo").`in`(did.countryCodes))
         }
-        if (didPredicates.isNotEmpty()) {
-            predicates.add(cb.or(*didPredicates.toTypedArray()))
+        when {
+            didPredicates.isNotEmpty() -> predicates.add(cb.or(*didPredicates.toTypedArray()))
+            // An asked-for destination that resolves to nothing restricts to nothing — see
+            // [resolveSearchDidScope] (16.9.2026 cusma2 load incident). `cb.disjunction()` is
+            // Hibernate's always-false `1 <> 1`, not an empty junction, so it really is emitted.
+            did.matchesNothing -> predicates.add(cb.disjunction())
         }
 
         if (!searchParams.yachtIds.isNullOrEmpty()) {
@@ -1286,16 +1306,96 @@ class YachtQueryingService(
         return sub
     }
 
+    /**
+     * The `did` filter resolved for the search path: marina ids for the `r-…` / `l-…` tokens,
+     * 2-letter codes for the `c-…` ones. [matchesNothing] means the caller DID ask for a
+     * destination but not one token of it is a real country / region / marina.
+     */
+    internal data class SearchDidScope(
+        val marinaIds: List<Long>,
+        val countryCodes: List<String>,
+        val matchesNothing: Boolean,
+    )
+
+    /**
+     * Resolve `did=c-54 / r-12 / l-9001` into the ids the search can match on.
+     *
+     * [SearchDidScope.matchesNothing] is the fix for the 16.9.2026 cusma2 load incident: an
+     * unresolvable destination used to leave the location filter OFF, which WIDENED the query
+     * to the whole catalogue instead of narrowing it — `did=l-l-19` returned all 897 Croatian
+     * catamarans instead of the 2 boats in marina l-19, and `did=l-9999999` returned all 13,609
+     * yachts in 2.3 s. Malformed tokens are never repaired, only refused: an asked-for
+     * destination that resolves to nothing must return zero rows, exactly like
+     * `YachtDistributionService.resolveDidScope` already does for the facet counts.
+     */
+    internal fun resolveSearchDidScope(locationIds: List<String>?): SearchDidScope {
+        // Blanks count as tokens: `did=,` reaches us as two blank entries, and that is a
+        // destination the caller asked for which resolves to nothing — refusing it keeps the
+        // 13,609-row full-catalogue scan unreachable from a junk URL, and keeps this endpoint
+        // agreeing with the facet endpoints, which already answer zero rows for the same URL.
+        val tokens = locationIds.orEmpty()
+        val countryCodes =
+            tokens
+                .filter { it.firstOrNull() == 'c' }
+                .mapNotNull { it.drop(2).toLongOrNull() }
+                .mapNotNull { countryRepository.findById(it).orElse(null)?.code2?.uppercase() }
+                .distinct()
+        val marinaIds =
+            tokens
+                .filterNot { it.firstOrNull() == 'c' }
+                .flatMap { locationId -> getMarinas(locationId).mapNotNull { it.id } }
+                .distinct()
+        val matchesNothing = tokens.isNotEmpty() && marinaIds.isEmpty() && countryCodes.isEmpty()
+        if (matchesNothing) {
+            warnUnresolvableDid(tokens)
+        }
+        return SearchDidScope(
+            marinaIds = marinaIds,
+            countryCodes = countryCodes,
+            matchesNothing = matchesNothing,
+        )
+    }
+
+    /**
+     * The only signal that a destination went blank. Before the 16.9.2026 cusma2 load incident fix
+     * a stale `did` silently WIDENED the query, so a landing page pointing at a renumbered region
+     * still showed boats and nobody noticed; now it correctly shows none, which is invisible unless
+     * this line exists. Throttled like the image resize gate — once a minute with the cumulative
+     * count — because the refusal fires per query and crawlers arrive in bursts. Read the total as
+     * queries, not requests: one `/public/yachts` call builds the predicates twice (the id count
+     * and the page), so a refused search counts 2.
+     */
+    private fun warnUnresolvableDid(tokens: List<String>) {
+        val total = didRefusals.incrementAndGet()
+        val now = System.currentTimeMillis()
+        val last = lastDidWarnAtMs.get()
+        if (now - last >= DID_REFUSAL_WARN_INTERVAL_MS && lastDidWarnAtMs.compareAndSet(last, now)) {
+            val shown =
+                tokens
+                    .take(DID_REFUSAL_LOGGED_TOKENS)
+                    .joinToString(",") { it.take(32).replace(UNSAFE_DID_CHARS, "?") }
+            log.warn(
+                "Unresolvable did [{}] ({} token(s)): returning zero rows instead of the whole catalogue — " +
+                    "{} refused since start; next warning in >= 1 min",
+                shown,
+                tokens.size,
+                total,
+            )
+        }
+    }
+
     private fun getMarinas(locationId: String): List<Location> {
         val locationType =
-            when (locationId.first()) {
+            when (locationId.firstOrNull()) {
                 'r' -> LocationType.REGION
                 'c' -> LocationType.COUNTRY
                 'l' -> LocationType.MARINA
                 else -> return emptyList()
             }
 
-        val id = locationId.substring(2).toIntOrNull() ?: return emptyList()
+        // `drop(2)`, not `substring(2)`: a one-character token (`did=l`) must resolve to
+        // "unknown destination" like any other bad token, not throw out of the request.
+        val id = locationId.drop(2).toIntOrNull() ?: return emptyList()
 
         return when (locationType) {
             // A marina can exist twice (one row per provider, spelled differently —
@@ -1330,7 +1430,8 @@ class YachtQueryingService(
     private fun deriveRegionCountryCodes(locationIds: List<String>?): List<String> =
         locationIds
             ?.filter { it.firstOrNull() == 'r' }
-            ?.mapNotNull { it.substring(2).toLongOrNull() }
+            // `drop(2)` for the same reason as in [getMarinas]: `did=r` must not throw.
+            ?.mapNotNull { it.drop(2).toLongOrNull() }
             ?.mapNotNull { regionRepository.findById(it).orElse(null)?.countryCode }
             ?.distinct()
             .orEmpty()

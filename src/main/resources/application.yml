@@ -17,6 +17,12 @@ server:
   port: 8443
   tomcat:
     max-swallow-size: 128MB
+    threads:
+      # Spring Boot's own default, pinned explicitly after the 16.9.2026 cusma2 load incident:
+      # the image resize gate sheds requests as a ratio of this number (see
+      # application.images.resize-wait-ms), and that ratio must be visible in config instead of
+      # living in a framework default nobody can see.
+      max: 200
 
 spring:
   application:
@@ -194,6 +200,23 @@ application:
     enabled: false
     pilot-yacht-ids: []
     manual-groups: []
+  images:
+    # 16.9.2026 cusma2 load incident. A 60 s tracer caught one of the 9 OOM-kills: RSS went
+    # 2.3 GB -> 5.2 GB inside ONE minute while everything the JVM tracks stayed flat (NMT total
+    # 2.0 GB, heap 1.58 GB, thread count normal) and the request rate was normal. At each kill
+    # dozens of DIFFERENT /public/image/{id}?width=... requests were in flight (91 concurrent at
+    # one of them). Every resize `imread`s the FULL original, which is tens of MB of OFF-HEAP
+    # OpenCV memory the JVM neither tracks nor bounds, so a crawler burst allocates gigabytes
+    # natively within seconds. The Mats are released correctly — the only missing bound is on
+    # how many may run at once. 4 keeps the worst case in the low hundreds of MB.
+    max-concurrent-resizes: ${IMAGE_MAX_CONCURRENT_RESIZES:4}
+    # How long a request may WAIT for a free slot before it is shed with 503 + Retry-After. The
+    # waiting thread is one of `server.tomcat.threads.max` (top of this file), so this is the time a Tomcat
+    # worker is parked behind the gate, not a time budget the gate spends on itself: keep it short.
+    # The queue depth is bounded too (YachtImageService.MAX_WAITERS_PER_PERMIT, 8 per permit = 32
+    # parked threads at 4 permits), so a sustained burst is shed immediately instead of eating the
+    # pool one 2-second park at a time.
+    resize-wait-ms: ${IMAGE_RESIZE_WAIT_MS:2000}
   email:
     enabled: ${EMAIL_ENABLED:false}
     # From-address shown in the recipient inbox. SMTP auth happens with

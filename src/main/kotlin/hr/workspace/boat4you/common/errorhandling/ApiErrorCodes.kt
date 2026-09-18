@@ -40,6 +40,11 @@ enum class ApiErrorCodes(
     YACHT_NOT_ACTIVE(1502, "Yacht is not active"),
     AGENCY_NOT_ACTIVE(1601, "The yacht's agency is not active"),
     IMAGE_NOT_FOUND(1602, "Image not found"),
+
+    // 16.9.2026 cusma2 load incident: the OpenCV resize gate is full. Transient capacity, not a
+    // client mistake — served as 503 + Retry-After so the CDN/crawler comes back instead of
+    // hammering. Customer-facing wording stays a short, non-technical apology.
+    IMAGE_RESIZE_BUSY(1603, "The image is temporarily unavailable, please try again in a moment."),
     ENTITY_NOT_DELETABLE(1701, "Entity cannot be deleted because there are other entities referencing it"),
     DATA_UNAVAILABLE(2002, "Data unavailable"),
     RESERVATION_FLOW_NOT_EXIST(3001, "Reservation flow does not exist"),
