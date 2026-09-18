@@ -1,0 +1,11 @@
+[Unit]
+Description=TLS certificate monitor for all public hostnames (mails Mario on a problem)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=cusma3
+ExecStart=/home/cusma3/bin/cert_expiry_monitor.sh
+# ~55 hosts x worst case (10 s + 5 s + 10 s) = ~23 min only if EVERY host is down; SIGTERM is trapped and mails partial results
+TimeoutStartSec=1500

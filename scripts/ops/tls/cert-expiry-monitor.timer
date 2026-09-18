@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily 08:31 UTC TLS certificate monitor
+
+[Timer]
+OnCalendar=*-*-* 08:31:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

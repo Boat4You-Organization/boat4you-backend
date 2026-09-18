@@ -1,6 +1,52 @@
 # Backend deploy notes
 
-## 2026-09-18 — 🔴 cusma2 load incident: bounded image resizes + unknown `did` no longer widens — ⏳ DEPLOYING
+## 2026-09-18 (b) — 🔐 TLS hygiene: http://www redirect, HSTS ×6 sisters, HTTP/2 on the API, certificate monitor — ✅ LIVE (ops only, no jar)
+
+**Why:** Mario asked where we stand on TLS. Certificates themselves were fine (Let's Encrypt ECDSA P-256 everywhere,
+certbot.timer on cusma1/2/5, cPanel AutoSSL for wp./mail./webmail./cpanel./autodiscover.), but four gaps were open.
+Nothing here touches the application; all four are nginx/systemd changes. Scripts are versioned in `scripts/ops/tls/`.
+
+1. **cusma1 — `http://www.boat4you.com` answered 404.** There was no port-80 server block for `www`, so it fell
+   through to the default server (the apex and admin had one). Added a certbot-shaped block (`listen 80; listen [::]:80;`
+   → `301 https://$host$request_uri`). Verified: http://www → 301, path + query preserved; `certbot renew --dry-run`
+   on cusma1 succeeds for both lineages afterwards (http-01 follows the redirect).
+2. **cusma5 — HSTS on the six sister vhosts** (boat4you already had it). `max-age=31536000; includeSubDomains` with
+   `always`, in three places per vhost: the www 443 block, the apex 443 block (so the 301 carries it too) and the
+   `/wp-content/` location — that location has its own `add_header` lines and nginx add_header inheritance is
+   all-or-nothing, so the server-level header would silently vanish there. **croatia-yachting.com gets HSTS WITHOUT
+   `includeSubDomains`** on purpose: `webmail.`, `cpanel.` and `autodiscover.croatia-yachting.com` serve a certificate
+   for a different name (AutoSSL does not cover them; an `openssl s_client` without `-verify_hostname` reports
+   "Verify return code: 0 (ok)" for these and hides it). Add `includeSubDomains` there once AutoSSL is fixed.
+   Know-how: HSTS is host-bound, not port-bound — under includeSubDomains the plaintext cPanel ports (2082/2086/2095)
+   of those zones stop being reachable in a browser that has seen the header; use the TLS ports (2083/2087/2096).
+3. **cusma2 — HTTP/2 on api.boat4you.com** (`listen 443 ssl http2;` — nginx 1.24, the separate `http2 on;` directive
+   is 1.25.1+). Verified ALPN h2, HTTP/1.1 clients still served, image cache still MISS→HIT.
+4. **cusma3 — daily certificate monitor** `/home/cusma3/bin/cert_expiry_monitor.sh`, system units
+   `cert-expiry-monitor.service` + `.timer` (08:31 UTC, Persistent). Let's Encrypt stopped sending expiry e-mails in
+   June 2025, so a silently failing renewal would only show up as an outage. Per host (53: every public name of the
+   7 sites + adriapixel + cusmanich.hr, plus `mail.boat4you.com:465`): certificate received, chain trusted, **name
+   matches** (`-verify_hostname`), days left. The threshold is relative — alert under 1/4 of the certificate's own
+   lifetime (22 d for today's 89-day certs; LE renews at 30 d, so an alert means renewal has been failing for a week) —
+   because lifetimes are being cut to 47 d by 2029 and a fixed day count would rot. Silent when healthy; heartbeat
+   mail every 7 days (elapsed-time stamp, not weekday); SIGTERM is trapped and mails partial results; the SMTP password
+   goes to curl via `-K <(…)`, never argv; exit code 1 when a mail could not be delivered, so `systemctl --failed`
+   shows it. SMTP settings come from `boat4youscheduler_vars.env`. Proven with a negative run (stubbed mail):
+   hostname mismatch, expired, self-signed and unreachable hosts all reported; closed SMTP port → exit 1.
+   Last result on the box: `/home/cusma3/bin/cert_expiry_monitor.last`. Manual run: `cert_expiry_monitor.sh --test`.
+
+**How it was applied:** `scripts/ops/tls/nginx_apply.sh <sha256-of-editor> <tag> <mode>:<conf>…` — refuses to run
+the editor as root unless its checksum matches, backs up to `/var/backups/nginx/tls-20260918/` (outside nginx's
+include paths), edits with the idempotent `tls_edit.py` (asserts every anchor, exit 3 on mismatch), `nginx -t`,
+reload, restores every file on any failure. Live confs were md5-checked against the fetched originals first (no drift).
+**Rollback:** `cp -p /var/backups/nginx/tls-20260918/<file> /etc/nginx/conf.d/ && nginx -t && systemctl reload nginx`
+(HSTS itself cannot be "rolled back" in browsers that saw it — that is its point; every HSTS host serves valid TLS).
+**Open (needs Mario, cPanel login):** CAA records `0 issue "letsencrypt.org"` for the 7 zones (DNS lives on the cPanel
+box; every certificate we serve, including AutoSSL's, is Let's Encrypt). Do it now that the monitor is live.
+Not done on purpose: HSTS preload, certbot upgrade (apt 2.9.0 is fine), DNSSEC/SPF/DMARC (Pondi's area).
+
+---
+
+## 2026-09-18 — 🔴 cusma2 load incident: bounded image resizes + unknown `did` no longer widens (`245e577`) — ✅ LIVE cusma2 (20:27 UTC) + cusma3 (21:07 UTC)
 
 **Incident (14.-18.9.2026):** the API node was kernel-OOM-killed 9× in 3 days (14.9. 05:54, 13:49, 14:33, 19:52,
 21:40; 15.9. 00:38, 01:37, 15:58; 16.9. 21:04 — always at anon-rss ≈5.6 GB on a 5.8 GB box with -Xmx3072m) and kept
@@ -43,6 +89,10 @@ Croatia Charter's itinerary extras → fixed to `r-193`) and `r-191` (2 requests
 permit released on failure) + the two warm-policy classes — 22 green; ktlint clean on touched files.
 **Deploy:** cusma2 (API) → verify `X-Cache-Status`, a resized image, `did=l-l-19` → 0 rows, `did=l-19` → 2;
 cusma3 in a safe window for jar parity (no scheduler behaviour change). Rollback `webservice.jar.prev`.
+**Outcome (first hours):** jar md5 `f760ad8a…` on both nodes; cusma3 restarted idle at 21:07 UTC, Flyway "up to date"
+(189 migrations). Malformed `did` requests 40-55/min → 0 after the sister deploys; catalogue fetches 1,772/10 min → ~0;
+API RSS ~1 GB, 0 Hikari timeouts since the restart; the gate shed 17 of ~700 images in the first 10 minutes while the
+nginx cache was cold, none after.
 
 ## 2026-09-13 — 📧 Users: resend the sign-up invite (`9401056` + `75e1e81`) — ✅ LIVE cusma2 19:20 UTC
 
