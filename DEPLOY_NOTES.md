@@ -1,5 +1,32 @@
 # Backend deploy notes
 
+## 2026-09-19 — 🚑 Booking hotfix: a partner extra name over 200 chars took the whole booking down (`87a674b`) — ✅ LIVE cusma2 10:12 UTC, ⏳ cusma3 parity
+
+**Report (Mario, from a customer):** "ne može napraviti rezervaciju online". **Measured:** every `POST /public/reservations`
+and `POST /secured/reservations` answered **502** from 09:49 UTC — 8 attempts in 14 minutes by two accounts (the customer
+registered a second one hoping it would help), all on one yacht (Stelina, id 9020, MMK 2537536420000103140, offer 595995,
+16.-23.10.2027). The API itself was healthy; the 502 was the application's own `BookingCreationException`.
+**Root cause:** MMK returns the obligatory extra "Charter pack (Includes: end cleaning, bed linen/ bath towels, …)" with a
+**222-character name**. `ExternalReservationExtra.name` is `@Size(max = 200)` / `varchar(200)`, so bean validation threw at
+flush (`ConstraintViolationException … size must be between 0 and 200`), the booking transaction rolled back AFTER the MMK
+option had been created, and the B2 compensation cancelled the option and set the offer back to FREE — which is why every
+retry could create a fresh option and fail the same way. **Not a one-off:** 37,485 offer extras on 35,142 offers carry a name
+over 200 characters (mostly Greek "Charter pack" descriptions), so any booking whose partner response echoes such an extra
+failed the same way. Latent since the entity was written; nothing to do with the 18.9. deploys.
+**Fix:** `ReservationMutationService.createReservationExtras` cuts the partner name to
+`ExternalReservationExtra.NAME_MAX_LENGTH` (one constant now drives `@Size`, the column length and the mapper). The stored
+name is a display-only copy of partner text. Test `ExternalReservationExtraNameTests` (3) pins both halves: the raw name
+violates, the cut name validates. ktlint clean.
+**Verified:** Flyway "up to date" (189), health 200 after ~16 s, offer 595995 FREE, no dangling partner reservation for the
+yacht in `external_reservations`, no "Compensation: … failed" lines. A real test booking was NOT made on purpose (it would
+place a real option on the customer's yacht) — confirmation is the customer's next attempt.
+**Pre-existing, unrelated:** `ReservationPaymentPhasesServiceTest` fails 26 of 67 — hard-coded 2026 dates vs. logic that now
+lands in 2027. Not touched here.
+**Follow-up worth doing:** widen the column to `text` (no view depends on the table) so the full partner wording survives,
+and alert on `BookingCreationException` — this was found by a customer, not by us (see `UPTIME-PLAN-2026-09-19.md`, 0.6).
+
+---
+
 ## 2026-09-18 (b) — 🔐 TLS hygiene: http://www redirect, HSTS ×6 sisters, HTTP/2 on the API, certificate monitor — ✅ LIVE (ops only, no jar)
 
 **Why:** Mario asked where we stand on TLS. Certificates themselves were fine (Let's Encrypt ECDSA P-256 everywhere,
