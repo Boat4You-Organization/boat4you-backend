@@ -48,7 +48,24 @@ data class ReservationResponseWrapper(
     val crewListUrl: String?,
     val yachtId: Long,
     val calculatedSysStatus: ReservationStatus,
-)
+) {
+    /**
+     * The partner code is not a display copy: NauSys gets it back as the reservation `uuid` on confirm (Stripe webhook,
+     * after capture) and on cancel, so it may never be cut to fit `reservation.external_reservation_code`. A code we
+     * cannot store is refused while the adapter can still release the option (observed max: 36 chars).
+     */
+    fun requireStorableCode(): ReservationResponseWrapper {
+        check((externalCode?.length ?: 0) <= EXTERNAL_CODE_MAX_LENGTH) {
+            "Partner reservation code is ${externalCode?.length} chars, we can store $EXTERNAL_CODE_MAX_LENGTH"
+        }
+        return this
+    }
+
+    companion object {
+        /** Width of `reservation.external_reservation_code` (projected by reservation_view, so not simply widened). */
+        const val EXTERNAL_CODE_MAX_LENGTH = 100
+    }
+}
 
 data class ExtraWrapper(
     val externalId: Long,

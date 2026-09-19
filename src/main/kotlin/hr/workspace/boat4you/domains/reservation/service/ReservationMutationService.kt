@@ -116,7 +116,7 @@ class ReservationMutationService(
         val reservation = reservationRepository.findById(reservationId).orElseThrow()
 
         reservation.status = externalReservation.status
-        reservation.externalStatus = externalReservation.externalStatus
+        reservation.externalStatus = fitExternalStatus(externalReservation.externalStatus)
         reservation.sysStatus = externalReservation.calculatedSysStatus
 
         // A partner-side cancel arrives HERE (sync mirror), bypassing
@@ -172,7 +172,7 @@ class ReservationMutationService(
                 this.createdAt = Instant.now()
                 this.optionExpiresAt = externalReservation.expiresAt
                 this.status = externalReservation.status
-                this.externalStatus = externalReservation.externalStatus
+                this.externalStatus = fitExternalStatus(externalReservation.externalStatus)
                 this.sysStatus = externalReservation.calculatedSysStatus // option ili option_waiting
                 this.response = externalReservation.responseBody
                 // Price fields: admin override beats partner response. We apply
@@ -189,10 +189,12 @@ class ReservationMutationService(
                 this.clientPrice = adminOverridePrice ?: externalReservation.clientPrice
                 this.agencyPrice = externalReservation.agencyPrice
                 this.deposit = externalReservation.deposit
-                this.currency = externalReservation.currency
-                this.paymentNote = externalReservation.paymentNote
-                this.bankDetails = externalReservation.bankDetails
-                this.note = externalReservation.note
+                // "eur " must not fail a booking; anything that is still not 3 letters stays as sent, so validation
+                // fails loudly (option released, admins alerted) - a guessed currency on the money path is worse.
+                this.currency = externalReservation.currency.trim().uppercase()
+                this.paymentNote = fitPartnerText("paymentNote", externalReservation.paymentNote, reservationFlowId)
+                this.bankDetails = fitPartnerText("bankDetails", externalReservation.bankDetails, reservationFlowId)
+                this.note = fitPartnerText("note", externalReservation.note, reservationFlowId)
                 this.locationFrom = externalReservation.locationFrom
                 this.locationTo = externalReservation.locationTo
                 this.product = externalReservation.product
@@ -229,8 +231,8 @@ class ReservationMutationService(
         // `confirmReservation` once the first payment arrives.
         val finalOfferStatus = if (adminOverridePrice != null) {
             reservation.sysStatus = ReservationStatus.RESERVATION
-            reservation.externalStatus = reservation.externalStatus?.replace("OPTION", "RESERVATION")
-                ?: reservation.externalStatus
+            // Fit again: the replace makes the label 5 characters longer per occurrence.
+            reservation.externalStatus = fitExternalStatus(reservation.externalStatus?.replace("OPTION", "RESERVATION"))
             OfferStatus.RESERVED
         } else {
             OfferStatus.OPTION
@@ -289,6 +291,37 @@ class ReservationMutationService(
         }
     }
 
+    // Partner-owned strings versus our column widths. A value over the width fails bean validation at flush and rolls
+    // the whole booking back AFTER the partner option (or, on the Stripe webhook, the partner confirmation) already
+    // exists - the 19.9.2026 incident. These are display copies; the full payload stays in `reservation.response`.
+    private fun fitExternalStatus(value: String?): String? = value?.take(Reservation.EXTERNAL_STATUS_MAX_LENGTH)
+
+    private fun fitPartnerText(
+        field: String,
+        value: String?,
+        reservationFlowId: Long,
+    ): String? {
+        if (value == null || value.length <= Reservation.PARTNER_TEXT_MAX_LENGTH) return value
+        log.warn(
+            "Partner {} is {} chars, cut to {} (flow {}); the full text is in reservation.response",
+            field,
+            value.length,
+            Reservation.PARTNER_TEXT_MAX_LENGTH,
+            reservationFlowId,
+        )
+        return value.take(Reservation.PARTNER_TEXT_MAX_LENGTH)
+    }
+
+    /** A cut URL is a dead link the customer would click; no link is a state every consumer already handles. */
+    private fun fitCrewListUrl(
+        url: String?,
+        reservationId: Long,
+    ): String? {
+        if (url == null || url.length <= Reservation.CREW_LIST_URL_MAX_LENGTH) return url
+        log.error("Partner crew-list URL is {} chars, dropped (reservation {}); set it by hand in admin", url.length, reservationId)
+        return null
+    }
+
     private fun createReservationExtras(
         reservation: Reservation,
         externalReservation: ReservationResponseWrapper,
@@ -297,10 +330,7 @@ class ReservationMutationService(
             val externalReservationExtra = ExternalReservationExtra()
             externalReservationExtra.reservation = reservation
             externalReservationExtra.externalId = it.externalId
-            // The partner owns this text and MMK sometimes puts a whole description into the name. Anything over
-            // the column width failed bean validation at flush and took the WHOLE booking down with a 502 after the
-            // partner option had already been created (19.9.2026: 8 attempts on one yacht). Our copy is display-only.
-            externalReservationExtra.name = it.name?.take(ExternalReservationExtra.NAME_MAX_LENGTH)
+            externalReservationExtra.name = it.name
             externalReservationExtra.quantity = it.quantity?.toBigDecimal()
             externalReservationExtra.unit = it.unit
             externalReservationExtra.price = it.price
@@ -318,7 +348,7 @@ class ReservationMutationService(
         val reservation = reservationRepository.findById(reservationId).orElseThrow()
 
         reservation.status = externalReservation.status
-        reservation.externalStatus = externalReservation.externalStatus
+        reservation.externalStatus = fitExternalStatus(externalReservation.externalStatus)
         reservation.sysStatus = ReservationStatus.RESERVATION
         // Booking number was already assigned at createReservation; only fill
         // in here for the rare case a reservation entered directly in the
@@ -326,7 +356,7 @@ class ReservationMutationService(
         if (reservation.reservationNumber == null) {
             reservation.reservationNumber = bookingNumberService.next(reservation.dateFrom!!.year)
         }
-        reservation.crewListUrl = externalReservation.crewListUrl
+        reservation.crewListUrl = fitCrewListUrl(externalReservation.crewListUrl, reservationId)
 
         val reservationFlow = reservation.reservationFlow!!
         offerMutationService.updateOfferStatus(reservationFlow.offer!!.id!!, OfferStatus.RESERVED)
@@ -442,7 +472,7 @@ class ReservationMutationService(
     ): ReservationDto {
         val reservation = reservationRepository.findById(reservationId).orElseThrow()
         reservation.status = externalReservation.status
-        reservation.externalStatus = externalReservation.externalStatus
+        reservation.externalStatus = fitExternalStatus(externalReservation.externalStatus)
         reservation.sysStatus = ReservationStatus.CANCELLED
         reservationRepository.save(reservation)
 

@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.exceptions.ExternalOptionMappingException
 import hr.workspace.boat4you.domains.external.model.ReservationData
 import hr.workspace.boat4you.domains.external.nausys.client.NauSysRetryableClient
 import hr.workspace.boat4you.domains.external.nausys.config.NauSysAuthProvider
@@ -108,7 +109,24 @@ class NausysReservationIntegrationService(
             )
         val reservationResponse = nauSysRetryableClient.createOption(optionRequest)
 
-        return toResponseWrapper(reservationResponse, fallbackLocationFrom, fallbackLocationTo)
+        // From here the option EXISTS at NauSys. The booking controller can only release an option it holds a wrapper
+        // for, so a mapping failure here used to leave it dangling (yacht blocked at the partner, FREE with us)
+        // until it expired. Release it ourselves - straight on the client, because cancelOption() maps the response.
+        return try {
+            toResponseWrapper(reservationResponse, fallbackLocationFrom, fallbackLocationTo).requireStorableCode()
+        } catch (e: Exception) {
+            log.error("NauSys option {} created but its response could not be mapped - releasing it", reservationResponse.id, e)
+            runCatching {
+                nauSysRetryableClient.stornoOption(
+                    RestYachtReservationRequest(
+                        credentials = nauSysAuthProvider.auth,
+                        id = reservationResponse.id,
+                        uuid = reservationResponse.uuid,
+                    ),
+                )
+            }.onFailure { log.error("Release of dangling NauSys option {} FAILED - storno it by hand at NauSys", reservationResponse.id, it) }
+            throw ExternalOptionMappingException("NauSys option ${reservationResponse.id} could not be mapped", e)
+        }
     }
 
     fun confirmReservation(

@@ -13,7 +13,6 @@ import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.Table
 import jakarta.validation.constraints.NotNull
-import jakarta.validation.constraints.Size
 import org.hibernate.annotations.OnDelete
 import org.hibernate.annotations.OnDeleteAction
 import java.math.BigDecimal
@@ -35,8 +34,9 @@ open class ExternalReservationExtra {
     @Column(name = "external_id")
     open var externalId: Long? = null
 
-    @Size(max = NAME_MAX_LENGTH)
-    @Column(name = "name", length = NAME_MAX_LENGTH)
+    // Partner-owned text, unbounded on purpose (V9_58). A 222-char MMK name against the former varchar(200) failed
+    // bean validation at flush and took whole bookings down after the partner option existed (19.9.2026).
+    @Column(name = "name", length = Integer.MAX_VALUE)
     open var name: String? = null
 
     @Column(name = "quantity")
@@ -51,9 +51,4 @@ open class ExternalReservationExtra {
 
     @Column(name = "payable_in_base")
     open var payableInBase: Boolean? = null
-
-    companion object {
-        /** Width of `external_reservation_extras.name`. Partner-supplied names are cut to this before persist. */
-        const val NAME_MAX_LENGTH = 200
-    }
 }

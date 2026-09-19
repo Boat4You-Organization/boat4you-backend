@@ -1,5 +1,53 @@
 # Backend deploy notes
 
+## 2026-09-19 (b) — 🛡️ Booking path hardened after the morning incident (V9_58 + alert) — ⏳ BUILT, waiting for Mario's go
+
+**Mario: "sredi da se to više ne događa".** Three Opus finders + nine skeptics went through everything that can fail a
+booking after the partner option exists, then three reviewers attacked the diff (raw results:
+`boat4you-delivery/_booking-failure-audit-2026-09-19/`). What ships in this jar:
+
+1. **V9_58 — two partner-text columns lose their length limit** (`external_reservation_extras.name` 200,
+   `reservation_extras.yacht_extras_key` 255 → unbounded `varchar`, the same type `reservation_extras.name` already is;
+   entities drop `@Size`, `length = Integer.MAX_VALUE`). The second column was the same bug one step earlier and was
+   **live**: `extrasKey()` falls back to the partner NAME when an extra has no catalogue mapping, 17 obligatory extras of
+   264 chars on MMK yacht 7828 made **33 free future offers unbookable**, failing in `createReservationFlow` before the
+   partner was called, with no log that named the yacht. The key is never cut (it is matched back against
+   `extrasKey()`). The morning's `take(200)` stop-gap is gone: the full partner wording is stored again. No view, index
+   or constraint depends on either column (checked on production); `SET LOCAL lock_timeout = '5s'` so a busy table
+   makes the migration fail fast and retry on the next systemd restart instead of queueing every reader behind it.
+   Mixed versions are safe both ways (old jar validates against the wider columns; rollback to `.prev` is fine).
+   For up to ~20 min after the migration cusma3 may log `cached plan must not change result type` on
+   `reservation_extras` reads until its connections recycle or it is restarted — expected, not a regression.
+2. **Partner strings on `Reservation` are fitted at every copy site** — `externalStatus` (30, also AFTER the
+   OPTION→RESERVATION replace, which makes it longer), `paymentNote` / `bankDetails` / `note` (2000, WARN names the
+   flow; the full payload stays in `reservation.response`). `crewListUrl` over 1000 is **dropped, not cut** (a cut URL is
+   a dead link; null is a state every consumer handles; ERROR log, admin can paste it). These columns are projected by
+   `reservation_view`, which is why they are fitted rather than widened. `currency` is only trimmed/upper-cased.
+   `externalReservationCode` is **never cut**: NauSys gets it back as the `uuid` on confirm (Stripe webhook, after
+   capture) and cancel. A code over 100 is refused inside the adapter while the option can still be released.
+3. **Both adapters release an option whose response cannot be mapped** (`ExternalOptionMappingException`). The booking
+   controller can only release an option it holds a wrapper for, so a mapping failure used to leave the option
+   dangling at the partner (yacht blocked there, FREE with us) until it expired. Released by id straight on the
+   client, because `cancelOption()` maps the response again. Deliberately not in the controllers' allow-list → 502.
+4. **`BookingFailureAlertService` — a failed booking mails every admin** with the customer's name, e-mail, phone, the
+   yacht (Manufacturer Model Name), dates, price and the scrubbed root cause (PostgreSQL `Detail:` lines never leave).
+   Two kinds, told apart in the subject: `🚨 Rezervacija NIJE prošla` (our defect) and `ℹ️ Partner odbio rezervaciju`
+   (yacht gone at the partner — not an incident, but a customer who just tried to pay for a week is a lead). Also
+   fires when `createReservationFlow` itself dies on a non-domain exception (no flow row exists → built from the
+   request). Throttle: one mail per customer+offer per 30 min (armed only AFTER the mail is queued), 20 mails/hour
+   overall, then the ERROR log line is the alert. No Reply-To on purpose (internal diagnostics in the body).
+
+**Tests:** 12 new (`ExternalReservationExtraNameTests` 2, `MmkOptionMappingReleaseTests` 2,
+`NausysOptionMappingReleaseTests` 1, `BookingFailureAlertServiceTests` 7), ktlint clean. Full suite: 31 of 268 fail, all
+pre-existing and untouched (26 × `ReservationPaymentPhasesServiceTest` hard-coded 2026 dates, `NauSysDateTimeWrapperTests`
+same, `Boat4youWsApplicationTests` needs DB credentials, `MatchersTests` 1, `ReservationOptionsCombinationProviderTests` 2).
+**Web counterpart:** boat4you-web `81d720fd` (translated persistent failure panel ×9 locales + pre-filled quote modal).
+Its copy promises "our team has been notified" — **deploy this jar first**, the web after.
+**Not done, on purpose:** admin list of failed flows (the mail carries the contact), retry/idempotency guard on rapid
+re-submits, `updateCrewListUrl` admin input length, fetch timeout on the web booking call, Stripe-path English strings.
+
+---
+
 ## 2026-09-19 — 🚑 Booking hotfix: a partner extra name over 200 chars took the whole booking down (`87a674b`) — ✅ LIVE cusma2 10:12 UTC, ⏳ cusma3 parity
 
 **Report (Mario, from a customer):** "ne može napraviti rezervaciju online". **Measured:** every `POST /public/reservations`

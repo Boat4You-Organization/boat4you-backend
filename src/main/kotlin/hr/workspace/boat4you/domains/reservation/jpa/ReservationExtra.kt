@@ -13,7 +13,6 @@ import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
 import jakarta.persistence.ManyToOne
 import jakarta.persistence.Table
-import jakarta.validation.constraints.Size
 import org.hibernate.annotations.OnDelete
 import org.hibernate.annotations.OnDeleteAction
 import java.math.BigDecimal
@@ -34,8 +33,9 @@ open class ReservationExtra {
     @Column(name = "price", nullable = false)
     open var price: BigDecimal? = null
 
-    @Size(max = 255)
-    @Column(name = "yacht_extras_key")
+    // Unbounded on purpose (V9_58): extrasKey() falls back to the partner-owned NAME when the extra has no catalogue
+    // mapping, and it must NOT be cut - it is matched back against extrasKey() (ExtrasVariantResolver).
+    @Column(name = "yacht_extras_key", length = Integer.MAX_VALUE)
     open var yachtExtrasKey: String? = null
 
     @ManyToOne(fetch = FetchType.LAZY)

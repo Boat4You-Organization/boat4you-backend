@@ -102,6 +102,8 @@ class EmailService(
 
     private val templatesWithoutSharedFooter = setOf(
         "email/inquiryNotification",
+        // Plain <pre> admin mails: no cid: reference at all, the shared PNGs would arrive as orphan attachments.
+        "email/adminBookingFailed",
         // userInvite + passwordReset + birthdayWish + fewMoreDetails +
         // reservationConfirmed + optionExpiryReminder + optionExpired were
         // redesigned around inline-SVG logo + footer (no boat4youLogoFull /

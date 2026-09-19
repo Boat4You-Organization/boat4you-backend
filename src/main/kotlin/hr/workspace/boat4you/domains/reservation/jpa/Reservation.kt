@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
+import hr.workspace.boat4you.domains.reservation.model.ReservationResponseWrapper
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -82,8 +83,8 @@ open class Reservation {
     /**
      * Original external status int for MMK values, string for Nausys
      */
-    @Size(max = 30)
-    @Column(name = "external_status", length = 30)
+    @Size(max = EXTERNAL_STATUS_MAX_LENGTH)
+    @Column(name = "external_status", length = EXTERNAL_STATUS_MAX_LENGTH)
     open var externalStatus: String? = null
 
     @Column(name = "option_expires_at")
@@ -105,8 +106,8 @@ open class Reservation {
      * Partner reservation code (MMK reservationCode / Nausys UUID). Null
      * for admin "fictitious" replacement reservations — no partner call.
      */
-    @Size(max = 100)
-    @Column(name = "external_reservation_code", length = 100)
+    @Size(max = ReservationResponseWrapper.EXTERNAL_CODE_MAX_LENGTH)
+    @Column(name = "external_reservation_code", length = ReservationResponseWrapper.EXTERNAL_CODE_MAX_LENGTH)
     open var externalReservationCode: String? = null
 
     /**
@@ -181,20 +182,20 @@ open class Reservation {
     @Column(name = "total_price", nullable = false)
     open var totalPrice: BigDecimal? = null
 
-    @Size(max = 2000)
-    @Column(name = "payment_note", length = 2000)
+    @Size(max = PARTNER_TEXT_MAX_LENGTH)
+    @Column(name = "payment_note", length = PARTNER_TEXT_MAX_LENGTH)
     open var paymentNote: String? = null
 
     @Size(max = 3)
     @Column(name = "currency", length = 3)
     open var currency: String? = null
 
-    @Size(max = 2000)
-    @Column(name = "bank_details", length = 2000)
+    @Size(max = PARTNER_TEXT_MAX_LENGTH)
+    @Column(name = "bank_details", length = PARTNER_TEXT_MAX_LENGTH)
     open var bankDetails: String? = null
 
-    @Size(max = 2000)
-    @Column(name = "note", length = 2000)
+    @Size(max = PARTNER_TEXT_MAX_LENGTH)
+    @Column(name = "note", length = PARTNER_TEXT_MAX_LENGTH)
     open var note: String? = null
 
     @Column(name = "discount")
@@ -206,7 +207,15 @@ open class Reservation {
     @OneToMany(mappedBy = "reservation", cascade = [CascadeType.ALL], orphanRemoval = true)
     open var externalReservationExtras: MutableSet<ExternalReservationExtra> = mutableSetOf()
 
-    @Size(max = 1000)
-    @Column(name = "crew_list_url", length = 1000)
+    @Size(max = CREW_LIST_URL_MAX_LENGTH)
+    @Column(name = "crew_list_url", length = CREW_LIST_URL_MAX_LENGTH)
     open var crewListUrl: String? = null
+
+    companion object {
+        // Widths of the columns that hold partner-owned text. These columns are projected by reservation_view, so they
+        // cannot simply be widened; ReservationMutationService fits the partner value to them instead (19.9.2026).
+        const val EXTERNAL_STATUS_MAX_LENGTH = 30
+        const val PARTNER_TEXT_MAX_LENGTH = 2000
+        const val CREW_LIST_URL_MAX_LENGTH = 1000
+    }
 }

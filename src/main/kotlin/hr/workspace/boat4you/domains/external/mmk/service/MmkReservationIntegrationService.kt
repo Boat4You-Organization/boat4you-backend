@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.exceptions.ExternalCancellationException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException
+import hr.workspace.boat4you.domains.external.exceptions.ExternalOptionMappingException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException
 import hr.workspace.boat4you.domains.external.mmk.client.MmkRetryableClient
@@ -70,9 +71,8 @@ class MmkReservationIntegrationService(
         // No `$reservationRequest`: its toString carries clientName (PII) into the log.
         log.info("Creating MMK option yachtId={} {}→{}", reservationData.externalYachtId, reservationData.startDate, reservationData.endDate)
 
-        return try {
-            val reservationResponse = mmkRetryableClient.createOption(reservationRequest)
-            toResponseWrapper(reservationResponse, null, fallbackLocationFrom, fallbackLocationTo)
+        val reservationResponse = try {
+            mmkRetryableClient.createOption(reservationRequest)
         } catch (e: HttpStatusCodeException) {
             // Surface partner's exact reason in the log so we can debug it
             // (e.g. `"Yacht not available in period."`). The exception message
@@ -85,6 +85,18 @@ class MmkReservationIntegrationService(
         } catch (e: Exception) {
             log.error("Error creating MMK option (yachtId={})", reservationData.externalYachtId, e)
             throw ExternalOptionException("Failed to create MMK option for yachtId: ${reservationData.externalYachtId}")
+        }
+
+        // From here the option EXISTS at MMK. The booking controller can only release an option it holds a wrapper
+        // for, so a mapping failure here used to leave it dangling (yacht blocked at the partner, FREE with us)
+        // until it expired. Release it ourselves - by id, not via cancelOption(), which maps the response again.
+        return try {
+            toResponseWrapper(reservationResponse, null, fallbackLocationFrom, fallbackLocationTo).requireStorableCode()
+        } catch (e: Exception) {
+            log.error("MMK option {} created but its response could not be mapped - releasing it", reservationResponse.id, e)
+            runCatching { mmkRetryableClient.cancelOption(reservationResponse.id) }
+                .onFailure { log.error("Release of dangling MMK option {} FAILED - cancel it by hand at MMK", reservationResponse.id, it) }
+            throw ExternalOptionMappingException("MMK option ${reservationResponse.id} could not be mapped", e)
         }
     }
 

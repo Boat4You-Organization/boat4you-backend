@@ -14,6 +14,7 @@ import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.exceptions.BookingCreationException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
+import hr.workspace.boat4you.domains.reservation.service.BookingFailureAlertService
 import hr.workspace.boat4you.domains.reservation.service.ReservationEmailService
 import hr.workspace.boat4you.domains.reservation.service.ReservationFlowMutationService
 import hr.workspace.boat4you.domains.reservation.service.ReservationFlowQueryingService
@@ -54,6 +55,7 @@ class ReservationController(
     private val reservationFlowMutationService: ReservationFlowMutationService,
     private val reservationIntegrationService: ReservationIntegrationService,
     private val reservationMutationService: ReservationMutationService,
+    private val bookingFailureAlertService: BookingFailureAlertService,
     private val reservationEmailService: ReservationEmailService,
     private val reservationFlowQueryingService: ReservationFlowQueryingService,
     private val paymentPhasesService: ReservationPaymentPhasesService,
@@ -150,7 +152,19 @@ class ReservationController(
         // Step 1 — OUR DB flow (+ payment phases, user, invite email). Own
         // @Transactional; COMMITS before we return. It also flips the offer
         // FREE -> OPTION under the pessimistic lock (B2 double-submit guard).
-        val reservationFlowId = reservationFlowMutationService.createReservationFlow(createReservationDto)
+        val reservationFlowId =
+            try {
+                reservationFlowMutationService.createReservationFlow(createReservationDto)
+            } catch (e: Exception) {
+                // Our own exceptions and IllegalArgument are ordinary rejections (offer gone, agency inactive, bad
+                // voucher). Anything else is a defect that loses the booking before a flow row even exists - the
+                // other half of 19.9.2026 (a 264-char partner extra name as the extras key), which left no trace.
+                if (e !is IllegalArgumentException && !e.javaClass.name.startsWith("hr.workspace.boat4you.")) {
+                    runCatching { bookingFailureAlertService.alertRejectedRequest(createReservationDto, e) }
+                        .onFailure { log.error("Booking failure alert failed for offer {}", createReservationDto.offerId, it) }
+                }
+                throw e
+            }
 
         // Steps 2-4 happen AFTER step 1 already committed, so any failure here
         // would otherwise leave an orphan live IN_PROGRESS flow + the offer
@@ -234,6 +248,15 @@ class ReservationController(
             // original failure.
             runCatching { reservationMutationService.abandonFailedFlow(reservationFlowId) }
                 .onFailure { log.error("Compensation: abandonFailedFlow failed for flow {}", reservationFlowId, it) }
+
+            // Tell a human while the customer is still reachable - the flow row holds who it was. On 19.9.2026 eight
+            // failed attempts went unnoticed until the customer wrote to us. Best-effort, never masks the failure.
+            val partnerRejection =
+                e is hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException ||
+                    e is hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException ||
+                    e is hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException
+            runCatching { bookingFailureAlertService.alertFailedFlow(reservationFlowId, e, partnerRejection) }
+                .onFailure { log.error("Booking failure alert failed for flow {}", reservationFlowId, it) }
 
             // Already-clean domain exceptions (partner option/reservation error,
             // yacht/agency not active, flow not found, ...) keep their existing
