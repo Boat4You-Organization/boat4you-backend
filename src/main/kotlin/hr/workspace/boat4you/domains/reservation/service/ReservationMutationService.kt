@@ -297,7 +297,10 @@ class ReservationMutationService(
             val externalReservationExtra = ExternalReservationExtra()
             externalReservationExtra.reservation = reservation
             externalReservationExtra.externalId = it.externalId
-            externalReservationExtra.name = it.name
+            // The partner owns this text and MMK sometimes puts a whole description into the name. Anything over
+            // the column width failed bean validation at flush and took the WHOLE booking down with a 502 after the
+            // partner option had already been created (19.9.2026: 8 attempts on one yacht). Our copy is display-only.
+            externalReservationExtra.name = it.name?.take(ExternalReservationExtra.NAME_MAX_LENGTH)
             externalReservationExtra.quantity = it.quantity?.toBigDecimal()
             externalReservationExtra.unit = it.unit
             externalReservationExtra.price = it.price

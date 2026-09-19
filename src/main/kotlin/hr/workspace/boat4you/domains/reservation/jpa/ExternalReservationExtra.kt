@@ -35,8 +35,8 @@ open class ExternalReservationExtra {
     @Column(name = "external_id")
     open var externalId: Long? = null
 
-    @Size(max = 200)
-    @Column(name = "name", length = 200)
+    @Size(max = NAME_MAX_LENGTH)
+    @Column(name = "name", length = NAME_MAX_LENGTH)
     open var name: String? = null
 
     @Column(name = "quantity")
@@ -51,4 +51,9 @@ open class ExternalReservationExtra {
 
     @Column(name = "payable_in_base")
     open var payableInBase: Boolean? = null
+
+    companion object {
+        /** Width of `external_reservation_extras.name`. Partner-supplied names are cut to this before persist. */
+        const val NAME_MAX_LENGTH = 200
+    }
 }
