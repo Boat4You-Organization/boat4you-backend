@@ -1,5 +1,36 @@
 # Backend deploy notes
 
+## 2026-09-21 — 👻 MMK phantom FREE weeks hidden (ops data fix, no jar) — ✅ APPLIED 21.9. ~23:20 UTC
+
+**Mario:** LA MAR (yacht 11990, Ionian Charter) shows the whole of 2027 free with prices while the agency has not made
+next season's price list. **Proven:** MMK quotes nothing for that yacht in 2027 (exact dates, `flexibility=1`, single
+`yachtId`: `[]`; a 2026 week still returns an offer; a control yacht returns 2027 offers). Our 70 FREE 2027 rows carry the
+2026 base prices - MMK once quoted 2027 from the old list, then stopped.
+**Root cause:** since `58d4623` (20.7.) `syncOffersForAgency` is upsert-only (the agency-level yearly feed is incomplete
+and its withdrawal pass had hidden ~81k bookable weeks), and `MmkStaleOfferReverifyService` only heals
+UNAVAILABLE -> FREE. **Nothing covers FREE -> "the partner no longer sells it".** Occupancy is covered by the availability
+sync, but a withdrawn price list is not occupancy.
+**What was done (no deploy):** read-only probe from cusma2 of all 6,929 MMK yacht-years with FREE weekly offers from
+2027-01-01 (same yacht selection as the reverifier): per-yacht year screen, then exact-date checks. 0 API errors.
+199 yacht-years fully unquoted (163 in 2027, 36 in 2028) + 8 yachts partly; then EVERY free week of those candidates
+checked by exact dates (5,909 calls: 5,088 empty, 821 quoted; the 88 empty weeks of mixed yachts confirmed twice).
+One transaction on cusma4: **10,375 offer rows FREE -> UNAVAILABLE** (8,389 weekly + 1,986 multi-week rows overlapping a
+confirmed-empty week) on **189 yachts**; no reservation flow referenced any of them. Most affected: Le Boat 43 yachts,
+Yachtcharter De Drait 61, Adriatic Sailing 13, Ionian Charter 11, Ultra Sailing 9.
+**Reversible and self-healing:** the rows match `findStaleUnavailableMmkCombos`, so the nightly reverifier (09:25 UTC)
+turns a week back to FREE with the right price the morning after the agency publishes it. Evidence in
+`ops_mmk_phantom_weeks_20260921`, row backup in `ops_offer_phantom_backup_20260921`. Undo:
+`update offer o set status=b.old_status from ops_offer_phantom_backup_20260921 b where o.id=b.offer_id and o.status='UNAVAILABLE';`
+Scripts + raw results: `boat4you-delivery/_mmk-phantom-audit-2026-09-21/`.
+**Know-how:** the per-yacht `flexibility=6` year call is NOT reliable either (99 yacht-years answered 0 for the year while
+exact weeks were quoted) - only exact-date calls are evidence. The reverifier's nightly load grows by ~5k combos.
+**Still open (needs a jar):** this was a one-off sweep. The permanent fix is the mirror image of the reverifier - a
+scheduled FREE-side check (sample weeks per yacht-season, escalate to every week on an empty sample, exact-date only,
+HTTP 200 + empty confirmed twice, abort the run when an unusual share comes back empty). Not covered at all: yachts that
+are quoted for part of a year and phantom for the rest, and NauSys.
+
+---
+
 ## 2026-09-19 (b) — 🛡️ Booking path hardened after the morning incident (V9_58 + alert) — ⏳ BUILT, waiting for Mario's go
 
 **Mario: "sredi da se to više ne događa".** Three Opus finders + nine skeptics went through everything that can fail a
