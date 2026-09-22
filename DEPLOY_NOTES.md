@@ -1,5 +1,38 @@
 # Backend deploy notes
 
+## 2026-09-22 — 👻 MMK free-offer reverifier (V9_59) — the permanent fix for phantom FREE weeks — ⏳ BUILT (jar `9c4b8e7f`), deploy cusma2 + cusma3
+
+**Mario:** "podaci kod nas trebaju biti isti kao na MMK i NauSys". NauSys already flips a FREE week the partner stopped
+returning to OPTION_WAITING (its own disappearance pass). MMK had nothing in that direction since `58d4623` (20.7.)
+made the agency sweep upsert-only — hence the 21.9. one-off (10,375 rows on 189 yachts hidden by hand).
+**What ships:** `MmkFreeOfferReverifyService` + daily job `runDailyFreeReverify` at **13:30 UTC** (data-sync profile,
+ShedLock PT2H30M), the mirror image of the 09:25 UNAVAILABLE→FREE reverifier. Per yacht-season (FREE 7-night weeks
+grouped by yacht + year): probe first/middle/last week with the ONLY trusted MMK call (exact dates, `flexibility=1`,
+single `yachtId`); if all three are empty, ask every FREE week of that season. **A week is hidden only when two daily
+runs on different days both found it empty** (`mmk_free_week_strike`, V9_59: first_empty_on → hidden_on, hidden_rows;
+a quote deletes the row). **Evidence scope == write scope:** only the probed 7-night rows are flipped
+(`markWeekUnavailable`), never a 14/21/28-night row that merely overlaps — that was the shape of the reverted 55de710.
+**Breakers, all before any write:** < 50 decided seasons → abort ("partner unreachable"); > 10 % of probes failed →
+abort ("degraded"); > 10 % of decided seasons empty (3× the 2.9 % baseline of 21.9.) → abort ("outage"); an agency
+with ≥ 5 decided seasons and > 50 % empty is **escalated in the ERROR log and NOT hidden** (a broken feed and a
+withdrawn list look identical — a human decides); ≤ 400 seasons verified per run; 100-minute wall-clock budget
+(`getOffers` retries 3× with a 60 s read timeout, an outage must not run into the 16:40 availability slot).
+**Back-off:** the 09:25 reverifier skips a week this job hid for 7 days (`findStaleUnavailableMmkCombos`), and clears
+the strike when MMK quotes it again — so a published price list re-opens the week within a day, with the new price.
+**Reviewed** by two adversarial Opus passes (`_mmk-phantom-audit-2026-09-21/` has the 21.9. probe data); every blocker
+and major is in the version above (narrow write scope, two-day evidence, unknown-share and low-decided breakers,
+per-agency cap, per-run cap, time budget, 13:30 not 13:15, strike table as audit trail). Tests: 8 behavioural
+(`MmkFreeOfferReverifyServiceTests`) — the native SQL itself is not covered by a Testcontainers test (Docker is not
+available here), so the first run is watched: `journalctl -u boat4youscheduler | grep "free-offer reverify"`.
+**Expected first days:** day 1 ≈ 0 hidden, only first strikes (the 21.9. sweep already hid the known phantoms); the
+strike table fills, day 2 hides what stayed empty. **Rollback:** `webservice.jar.prev`; the table is additive and
+harmless to an older jar. Undo of a run: `UPDATE offer o SET status='FREE' FROM mmk_free_week_strike k WHERE
+k.yacht_id=o.yacht_id AND k.date_from=o.date_from AND k.date_to=o.date_to AND k.hidden_on = <date> AND o.status='UNAVAILABLE'`.
+**Not covered on purpose:** partial seasons where the first/middle/last week is quoted but a block in between is not
+(under-hides, never over-hides); NauSys (has its own pass).
+
+---
+
 ## 2026-09-21 — 👻 MMK phantom FREE weeks hidden (ops data fix, no jar) — ✅ APPLIED 21.9. ~23:20 UTC
 
 **Mario:** LA MAR (yacht 11990, Ionian Charter) shows the whole of 2027 free with prices while the agency has not made
@@ -31,7 +64,7 @@ are quoted for part of a year and phantom for the rest, and NauSys.
 
 ---
 
-## 2026-09-19 (b) — 🛡️ Booking path hardened after the morning incident (V9_58 + alert) — ⏳ BUILT, waiting for Mario's go
+## 2026-09-19 (b) — 🛡️ Booking path hardened after the morning incident (V9_58 + alert) — ✅ LIVE cusma2 22.9. 07:26 UTC (V9_58 applied in 9 ms) + cusma3 07:58 UTC; web `81d720fd` LIVE 07:28 UTC (BUILD_ID `y4M4frrDu66tpFBorIi6t`)
 
 **Mario: "sredi da se to više ne događa".** Three Opus finders + nine skeptics went through everything that can fail a
 booking after the partner option exists, then three reviewers attacked the diff (raw results:

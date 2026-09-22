@@ -34,6 +34,7 @@ class MmkStaleOfferReverifyService(
     private val offerRepository: OfferRepository,
     private val mmkRetryableClient: MmkRetryableClient,
     private val mmkYachtOfferSyncService: MmkYachtOfferSyncService,
+    private val mmkFreeOfferReverifyService: MmkFreeOfferReverifyService,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -132,6 +133,8 @@ class MmkStaleOfferReverifyService(
                 consecutiveErrors = 0
                 if (response.isNotEmpty()) {
                     mmkYachtOfferSyncService.syncOffers(response)
+                    // MMK sells the week again: whatever the free-offer reverifier recorded about it is void.
+                    mmkFreeOfferReverifyService.clearStrike(combo.yachtId, combo.dateFrom, combo.dateTo)
                     reactivated.incrementAndGet()
                 }
             } catch (e: Exception) {

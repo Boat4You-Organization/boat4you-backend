@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.external.mmk.job
 
+import hr.workspace.boat4you.domains.external.mmk.service.MmkFreeOfferReverifyService
 import hr.workspace.boat4you.domains.external.mmk.service.MmkStaleOfferReverifyService
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component
 @Component
 class MmkStaleReverifyJob(
     private val mmkStaleOfferReverifyService: MmkStaleOfferReverifyService,
+    private val mmkFreeOfferReverifyService: MmkFreeOfferReverifyService,
     // One-shot trigger for the initial 54k-combo backlog drain: set on the scheduler node,
     // deploy/restart, remove after the run (a stray restart with the flag on is harmless —
     // post-backlog the run is near-empty and idempotent).
@@ -35,6 +37,21 @@ class MmkStaleReverifyJob(
         val start = System.currentTimeMillis()
         mmkStaleOfferReverifyService.reverifyStaleUnavailableOffers()
         log.info("Nightly MMK stale-offer reverify took ${System.currentTimeMillis() - start} ms")
+    }
+
+    // The other direction (FREE weeks MMK no longer sells). 13:30 UTC: the 12:40 MMK availability run takes 10-40 min
+    // (measured up to 09:20 for the 08:40 run, hence the 09:25 slot above), so 13:30 gives it the same margin and the
+    // two MMK consumers never call the partner together. Budgeted at 100 min inside the service; lock covers that.
+    @Scheduled(cron = "0 30 13 * * ?")
+    @SchedulerLock(name = "mmkFreeOfferReverify", lockAtMostFor = "PT2H30M")
+    fun runDailyFreeReverify() {
+        log.info("Starting daily MMK free-offer reverify")
+        val start = System.currentTimeMillis()
+        val r = mmkFreeOfferReverifyService.reverifyFreeOffers()
+        log.info(
+            "Daily MMK free-offer reverify took ${System.currentTimeMillis() - start} ms: ${r.seasons} seasons, ${r.emptySeasons} unquoted, " +
+                "${r.firstStrikes} first strikes, ${r.hiddenWeeks} weeks hidden (${r.hiddenRows} rows)${r.aborted?.let { "; ABORTED: $it" } ?: ""}",
+        )
     }
 
     @EventListener(ApplicationReadyEvent::class)
