@@ -51,6 +51,7 @@ import jakarta.persistence.EntityManager
 import jakarta.persistence.criteria.CriteriaBuilder
 import jakarta.persistence.criteria.CriteriaQuery
 import jakarta.persistence.criteria.Expression
+import jakarta.persistence.criteria.Order
 import jakarta.persistence.criteria.Predicate
 import jakarta.persistence.criteria.Root
 import org.slf4j.LoggerFactory
@@ -382,69 +383,79 @@ class YachtQueryingService(
         // so MAX() over the per-offer group keeps the value intact (every row
         // in a yacht's group shares the same agency).
         val recommendedBoost = cb.max(root.get<Int>("agencyRecommended"))
-        when (sortBy) {
-            "asc" -> {
-                cq.orderBy(cb.asc(totalPriceExpr))
-            }
+        // Every sort ends on the yacht id (the GROUP BY key, unique per result row) so the ORDER BY
+        // is a total order. Without it a page boundary that falls inside a run of tied keys —
+        // hundreds of yachts share a searched-week total, a deposit or a length — is cut at a
+        // different place on each LIMIT/OFFSET: Postgres' bounded top-N heap sort orders equal keys
+        // differently for each bound, so a yacht came back on two neighbouring pages while another
+        // came back on none (22.9.2026: Croatia catamarans 897 rows / 894 distinct over 9 pages;
+        // the admin Offers walk reported the 3 missing). Appended after the `when` so no branch can
+        // forget it; see YachtSearchPagingStabilityTest.
+        val primaryOrders: List<Order> =
+            when (sortBy) {
+                "asc" -> {
+                    listOf(cb.asc(totalPriceExpr))
+                }
 
-            "desc" -> {
-                cq.orderBy(cb.desc(totalPriceExpr))
-            }
+                "desc" -> {
+                    listOf(cb.desc(totalPriceExpr))
+                }
 
-            "lowestPrepayment" -> {
-                cq.orderBy(cb.asc(cb.min(root.get<BigDecimal>("lowestPrepayment"))))
-            }
+                "lowestPrepayment" -> {
+                    listOf(cb.asc(cb.min(root.get<BigDecimal>("lowestPrepayment"))))
+                }
 
-            "discount" -> {
-                // Deals/promo pages: biggest saving vs partner list price first.
-                // Ordered by the client/list ratio of the SAME searched-week
-                // expressions the card displays, so the ordering matches the
-                // "-X%" chips. NULLIF guards zero list prices; COALESCE sends
-                // yachts without a list price (ratio NULL) to the end together
-                // with undiscounted ones (ratio 1); ties break cheapest-first.
-                val savingRatio =
-                    cb.coalesce(
-                        cb.quot(
-                            exactPeriodOrMin(cb, root.get<BigDecimal>("clientPrice"), dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate),
-                            cb.nullif(
-                                exactPeriodOrMin(cb, root.get<BigDecimal>("listPrice"), dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate),
-                                BigDecimal.ZERO,
-                            ),
-                        ).`as`(BigDecimal::class.java),
-                        cb.literal(BigDecimal.ONE),
-                    )
-                cq.orderBy(cb.asc(savingRatio), cb.asc(totalPriceExpr))
-            }
+                "discount" -> {
+                    // Deals/promo pages: biggest saving vs partner list price first.
+                    // Ordered by the client/list ratio of the SAME searched-week
+                    // expressions the card displays, so the ordering matches the
+                    // "-X%" chips. NULLIF guards zero list prices; COALESCE sends
+                    // yachts without a list price (ratio NULL) to the end together
+                    // with undiscounted ones (ratio 1); ties break cheapest-first.
+                    val savingRatio =
+                        cb.coalesce(
+                            cb.quot(
+                                exactPeriodOrMin(cb, root.get<BigDecimal>("clientPrice"), dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate),
+                                cb.nullif(
+                                    exactPeriodOrMin(cb, root.get<BigDecimal>("listPrice"), dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate),
+                                    BigDecimal.ZERO,
+                                ),
+                            ).`as`(BigDecimal::class.java),
+                            cb.literal(BigDecimal.ONE),
+                        )
+                    listOf(cb.asc(savingRatio), cb.asc(totalPriceExpr))
+                }
 
-            "lengthAsc" -> {
-                // Yachts without length land at the end — COALESCE maps NULL to a
-                // large value so ascending order pushes them to the bottom. Postgres'
-                // default ASC already does this; the COALESCE makes it explicit and
-                // dialect-independent. MIN() because only `id` is grouped —
-                // length is constant per yacht, so MIN is the value itself.
-                cq.orderBy(cb.asc(cb.coalesce(cb.min(root.get<BigDecimal>("length")), cb.literal(BigDecimal.valueOf(9999)))))
-            }
+                "lengthAsc" -> {
+                    // Yachts without length land at the end — COALESCE maps NULL to a
+                    // large value so ascending order pushes them to the bottom. Postgres'
+                    // default ASC already does this; the COALESCE makes it explicit and
+                    // dialect-independent. MIN() because only `id` is grouped —
+                    // length is constant per yacht, so MIN is the value itself.
+                    listOf(cb.asc(cb.coalesce(cb.min(root.get<BigDecimal>("length")), cb.literal(BigDecimal.valueOf(9999)))))
+                }
 
-            "lengthDesc" -> {
-                // Default Postgres DESC puts NULLs first, which surfaces yachts
-                // with no length as the "longest" — wrong. Map NULL to -1 so they
-                // fall to the bottom while real lengths still sort largest-first.
-                cq.orderBy(cb.desc(cb.coalesce(cb.min(root.get<BigDecimal>("length")), cb.literal(BigDecimal.valueOf(-1)))))
-            }
+                "lengthDesc" -> {
+                    // Default Postgres DESC puts NULLs first, which surfaces yachts
+                    // with no length as the "longest" — wrong. Map NULL to -1 so they
+                    // fall to the bottom while real lengths still sort largest-first.
+                    listOf(cb.desc(cb.coalesce(cb.min(root.get<BigDecimal>("length")), cb.literal(BigDecimal.valueOf(-1)))))
+                }
 
-            "recommendedScore", "recommended" -> {
-                // Curated partners first (DESC on the 0/1 boost ⇒ 1s before 0s),
-                // then cheapest within each bucket. The legacy
-                // `recommended_score` column is left in the view but no longer
-                // drives this sort.
-                cq.orderBy(cb.desc(recommendedBoost), cb.asc(totalPriceExpr))
-            }
+                "recommendedScore", "recommended" -> {
+                    // Curated partners first (DESC on the 0/1 boost ⇒ 1s before 0s),
+                    // then cheapest within each bucket. The legacy
+                    // `recommended_score` column is left in the view but no longer
+                    // drives this sort.
+                    listOf(cb.desc(recommendedBoost), cb.asc(totalPriceExpr))
+                }
 
-            else -> {
-                // Empty / unknown sortBy ⇒ same behaviour as the Recommended tab.
-                cq.orderBy(cb.desc(recommendedBoost), cb.asc(totalPriceExpr))
+                else -> {
+                    // Empty / unknown sortBy ⇒ same behaviour as the Recommended tab.
+                    listOf(cb.desc(recommendedBoost), cb.asc(totalPriceExpr))
+                }
             }
-        }
+        cq.orderBy(primaryOrders + cb.asc(root.get<Long>("id")))
 
         val query = entityManager.createQuery(cq)
         val cappedSize = size.coerceIn(1, MAX_PAGE_SIZE)
