@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.ExternalEquipmentRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtraRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
+import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.external.nausys.client.NauSysRetryableClient
 import hr.workspace.boat4you.domains.external.nausys.config.NauSysAuthProvider
 import hr.workspace.boat4you.domains.external.nausys.model.NauSysDateWrapper
@@ -75,8 +76,13 @@ class NauSysObligatoryExtrasService(
                 externalEquipmentRepository
                     .getCachedByExternalSystemId(ExternalSystemEnum.NAUSYS.value)
                     .filter { it.type == ExternalEquipmentType.SERVICE && it.externalId != null && it.name != null }
-            val serviceIdByName = nausysServices.associate { it.name!! to it.externalId!! }
-            val nameByServiceId = nausysServices.associate { it.externalId!! to it.name!! }
+            // yacht_extras.name is stored through ExtraNameNormalizer ("One man crew" -> "Skipper"), so look the
+            // stored name up under the normalized service name too; an exact raw name wins over a renamed one.
+            val serviceIdByName =
+                nausysServices.associate { ExtraNameNormalizer.normalize(it.name)!! to it.externalId!! } +
+                    nausysServices.associate { it.name!! to it.externalId!! }
+            // Same label as the stored rows: the caller dedupes on yacht_extras.name and shows this name to the client.
+            val nameByServiceId = nausysServices.associate { it.externalId!! to ExtraNameNormalizer.normalize(it.name)!! }
 
             // Selected extras -> NauSys serviceIDs. Only services carry a serviceId
             // (equipment uses equipmentId and does not drive obligatory rules here).

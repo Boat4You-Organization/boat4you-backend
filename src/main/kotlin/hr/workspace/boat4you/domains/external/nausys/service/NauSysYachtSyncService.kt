@@ -35,6 +35,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslationRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
+import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
@@ -582,7 +583,7 @@ class NauSysYachtSyncService(
 
                 val yachtExtra = YachtExtra()
                 yachtExtra.extras = boat4youMatch
-                yachtExtra.name = externalEquipmentMatch.name
+                yachtExtra.name = ExtraNameNormalizer.normalize(externalEquipmentMatch.name)
                 yachtExtra.externalId = nausysEquipment.id
                 yachtExtra.yacht = yacht
                 yachtExtra.price = nausysEqPrice
@@ -642,7 +643,7 @@ class NauSysYachtSyncService(
 
                 val yachtExtra = YachtExtra()
                 yachtExtra.extras = boat4youMatch
-                yachtExtra.name = externalEquipmentMatch.name
+                yachtExtra.name = ExtraNameNormalizer.normalize(externalEquipmentMatch.name)
                 yachtExtra.externalId = nausysService.id
                 yachtExtra.yacht = yacht
                 yachtExtra.price = nausysSvcPrice

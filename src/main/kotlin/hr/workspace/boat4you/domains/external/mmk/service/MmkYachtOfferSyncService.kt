@@ -17,6 +17,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
+import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.service.YachtSyncMutex
@@ -339,7 +340,7 @@ class MmkYachtOfferSyncService(
             val offerExtra = OfferExtra()
             offerExtra.offer = offer
             offerExtra.extras = boat4youExtrasMatch
-            offerExtra.name = mmkExtra.name
+            offerExtra.name = ExtraNameNormalizer.normalize(mmkExtra.name)
             offerExtra.price = mmkPrice
             offerExtra.payableInBase = mmkExtra.payableInBase
             offerExtra.paymentType = mmkPaymentType
