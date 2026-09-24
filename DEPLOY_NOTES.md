@@ -1,5 +1,49 @@
 # Backend deploy notes
 
+## 2026-09-24 — ⛵ Partner "One man crew" extras shown as "Skipper" (V9_60) — ⏳ BUILT (jar `603d7fa1`), deploy cusma2 + cusma3
+
+**Mario:** show it as Skipper everywhere. NSS Charter (agency 1526, `One man crew (Caribbean)`, 36 yacht_extras rows)
+and Marina Yacht Charter (1041, `One man crew (+ boarding)` 15 + `One man crew (+ boarding) : Compensation due directly
+to the Skipper, …` 27) sell the skipper under that name — the customer extras tab and e-mails did not read as a skipper,
+and the admin offer builder (finds the skipper row by the keyword "skipper") did not find it at all.
+**What ships (`fe7cd61`):** `ExtraNameNormalizer` (rule table `SYNONYMS`; "one man crew" — case-insensitive, whole
+words, one-man / oneman / double-space variants — → "Skipper", prefix/suffix kept; any other name byte-for-byte
+unchanged) applied at the 6 places the MMK / NauSys yacht + offer sync write a partner extra name. **The sync writes
+the name only on INSERT** (updates match on externalId and leave the name alone), so V9_60 renames what already exists.
+Matching (catalogue `match_keys`, externalId, payment-type keywords) still uses the raw partner name — every row keeps
+the `extras_id` it has today (the rename never maps a row onto our Skipper label).
+`NauSysObligatoryExtrasService` joins stored names back to NauSys services by name: it now also resolves the
+normalized name (raw exact name wins) and returns the normalized name, otherwise a renamed NauSys skipper would stop
+triggering "Damage Waiver obligatory once a Skipper is added" and the re-quote would count it twice.
+**V9_60:** `yacht_extras` + `offer_extras`, one transaction, `lock_timeout 5s`, idempotent. Expected **78 / 0** rows.
+Both UPDATEs are a sequential scan (no index on name) — offer_extras ~4M rows = a few seconds at startup. The SQL was
+run on a throwaway PostgreSQL 17 with the unit-test strings (7 renamed, "Two man crew" / "Crew change" / "Skipper" /
+"someone man crew" / NULL untouched, 2nd run UPDATE 0). Not touched: `extras` (our labels), reservation_extras and
+external_reservation_extras (booking snapshots — old bookings keep "One man crew").
+**Before deploy (cusma4), snapshot = the only exact undo:**
+```sql
+\copy (SELECT 'yacht_extras' AS t, id, name FROM yacht_extras WHERE name ~* '\mone[[:space:]-]*man[[:space:]-]*crew\M'
+       UNION ALL SELECT 'offer_extras', id, name FROM offer_extras WHERE name ~* '\mone[[:space:]-]*man[[:space:]-]*crew\M')
+      TO '/root/v9_60_one_man_crew_backup.csv' CSV HEADER   -- expect 78 lines (+ header)
+-- same yacht already has a row with the new name? (0 expected; else the name-keyed dedupe shows only one of the two)
+SELECT a.yacht_id, a.name, b.name FROM yacht_extras a JOIN yacht_extras b ON b.yacht_id = a.yacht_id AND b.id <> a.id
+   AND lower(b.name) = lower(regexp_replace(a.name, '\mone[[:space:]-]*man[[:space:]-]*crew\M', 'Skipper', 'gi'))
+ WHERE a.name ~* '\mone[[:space:]-]*man[[:space:]-]*crew\M';
+```
+**After:** `flyway_schema_history` has V9_60 success; the first query returns 0; admin offer builder on an NSS
+Caribbean yacht finds the Skipper row. Web ISR pages may show the old name until their revalidate (≤ 1 h).
+**Rollback:** `webservice.jar.prev` (V9_60 stays applied; the old jar shows the new names, only its NauSys obligatory
+re-quote no longer finds a renamed NauSys row by name — restore the names too if that matters). **Undo the rename:**
+NOT `regexp_replace(name, '\mSkipper', 'One man crew')` — that also hits genuine "Skipper" rows and the "…directly to the
+Skipper" text. A re-sync after reverting the code does NOT restore it either (the name is only written on insert).
+Restore from the snapshot by id: load the CSV into a temp table `b` and `UPDATE yacht_extras y SET name = b.name FROM b
+WHERE b.t = 'yacht_extras' AND y.id = b.id` (same for offer_extras).
+**Side effects (intended):** new bookings with these extras get "Skippered charter" in the charter agreement (it keys on
+"skipper" in the extra name); an obligatory renamed row now shares the base name "skipper" with an obligatory offer
+"Skipper" anchor in `ExtrasVariantResolver` (treated as a variant sibling, as for any other same-named row).
+
+---
+
 ## 2026-09-22 — 👻 MMK free-offer reverifier (V9_59) — the permanent fix for phantom FREE weeks — ⏳ BUILT (jar `9c4b8e7f`), deploy cusma2 + cusma3
 
 **Mario:** "podaci kod nas trebaju biti isti kao na MMK i NauSys". NauSys already flips a FREE week the partner stopped
