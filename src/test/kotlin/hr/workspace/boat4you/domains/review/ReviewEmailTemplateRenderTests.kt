@@ -67,6 +67,7 @@ class ReviewEmailTemplateRenderTests {
             userSurname = "Horvat",
             userLanguage = "DE",
             userCountry = "Germany",
+            userUnsubscribeToken = "0b1c2d3e-unsub",
         )
 
     @Test
@@ -87,8 +88,27 @@ class ReviewEmailTemplateRenderTests {
                 (1..5).forEach { html shouldContain "href=\"$url?rating=$it\"" }
                 html shouldContain "https://api.boat4you.com/public/image/555?width=936"
                 html shouldContain "60"
+                // opt-out footer: same web page as the birthday mail
+                html shouldContain "href=\"https://www.boat4you.com/unsubscribe/0b1c2d3e-unsub\""
             }
         }
+    }
+
+    @Test
+    fun `one-click unsubscribe - RFC 8058 headers point at the API, no token means no link and no headers`() {
+        sender.unsubscribeHeaders(context) shouldBe
+            mapOf(
+                "List-Unsubscribe" to "<https://api.boat4you.com/public/users/unsubscribe/0b1c2d3e-unsub>",
+                "List-Unsubscribe-Post" to "List-Unsubscribe=One-Click",
+            )
+        val noToken = context.copy(userUnsubscribeToken = null)
+        sender.unsubscribeHeaders(noToken) shouldBe emptyMap()
+        val html =
+            engine.process(
+                ReviewEmailSender.YACHT_TEMPLATE,
+                Context(Locale.ENGLISH).apply { setVariables(sender.variables(ReviewKind.YACHT, noToken, "en", "https://www.boat4you.com/review/T")) },
+            )
+        html shouldNotContain "/unsubscribe/"
     }
 
     @Test

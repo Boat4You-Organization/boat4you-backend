@@ -10,6 +10,8 @@ import hr.workspace.boat4you.domains.review.dto.ReviewValuesDto
 import hr.workspace.boat4you.domains.review.exceptions.ReviewEditWindowClosedException
 import hr.workspace.boat4you.domains.review.exceptions.ReviewLinkInvalidException
 import hr.workspace.boat4you.domains.review.exceptions.ReviewNotFoundException
+import hr.workspace.boat4you.domains.review.service.ReviewInvitationService
+import hr.workspace.boat4you.domains.review.service.ReviewResendOutcome
 import hr.workspace.boat4you.domains.review.service.ReviewService
 import hr.workspace.boat4you.domains.review.service.ReviewSubmitOutcome
 import org.junit.jupiter.api.Test
@@ -27,9 +29,10 @@ import java.time.Instant
 /** HTTP contract of the review endpoints: status codes and error bodies go through ApiErrorHandler. */
 class ReviewControllersTests {
     private val service: ReviewService = mock(ReviewService::class.java)
+    private val invitations: ReviewInvitationService = mock(ReviewInvitationService::class.java)
     private val mvc =
         MockMvcBuilders
-            .standaloneSetup(PublicReviewController(service), AdminReviewController(service))
+            .standaloneSetup(PublicReviewController(service), AdminReviewController(service, invitations))
             .setControllerAdvice(ApiErrorHandler())
             .build()
 
@@ -138,5 +141,25 @@ class ReviewControllersTests {
                 contentType = MediaType.APPLICATION_JSON
                 content = """{"status":"LIVE"}"""
             }.andExpect { status { isBadRequest() } }
+    }
+
+    @Test
+    fun `admin re-send - 200 SENT, 409 DISABLED or ALREADY_REVIEWED, 404 NOT_ELIGIBLE, kind required`() {
+        val cases =
+            mapOf(
+                ReviewResendOutcome.SENT to 200,
+                ReviewResendOutcome.DISABLED to 409,
+                ReviewResendOutcome.ALREADY_REVIEWED to 409,
+                ReviewResendOutcome.NOT_ELIGIBLE to 404,
+            )
+        cases.forEach { (outcome, code) ->
+            `when`(invitations.resend(42, ReviewKind.YACHT)).thenReturn(outcome)
+            mvc.post("/admin/reviews/requests/42/resend?kind=YACHT").andExpect {
+                status { isEqualTo(code) }
+                jsonPath("$.outcome") { value(outcome.name) }
+            }
+        }
+        mvc.post("/admin/reviews/requests/42/resend").andExpect { status { isBadRequest() } }
+        mvc.post("/admin/reviews/requests/42/resend?kind=BOAT").andExpect { status { isBadRequest() } }
     }
 }

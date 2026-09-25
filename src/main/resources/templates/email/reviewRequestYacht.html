@@ -236,6 +236,15 @@
                       We only publish your review if you allow it.
                     </div>
 
+                    <!-- Opt-out: same one-click unsubscribe (marketing_opt_out) as the birthday mail -->
+                    <div th:if="${unsubscribeUrl}"
+                      style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:12px; color:#64748b; line-height:1.6; text-align:center; padding-top:14px;">
+                      <span th:text="#{reviewRequest.optOutHint}">Prefer not to receive e-mails like this?</span>
+                      <span>&#160;</span>
+                      <a th:href="${unsubscribeUrl}" th:text="#{reviewRequest.unsubscribe}" target="_blank"
+                        style="color:#2856ff; font-weight:600; text-decoration:none;">Unsubscribe</a>
+                    </div>
+
                   </td>
                 </tr>
               </table>

@@ -7,7 +7,8 @@
 -- database leak does not hand out working links. One request row per (reservation, kind) is also the "never
 -- double-send" guard: the sender claims the row with INSERT ... ON CONFLICT DO NOTHING before it e-mails.
 --
--- Additive only (two new tables, no change to existing rows), idempotent.
+-- Additive only (two new tables, no change to existing rows), idempotent. The remaining FKs point at reservation and
+-- users (short write transactions); still start this jar inside a quiet window with no sync running (DEPLOY_NOTES).
 SET LOCAL lock_timeout = '5s';
 
 CREATE TABLE IF NOT EXISTS review_request (
@@ -32,7 +33,10 @@ CREATE TABLE IF NOT EXISTS reservation_review (
     request_id                 BIGINT        REFERENCES review_request (id) ON DELETE SET NULL,
     kind                       VARCHAR(16)   NOT NULL,
     -- The boat at the time of the charter (YACHT kind; also filled for BOOKING for admin context).
-    yacht_id                   BIGINT        REFERENCES yacht (id) ON DELETE SET NULL,
+    -- Deliberately NO foreign key: creating an FK takes SHARE ROW EXCLUSIVE on the referenced table, and yacht is
+    -- written by the NauSys / MMK syncs for hours at a time — with lock_timeout 5s the migration (and so the node's
+    -- start) could fail. The column is informational (the review hangs off reservation_id), readers LEFT JOIN yacht.
+    yacht_id                   BIGINT,
     user_id                    BIGINT        REFERENCES users (id) ON DELETE SET NULL,
     -- YACHT review -> the same reservation's BOOKING review, when the customer left one (not required).
     booking_review_id          BIGINT        REFERENCES reservation_review (id) ON DELETE SET NULL,

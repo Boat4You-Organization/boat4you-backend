@@ -43,6 +43,8 @@ data class ReviewReservationContext(
     val userSurname: String?,
     val userLanguage: String?,
     val userCountry: String?,
+    /** users.unsubscribe_token — the same one-click opt-out (marketing_opt_out) as the birthday mail. */
+    val userUnsubscribeToken: String? = null,
 ) {
     /** Manufacturer + Model + Name (e-mail rule), without repeating a manufacturer the model name already starts with. */
     val yachtFullLabel: String
@@ -242,6 +244,46 @@ class ReviewDao(
             validityDays.toInt(),
         ) == 1
 
+    /**
+     * Admin re-ask: a real, confirmed, paid booking of a reachable customer (the base rules, without the BOOKING
+     * 48 h / YACHT 3-14 day timing — the admin decides the moment).
+     */
+    fun isResendEligible(reservationId: Long): Boolean =
+        jdbc
+            .queryForList(
+                """
+                SELECT r.id
+                FROM reservation r
+                JOIN reservation_flow rf ON rf.id = r.reservation_flow_id
+                JOIN users u ON u.id = rf.user_id
+                WHERE r.id = ?
+                  AND $REAL_CONFIRMED_BOOKING
+                  AND EXISTS (
+                      SELECT 1 FROM reservation_payment_phase pp
+                      WHERE pp.reservation_flow_id = rf.id AND pp.paid_on IS NOT NULL
+                  )
+                """.trimIndent(),
+                Long::class.java,
+                reservationId,
+            ).isNotEmpty()
+
+    /** Removes the (reservation, kind) request unless the customer already answered it. Returns rows deleted. */
+    fun deleteUnansweredRequest(
+        reservationId: Long,
+        kind: ReviewKind,
+    ): Int =
+        jdbc.update(
+            """
+            DELETE FROM review_request q
+            WHERE q.reservation_id = ? AND q.kind = ?
+              AND NOT EXISTS (
+                  SELECT 1 FROM reservation_review rr WHERE rr.reservation_id = q.reservation_id AND rr.kind = q.kind
+              )
+            """.trimIndent(),
+            reservationId,
+            kind.name,
+        )
+
     fun findRequestByTokenHash(tokenHash: String): ReviewRequestRow? =
         jdbc
             .query(
@@ -274,7 +316,8 @@ class ReviewDao(
                        l.name AS base_name, c.name AS base_country,
                        rf.email AS flow_email, rf.name AS flow_name, rf.surname AS flow_surname,
                        u.id AS user_id, u.name AS user_name, u.surname AS user_surname,
-                       u.language AS user_language, u.country AS user_country
+                       u.language AS user_language, u.country AS user_country,
+                       u.unsubscribe_token AS user_unsubscribe_token
                 FROM reservation r
                 JOIN reservation_flow rf ON rf.id = r.reservation_flow_id
                 LEFT JOIN users u ON u.id = rf.user_id
@@ -306,6 +349,7 @@ class ReviewDao(
                         userSurname = rs.getString("user_surname"),
                         userLanguage = rs.getString("user_language"),
                         userCountry = rs.getString("user_country"),
+                        userUnsubscribeToken = rs.getString("user_unsubscribe_token"),
                     )
                 },
                 reservationId,
@@ -388,7 +432,11 @@ class ReviewDao(
         return id
     }
 
-    /** Customer edit; the 24 h window is enforced here too, so a request at the boundary cannot slip through. */
+    /**
+     * Customer edit; the 24 h window is enforced here too, so a request at the boundary cannot slip through.
+     * Every edit goes back to moderation: an already PUBLISHED (or HIDDEN) review returns to NEW with the moderation
+     * stamp cleared, so replaced text or a withdrawn publish consent can never stay published without an admin.
+     */
     fun updateReviewWithinEditWindow(
         id: Long,
         values: ReviewValuesDto,
@@ -399,7 +447,10 @@ class ReviewDao(
         return jdbc.update(
             """
             UPDATE reservation_review
-            SET rating = ?, $scoreSets, title = ?, text = ?, locale = ?, publish_consent = ?, updated_at = now()
+            SET rating = ?, $scoreSets, title = ?, text = ?, locale = ?, publish_consent = ?, updated_at = now(),
+                status = 'NEW',
+                status_changed_at = CASE WHEN status = 'NEW' THEN status_changed_at END,
+                status_changed_by_user_id = CASE WHEN status = 'NEW' THEN status_changed_by_user_id END
             WHERE id = ? AND created_at > now() - make_interval(hours => ?)
             """.trimIndent(),
             values.rating,
@@ -454,13 +505,10 @@ class ReviewDao(
                     statusChangedAt = rs.instant("status_changed_at"),
                     reservationNumber = rs.getString("reservation_number"),
                     yachtId = rs.longOrNull("yacht_id"),
+                    // yacht_id has no FK (V9_62): a yacht deleted since then simply has no label.
                     yachtFullLabel =
-                        rs.longOrNull("yacht_id")?.let {
-                            ReviewLabels.yachtFullLabel(
-                                rs.getString("manufacturer_name"),
-                                rs.getString("model_name"),
-                                rs.getString("yacht_name"),
-                            )
+                        rs.getString("yacht_name")?.let {
+                            ReviewLabels.yachtFullLabel(rs.getString("manufacturer_name"), rs.getString("model_name"), it)
                         },
                     customerName =
                         listOf(rs.getString("flow_name"), rs.getString("flow_surname"))

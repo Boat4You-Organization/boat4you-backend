@@ -7,6 +7,21 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 
+/** Admin re-ask outcome (POST /admin/reviews/requests/{reservationId}/resend). */
+enum class ReviewResendOutcome {
+    /** A fresh link went out; any earlier unanswered link of that kind is dead (its row was replaced). */
+    SENT,
+
+    /** application.reviews.enabled = false — nothing touched. */
+    DISABLED,
+
+    /** The customer already submitted that review — nothing touched. */
+    ALREADY_REVIEWED,
+
+    /** Not a real, confirmed, paid booking of a reachable, not opted-out customer — nothing touched. */
+    NOT_ELIGIBLE,
+}
+
 data class ReviewSweepResult(
     val bookingSent: Int,
     val yachtSent: Int,
@@ -75,6 +90,34 @@ class ReviewInvitationService(
     }
 
     /**
+     * Admin re-ask of one reservation (e.g. customers mailed while the web review page was missing: their link 404'd
+     * and the once-only claim row would block every later send). In one transaction: refuse when disabled, already
+     * reviewed or not eligible; otherwise drop the unanswered request row and claim + send a fresh one. The BOOKING
+     * 48 h / YACHT 3-14 day timing does not apply — the admin picks the moment.
+     */
+    fun resend(
+        reservationId: Long,
+        kind: ReviewKind,
+    ): ReviewResendOutcome {
+        if (!enabled) return ReviewResendOutcome.DISABLED
+        return tx.execute {
+            when {
+                dao.findReview(reservationId, kind) != null -> ReviewResendOutcome.ALREADY_REVIEWED
+                !dao.isResendEligible(reservationId) -> ReviewResendOutcome.NOT_ELIGIBLE
+                else -> {
+                    val removed = dao.deleteUnansweredRequest(reservationId, kind)
+                    if (claimAndSend(reservationId, kind)) {
+                        log.info("{} review request re-sent for reservation {} by admin (replaced {} old request)", kind, reservationId, removed)
+                        ReviewResendOutcome.SENT
+                    } else {
+                        ReviewResendOutcome.NOT_ELIGIBLE
+                    }
+                }
+            }
+        } ?: ReviewResendOutcome.NOT_ELIGIBLE
+    }
+
+    /**
      * Claim + send in one transaction; false when the reservation does not qualify (any more), another sender already
      * claimed it, or the data is incomplete. BOOKING eligibility is re-checked right here, per reservation: the
      * sweep's candidate list is computed up front, and the yacht-swap chain rule depends on earlier claims of the
@@ -88,18 +131,26 @@ class ReviewInvitationService(
             if (kind == ReviewKind.BOOKING && dao.bookingCandidateIds(1, reservationId).isEmpty()) {
                 return@execute false
             }
-            val context = dao.loadReservationContext(reservationId)
-            if (context == null || context.flowEmail.isNullOrBlank()) {
-                log.warn("{} review request skipped for reservation {}: no recipient", kind, reservationId)
-                return@execute false
-            }
-            val locale = ReviewLinks.normalizeLocale(context.userLanguage) ?: ReviewLinks.DEFAULT_LOCALE
-            val token = ReviewTokens.generate()
-            val claimed =
-                dao.claimRequest(reservationId, kind, ReviewTokens.hash(token), locale, ReviewTokens.VALIDITY.toDays())
-            if (!claimed) return@execute false
-            mailer.send(kind, context, locale, ReviewLinks.reviewUrl(serverHostPublic, locale, token))
-            log.info("{} review request sent for reservation {} ({})", kind, reservationId, locale)
-            true
+            claimAndSend(reservationId, kind)
         } ?: false
+
+    /** Inside the caller's transaction: load the recipient, claim the (reservation, kind) row, render + queue the mail. */
+    private fun claimAndSend(
+        reservationId: Long,
+        kind: ReviewKind,
+    ): Boolean {
+        val context = dao.loadReservationContext(reservationId)
+        if (context == null || context.flowEmail.isNullOrBlank()) {
+            log.warn("{} review request skipped for reservation {}: no recipient", kind, reservationId)
+            return false
+        }
+        val locale = ReviewLinks.normalizeLocale(context.userLanguage) ?: ReviewLinks.DEFAULT_LOCALE
+        val token = ReviewTokens.generate()
+        val claimed =
+            dao.claimRequest(reservationId, kind, ReviewTokens.hash(token), locale, ReviewTokens.VALIDITY.toDays())
+        if (!claimed) return false
+        mailer.send(kind, context, locale, ReviewLinks.reviewUrl(serverHostPublic, locale, token))
+        log.info("{} review request sent for reservation {} ({})", kind, reservationId, locale)
+        return true
+    }
 }

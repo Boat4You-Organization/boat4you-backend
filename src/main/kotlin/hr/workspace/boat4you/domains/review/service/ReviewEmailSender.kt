@@ -25,6 +25,11 @@ fun interface ReviewInvitationMailer {
  *
  * Rendering happens synchronously inside EmailService.sendEmail, so a template error throws here and rolls back
  * the caller's claim (the request is retried on the next run); the SMTP submit itself runs after the commit.
+ *
+ * Opt-out: the requests honour users.marketing_opt_out (like the birthday mail), so every mail carries the same
+ * one-click way out — a footer link to the web page /unsubscribe/{token} (which POSTs from a real browser, so link
+ * scanners cannot opt people out) and RFC 8058 List-Unsubscribe / List-Unsubscribe-Post headers pointing at the API
+ * endpoint POST /public/users/unsubscribe/{token} for the mail client's own unsubscribe button.
  */
 @Component
 class ReviewEmailSender(
@@ -66,8 +71,21 @@ class ReviewEmailSender(
             templateName = if (kind == ReviewKind.BOOKING) BOOKING_TEMPLATE else YACHT_TEMPLATE,
             variables = variables,
             locale = javaLocale,
+            extraHeaders = unsubscribeHeaders(context),
         )
     }
+
+    /** RFC 8058 one-click headers; empty when the user has no unsubscribe token. */
+    fun unsubscribeHeaders(context: ReviewReservationContext): Map<String, String> =
+        unsubscribeToken(context)?.let {
+            mapOf(
+                "List-Unsubscribe" to "<${serverHost.trimEnd('/')}/public/users/unsubscribe/$it>",
+                "List-Unsubscribe-Post" to "List-Unsubscribe=One-Click",
+            )
+        } ?: emptyMap()
+
+    private fun unsubscribeToken(context: ReviewReservationContext): String? =
+        context.userUnsubscribeToken?.trim()?.takeIf { it.isNotEmpty() }
 
     fun variables(
         kind: ReviewKind,
@@ -95,6 +113,8 @@ class ReviewEmailSender(
             "starLinks" to (1..5).map { mapOf("rating" to it, "url" to "$reviewUrl?rating=$it") },
             "validDays" to ReviewTokens.VALIDITY.toDays(),
             "currentYear" to LocalDate.now().year.toString(),
+            // Same web page as the birthday mail's link; null (no token) hides the footer line.
+            "unsubscribeUrl" to unsubscribeToken(context)?.let { "${serverHostPublic.trimEnd('/')}/unsubscribe/$it" },
         )
     }
 }

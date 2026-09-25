@@ -1,5 +1,45 @@
 # Backend deploy notes
 
+## 2026-09-25 — Review collection (V9_62) review fixes: off by default in prod, edits re-moderated, unsubscribe, admin re-send, no yacht FK — ⏳ BUILT, not deployed
+
+Follow-up to the V9_62 entry below (same unreleased feature; V9_62 was edited in place — it was never applied
+anywhere: not pushed, not deployed, local DB is at 1.89).
+- **`REVIEWS_ENABLED` default false in application-prod.yml** (was true + a note to override it on both nodes). Why:
+  sending is at-most-once and the raw token is never stored, so a mail sent before the web page exists burns that
+  customer's request for good (UNIQUE (reservation_id, kind) blocks every re-send) — a missing env line at restart
+  would do it to up to 200+200 customers at the 09:10 sweep plus every payment. Turn on = `REVIEWS_ENABLED=true` in the
+  env file on cusma2 AND cusma3 + restart, once the page is live; flip the yml default in a follow-up commit then.
+- **Customer edit (24 h window) → back to moderation:** the UPDATE now sets `status = 'NEW'` and clears
+  `status_changed_at` / `status_changed_by_user_id` when the review had been moderated — replaced text or a withdrawn
+  publish consent can no longer stay PUBLISHED.
+- **Unsubscribe:** the requests honour `users.marketing_opt_out` (like the birthday mail) but had no way out. Both
+  templates now show "Prefer not to receive e-mails like this? Unsubscribe" (9 languages + default) linking to the
+  existing web page `{SERVER_HOST_PUBLIC}/unsubscribe/{users.unsubscribe_token}` (browser-side POST, scanner-safe), and
+  every mail carries RFC 8058 `List-Unsubscribe: <{SERVER_HOST}/public/users/unsubscribe/{token}>` +
+  `List-Unsubscribe-Post: List-Unsubscribe=One-Click` (existing permitAll POST endpoint). No token → no link/headers.
+- **Admin re-send** `POST /admin/reviews/requests/{reservationId}/resend?kind=BOOKING|YACHT` (SYSTEM_ADMIN, both
+  nodes): one transaction — drops the unanswered request and mails a fresh link (timing rules skipped, base
+  eligibility kept: confirmed, real, paid, not GDPR-deleted, not opted out). → 200 `{"outcome":"SENT"}` /
+  409 `{"outcome":"DISABLED"}` (flag off) / 409 `{"outcome":"ALREADY_REVIEWED"}` / 404 `{"outcome":"NOT_ELIGIBLE"}`;
+  nothing changes unless SENT. For customers whose link could not be used.
+- **V9_62: no FK on `reservation_review.yacht_id`.** Creating an FK takes SHARE ROW EXCLUSIVE on the referenced table;
+  yacht is written by the syncs for hours, so with `lock_timeout 5s` Flyway could fail and the node not start (on
+  cusma2 = API outage). The column is informational (review hangs off reservation_id; admin list LEFT JOINs yacht).
+  FKs to reservation / users stay (CASCADE for the spam purge). **🔴 Start this jar only inside a quiet window with no
+  sync running** (07:50-08:40 / 13:00-16:15 / 17:50-20:35 / 21:05-22:15 UTC), cusma3 then cusma2 as usual; if Flyway
+  still hits `lock timeout`, just restart inside the window (the migration is transactional + idempotent).
+- **Not changed (explained):** the two SQL suites keep a hand-written minimal schema instead of the real Flyway chain
+  — the chain cannot be replayed on an empty database (V9_18 inserts `location_region` for location 2029, a prod-only
+  row); they now run on postgres:18-alpine (prod major) and every referenced column was cross-checked by hand against
+  the migrations.
+**Tests (31, green):** ReviewCollectionIntegrationTest (9, PG18: + PUBLISHED review edited → NEW with stamp cleared,
+unsubscribe token reaches the mailer, re-send replaces the link / old token 404 / 48 h rule bypassed / refused when
+reviewed, opted-out, unpaid, unknown or disabled), ReviewControllersTests (5: + re-send status mapping, kind required),
+ReviewEmailTemplateRenderTests (4: + footer link in 2 templates × 9 languages, List-Unsubscribe headers, no token →
+no link), ReviewTokensTests (7), ReviewValidationTests (6).
+**After deploy:** `\d reservation_review` shows no yacht FK; flag off → `SELECT count(*) FROM review_request;` = 0.
+**Undo:** `webservice.jar.prev`; migration undo unchanged (see V9_62 entry).
+
 ## 2026-09-25 — Charter facts (V9_61) review fixes: 08:00 UTC slot, search-consistent boat count, skipper by extras_id, ?force, stale alert — ⏳ BUILT, not deployed
 
 Follow-up to the V9_61 entry below (same unreleased feature, deploy both together). No new migration.
@@ -33,10 +73,9 @@ Mutation-checked: reverting the has_bookable filter or the extras_id match fails
 
 ## 2026-09-25 — Review collection: booking + yacht review requests, magic-link form, admin moderation (V9_62) — ⏳ BUILT, not deployed
 
-**🔴 BEFORE DEPLOY:** the web page `/[locale/]review/{token}` does not exist yet. `application.reviews.enabled` is
-**true in application-prod.yml**, so put `REVIEWS_ENABLED=false` in the env file on **cusma2 AND cusma3** before
-restarting with this jar, and flip it to true (restart) only once the web page is live — otherwise customers get
-e-mails with links to a 404. With the flag off nothing is sent; the endpoints and tables work regardless.
+**Flag:** `application.reviews.enabled` now ships **false in application-prod.yml** too (see the "review fixes" entry
+above) — nothing is mailed until `REVIEWS_ENABLED=true` is set on both nodes after the web page
+`/[locale/]review/{token}` is live. With the flag off the endpoints and tables work regardless.
 
 **What / why:** phase 1 of the review plan (memory `project_review_voucher_plan_future`), collection only — nothing
 is displayed publicly, no vouchers/incentives. Two kinds per reservation:
@@ -82,7 +121,7 @@ is displayed publicly, no vouchers/incentives. Two kinds per reservation:
 rating kept). Not yet in the Art. 20 data export (follow-up).
 
 **Migration V9_62:** two new tables `review_request` + `reservation_review` (FKs to reservation ON DELETE CASCADE so
-the spam purge keeps working, yacht/users ON DELETE SET NULL), CHECKs on kind/status/scores/text length, indexes for
+the spam purge keeps working, users ON DELETE SET NULL; yacht_id without FK — see fixes entry), CHECKs on kind/status/scores/text length, indexes for
 the admin list. `lock_timeout 5s`, idempotent (IF NOT EXISTS). No existing row touched.
 
 **Tests (28, all green):** ReviewTokensTests (7), ReviewValidationTests (6), ReviewControllersTests (4),

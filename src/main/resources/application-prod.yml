@@ -54,7 +54,11 @@ application:
     # rotate without a redeploy; default keeps the boat4you mailbox.
     from-address: ${EMAIL_FROM_ADDRESS:Boat4You | Endless blue. Boats 4 you <info@boat4you.com>}
   reviews:
-    enabled: ${REVIEWS_ENABLED:true}
+    # OFF until the web page /[locale/]review/{token} is live: a request e-mail is at-most-once (the raw token is
+    # never stored), so a mail sent before the page exists would burn that customer's request with a 404 link.
+    # Turn on with REVIEWS_ENABLED=true in the env file on both nodes (+ restart); flip this default in a follow-up
+    # commit once the page is live. The env var stays the kill switch.
+    enabled: ${REVIEWS_ENABLED:false}
   invites:
     user:
       allow-uninvited-login: false

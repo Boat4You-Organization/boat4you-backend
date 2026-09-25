@@ -9,6 +9,7 @@ import hr.workspace.boat4you.domains.review.exceptions.ReviewNotFoundException
 import hr.workspace.boat4you.domains.review.service.ReviewDao
 import hr.workspace.boat4you.domains.review.service.ReviewInvitationMailer
 import hr.workspace.boat4you.domains.review.service.ReviewInvitationService
+import hr.workspace.boat4you.domains.review.service.ReviewResendOutcome
 import hr.workspace.boat4you.domains.review.service.ReviewService
 import hr.workspace.boat4you.domains.review.service.ReviewTokens
 import io.kotest.assertions.throwables.shouldThrow
@@ -34,7 +35,9 @@ import org.testcontainers.junit.jupiter.Testcontainers
  * The review collection against a real PostgreSQL: the V9_62 migration (run twice — idempotent), the eligibility
  * queries, the once-only claim, the daily sweep, and the magic-link form (create / edit / 24 h window / expiry) plus
  * admin moderation and GDPR anonymisation. Same approach as CharterFactsComputeServiceTest: no Spring context or
- * Flyway, a minimal schema with exactly the columns the review code reads.
+ * Flyway (the versioned chain cannot be replayed on an empty database: V9_18 is a prod data fix that inserts
+ * location_region for location 2029), a minimal schema with exactly the columns the review code reads, on PostgreSQL
+ * 18 like prod (cusma4).
  *
  * Fixture (times relative to the database clock):
  *  BOOKING — 1 eligible (paid 1 h ago, German customer); 2 fictitious; 3 unpaid option; 4 first payment 10 days ago
@@ -52,7 +55,7 @@ class ReviewCollectionIntegrationTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer<Nothing> =
-            PostgreSQLContainer<Nothing>("postgres:17-alpine").apply {
+            PostgreSQLContainer<Nothing>("postgres:18-alpine").apply {
                 withDatabaseName("boat4you_db")
                 withInitScript("init/00_roles.sql")
             }
@@ -66,7 +69,7 @@ class ReviewCollectionIntegrationTest {
             CREATE TABLE yacht (id bigint PRIMARY KEY, name varchar(255) NOT NULL, model_id bigint, main_image_id bigint);
             CREATE TABLE users (id bigint PRIMARY KEY, name varchar(255) NOT NULL, surname varchar(255) NOT NULL,
                                 email varchar(255) NOT NULL, language varchar(10), country varchar(100), deleted_at timestamp,
-                                marketing_opt_out boolean NOT NULL DEFAULT false);
+                                marketing_opt_out boolean NOT NULL DEFAULT false, unsubscribe_token varchar(36));
             CREATE TABLE reservation_flow (id bigint PRIMARY KEY, yacht_id bigint NOT NULL, user_id bigint NOT NULL,
                                            email varchar(255) NOT NULL, name varchar(255), surname varchar(255),
                                            previous_flow_id bigint);
@@ -82,6 +85,7 @@ class ReviewCollectionIntegrationTest {
         val reservationId: Long,
         val locale: String,
         val url: String,
+        val unsubscribeToken: String?,
     )
 
     private lateinit var dataSource: HikariDataSource
@@ -108,7 +112,10 @@ class ReviewCollectionIntegrationTest {
         jdbc.execute("BEGIN; $migration; COMMIT;")
 
         dao = ReviewDao(jdbc)
-        val mailer = ReviewInvitationMailer { kind, context, locale, url -> sent += Sent(kind, context.reservationId, locale, url) }
+        val mailer =
+            ReviewInvitationMailer { kind, context, locale, url ->
+                sent += Sent(kind, context.reservationId, locale, url, context.userUnsubscribeToken)
+            }
         invitations = ReviewInvitationService(dao, mailer, DataSourceTransactionManager(dataSource), "https://www.boat4you.com", true)
         reviews = ReviewService(dao)
         seed()
@@ -133,6 +140,7 @@ class ReviewCollectionIntegrationTest {
                 (3, 'Opted', 'Out', 'optout@example.com', 'EN', NULL);
             UPDATE users SET deleted_at = LOCALTIMESTAMP - interval '1 day' WHERE id = 2;
             UPDATE users SET marketing_opt_out = true WHERE id = 3;
+            UPDATE users SET unsubscribe_token = 'unsub-token-ana' WHERE id = 1;
             """.trimIndent(),
         )
         // id, user, previous flow
@@ -239,6 +247,8 @@ class ReviewCollectionIntegrationTest {
         val booking = sent.first { it.kind == ReviewKind.BOOKING }
         booking.locale shouldBe "de"
         booking.url shouldStartWith "https://www.boat4you.com/de/review/"
+        // the mail gets the customer's one-click opt-out handle (footer link + List-Unsubscribe)
+        booking.unsubscribeToken shouldBe "unsub-token-ana"
         ReviewTokens.isWellFormed(token(booking)) shouldBe true
 
         // Only the hash is stored.
@@ -365,6 +375,19 @@ class ReviewCollectionIntegrationTest {
 
         shouldThrow<ParameterValidationException> { reviews.setStatus(first.id, "LIVE", 3) }
         shouldThrow<ReviewNotFoundException> { reviews.setStatus(999_999, "HIDDEN", 3) }
+
+        // A customer edit inside the 24 h window sends a PUBLISHED review back to moderation (new text or a withdrawn
+        // consent must never stay published without an admin).
+        val yachtToken = token(sent.first { it.kind == ReviewKind.YACHT && it.reservationId == 21L })
+        val id21 = jdbc.queryForObject("SELECT id FROM reservation_review WHERE reservation_id = 21 AND kind = 'YACHT'", Long::class.java)!!
+        reviews.setStatus(id21, "PUBLISHED", 3).status shouldBe ReviewStatus.PUBLISHED
+        val edited = reviews.submit(yachtToken, ReviewSubmitRequest(rating = 2, text = "Changed my mind", publishConsent = false))
+        edited.result.status shouldBe ReviewStatus.NEW
+        jdbc.queryForMap("SELECT status, status_changed_at, status_changed_by_user_id FROM reservation_review WHERE id = ?", id21).let {
+            it["status"] shouldBe "NEW"
+            it["status_changed_at"] shouldBe null
+            it["status_changed_by_user_id"] shouldBe null
+        }
     }
 
     @Test
@@ -381,6 +404,29 @@ class ReviewCollectionIntegrationTest {
 
     @Test
     @Order(8)
+    fun `admin re-send - fresh link replaces an unanswered one, refused when reviewed, ineligible or disabled`() {
+        val disabled = ReviewInvitationService(dao, { _, _, _, _ -> error("must not mail") }, DataSourceTransactionManager(dataSource), "https://www.boat4you.com", false)
+        disabled.resend(26, ReviewKind.YACHT) shouldBe ReviewResendOutcome.DISABLED
+
+        val oldToken = token(sent.first { it.kind == ReviewKind.YACHT && it.reservationId == 26L })
+        invitations.resend(26, ReviewKind.YACHT) shouldBe ReviewResendOutcome.SENT
+        val newToken = token(sent.last())
+        sent.last().reservationId shouldBe 26L
+        (newToken != oldToken) shouldBe true
+        jdbc.queryForObject("SELECT count(*) FROM review_request WHERE reservation_id = 26 AND kind = 'YACHT'", Long::class.java) shouldBe 1L
+        shouldThrow<ReviewLinkInvalidException> { reviews.getForm(oldToken) }
+        reviews.getForm(newToken).kind shouldBe ReviewKind.YACHT
+
+        // first payment 10 days ago: the sweep never asks (48 h rule), the admin can
+        invitations.resend(4, ReviewKind.BOOKING) shouldBe ReviewResendOutcome.SENT
+        invitations.resend(1, ReviewKind.BOOKING) shouldBe ReviewResendOutcome.ALREADY_REVIEWED
+        invitations.resend(6, ReviewKind.BOOKING) shouldBe ReviewResendOutcome.NOT_ELIGIBLE // opted out
+        invitations.resend(3, ReviewKind.BOOKING) shouldBe ReviewResendOutcome.NOT_ELIGIBLE // unpaid option
+        invitations.resend(999, ReviewKind.YACHT) shouldBe ReviewResendOutcome.NOT_ELIGIBLE
+    }
+
+    @Test
+    @Order(9)
     fun `reservation purge cascades to its review rows`() {
         jdbc.update("DELETE FROM reservation WHERE id = 21")
         jdbc.queryForObject("SELECT count(*) FROM reservation_review WHERE reservation_id = 21", Long::class.java) shouldBe 0L
