@@ -1,5 +1,12 @@
 # Backend deploy notes
 
+## 2026-09-26 — Undated landings priced per week (`priceBasis=week`) + positive-price fallback — ✅ LIVE cusma2 23:13 UTC 25.9. (jar `5a2bddc2`, merge `175630d`); cusma3 scheduled 26.9. 07:52 UTC (quiet-window script)
+
+`GET /public/yachts?priceBasis=week` (web sends it only on undated fetches): each yacht is priced by its cheapest bookable 7-night offer (from today, > 0 €, not RESERVED/SERVICE; typo guard: cheapest < 12 % of the dearest week → no price, card "Price on request"); unpriced yachts sort last. Default path (sister sites, admin, AI chat): the fallback MIN prefers positive prices (18 future 0 € offers existed). No migration; count query unchanged.
+Review (adversarial, EXPLAIN on a 4× local copy): page query +12 % default / +36 % weekly, HashAggregate 17.9 MB, no spill; custom plans kept (`plan_cache_mode=auto` — never force_generic_plan). Prod: 0 offers with list price 0 and client price > 0 (the per-column MIN caveat is moot).
+Live 23:16 UTC: API Greece `did=c-86` default = 1/2/3/7-day mix (Sofia 211/1 d) vs week = all 7 d (508, 509, 687 …); web Greece, Croatia × catamaran and Split Region landings show only "Price for 7 days".
+Follow-ups (minor): compare the cheapest week with a typical week instead of MAX (3/11.8K yachts lose a real price to one dear holiday week); exclude 0-night rows (date_to = date_from) from weekly candidates.
+
 ## 2026-09-25 — Sea charter only: inland (river/canal/lake) vessels, operators and bases blocked in the sync (V9_63 + V9_64) — ✅ LIVE cusma2 17:51 + cusma3 17:52 UTC (jar `2c45c2f8`)
 
 **Live check 17:55 UTC (prod DB):** Flyway 9.64; `location.inland` = 93 rows (all id+name guards matched); visible yachts at inland bases 0; visible yachts of river builders 0; 17 river/lake agencies inactive; visible fleet 13,187. `/public/yachts/17148` (Le Boat) → 400, web boat page 404. Same day, before the deploy: the 13 river agencies (15:51 UTC) and the 4 lake agencies + 28 lake-base yachts (~16:05 UTC) were switched off by hand (backup tables `ops_river_agency_backup_20260925`, `ops_lake_yacht_backup_20260925`); API restarted 15:53 to drop caches. Reviews: `REVIEWS_ENABLED=true` added to both env files 15:45 UTC (backups `*.env.bak-20260925-reviews`), first sweep 26.9. 09:10 UTC.
