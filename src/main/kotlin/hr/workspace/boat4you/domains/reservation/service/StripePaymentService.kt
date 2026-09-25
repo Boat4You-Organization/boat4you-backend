@@ -8,6 +8,7 @@ import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
 import hr.workspace.boat4you.domains.reservation.enums.PaymentType
+import hr.workspace.boat4you.domains.reservation.events.ReservationPaymentRecordedEvent
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlow
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhase
@@ -19,6 +20,7 @@ import hr.workspace.boat4you.domains.voucher.service.VoucherService
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -36,6 +38,7 @@ class StripePaymentService(
     private val reservationEmailService: ReservationEmailService,
     private val stripeEventIdempotencyService: StripeEventIdempotencyService,
     private val voucherService: VoucherService,
+    private val eventPublisher: ApplicationEventPublisher,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${application.stripe.enabled}") private val stripeEnabled: Boolean,
     // 3-letter ISO 4217. Stripe wants lowercase. EUR is the product default;
@@ -305,6 +308,9 @@ class StripePaymentService(
         if (paymentPhaseId == null) {
             promoteReservationToBooking(reservationId)
         }
+
+        // Follow-ups (booking review request) run after this transaction commits and cannot fail the payment.
+        eventPublisher.publishEvent(ReservationPaymentRecordedEvent(reservationId))
     }
 
     @Transactional(readOnly = true)

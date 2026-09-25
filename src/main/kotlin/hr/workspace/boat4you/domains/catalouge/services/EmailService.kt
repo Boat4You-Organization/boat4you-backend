@@ -98,6 +98,8 @@ class EmailService(
         "email/clientMessage",
         "email/chatBrokerNotification",
         "email/voucherIssued",
+        "email/reviewRequestBooking",
+        "email/reviewRequestYacht",
     )
 
     private val templatesWithoutSharedFooter = setOf(

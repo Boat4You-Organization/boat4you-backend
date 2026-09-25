@@ -53,6 +53,8 @@ application:
     # Customer-visible From. Falls through to the env var first so we can
     # rotate without a redeploy; default keeps the boat4you mailbox.
     from-address: ${EMAIL_FROM_ADDRESS:Boat4You | Endless blue. Boats 4 you <info@boat4you.com>}
+  reviews:
+    enabled: ${REVIEWS_ENABLED:true}
   invites:
     user:
       allow-uninvited-login: false

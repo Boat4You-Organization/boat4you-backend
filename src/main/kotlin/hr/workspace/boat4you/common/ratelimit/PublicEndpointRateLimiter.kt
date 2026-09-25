@@ -37,6 +37,9 @@ import java.util.concurrent.ConcurrentHashMap
  *  - `POST /auth/register/verifyEmail` — 6-digit code brute-force
  *    vector. Per-user attempt counter exists but per-IP throttle adds
  *    defense in depth.
+ *  - `POST /public/reviews/request/{token}` — anonymous review submit
+ *    behind the e-mail magic link (25.9.2026). The 256-bit token cannot be
+ *    guessed; the limit only stops a script from hammering one link.
  *
  * Implementation: token bucket keyed by (rule path, client IP). Every
  * accepted call consumes 1 token; tokens refill at
@@ -88,6 +91,10 @@ class PublicEndpointRateLimiter(
     private val verifyEmailCapacity: Int,
     @Value("\${application.rate-limit.auth-verify-email.window-seconds:60}")
     private val verifyEmailWindowSeconds: Long,
+    @Value("\${application.rate-limit.public-review.capacity:10}")
+    private val reviewCapacity: Int,
+    @Value("\${application.rate-limit.public-review.window-seconds:60}")
+    private val reviewWindowSeconds: Long,
 ) : OncePerRequestFilter() {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -115,6 +122,7 @@ class PublicEndpointRateLimiter(
             Rule("POST", "/auth/register/resendVerificationCode/", prefix = true, capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "resend-verification"),
             Rule("POST", "/auth/register", capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "register"),
             Rule("POST", "/auth/requestPasswordReset", capacity = passwordResetCapacity, windowSeconds = passwordResetWindowSeconds, label = "password-reset"),
+            Rule("POST", "/public/reviews/request/", prefix = true, capacity = reviewCapacity, windowSeconds = reviewWindowSeconds, label = "review-submit"),
         )
     }
 

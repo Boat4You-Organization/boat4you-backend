@@ -21,6 +21,9 @@ import hr.workspace.boat4you.domains.reservation.exceptions.ReservationFlowNotEx
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationStatusException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationUserNotExists
+import hr.workspace.boat4you.domains.review.exceptions.ReviewEditWindowClosedException
+import hr.workspace.boat4you.domains.review.exceptions.ReviewLinkInvalidException
+import hr.workspace.boat4you.domains.review.exceptions.ReviewNotFoundException
 import hr.workspace.boat4you.domains.users.exceptions.UserAlreadyExistsException
 import hr.workspace.boat4you.domains.users.exceptions.UserDoesNotExistException
 import hr.workspace.boat4you.domains.users.exceptions.UserInviteException
@@ -551,6 +554,43 @@ internal class ApiErrorHandler {
             ErrorSchema(
                 ApiErrorCodes.INVOICE_NOT_EXIST.code,
                 ApiErrorCodes.INVOICE_NOT_EXIST.message,
+            ),
+            HttpStatus.NOT_FOUND,
+        )
+    }
+
+    // Guest review form: stale / mistyped e-mail links are routine, so INFO without the token (it is a credential).
+    @ExceptionHandler(ReviewLinkInvalidException::class)
+    fun handleReviewLinkInvalidException(e: ReviewLinkInvalidException): ResponseEntity<ErrorSchema> {
+        logger.info("ReviewLinkInvalidException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.REVIEW_LINK_INVALID.code,
+                ApiErrorCodes.REVIEW_LINK_INVALID.message,
+            ),
+            HttpStatus.NOT_FOUND,
+        )
+    }
+
+    @ExceptionHandler(ReviewEditWindowClosedException::class)
+    fun handleReviewEditWindowClosedException(e: ReviewEditWindowClosedException): ResponseEntity<ErrorSchema> {
+        logger.info("ReviewEditWindowClosedException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.REVIEW_EDIT_WINDOW_CLOSED.code,
+                ApiErrorCodes.REVIEW_EDIT_WINDOW_CLOSED.message,
+            ),
+            HttpStatus.CONFLICT,
+        )
+    }
+
+    @ExceptionHandler(ReviewNotFoundException::class)
+    fun handleReviewNotFoundException(e: ReviewNotFoundException): ResponseEntity<ErrorSchema> {
+        logger.warn("ReviewNotFoundException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.REVIEW_NOT_FOUND.code,
+                ApiErrorCodes.REVIEW_NOT_FOUND.message,
             ),
             HttpStatus.NOT_FOUND,
         )

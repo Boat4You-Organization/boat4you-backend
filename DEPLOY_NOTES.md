@@ -1,5 +1,73 @@
 # Backend deploy notes
 
+## 2026-09-25 — Review collection: booking + yacht review requests, magic-link form, admin moderation (V9_62) — ⏳ BUILT, not deployed
+
+**🔴 BEFORE DEPLOY:** the web page `/[locale/]review/{token}` does not exist yet. `application.reviews.enabled` is
+**true in application-prod.yml**, so put `REVIEWS_ENABLED=false` in the env file on **cusma2 AND cusma3** before
+restarting with this jar, and flip it to true (restart) only once the web page is live — otherwise customers get
+e-mails with links to a 404. With the flag off nothing is sent; the endpoints and tables work regardless.
+
+**What / why:** phase 1 of the review plan (memory `project_review_voucher_plan_future`), collection only — nothing
+is displayed publicly, no vouchers/incentives. Two kinds per reservation:
+- **BOOKING** (the Boat4You booking experience) — requested right after the customer's FIRST payment. Trigger:
+  `ReservationPaymentRecordedEvent`, published by the Stripe webhook (`StripePaymentService.handleWebhookEvent`) and by
+  the admin bank-transfer confirm / mark-paid endpoints; `ReviewPaymentListener` = `@TransactionalEventListener(AFTER_COMMIT,
+  fallbackExecution)` → virtual thread, so a rolled-back payment never mails and the payment flow can never fail
+  because of the review e-mail. "First payment" = the earliest `paid_on` of the flow is < 48 h old (a pre-existing
+  booking paying its balance never qualifies). Safety net: the daily job re-checks the last 48 h.
+- **YACHT** (boat / charter) — daily job, charters with `date_to` 3-14 days ago, confirmed + at least one paid
+  instalment. Sent to every eligible reservation, NOT only to those with a booking review (deviation from the plan's
+  "upgrade path": the submit accepts a yacht review regardless and stores `booking_review_id` when a booking review
+  exists). The 14-day lookback means the first run does not mail old charters.
+- Eligible (both): `sys_status = RESERVATION`, `external_id` set and not `FICTITIOUS`, user not GDPR-deleted, user not
+  `marketing_opt_out` (same courtesy-mail opt-out as the birthday mail); booking: no BOOKING request in the yacht-swap
+  chain (an admin replacement booking with a carried-over instalment does not ask twice).
+- **Once only:** `review_request` has UNIQUE (reservation_id, kind); the sender claims the row
+  (`INSERT … ON CONFLICT DO NOTHING`) and only the claimer mails, in the same transaction; EmailService submits after
+  commit. A template error rolls the claim back (retried next run); an SMTP failure is logged, not retried
+  (at-most-once by design).
+- **Job:** `ReviewInvitationJob` 09:10 UTC, scheduler node only (`@Profile("data-sync")`, ShedLock
+  `reviewInvitations`, PT30M), max 200 per kind per run. Slot: after the 09:00 birthday mail, before 09:25 MMK reverify
+  / 09:32 pre-charter / 09:40-09:50 trip jobs. Queries touch a few hundred reservations; nothing heavy on cusma2.
+- **Link:** 32 random bytes, URL-safe base64 (43 chars); DB stores only SHA-256 hex; valid 60 days; reviews editable
+  24 h after the first submit via the same link. URL = `SERVER_HOST_PUBLIC` + `/{lc}` (not for en) + `/review/{token}`;
+  the e-mail also has 5 star links `…?rating=1..5` (form preselect).
+- **E-mails:** `email/reviewRequestBooking` + `email/reviewRequestYacht` (redesigned header/footer family), in
+  `users.language` (all 9 bundles: en/hr/de/fr/it/es/pt/pl/nl + default), recipient `"Full Name <email>"`, boat as
+  Manufacturer + Model + Name (manufacturer not repeated when the model name starts with it). Inquiry e-mail untouched.
+
+**Endpoints:**
+- `GET /public/reviews/request/{token}` → 200 form context (kind, scoreKeys, reservationNumber, yachtId, yachtFullLabel,
+  yachtMainImageId, dateFrom/dateTo, baseName/baseCountry, customerFirstName, locale, linkExpiresAt, submitted,
+  editable, editableUntil, review = existing values only while editable), `Cache-Control: no-store`; 404 code 7001
+  for unknown / malformed / expired link.
+- `POST /public/reviews/request/{token}` body `{rating 1-5 (required), scores{…kind keys 1-5}, title ≤120,
+  text ≤3000, publishConsent, locale}` → 201 new / 200 edit / 400 (1102, field map) / 404 (7001) / 409 (7002, edit
+  window over). Rate limit 10/min/IP (`application.rate-limit.public-review.*`) → 429.
+- `GET /admin/reviews?kind=&status=&page=&size=` (SYSTEM_ADMIN, both nodes) → PagedModel newest first;
+  `PATCH /admin/reviews/{id}` `{"status":"PUBLISHED|HIDDEN|NEW"}` → 200 / 400 / 404 (7003). Reviews arrive as NEW.
+
+**GDPR:** `softDeleteForGdpr` now also anonymises the user's reviews (text/title/country/consent cleared, HIDDEN,
+rating kept). Not yet in the Art. 20 data export (follow-up).
+
+**Migration V9_62:** two new tables `review_request` + `reservation_review` (FKs to reservation ON DELETE CASCADE so
+the spam purge keeps working, yacht/users ON DELETE SET NULL), CHECKs on kind/status/scores/text length, indexes for
+the admin list. `lock_timeout 5s`, idempotent (IF NOT EXISTS). No existing row touched.
+
+**Tests (28, all green):** ReviewTokensTests (7), ReviewValidationTests (6), ReviewControllersTests (4),
+ReviewEmailTemplateRenderTests (3: both templates × 9 languages with the real bundles), ReviewCollectionIntegrationTest
+(8, Testcontainers PG17: real V9_62 run twice, eligibility fixture, once-only sweep, event path, form create/edit/409/
+expiry, yacht↔booking link, admin paging/moderation, GDPR anonymisation, purge cascade).
+
+**After deploy (flag still off):** `SELECT count(*) FROM review_request;` = 0; `GET /public/reviews/request/xyz` → 404
+7001; `GET /admin/reviews` → empty page. **After the web page is live:** set `REVIEWS_ENABLED=true` on both nodes,
+restart inside the cusma3 window; next 09:10 UTC log line `Review request sweep: ReviewSweepResult(bookingSent=…,
+yachtSent=…, failed=0)`; a Stripe payment logs `BOOKING review request sent for reservation N (lc)`.
+**Kill switch:** `REVIEWS_ENABLED=false` + restart. **Rollback:** `webservice.jar.prev` on both nodes (tables stay,
+unused). **Undo the migration** (only if wanted; deletes collected reviews):
+`DROP TABLE IF EXISTS reservation_review; DROP TABLE IF EXISTS review_request;` +
+`DELETE FROM flyway_schema_history WHERE version = '9.62';`.
+
 ## 2026-09-25 — Charter facts for landing pages (V9_61) — ⏳ BUILT, not deployed
 
 **What:** landing pages (`/search?destinations=<slug>[&boatTypes=X]` → did c-/r-/l-) get a block of real inventory

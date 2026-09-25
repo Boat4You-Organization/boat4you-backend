@@ -66,4 +66,8 @@ enum class ApiErrorCodes(
     EXTERNAL_OPTION_ERROR(6002, "We're sorry, we're experiencing technical difficulties with this booking. Please contact our support team."),
     EXTERNAL_RESERVATION_ERROR(6003, "We're sorry, we couldn't complete your reservation due to a technical issue. Please contact our support team."),
     EXTERNAL_RESERVATION_CANCELLATION_ERROR(6004, "We're sorry, the cancellation couldn't be processed due to a technical issue. Please contact our support team."),
+    // 7xxx: guest review form (magic link from the review request e-mail). Customer-facing wording.
+    REVIEW_LINK_INVALID(7001, "This review link is invalid or has expired."),
+    REVIEW_EDIT_WINDOW_CLOSED(7002, "This review can no longer be changed — reviews can be edited for 24 hours after sending."),
+    REVIEW_NOT_FOUND(7003, "Review does not exist"),
 }

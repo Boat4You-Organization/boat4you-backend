@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.users.services
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.common.exceptions.UnmodifiableFieldsException
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
+import hr.workspace.boat4you.domains.review.service.ReviewDao
 import hr.workspace.boat4you.domains.roles.jpa.RoleAssignmentEntity
 import hr.workspace.boat4you.domains.roles.jpa.RoleAssignmentRepository
 import hr.workspace.boat4you.domains.roles.services.RoleService
@@ -33,6 +34,7 @@ class UserMutationService(
     private val passwordService: PasswordService,
     private val tokenService: TokenService,
     private val inquiryRepository: InquiryRepository,
+    private val reviewDao: ReviewDao,
 ) {
     private val logger: Logger = LoggerFactory.getLogger(this::class.java.name)
 
@@ -258,10 +260,14 @@ class UserMutationService(
         // retention obligation, so they are hard-deleted rather than tombstoned.
         val purgedInquiries = inquiryRepository.deleteByEmailIgnoreCase(originalEmail)
 
+        // Reviews: free text, country and publish consent go, the review is hidden; the anonymous rating stays.
+        val anonymisedReviews = reviewDao.anonymiseForUser(id)
+
         logger.info(
-            "GDPR soft-delete completed for user id={} (purged {} inquiry lead(s))",
+            "GDPR soft-delete completed for user id={} (purged {} inquiry lead(s), anonymised {} review(s))",
             id,
             purgedInquiries,
+            anonymisedReviews,
         )
     }
 

@@ -12,6 +12,7 @@ import hr.workspace.boat4you.domains.reservation.dto.ReservationViewDetailsDto
 import hr.workspace.boat4you.domains.reservation.dto.ReservationViewDto
 import hr.workspace.boat4you.domains.reservation.enums.PaymentType
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
+import hr.workspace.boat4you.domains.reservation.events.ReservationPaymentRecordedEvent
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.dto.AdminCreateReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.CreateFictitiousReservationDto
@@ -34,6 +35,7 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Pageable
 import org.springframework.data.domain.Sort
 import org.springframework.data.web.PageableDefault
@@ -74,6 +76,7 @@ internal class AdminReservationController(
     private val reservationDocumentService: ReservationDocumentService,
     private val reservationMappers: ReservationMappers,
     private val voucherService: VoucherService,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
     private val log = LoggerFactory.getLogger(AdminReservationController::class.java)
 
@@ -252,6 +255,10 @@ internal class AdminReservationController(
         reservationEmailService.sendConfirmationForReserved(reservationResponse, PaymentType.BANK_TRANSFER)
         runCatching { voucherService.issueForConfirmedReservation(id) }
             .onFailure { log.error("Voucher issuance failed for reservation {}", id, it) }
+        // Bank transfer confirmed with the paid instalment(s): booking review request (async, after this commit).
+        if (paymentPhaseIds.isNotEmpty()) {
+            eventPublisher.publishEvent(ReservationPaymentRecordedEvent(id))
+        }
 
         return ResponseEntity.ok(reservationResponse)
     }
@@ -348,7 +355,11 @@ internal class AdminReservationController(
         @PathVariable id: Long,
         @Parameter(description = "Payment phases which will be marked as paid") @PathVariable paymentPhaseIds: List<Long> = emptyList(),
     ): ResponseEntity<List<PaymentPhaseDto>> {
-        return ResponseEntity.ok(paymentPhasesService.markPaymentPhasePaid(id, paymentPhaseIds))
+        val phases = paymentPhasesService.markPaymentPhasePaid(id, paymentPhaseIds)
+        if (phases.isNotEmpty()) {
+            eventPublisher.publishEvent(ReservationPaymentRecordedEvent(id))
+        }
+        return ResponseEntity.ok(phases)
     }
 
     @Operation(
