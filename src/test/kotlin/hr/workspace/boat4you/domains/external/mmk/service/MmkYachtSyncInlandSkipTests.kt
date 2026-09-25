@@ -114,6 +114,7 @@ class MmkYachtSyncInlandSkipTests {
         shipyardId: Long?,
         products: List<String> = listOf("bareboat"),
         kind: String = "Motor boat",
+        model: String? = null,
     ) = org.openapitools.client.mmk.model.Yacht(
         id = id,
         name = "Yacht $id",
@@ -123,6 +124,7 @@ class MmkYachtSyncInlandSkipTests {
         companyId = 1L,
         company = "Company",
         shipyardId = shipyardId,
+        model = model,
         products = products.map { Product(name = it, extras = emptyList()) },
     )
 
@@ -142,6 +144,24 @@ class MmkYachtSyncInlandSkipTests {
         service.skipReason(mmkYacht(5, bavariaShipyard, products = emptyList()), inland) shouldBe SkipReason.NO_VALID_PRODUCTS
         service.shouldSkip(mmkYacht(6, leBoatShipyard), inland) shouldBe true
         service.shouldSkip(mmkYacht(7, bavariaShipyard), inland) shouldBe false
+    }
+
+    @Test
+    fun `a shipyard without a manufacturer row is caught by the model name`() {
+        // Kuhnle-Tours: MMK shipyard never mapped to a manufacturer of ours, the model name still names the builder
+        val inland = setOf(leBoatShipyard)
+        service.skipReason(mmkYacht(8, null, model = "Kormoran 1140"), inland) shouldBe SkipReason.INLAND_VESSEL
+        service.skipReason(mmkYacht(9, 999L, model = "Pedro Skiron 35 "), inland) shouldBe SkipReason.INLAND_VESSEL
+        service.skipReason(mmkYacht(10, null, model = "Bavaria 40 Vision"), inland) shouldBe null
+        service.skipReason(mmkYacht(11, null, model = "Triton 48 - 4 + 1 cab."), inland) shouldBe null
+    }
+
+    @Test
+    fun `an already imported inland yacht found by model name is switched off`() {
+        service.syncYachtsForAgency(agency.id!!, listOf(mmkYacht(500L, null, model = "Kormoran 940")))
+
+        existing.sysActive shouldBe false
+        saved shouldContainExactly listOf(existing)
     }
 
     @Test

@@ -45,6 +45,7 @@ class NauSysYachtSyncInlandSkipTests {
             manufacturer = Manufacturer().also { it.name = "Linssen" }
             externalCategoryId = 101L
         }
+    private var model = linssenModel
     private val saved = mutableListOf<Yacht>()
 
     private fun mapping(
@@ -70,7 +71,7 @@ class NauSysYachtSyncInlandSkipTests {
             }
         }
     private val models =
-        mock(ModelRepository::class.java) { inv -> if (inv.method.name == "findById") Optional.of(linssenModel) else null }
+        mock(ModelRepository::class.java) { inv -> if (inv.method.name == "findById") Optional.of(model) else null }
     private val agencies =
         mock(AgencyRepository::class.java) { inv -> if (inv.method.name == "findById") Optional.of(agency) else null }
     private val systems =
@@ -104,6 +105,22 @@ class NauSysYachtSyncInlandSkipTests {
 
     @Test
     fun `an already imported inland yacht is switched off, a new one is not imported`() {
+        service.syncYachtsForAgency(agency.id!!, nausysYachts(600L, 601L))
+
+        existing.sysActive shouldBe false
+        saved shouldContainExactly listOf(existing)
+    }
+
+    @Test
+    fun `a model without a manufacturer is caught by its name`() {
+        // Kuhnle-Tours' Kormoran: manufacturer never resolved, the model name still names the builder
+        model =
+            Model().apply {
+                id = 5L
+                name = "Kormoran 1140"
+                externalCategoryId = 101L
+            }
+
         service.syncYachtsForAgency(agency.id!!, nausysYachts(600L, 601L))
 
         existing.sysActive shouldBe false

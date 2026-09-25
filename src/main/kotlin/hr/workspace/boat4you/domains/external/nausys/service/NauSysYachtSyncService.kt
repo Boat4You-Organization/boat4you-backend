@@ -148,7 +148,7 @@ class NauSysYachtSyncService(
             if (shouldSkip(nausysYacht, model)) {
                 // Sea charter only: a river/canal cruiser imported earlier (before its builder was recognised) must
                 // go off the sites now — take-back keeps it, the partner still lists it. Row and mapping stay.
-                if (mapping != null && yacht.sysActive == true && InlandVesselRules.isInlandBuilder(model.manufacturer?.name)) {
+                if (mapping != null && yacht.sysActive == true && isInland(model)) {
                     yacht.sysActive = false
                     yachtRepository.saveAndFlush(yacht)
                     log.warn("Deactivated NauSYS yacht ${yacht.id} (${yacht.name}) of agency ${agency.id} — inland builder, sea charter only")
@@ -708,10 +708,14 @@ class NauSysYachtSyncService(
             return true
         }
         // River/canal cruisers come as MOTORBOAT / MOTOR_YACHT — only the builder gives them away.
-        val inland = InlandVesselRules.isInlandBuilder(model.manufacturer?.name)
-        if (inland) log.info("Skipping NauSYS yacht ${nausysYacht.id}: inland builder ${model.manufacturer?.name}")
+        val inland = isInland(model)
+        if (inland) log.info("Skipping NauSYS yacht ${nausysYacht.id}: inland builder ${model.manufacturer?.name} / ${model.name}")
         return inland
     }
+
+    /** Builder by manufacturer, or by the model name for a model whose manufacturer we never resolved ("Kormoran 1140"). */
+    private fun isInland(model: Model): Boolean =
+        InlandVesselRules.isInlandBuilder(model.manufacturer?.name) || InlandVesselRules.isInlandBuilder(model.name)
 
     private fun createTranslations(
         newYacht: Yacht,

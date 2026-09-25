@@ -36,6 +36,12 @@ class InlandVesselRulesTests {
             "Brandaris",
             "Veha Motorjachten",
             "  LE BOAT ",
+            // model names of models whose manufacturer we never resolved (Kuhnle-Tours, De Drait)
+            "Kormoran 1140",
+            "Pedro Skiron 35 ",
+            "De Drait Vri-Jon Contessa 1370",
+            "Nicols Estivale Octo",
+            "Linssen Grand Sturdy 35.0 AC",
         ).filterNot { InlandVesselRules.isInlandBuilder(it) }.shouldBeEmpty()
     }
 
@@ -66,6 +72,13 @@ class InlandVesselRulesTests {
             "Riviera",
             "Four Winns Boats",
             "Leopard",
+            // sea model names
+            "Triton 48 - 4 + 1 cab.",
+            "Bavaria 40 Vision",
+            "Horizon 48",
+            "Northman 1200 Elegance",
+            "Futura 40 Grand Horizon",
+            "Lagoon 42",
         ).filter { InlandVesselRules.isInlandBuilder(it) }.shouldBeEmpty()
     }
 

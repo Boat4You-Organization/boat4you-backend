@@ -236,7 +236,8 @@ class ConsistencyVerifierJob(
                         val model = y.yachtModelId?.let { nausysModels[it] }
                         model != null &&
                             !VesselType.shouldSkipVesselType(VesselType.fromNauSysCategoryId(model.categoryId)) &&
-                            !InlandVesselRules.isInlandBuilder(model.manufacturerName)
+                            !InlandVesselRules.isInlandBuilder(model.manufacturerName) &&
+                            !InlandVesselRules.isInlandBuilder(model.name)
                     }.mapNotNull { it.id }
                     .toSet(),
             )
@@ -247,18 +248,19 @@ class ConsistencyVerifierJob(
     private data class NausysModel(
         val categoryId: Long?,
         val manufacturerName: String?,
+        val name: String?,
     )
 
-    /** NauSys model external id → external_category_id + manufacturer name (one query, reused for every agency). */
+    /** NauSys model external id → external_category_id + manufacturer + model name (one query, reused for every agency). */
     private fun loadNausysModels(): Map<Long, NausysModel> =
         jdbcTemplate.query(
             """
-            SELECT em.external_id, m.external_category_id, mf.name FROM external_mapping em
+            SELECT em.external_id, m.external_category_id, mf.name, m.name FROM external_mapping em
             JOIN model m ON m.id = em.system_id
             LEFT JOIN manufacturer mf ON mf.id = m.manufacturer_id
             WHERE em.type = 'Model' AND em.external_system_id = ?
             """.trimIndent(),
-            { rs, _ -> rs.getLong(1) to NausysModel(rs.getObject(2)?.let { (it as Number).toLong() }, rs.getString(3)) },
+            { rs, _ -> rs.getLong(1) to NausysModel(rs.getObject(2)?.let { (it as Number).toLong() }, rs.getString(3), rs.getString(4)) },
             ExternalSystemEnum.NAUSYS.value,
         ).toMap()
 }

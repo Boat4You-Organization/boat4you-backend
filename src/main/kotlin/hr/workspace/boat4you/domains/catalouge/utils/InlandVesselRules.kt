@@ -9,8 +9,9 @@ import java.text.Normalizer
  * company as an active agency (5.7.2026) Le Boat (901 boats), Riverly, Canal Evasion and ten more river operators came
  * in that way, e.g. Le Boat "Caprice Comfort 51" on www.boat4you.com (all 13 switched off by hand 25.9.2026, V9_63).
  *
- * - [isInlandBuilder]: the yacht's manufacturer builds only inland cruisers -> the MMK and NauSys yacht sync skip the
- *   yacht and switch off one imported earlier; the weekly inventory uses the same rule.
+ * - [isInlandBuilder]: the yacht's manufacturer - or its model name, which starts with the builder ("Kormoran 1140",
+ *   for models whose manufacturer we never resolved) - is an inland-only builder -> the MMK and NauSys yacht sync skip
+ *   the yacht and switch off one imported earlier; the weekly inventory uses the same rule.
  * - [isRiverOperator]: a NEW partner company's name reads like a river operator -> the agency mirror creates it
  *   inactive (a manual OFF, so the mirror never re-activates it). Operators whose name gives nothing away (Anjou
  *   Navigation, Aqua Libra, ...) are still caught boat by boat through their builders.
@@ -19,7 +20,7 @@ import java.text.Normalizer
  * out: only the builder "Triton Boats" is inland ("Triton" alone can be a sea model), "Delos" is a sea brand.
  */
 object InlandVesselRules {
-    /** Manufacturers / shipyards that build only river, canal and lake cruisers. */
+    /** Manufacturers / shipyards that build only river, canal and lake cruisers; also matched against model names. */
     val INLAND_BUILDERS: List<Regex> =
         listOf(
             """\ble[\s-]*boat\b""", // Le Boat, LeBoat
@@ -33,7 +34,7 @@ object InlandVesselRules {
             """\bhaus[\s-]*boot""", // Hausboot, Hausboote
             """\blinssen\b""",
             """\bgruno\b""",
-            """\bpedro[\s-]*boats?\b""",
+            """\bpedro\b""", // Pedro Boat, model "Pedro Skiron 35"
             """\btriton[\s-]*boats?\b""",
             """\bbrandaris\b""",
             """\bveha\b""", // Veha Motorjachten

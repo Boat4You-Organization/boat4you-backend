@@ -779,8 +779,9 @@ class MmkYachtSyncService(
 
     /**
      * MMK shipyard ids whose manufacturer builds only river/canal cruisers ([InlandVesselRules.isInlandBuilder]).
-     * Read once per agency / inventory run and handed to [skipReason]: the MMK yacht carries only its shipyardId,
-     * the name comes from our manufacturer row (mapped by the catalogue manufacturerSync, same lookup as syncModel).
+     * Read once per agency / inventory run and handed to [skipReason]: the MMK yacht carries a shipyardId, not the
+     * builder's name - that comes from our manufacturer row (mapped by the catalogue manufacturerSync, same lookup as
+     * syncModel). Shipyards without such a row are caught by the model name in [skipReason].
      */
     fun inlandShipyardIds(): Set<Long> {
         val inlandManufacturerIds =
@@ -800,9 +801,12 @@ class MmkYachtSyncService(
         mmkYacht: org.openapitools.client.mmk.model.Yacht,
         inlandShipyardIds: Set<Long>,
     ): SkipReason? {
-        // First: an inland yacht is switched off by the sync, whatever else is wrong with it.
-        if (mmkYacht.shipyardId != null && mmkYacht.shipyardId in inlandShipyardIds) {
-            log.debug("Skipping MMK yacht ${mmkYacht.id}: inland builder (shipyardId ${mmkYacht.shipyardId})")
+        // First: an inland yacht is switched off by the sync, whatever else is wrong with it. The model name covers
+        // shipyards we have no manufacturer row for (Kuhnle-Tours' "Kormoran 1140", "Pedro Skiron 35").
+        if ((mmkYacht.shipyardId != null && mmkYacht.shipyardId in inlandShipyardIds) ||
+            InlandVesselRules.isInlandBuilder(mmkYacht.model)
+        ) {
+            log.debug("Skipping MMK yacht ${mmkYacht.id}: inland builder (shipyardId ${mmkYacht.shipyardId}, model ${mmkYacht.model})")
             return SkipReason.INLAND_VESSEL
         }
 
