@@ -6,6 +6,12 @@
 -- This records the fix applied by hand in production at ~16:05 UTC (4 agencies active=false + 28 yachts
 -- sys_active=false) and makes the yacht sync keep it: every normal yacht update sets sys_active=true, so the base
 -- itself is now flagged.
+-- Flyway's role has no lock_timeout of its own. The ALTER holds ACCESS EXCLUSIVE on location until COMMIT (a waiting
+-- request queues every later reader behind it), and the yacht UPDATE waits on any running yacht sync. So give up
+-- fast instead: the migration is one transaction, a timeout rolls it back cleanly and the API's systemd restart
+-- simply tries again a few seconds later (deploy inside a quiet window, DEPLOY_NOTES).
+SET LOCAL lock_timeout = '5s';
+
 -- 1) location.inland: a river / canal / lake base. The MMK and NauSys yacht sync treat a yacht whose base is inland
 --    like an inland builder (InlandVesselRules): never imported, one imported earlier switched off; the weekly
 --    inventory does the same. Location ids differ between databases (e.g. local vs production), so every id is
@@ -48,7 +54,15 @@ UPDATE public.location l
         -- PL
         (1228, 'AZS Wilkasy'), (900, 'PTTK Wilkasy'), (931, 'Port Sztynort'), (1298, 'Port ZHP'),
         -- PT
-        (1762, 'Amieira Marina')
+        (1762, 'Amieira Marina'),
+        -- Also inland, found in the 27.5.2026 production snapshot as bases of river operators (Kuhnle-Tours 534,
+        -- PUUR Yachtcharter 1481, Aqua Libra); not re-checked in production today - a renamed or missing row simply
+        -- matches nothing. BE, CZ, DE, FR, NL:
+        (1542, 'Jachthaven De Spaanjerd'), (631, 'Marina Vltava'),
+        (1491, 'Marina Müritz'), (625, 'Jachthafen Mirow'), (1366, 'Marina Vulkan Werft'), (989, 'Wolfsbruch'),
+        (1147, 'Marina Röblinsee'), (918, 'Malchin'), (1290, 'Marina Alter Hafen'), (643, 'Zeuthen'),
+        (1065, 'Port de Buzet-sur-Baïse'), (1409, 'Niderviller Marina'),
+        (1006, 'AWS Eendracht')
        ) AS v (id, name)
  WHERE l.id = v.id
    AND lower(normalize(trim(l.name), NFC)) = lower(normalize(v.name, NFC))

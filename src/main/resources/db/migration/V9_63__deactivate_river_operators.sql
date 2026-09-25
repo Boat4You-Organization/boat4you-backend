@@ -13,6 +13,11 @@
 -- the MMK / NauSys yacht sync skip (and switch off) yachts from inland-only builders.
 -- Idempotent: an agency already off (as in production today) matches nothing. No other data changes. Agency ids
 -- differ between databases (locally 1657 is a Greek sea company), so the production names guard every id.
+-- Flyway's role has no lock_timeout of its own. The agency mirrors write these rows, so give up fast instead of
+-- waiting on a sync transaction: the migration is one transaction, a timeout rolls it back cleanly and the API's
+-- systemd restart simply tries again a few seconds later (deploy inside a quiet window, DEPLOY_NOTES).
+SET LOCAL lock_timeout = '5s';
+
 UPDATE public.agency
    SET active = false,
        sync_deactivated_by = NULL

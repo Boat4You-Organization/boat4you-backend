@@ -18,21 +18,29 @@ VesselType skip never caught them). The 13 agencies were switched off by hand in
   Waterfront Jachtcharter 1464) set `active=false`, `sync_deactivated_by=NULL` and 28 yachts of sea agencies at lake bases
   (Starsails @ Lemmer 1723, Aalsmeer/Leimuiden 1095, Yachthafen Rapperswil 1058, Marina di Navene 1309) `sys_active=false`,
   by hand in prod ~16:05 UTC. **V9_64** records it and keeps it: new column `location.inland` (NOT NULL DEFAULT false),
-  set true for 80 river/canal/lake bases (each prod id guarded by its name — ids differ between DBs), the 4 agencies
+  set true for 93 river/canal/lake bases (80 checked in prod 25.9. + 13 river-operator bases from the 27.5. prod
+  snapshot; each id guarded by its name — ids differ between DBs), the 4 agencies
   (id + name guarded, idempotent), and every `sys_active` yacht at an inland base → false. V9_63 got the same name guard
   (not applied anywhere yet).
 - MMK + NauSys yacht sync: a yacht whose base location is `inland` is handled exactly like an inland builder
   (INLAND_VESSEL: not imported, an imported one switched off, counted in `inland=`); the weekly inventory follows
   (partner base ids of inland locations, one query per system). Operator rule: "Canal Yachting" (Corinth Canal, sea,
   agency 843) no longer matches; builders + Riverboating Holidays / "River Boat" and Nicols "Estivale" models.
-- **Deploy order: cusma2 FIRST.** Only cusma2 applies `V__` migrations (cusma3 is pinned to Flyway 1.43), and the new
-  jar maps `location.inland` under `ddl-auto: validate` — the new jar on cusma3 before V9_64 exists fails startup
-  ("missing column [inland]"). The old jar on cusma3 runs fine against the new column (DEFAULT false).
+- **🔴 Deploy only inside a quiet window with no sync running on cusma3** (07:50-08:00 / 13:00-16:15 / 17:50-20:35 /
+  21:05-22:15 UTC; not 08:00-08:40 until the `Charter facts: … rows` line — CharterFactsJob reads `location` in one
+  long transaction). V9_63 + V9_64 run with `lock_timeout 5s`; V9_64 holds ACCESS EXCLUSIVE on `location` until it
+  commits. **cusma2 first** (applies V9_63 + V9_64; cusma3 is pinned to Flyway 1.43, and the new jar maps
+  `location.inland` under `ddl-auto: validate`, so on cusma3 before V9_64 it fails startup), **then cusma3 immediately
+  in the same window**: the old cusma3 jar has no inland rules and its yacht sync would set `sys_active=true` again.
+  If Flyway reports `lock timeout`, restart cusma2 inside the window; the migrations are transactional and idempotent.
+  Until deployed, the yacht sync (MMK 06:10 daily) brings the 28 hand-switched lake-base yachts back; V9_64 switches
+  them off again.
 - **After deploy:** check V9_63 + V9_64 applied on cusma2 (`flyway_schema_history`) and
-  `SELECT count(*) FROM location WHERE inland` → 80 (fewer = a name no longer matches: find it by id). V9_64 switches off
-  ALL active yachts at the 80 bases, also those of the already inactive river agencies (not only the 28). The first MMK /
-  NauSys yacht sync may switch off inland-builder or inland-base yachts that SEA agencies also list (WARN "Deactivated
-  MMK|NauSYS yacht ... inland builder or base") — expected; check the counts (`inland=` in the MMK take-back line).
+  `SELECT count(*) FROM location WHERE inland` → 93 (all 93 matched on the 27.5. snapshot; fewer = a name no longer
+  matches: find it by id). V9_64 switches off ALL active yachts at these bases, also those of the already inactive river
+  agencies (not only the 28). The first MMK / NauSys yacht sync may switch off inland-builder or inland-base yachts that
+  SEA agencies also list (WARN "Deactivated MMK|NauSYS yacht ... inland builder or base") — expected; check the counts
+  (`inland=` in the MMK take-back line).
 
 ## 2026-09-25 — V9_61 charter facts + V9_62 review collection ✅ LIVE cusma2 13:50 + cusma3 13:56 UTC
 
