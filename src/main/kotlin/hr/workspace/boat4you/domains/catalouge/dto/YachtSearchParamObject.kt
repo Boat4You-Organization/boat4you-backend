@@ -70,6 +70,12 @@ data class YachtSearchParamObject(
      * needs to create our-side reservation against it.
      */
     val includeUnavailable: Boolean = false,
+    /**
+     * `priceBasis=week` (web destination landings, 25.9.2026): an UNDATED search prices every
+     * yacht by its cheapest bookable 7-night offer, NULL when it has none (card: "price on
+     * request"). Ignored when a date is given. See YachtQueryingService.weeklyFromValue.
+     */
+    val weeklyPrice: Boolean = false,
     val language: LanguageEnum,
 ) {
     fun getMinLengthInMeters(): BigDecimal? {
