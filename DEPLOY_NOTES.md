@@ -1,5 +1,12 @@
 # Backend deploy notes
 
+## 2026-09-25 — V9_61 charter facts + V9_62 review collection ✅ LIVE cusma2 13:50 + cusma3 13:56 UTC
+
+Jar md5 `784f2919…` (HEAD `d562fc0`). Flyway 9.61 + 9.62 applied on cusma2 in 0.041 s; cusma3 "up to date" (deployed after
+the 13:30 MMK free-offer reverify finished, 0 sync lines). Verified: reservation_review FKs = reservation, users, review_request,
+self (no yacht FK); review_request 0, reservation_review 0, charter_facts 0; REVIEWS_ENABLED not set (sending OFF);
+`/public/charter-facts?did=c-54` 404 (first nightly run 08:00 UTC 26.9.), `did=x-1` 400, `/public/reviews/request/abc` 404.
+
 ## 2026-09-25 — Review collection (V9_62) review fixes: off by default in prod, edits re-moderated, unsubscribe, admin re-send, no yacht FK — ⏳ BUILT, not deployed
 
 Follow-up to the V9_62 entry below (same unreleased feature; V9_62 was edited in place — it was never applied
