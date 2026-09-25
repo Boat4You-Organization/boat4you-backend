@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-09-25 — Sea charter only: inland (river/canal) vessels and operators blocked in the sync (V9_63) — ⏳ BUILT, not deployed
+## 2026-09-25 — Sea charter only: inland (river/canal/lake) vessels, operators and bases blocked in the sync (V9_63 + V9_64) — ⏳ BUILT, not deployed
 
 Le Boat "Caprice Comfort 51" was live on www.boat4you.com: since 5.7.2026 the MMK agency mirror auto-creates every
 unknown company ACTIVE, and 13 river operators came in that way (their cruisers are MOTORBOAT / MOTOR_YACHT, so the
@@ -14,9 +14,25 @@ VesselType skip never caught them). The 13 agencies were switched off by hand in
 - Agency mirrors (MMK + NauSys): a NEW company whose name matches the operator rule is created `active=false`,
   `sync_deactivated_by=NULL` (manual OFF, never re-activated by the mirror) + WARN "Created NEW agency ... INACTIVE".
   Existing agencies untouched.
-- **After deploy:** the first MMK / NauSys yacht sync may switch off inland-builder yachts that SEA agencies also list
-  (WARN "Deactivated MMK|NauSYS yacht ... inland builder") — expected; check the counts (`inland=` in the MMK take-back
-  line). No pre-deploy action; normal jar deploy (cusma3 then cusma2).
+- Lake charter (Mario, same day): 4 lake agencies (Ahoj Czarter 1335, New Port (Nowy Sztynort) 698, Okej-Czarter 1326,
+  Waterfront Jachtcharter 1464) set `active=false`, `sync_deactivated_by=NULL` and 28 yachts of sea agencies at lake bases
+  (Starsails @ Lemmer 1723, Aalsmeer/Leimuiden 1095, Yachthafen Rapperswil 1058, Marina di Navene 1309) `sys_active=false`,
+  by hand in prod ~16:05 UTC. **V9_64** records it and keeps it: new column `location.inland` (NOT NULL DEFAULT false),
+  set true for 80 river/canal/lake bases (each prod id guarded by its name — ids differ between DBs), the 4 agencies
+  (id + name guarded, idempotent), and every `sys_active` yacht at an inland base → false. V9_63 got the same name guard
+  (not applied anywhere yet).
+- MMK + NauSys yacht sync: a yacht whose base location is `inland` is handled exactly like an inland builder
+  (INLAND_VESSEL: not imported, an imported one switched off, counted in `inland=`); the weekly inventory follows
+  (partner base ids of inland locations, one query per system). Operator rule: "Canal Yachting" (Corinth Canal, sea,
+  agency 843) no longer matches; builders + Riverboating Holidays / "River Boat" and Nicols "Estivale" models.
+- **Deploy order: cusma2 FIRST.** Only cusma2 applies `V__` migrations (cusma3 is pinned to Flyway 1.43), and the new
+  jar maps `location.inland` under `ddl-auto: validate` — the new jar on cusma3 before V9_64 exists fails startup
+  ("missing column [inland]"). The old jar on cusma3 runs fine against the new column (DEFAULT false).
+- **After deploy:** check V9_63 + V9_64 applied on cusma2 (`flyway_schema_history`) and
+  `SELECT count(*) FROM location WHERE inland` → 80 (fewer = a name no longer matches: find it by id). V9_64 switches off
+  ALL active yachts at the 80 bases, also those of the already inactive river agencies (not only the 28). The first MMK /
+  NauSys yacht sync may switch off inland-builder or inland-base yachts that SEA agencies also list (WARN "Deactivated
+  MMK|NauSYS yacht ... inland builder or base") — expected; check the counts (`inland=` in the MMK take-back line).
 
 ## 2026-09-25 — V9_61 charter facts + V9_62 review collection ✅ LIVE cusma2 13:50 + cusma3 13:56 UTC
 

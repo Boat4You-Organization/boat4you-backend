@@ -40,6 +40,9 @@ class LocationQueryingService(
         return locationRepository.findByExternalIdAndExternalSystemId(externalId, externalSystemId)
     }
 
+    /** Partner base ids of our inland (river / canal / lake) locations, see [LocationRepository.findInlandExternalIds]. */
+    fun getInlandLocationExternalIds(externalSystemId: Long): Set<Long> = locationRepository.findInlandExternalIds(externalSystemId).toSet()
+
     @Cacheable(value = ["locationCache"], unless = "#result == null")
     fun getCachedLocationById(id: Long): Location? {
         return locationRepository.findById(id).getOrNull()

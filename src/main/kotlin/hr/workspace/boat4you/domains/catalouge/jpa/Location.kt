@@ -60,6 +60,11 @@ open class Location {
     @Column(name = "city", length = 100)
     open var city: String? = null
 
+    // River / canal / lake base (V9_64, sea charter only - Mario 25.9.2026): the MMK and NauSys yacht sync never list
+    // a yacht based here, like an inland builder's. Set by migration / admin SQL; the catalogue syncs never write it.
+    @Column(name = "inland", nullable = false)
+    open var inland: Boolean = false
+
     // Read-only, DB-derived marina label: "name | city" when a city is present, else just name.
     // Backed by a STORED generated column (V9_16); the catalogue syncs only ever write name/city
     // and Postgres recomputes this, so a sync can never revert the label (the bug that kept wiping

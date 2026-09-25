@@ -15,9 +15,12 @@ import java.text.Normalizer
  * - [isRiverOperator]: a NEW partner company's name reads like a river operator -> the agency mirror creates it
  *   inactive (a manual OFF, so the mirror never re-activates it). Operators whose name gives nothing away (Anjou
  *   Navigation, Aqua Libra, ...) are still caught boat by boat through their builders.
+ * - A sea builder's boat at a river / canal / lake base (Lemmer, Lake Garda, ...) is caught by the base, not here:
+ *   location.inland (V9_64), checked by the same yacht syncs.
  *
  * Both match whole words, ignoring case and accents. Add a pattern to cover another builder / operator; keep sea names
- * out: only the builder "Triton Boats" is inland ("Triton" alone can be a sea model), "Delos" is a sea brand.
+ * out: only the builder "Triton Boats" is inland ("Triton" alone can be a sea model), "Delos" is a sea brand, and
+ * "Canal Yachting" is a sea company (Corinth Canal, agency 843).
  */
 object InlandVesselRules {
     /** Manufacturers / shipyards that build only river, canal and lake cruisers; also matched against model names. */
@@ -38,6 +41,8 @@ object InlandVesselRules {
             """\btriton[\s-]*boats?\b""",
             """\bbrandaris\b""",
             """\bveha\b""", // Veha Motorjachten
+            """\briver[\s-]*boat""", // Riverboating Holidays (NauSys builder), model "River Boat 1122"
+            """\bestivale\b""", // Nicols Estivale Octo / Quattro / Sixto models
         ).map { Regex(it, RegexOption.IGNORE_CASE) }
 
     /** Words in a partner company name that mark a river / canal operator. */
@@ -50,10 +55,12 @@ object InlandVesselRules {
             """\bkuhnle\b""", // Kuhnle-Tours
             """\bhouse[\s-]*boat""",
             """\bhaus[\s-]*boot""",
-            """\b[ck]anal(s|e|en)?\b""", // Canal Evasion, Gota Kanal Charter, Canal Boats Telemark
+            // Canal Evasion, Gota Kanal Charter, Canal Boats Telemark - but not "Canal Yachting" (Corinth Canal, sea)
+            """\b[ck]anal(s|e|en)?\b(?![\s-]*yacht)""",
             """\bfluvia""", // fluvial, fluviale, fluviaux
             """\bpeniche""", // peniche(s), penichette
             """\brivers?\b""",
+            """\briver[\s-]*boat""", // Riverboating Holidays
             """\bboating[\s-]+holidays?\b""",
         ).map { Regex(it, RegexOption.IGNORE_CASE) }
 

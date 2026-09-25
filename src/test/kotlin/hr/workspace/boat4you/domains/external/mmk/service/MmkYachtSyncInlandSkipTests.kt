@@ -3,11 +3,13 @@ package hr.workspace.boat4you.domains.external.mmk.service
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
+import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.jpa.Manufacturer
 import hr.workspace.boat4you.domains.catalouge.jpa.ManufacturerRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
+import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtSyncService.SkipReason
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
@@ -19,13 +21,17 @@ import org.openapitools.client.mmk.model.Product
 import java.util.Optional
 
 /**
- * 25.9.2026 sea charter only: an MMK yacht whose shipyard maps to an inland-only builder (Le Boat) is never imported,
- * and one imported earlier is switched off (row and mapping kept). A sea builder's yacht is untouched by the rule.
- * Repositories are answer-by-method-name mocks; anything the skip must not reach would NPE on the empty location list.
+ * 25.9.2026 sea charter only: an MMK yacht whose shipyard maps to an inland-only builder (Le Boat), or that is based at
+ * an inland location (location.inland, V9_64 - a sea agency's boats at Lemmer), is never imported, and one imported
+ * earlier is switched off (row and mapping kept). A sea builder's yacht at a sea base is untouched by the rule.
+ * Repositories are answer-by-method-name mocks; only the sea base 1 has a location mapping.
  */
 class MmkYachtSyncInlandSkipTests {
     private val leBoatShipyard = 300L
     private val bavariaShipyard = 301L
+    private val seaBase = 1L
+    private val lemmerBase = 1723L
+    private val inlandBases = setOf(lemmerBase)
     private val agency =
         Agency().apply {
             id = 1883L
@@ -37,6 +43,15 @@ class MmkYachtSyncInlandSkipTests {
             name = "Caprice Comfort 51"
             sysActive = true
         }
+
+    // same agency, imported earlier, based at sea
+    private val seaYacht =
+        Yacht().apply {
+            id = 78L
+            name = "Sea Yacht"
+            sysActive = true
+        }
+    private val seaLocation = Location().apply { id = 40L }
     private val saved = mutableListOf<Yacht>()
 
     private fun mapping(
@@ -64,15 +79,24 @@ class MmkYachtSyncInlandSkipTests {
         mock(ExternalMappingService::class.java) { inv ->
             when (inv.method.name) {
                 "getAllMappingsByType" -> listOf(mapping(leBoatShipyard, 9L), mapping(bavariaShipyard, 10L))
-                "getAllMappingsByTypeAndExtendedType" -> listOf(mapping(500L, existing.id!!))
-                "getCachedAllMappingsByType" -> emptyList<ExternalMapping>()
+                "getAllMappingsByTypeAndExtendedType" -> listOf(mapping(500L, existing.id!!), mapping(502L, seaYacht.id!!))
+                // Location mappings: MMK home base 1 -> our sea location
+                "getCachedAllMappingsByType" -> listOf(mapping(seaBase, seaLocation.id!!))
+                else -> null
+            }
+        }
+    private val locations =
+        mock(LocationQueryingService::class.java) { inv ->
+            when (inv.method.name) {
+                "getInlandLocationExternalIds" -> inlandBases
+                "getCachedLocationById" -> seaLocation
                 else -> null
             }
         }
     private val yachts =
         mock(YachtRepository::class.java) { inv ->
             when (inv.method.name) {
-                "findById" -> Optional.ofNullable(existing.takeIf { inv.arguments[0] == it.id })
+                "findById" -> Optional.ofNullable(listOf(existing, seaYacht).find { inv.arguments[0] == it.id })
                 "save" -> inv.getArgument<Yacht>(0).also { saved += it }
                 "findAllByAgencyAndExternalIdNotIn" -> emptyList<Yacht>()
                 else -> null
@@ -94,7 +118,7 @@ class MmkYachtSyncInlandSkipTests {
             externalMappingService = mappings,
             yachtImageRepository = any(),
             manufacturerRepository = manufacturers,
-            locationQueryingService = any(),
+            locationQueryingService = locations,
             reservationOptionRepository = any(),
             yachtEquipmentRepository = any(),
             equipmentRepository = any(),
@@ -115,11 +139,12 @@ class MmkYachtSyncInlandSkipTests {
         products: List<String> = listOf("bareboat"),
         kind: String = "Motor boat",
         model: String? = null,
+        homeBaseId: Long = seaBase,
     ) = org.openapitools.client.mmk.model.Yacht(
         id = id,
         name = "Yacht $id",
         kind = kind,
-        homeBaseId = 1L,
+        homeBaseId = homeBaseId,
         homeBase = "Base",
         companyId = 1L,
         company = "Company",
@@ -136,24 +161,24 @@ class MmkYachtSyncInlandSkipTests {
     @Test
     fun `an inland builder is skipped first, a sea builder is eligible`() {
         val inland = setOf(leBoatShipyard)
-        service.skipReason(mmkYacht(1, leBoatShipyard), inland) shouldBe SkipReason.INLAND_VESSEL
+        service.skipReason(mmkYacht(1, leBoatShipyard), inland, inlandBases) shouldBe SkipReason.INLAND_VESSEL
         // inland wins over the other reasons, so the sync always switches such a yacht off
-        service.skipReason(mmkYacht(2, leBoatShipyard, products = emptyList()), inland) shouldBe SkipReason.INLAND_VESSEL
-        service.skipReason(mmkYacht(3, bavariaShipyard), inland) shouldBe null
-        service.skipReason(mmkYacht(4, null), inland) shouldBe null
-        service.skipReason(mmkYacht(5, bavariaShipyard, products = emptyList()), inland) shouldBe SkipReason.NO_VALID_PRODUCTS
-        service.shouldSkip(mmkYacht(6, leBoatShipyard), inland) shouldBe true
-        service.shouldSkip(mmkYacht(7, bavariaShipyard), inland) shouldBe false
+        service.skipReason(mmkYacht(2, leBoatShipyard, products = emptyList()), inland, inlandBases) shouldBe SkipReason.INLAND_VESSEL
+        service.skipReason(mmkYacht(3, bavariaShipyard), inland, inlandBases) shouldBe null
+        service.skipReason(mmkYacht(4, null), inland, inlandBases) shouldBe null
+        service.skipReason(mmkYacht(5, bavariaShipyard, products = emptyList()), inland, inlandBases) shouldBe SkipReason.NO_VALID_PRODUCTS
+        service.shouldSkip(mmkYacht(6, leBoatShipyard), inland, inlandBases) shouldBe true
+        service.shouldSkip(mmkYacht(7, bavariaShipyard), inland, inlandBases) shouldBe false
     }
 
     @Test
     fun `a shipyard without a manufacturer row is caught by the model name`() {
         // Kuhnle-Tours: MMK shipyard never mapped to a manufacturer of ours, the model name still names the builder
         val inland = setOf(leBoatShipyard)
-        service.skipReason(mmkYacht(8, null, model = "Kormoran 1140"), inland) shouldBe SkipReason.INLAND_VESSEL
-        service.skipReason(mmkYacht(9, 999L, model = "Pedro Skiron 35 "), inland) shouldBe SkipReason.INLAND_VESSEL
-        service.skipReason(mmkYacht(10, null, model = "Bavaria 40 Vision"), inland) shouldBe null
-        service.skipReason(mmkYacht(11, null, model = "Triton 48 - 4 + 1 cab."), inland) shouldBe null
+        service.skipReason(mmkYacht(8, null, model = "Kormoran 1140"), inland, inlandBases) shouldBe SkipReason.INLAND_VESSEL
+        service.skipReason(mmkYacht(9, 999L, model = "Pedro Skiron 35 "), inland, inlandBases) shouldBe SkipReason.INLAND_VESSEL
+        service.skipReason(mmkYacht(10, null, model = "Bavaria 40 Vision"), inland, inlandBases) shouldBe null
+        service.skipReason(mmkYacht(11, null, model = "Triton 48 - 4 + 1 cab."), inland, inlandBases) shouldBe null
     }
 
     @Test
@@ -170,6 +195,33 @@ class MmkYachtSyncInlandSkipTests {
 
         existing.sysActive shouldBe false
         saved shouldContainExactly listOf(existing)
+    }
+
+    @Test
+    fun `a sea builder at an inland base is skipped, at a sea base eligible`() {
+        val inland = setOf(leBoatShipyard)
+        service.skipReason(mmkYacht(12, bavariaShipyard, homeBaseId = lemmerBase), inland, inlandBases) shouldBe SkipReason.INLAND_VESSEL
+        service.skipReason(mmkYacht(13, bavariaShipyard, homeBaseId = seaBase), inland, inlandBases) shouldBe null
+        service.shouldSkip(mmkYacht(14, bavariaShipyard, homeBaseId = lemmerBase), inland, inlandBases) shouldBe true
+    }
+
+    @Test
+    fun `a sea agency's yacht at an inland base is switched off, its yacht at a sea base stays`() {
+        // Starsails: Bavaria at Lemmer (IJsselmeer) goes off, the same agency's Bavaria at sea is synced as usual;
+        // a new one at Lemmer is not imported
+        service.syncYachtsForAgency(
+            agency.id!!,
+            listOf(
+                mmkYacht(500L, bavariaShipyard, homeBaseId = lemmerBase),
+                mmkYacht(502L, bavariaShipyard, homeBaseId = seaBase),
+                mmkYacht(503L, bavariaShipyard, homeBaseId = lemmerBase),
+            ),
+        )
+
+        existing.sysActive shouldBe false
+        seaYacht.sysActive shouldBe true
+        seaYacht.location shouldBe seaLocation
+        saved shouldContainExactly listOf(existing, seaYacht)
     }
 
     @Test

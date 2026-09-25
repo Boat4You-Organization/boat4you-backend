@@ -42,6 +42,12 @@ class InlandVesselRulesTests {
             "De Drait Vri-Jon Contessa 1370",
             "Nicols Estivale Octo",
             "Linssen Grand Sturdy 35.0 AC",
+            "Riverboating Holidays",
+            "River Boat 1122",
+            "River Boat 1122-S",
+            "Estivale Octo",
+            "Estivale Sixto Prestige C",
+            "Estivale Quattro B",
         ).filterNot { InlandVesselRules.isInlandBuilder(it) }.shouldBeEmpty()
     }
 
@@ -72,6 +78,7 @@ class InlandVesselRulesTests {
             "Riviera",
             "Four Winns Boats",
             "Leopard",
+            "Riva",
             // sea model names
             "Triton 48 - 4 + 1 cab.",
             "Bavaria 40 Vision",
@@ -100,6 +107,7 @@ class InlandVesselRulesTests {
             "River Cruises",
             "Boating Holidays",
             "Hausboot Charter",
+            "Riverboating Holidays",
         ).filterNot { InlandVesselRules.isRiverOperator(it) }.shouldBeEmpty()
     }
 
@@ -117,6 +125,9 @@ class InlandVesselRulesTests {
             "Delos",
             "Riviera Charter",
             "Canalis Yachting",
+            // Corinth Canal, sea (agency 843)
+            "Canal Yachting",
+            "Canal-Yachting",
         ).filter { InlandVesselRules.isRiverOperator(it) }.shouldBeEmpty()
     }
 

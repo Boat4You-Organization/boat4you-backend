@@ -97,6 +97,7 @@ class NauSysYachtSyncService(
             )
         val allLocationMappings =
             externalMappingService.getCachedAllMappingsByType(Location::class.simpleName.toString(), externalSystem)
+        val inlandBaseIds = locationQueryingService.getInlandLocationExternalIds(ExternalSystemEnum.NAUSYS.value.toLong())
 
         nausysResponse.yachts?.forEach { nausysYacht ->
             val mapping = allMappings.find { mapping -> mapping.externalId == nausysYacht.id!!.toLong() }
@@ -145,13 +146,14 @@ class NauSysYachtSyncService(
                 )
                 return@forEach
             }
-            if (shouldSkip(nausysYacht, model)) {
-                // Sea charter only: a river/canal cruiser imported earlier (before its builder was recognised) must
-                // go off the sites now — take-back keeps it, the partner still lists it. Row and mapping stay.
-                if (mapping != null && yacht.sysActive == true && isInland(model)) {
+            if (shouldSkip(nausysYacht, model, inlandBaseIds)) {
+                // Sea charter only: a river/canal/lake yacht imported earlier (before its builder or base was
+                // recognised) must go off the sites now — take-back keeps it, the partner still lists it. Row and
+                // mapping stay.
+                if (mapping != null && yacht.sysActive == true && isInland(nausysYacht, model, inlandBaseIds)) {
                     yacht.sysActive = false
                     yachtRepository.saveAndFlush(yacht)
-                    log.warn("Deactivated NauSYS yacht ${yacht.id} (${yacht.name}) of agency ${agency.id} — inland builder, sea charter only")
+                    log.warn("Deactivated NauSYS yacht ${yacht.id} (${yacht.name}) of agency ${agency.id} — inland builder or base, sea charter only")
                 }
                 return@forEach
             }
@@ -701,21 +703,36 @@ class NauSysYachtSyncService(
     private fun shouldSkip(
         nausysYacht: RestYacht,
         model: Model,
+        inlandBaseIds: Set<Long>,
     ): Boolean {
         val vesselType = VesselType.fromNauSysCategoryId(model.externalCategoryId)
         if (VesselType.shouldSkipVesselType(vesselType)) {
             log.info("Skipping NauSYS yacht ${nausysYacht.id} with vessel type $vesselType")
             return true
         }
-        // River/canal cruisers come as MOTORBOAT / MOTOR_YACHT — only the builder gives them away.
-        val inland = isInland(model)
-        if (inland) log.info("Skipping NauSYS yacht ${nausysYacht.id}: inland builder ${model.manufacturer?.name} / ${model.name}")
+        // River/canal cruisers come as MOTORBOAT / MOTOR_YACHT — only the builder or the base gives them away.
+        val inland = isInland(nausysYacht, model, inlandBaseIds)
+        if (inland) {
+            log.info(
+                "Skipping NauSYS yacht ${nausysYacht.id}: inland builder or base " +
+                    "(${model.manufacturer?.name} / ${model.name}, locationId ${nausysYacht.locationId})",
+            )
+        }
         return inland
     }
 
-    /** Builder by manufacturer, or by the model name for a model whose manufacturer we never resolved ("Kormoran 1140"). */
-    private fun isInland(model: Model): Boolean =
-        InlandVesselRules.isInlandBuilder(model.manufacturer?.name) || InlandVesselRules.isInlandBuilder(model.name)
+    /**
+     * Builder by manufacturer, or by the model name for a model whose manufacturer we never resolved ("Kormoran 1140"),
+     * or a river / canal / lake base ([inlandBaseIds]: NauSys location ids of location.inland, V9_64).
+     */
+    private fun isInland(
+        nausysYacht: RestYacht,
+        model: Model,
+        inlandBaseIds: Set<Long>,
+    ): Boolean =
+        InlandVesselRules.isInlandBuilder(model.manufacturer?.name) ||
+            InlandVesselRules.isInlandBuilder(model.name) ||
+            nausysYacht.locationId?.toLong() in inlandBaseIds
 
     private fun createTranslations(
         newYacht: Yacht,

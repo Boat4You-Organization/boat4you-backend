@@ -43,6 +43,20 @@ interface LocationRepository : JpaRepository<Location, Long> {
     fun findByNameIgnoreCase(name: String): Location?
 
     /**
+     * The partner's base ids (external_mapping 'Location') of our inland bases - river, canal and lake marinas,
+     * location.inland (V9_64). The MMK / NauSys yacht sync and the weekly inventory skip a yacht based there.
+     */
+    @Query(
+        """
+        SELECT em.externalId
+        FROM ExternalMapping em
+        JOIN Location l ON l.id = em.systemId
+        WHERE em.externalSystem.id = :externalSystemId AND em.type = 'Location' AND l.inland = true
+    """,
+    )
+    fun findInlandExternalIds(externalSystemId: Long): List<Long>
+
+    /**
      * IDs of all marinas that are the SAME place as [name] under a spelling/diacritic variant,
      * within the same country. The catalogue holds the same marina twice when providers spell it
      * differently — e.g. "Marina Kastela" (212 yachts) and "Marina Kaštela" (138 yachts) — so a

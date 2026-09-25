@@ -112,6 +112,7 @@ class MmkYachtSyncService(
         var skippedVesselType = 0
         var skippedInland = 0
         val inlandShipyardIds = inlandShipyardIds()
+        val inlandBaseIds = locationQueryingService.getInlandLocationExternalIds(ExternalSystemEnum.MMK.value.toLong())
 
         mmkYachts.forEach { mmkYacht ->
             // Track every partner-reported id up front (before shouldSkip) —
@@ -119,11 +120,11 @@ class MmkYachtSyncService(
             // the partner catalogue but we choose to skip our own update
             // (e.g. unsupported product mix), it must NOT be deactivated.
             mmkYacht.id?.let { syncedYachts.add(it) }
-            when (skipReason(mmkYacht, inlandShipyardIds)) {
+            when (skipReason(mmkYacht, inlandShipyardIds, inlandBaseIds)) {
                 SkipReason.INLAND_VESSEL -> {
-                    // Sea charter only: unlike the other skips, a river/canal cruiser imported earlier (before its
-                    // builder was recognised) must go off the sites now — take-back keeps it, the partner still
-                    // lists it. Row and mapping stay (no delete); nothing re-activates it while the rule matches.
+                    // Sea charter only: unlike the other skips, a river/canal/lake yacht imported earlier (before its
+                    // builder or base was recognised) must go off the sites now — take-back keeps it, the partner
+                    // still lists it. Row and mapping stay (no delete); nothing re-activates it while the rule matches.
                     skippedInland++
                     allMappings
                         .find { it.externalId == mmkYacht.id }
@@ -132,7 +133,7 @@ class MmkYachtSyncService(
                         ?.let {
                             it.sysActive = false
                             yachtRepository.save(it)
-                            log.warn("Deactivated MMK yacht ${it.id} (${it.name}, mmkId=${mmkYacht.id}) of agency ${agency.id} — inland builder, sea charter only")
+                            log.warn("Deactivated MMK yacht ${it.id} (${it.name}, mmkId=${mmkYacht.id}) of agency ${agency.id} — inland builder or base, sea charter only")
                         }
                     return@forEach
                 }
@@ -775,7 +776,8 @@ class MmkYachtSyncService(
     fun shouldSkip(
         mmkYacht: org.openapitools.client.mmk.model.Yacht,
         inlandShipyardIds: Set<Long>,
-    ): Boolean = skipReason(mmkYacht, inlandShipyardIds) != null
+        inlandBaseIds: Set<Long>,
+    ): Boolean = skipReason(mmkYacht, inlandShipyardIds, inlandBaseIds) != null
 
     /**
      * MMK shipyard ids whose manufacturer builds only river/canal cruisers ([InlandVesselRules.isInlandBuilder]).
@@ -796,10 +798,12 @@ class MmkYachtSyncService(
     }
 
     /** Why a partner yacht is not synced, or null when it is eligible. Per-yacht detail is DEBUG
-     * (~2.8k lines/week); the per-agency take-back line carries the counts. */
+     * (~2.8k lines/week); the per-agency take-back line carries the counts. [inlandBaseIds]: MMK home-base ids of our
+     * river / canal / lake bases (location.inland, V9_64 - a sea agency's boats at Lemmer, Lake Garda, ...). */
     fun skipReason(
         mmkYacht: org.openapitools.client.mmk.model.Yacht,
         inlandShipyardIds: Set<Long>,
+        inlandBaseIds: Set<Long>,
     ): SkipReason? {
         // First: an inland yacht is switched off by the sync, whatever else is wrong with it. The model name covers
         // shipyards we have no manufacturer row for (Kuhnle-Tours' "Kormoran 1140", "Pedro Skiron 35").
@@ -807,6 +811,10 @@ class MmkYachtSyncService(
             InlandVesselRules.isInlandBuilder(mmkYacht.model)
         ) {
             log.debug("Skipping MMK yacht ${mmkYacht.id}: inland builder (shipyardId ${mmkYacht.shipyardId}, model ${mmkYacht.model})")
+            return SkipReason.INLAND_VESSEL
+        }
+        if (mmkYacht.homeBaseId in inlandBaseIds) {
+            log.debug("Skipping MMK yacht ${mmkYacht.id}: inland base (homeBaseId ${mmkYacht.homeBaseId})")
             return SkipReason.INLAND_VESSEL
         }
 

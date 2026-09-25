@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.external.job
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
+import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.mmk.client.MmkAuditedClient
@@ -33,7 +34,8 @@ import org.springframework.stereotype.Component
  *     "other" and MMK day-charter-only yachts are deliberately never imported,
  *     so they must not show up as drift. The eligibility rules are the SAME
  *     ones the sync applies (MmkYachtSyncService.shouldSkip / VesselType /
- *     InlandVesselRules — inland builders, 25.9.2026).
+ *     InlandVesselRules — inland builders, and inland bases = location.inland,
+ *     25.9.2026).
  *     "We have, partner doesn't" still uses the partner's FULL list — that is
  *     the take-back baseline.
  *  B. DB invariants (pure SQL, no partner calls): orphaned yacht mappings,
@@ -52,6 +54,7 @@ class ConsistencyVerifierJob(
     private val nauSysAuditedClient: NauSysAuditedClient,
     private val nauSysAuthProvider: NauSysAuthProvider,
     private val jdbcTemplate: JdbcTemplate,
+    private val locationQueryingService: LocationQueryingService,
     private val emailService: EmailService,
     private val userRepository: UserRepository,
 ) {
@@ -112,10 +115,12 @@ class ConsistencyVerifierJob(
         val mmkInlandShipyardIds = mmkYachtSyncService.inlandShipyardIds()
 
         for (system in listOf(ExternalSystemEnum.MMK, ExternalSystemEnum.NAUSYS)) {
+            // the partner's base ids of our river / canal / lake bases — the sync never imports a yacht based there
+            val inlandBaseIds = locationQueryingService.getInlandLocationExternalIds(system.value.toLong())
             val agencies = agencyRepository.findAllActiveByPrimarySyncProvider(system.value.toLong())
             for (agency in agencies) {
                 val extId = agency.getExternalId() ?: continue
-                val partner = runCatching { partnerFleet(system, extId, nausysModels, mmkInlandShipyardIds) }
+                val partner = runCatching { partnerFleet(system, extId, nausysModels, mmkInlandShipyardIds, inlandBaseIds) }
                     .getOrElse {
                         failures++
                         continue
@@ -195,8 +200,8 @@ class ConsistencyVerifierJob(
         sb.appendLine("   - Budući offeri na NEaktivnim jahtama: $futureOffersInactiveYachts")
         sb.appendLine("   - Aktivne jahte bez ijedne slike: $activeYachtsNoImages")
         sb.appendLine()
-        sb.appendLine("Napomena: 'partner' brojka = samo plovila koja naš sync UVOZI (houseboat/riječni, gumenjaci,")
-        sb.appendLine("trimarani, 'other' i MMK plovila bez charter produkta — dnevni najam — se NE broje).")
+        sb.appendLine("Napomena: 'partner' brojka = samo plovila koja naš sync UVOZI (houseboat/riječni, riječne/jezerske")
+        sb.appendLine("baze, gumenjaci, trimarani, 'other' i MMK plovila bez charter produkta — dnevni najam — se NE broje).")
         sb.appendLine("'viška kod nas' = partner tu jahtu više ne lista (kandidat za deaktivaciju);")
         sb.appendLine("'fali kod nas' = plovilo koje bismo trebali imati, a nemamo.")
         return sb.toString()
@@ -207,12 +212,13 @@ class ConsistencyVerifierJob(
         agencyExternalId: Long,
         nausysModels: Map<Long, NausysModel>,
         mmkInlandShipyardIds: Set<Long>,
+        inlandBaseIds: Set<Long>,
     ): PartnerFleet = when (system) {
         ExternalSystemEnum.MMK -> {
             val yachts = mmkAuditedClient.getYachts(companyId = agencyExternalId)
             PartnerFleet(
                 allIds = yachts.map { it.id }.toSet(),
-                eligibleIds = yachts.filterNot { mmkYachtSyncService.shouldSkip(it, mmkInlandShipyardIds) }.map { it.id }.toSet(),
+                eligibleIds = yachts.filterNot { mmkYachtSyncService.shouldSkip(it, mmkInlandShipyardIds, inlandBaseIds) }.map { it.id }.toSet(),
             )
         }
         ExternalSystemEnum.NAUSYS -> {
@@ -231,13 +237,14 @@ class ConsistencyVerifierJob(
                 eligibleIds = yachts
                     .filter { y ->
                         // Mirror of NauSysYachtSyncService: unresolvable model → the
-                        // sync never imports it; otherwise skip by vessel category
-                        // and by inland builder.
+                        // sync never imports it; otherwise skip by vessel category,
+                        // by inland builder and by inland base.
                         val model = y.yachtModelId?.let { nausysModels[it] }
                         model != null &&
                             !VesselType.shouldSkipVesselType(VesselType.fromNauSysCategoryId(model.categoryId)) &&
                             !InlandVesselRules.isInlandBuilder(model.manufacturerName) &&
-                            !InlandVesselRules.isInlandBuilder(model.name)
+                            !InlandVesselRules.isInlandBuilder(model.name) &&
+                            y.locationId?.toLong() !in inlandBaseIds
                     }.mapNotNull { it.id }
                     .toSet(),
             )

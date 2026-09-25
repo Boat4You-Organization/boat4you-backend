@@ -11,9 +11,13 @@
 -- skip inactive agencies; yachts and offers are not touched (no delete).
 -- From now on the code keeps it that way: InlandVesselRules - new river-operator companies are created inactive, and
 -- the MMK / NauSys yacht sync skip (and switch off) yachts from inland-only builders.
--- Idempotent: an agency already off (as in production today) matches nothing. No other data changes.
+-- Idempotent: an agency already off (as in production today) matches nothing. No other data changes. Agency ids
+-- differ between databases (locally 1657 is a Greek sea company), so the production names guard every id.
 UPDATE public.agency
    SET active = false,
        sync_deactivated_by = NULL
  WHERE id IN (1883, 1773, 1734, 1674, 2038, 1657, 1747, 1219, 688, 1795, 1908, 1472, 937)
+   AND lower(trim(name)) IN ('le boat', 'riverly', 'anjou navigation', 'canal evasion', 'houseboat holidays italia',
+                             'sbs fleesensee', 'revier charter', 'yachtcharter de drait', 'jachtwerf oost',
+                             'hibo yachtcharter', 'blue wave yachting by delos', 'aqua libra', '3lacs yacht charter')
    AND active;
