@@ -1,5 +1,22 @@
 # Backend deploy notes
 
+## 2026-09-25 — Unusable/missing request parameters answer 400, not 500 (ce80f75, ✅ LIVE cusma2 07:57 + cusma3 07:58 UTC)
+
+cusma2 review: ~300 "Unhandled exception" ERROR lines a day were `MethodArgumentTypeMismatchException`
+— bots copy the srcset descriptor into image URLs (`/public/image/N?width=1080 1080w`) and send
+`?startDate=null` — answered with 500. `ApiErrorHandler` now handles `MethodArgumentTypeMismatchException`
+and `MissingServletRequestParameterException`: 400, code 1102 INVALID_REQUEST_PARAMETERS, WARN log,
+body names only the parameter + expected type (`{width=must be a valid Integer}`), never the raw value.
+Test `ApiErrorHandlerParameterTests` (2). No migration. Jar md5 `1d473b05…`; both nodes restarted inside
+the cusma3 window (0 sync lines). Verified: bad width → 400 JSON, good width → 200 image/webp,
+`startDate=null` → 400, health 200. Rollback: `webservice.jar.prev` on both nodes (= V9_60 build).
+
+Housekeeping the same morning on cusma2 (no code): `/tmp/opencv_openpnp*` ×52 (3.2 GB — OpenCV/openpnp
+extracts native libs into a new /tmp dir on every JVM start and never deletes it), two stale
+`/tmp/api7*.log` dumps (330 MB) and 4 redundant old jars (880 MB) removed → disk 75 % → 57 %.
+Permanent: systemd drop-in `boat4you.service.d/opencv-tmp-cleanup.conf` with
+`ExecStartPre=/bin/sh -c "rm -rf /tmp/opencv_openpnp*"` (active from this restart on).
+
 ## 2026-09-24 — ⛵ Partner "One man crew" extras shown as "Skipper" (V9_60) — ⏳ BUILT (jar `603d7fa1`), deploy cusma2 + cusma3
 
 **LIVE cusma2 24.9.2026 16:52 UTC** (jar md5 `603d7fa1…`, commits `a663e1a` + `763a5f2`; restart ~21 s to 200). Flyway `9.60` applied in 4.8 s. Verified on cusma4: 0 rows left matching `one[ -]*man[ -]*crew` in `yacht_extras`/`offer_extras`; renamed 36 × "Skipper (Caribbean)" (NSS Charter 1526) + 15 + 27 × "Skipper (+ boarding)…" (Marina Yacht Charter 1041). API `/public/yachts/12615` now returns `"Skipper (Caribbean)"`. Snapshot for undo: `cusma4:/home/cusma4/extras_one_man_crew_snapshot_20260924.csv` (78 rows, id + old name). 2 yachts now carry both a plain "Skipper" row and the renamed one (pre-existing partner duplication). **cusma3 (scheduler) LIVE 17:53 UTC** (same jar md5, window 17:50-20:35 UTC, 0 sync lines in the 3 min before; Flyway "up to date", Started in 12 s). Both nodes on `a663e1a`.
