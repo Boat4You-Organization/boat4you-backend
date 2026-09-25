@@ -49,8 +49,10 @@ import org.springframework.http.converter.HttpMessageNotReadableException
 // like server crashes in the logs and to the customer.
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import java.sql.SQLException
 
 @ControllerAdvice
@@ -93,6 +95,41 @@ internal class ApiErrorHandler {
             ErrorSchema(
                 ApiErrorCodes.INVALID_REQUEST_PARAMETERS.code,
                 ApiErrorCodes.INVALID_REQUEST_PARAMETERS.message + ": $badParameters",
+            ),
+            HttpStatus.BAD_REQUEST,
+        )
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException::class)
+    fun handleMethodArgumentTypeMismatchException(e: MethodArgumentTypeMismatchException): ResponseEntity<ErrorSchema> {
+        // A query/path parameter that cannot be converted to the controller's
+        // type is the caller's mistake, not a server failure — yet it fell
+        // through to the generic 500 handler (~300 "Unhandled exception" ERROR
+        // lines a day on cusma2, 25.9.2026: bots copy the srcset descriptor into
+        // the URL, `/public/image/N?width=1080 1080w`; `?startDate=null`). Only
+        // the parameter NAME and the expected type go into the body — the raw
+        // value is attacker-controlled input (F1-055 leak vector).
+        val expected = e.requiredType?.simpleName ?: "value"
+        logger.warn("MethodArgumentTypeMismatchException — parameter '{}' is not a valid {}", e.name, expected)
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.INVALID_REQUEST_PARAMETERS.code,
+                ApiErrorCodes.INVALID_REQUEST_PARAMETERS.message + ": {${e.name}=must be a valid $expected}",
+            ),
+            HttpStatus.BAD_REQUEST,
+        )
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException::class)
+    fun handleMissingServletRequestParameterException(
+        e: MissingServletRequestParameterException,
+    ): ResponseEntity<ErrorSchema> {
+        // Same family as above: a required parameter left out is a 400, not a 500.
+        logger.warn("MissingServletRequestParameterException — parameter '{}' is missing", e.parameterName)
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.INVALID_REQUEST_PARAMETERS.code,
+                ApiErrorCodes.INVALID_REQUEST_PARAMETERS.message + ": {${e.parameterName}=required}",
             ),
             HttpStatus.BAD_REQUEST,
         )
