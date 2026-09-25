@@ -102,6 +102,13 @@ class YachtController(
          * we actively promote.
          */
         @RequestParam(name = "countryCodes", required = false) countryCodes: List<String>?,
+        /**
+         * `week` → an undated search prices each yacht by its cheapest bookable 7-night offer
+         * (null when there is none) instead of MIN(per-day) × MIN(days) over all its offers.
+         * Sent by the web's undated destination landings; ignored with dates. Anything else,
+         * or absent, keeps the existing pricing (sister sites, admin, AI chat).
+         */
+        @RequestParam(name = "priceBasis", required = false) priceBasis: String? = null,
         @RequestParam(name = "page", defaultValue = "0") page: Int,
         @RequestParam(name = "size", defaultValue = "10") size: Int,
         @RequestHeader(name = "Accept-Language", required = false) lang: String? = null,
@@ -162,6 +169,7 @@ class YachtController(
                 agencyIds = agencyIds,
                 includeUnavailable = includeUnavailable,
                 countryCodes = countryCodes,
+                weeklyPrice = priceBasis.equals("week", ignoreCase = true),
                 language = language,
             )
 
