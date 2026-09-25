@@ -1,5 +1,45 @@
 # Backend deploy notes
 
+## 2026-09-25 — Charter facts for landing pages (V9_61) — ⏳ BUILT, not deployed
+
+**What:** landing pages (`/search?destinations=<slug>[&boatTypes=X]` → did c-/r-/l-) get a block of real inventory
+facts. New table `charter_facts` (did, vessel_type NULL = all types, computed_at, payload jsonb; unique index on
+`(did, COALESCE(vessel_type,''))`), filled nightly by `CharterFactsJob` **04:20 UTC on the scheduler node only**
+(`@Profile("data-sync")`, `@SchedulerLock("charterFactsRecompute", PT1H)`). 04:20 = after the 03:25-03:40
+voucher / inquiry / retention-reaper jobs, before the 05:30 cleanup and the 06:00 MMK sync, far from NauSys 23:00.
+**Why precomputed:** cusma2 is the only API node (OOM history) — it only does one indexed row read per request.
+**Endpoints:**
+- `GET /public/charter-facts?did=c-54[&vesselType=CATAMARAN]` → 200 payload + `computedAt`,
+  `Cache-Control: max-age=3600, public`; 404 no row; 400 malformed did (`^[clr]-\d{1,12}$`), missing did or
+  unknown vesselType. `/public/**` is already permitAll — no security change.
+- `POST /admin/charter-facts/recompute` (SYSTEM_ADMIN, **cusma3 only** like the other /admin job triggers) → 202
+  `STARTED` (runs in background under the SAME ShedLock lock as the cron) / 409 `ALREADY_RUNNING`.
+**Computation (set-based, one transaction, temp tables ON COMMIT DROP, `SET LOCAL statement_timeout 600s`,
+work_mem 128MB, jit off):** population = search's (EXTERNAL, sys_active, agency active + not availability_blocked),
+7-night offers with date_from in [today, +12 months), pickup marina in the 12 promoted countries
+(`charter-facts.countries`, default BS,ES,FR,GD,GR,HR,IT,ME,MQ,SC,TR,VG). One row per yacht-week (BAREBOAT/CREWED/
+one-way rows collapsed: price = cheapest non-UNAVAILABLE client_price EUR, available = any row FREE). did membership by
+pickup marina: c- via country.code2, r- via location_region with the search's own-country guard, l- = marina + its
+same-name siblings (findMarinaIdsByFoldedName fold). Keys: every promoted c- with boats; r-/l- with ≥10 boats; per
+vessel type with ≥10 boats. Fields: activeBoats, priceByMonth (p25/median/p75, months ≥5 offers), cheapest/
+priciestMonth, availableShareByMonth + mostBookedMonth, skipperWeekly (name starts "Skipper", no training/cook/…,
+per night ×7, per week/booking/boat/amount ×1, plain "Skipper" row preferred, 500-7000 EUR/week plausibility band),
+obligatoryExtrasWeekly (per-boat fees only — per-person items excluded; deposit/waiver/insurance excluded; boats with an
+obligatory percentage APA or no extras rows left out), deposit min/median/max (EUR ≥100 only), checkInDays,
+medianBuildYear, topModels (8), topBases (8, c-/r- only), boatTypeMix (all-types rows). Any figure with n<5 is omitted.
+**Safety:** the table is replaced (DELETE + INSERT) inside the same transaction — readers see old or new, never half.
+A run producing < 50 % of the stored rows (e.g. offer table emptied by an incident) is rolled back, old facts kept,
+ERROR logged. Measured on the local DB copy (145k yacht-weeks, 11k boats, 939k extras): whole SQL ≈ 3.5 s,
+685 keys / 264 dids.
+**Migration V9_61:** new empty table + index, `lock_timeout 5s`, idempotent (IF NOT EXISTS). No data touched.
+**After deploy:** cusma2 → `GET /public/charter-facts?did=c-54` = 404 until the first run (expected). On cusma3
+trigger once: `POST /admin/charter-facts/recompute` (202) → log line `Charter facts: N rows (M dids) from … yacht-weeks`
+→ `SELECT count(*), max(computed_at) FROM charter_facts;` → GET on cusma2 returns 200. Frontend wiring is separate.
+**Tests:** CharterFactsMathTests (7), CharterFactsControllerTests (4), CharterFactsJobTests (2),
+CharterFactsComputeServiceTest (5, Testcontainers PG17: real V9_61 + real aggregation SQL on a hand-checked fixture).
+**Rollback:** `webservice.jar.prev` on both nodes (the table stays, unused). **Undo the migration** (only if wanted):
+`DROP TABLE IF EXISTS charter_facts;` + `DELETE FROM flyway_schema_history WHERE version = '9.61';`.
+
 ## 2026-09-25 — Unusable/missing request parameters answer 400, not 500 (ce80f75, ✅ LIVE cusma2 07:57 + cusma3 07:58 UTC)
 
 cusma2 review: ~300 "Unhandled exception" ERROR lines a day were `MethodArgumentTypeMismatchException`
