@@ -15,6 +15,7 @@ import org.springframework.jdbc.datasource.SingleConnectionDataSource
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
 import java.sql.ResultSet
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -30,7 +31,12 @@ import java.time.LocalDate
  *  - weekly offers = exactly 7 nights, date_from in [today, today + 12 months), pickup marina in a promoted country;
  *  - one row per yacht-week (a week can have a BAREBOAT and a CREWED row, or a one-way variant): the round-trip,
  *    bookable (not UNAVAILABLE), cheapest row names the base, the price is the cheapest non-UNAVAILABLE client_price (EUR, what the listing shows), and the
- *    week counts as available when any of its rows is FREE;
+ *    week counts as available when any of its rows is FREE, and bookable when any of its rows is not UNAVAILABLE;
+ *  - a boat belongs to a did only when it has at least one BOOKABLE week based there — search hides UNAVAILABLE rows
+ *    (YachtQueryingService, offerStatus <> UNAVAILABLE for every public caller), so a boat whose every week is
+ *    UNAVAILABLE (withdrawn by the MMK reverifier, blocked by owner weeks) is not counted: activeBoats, the per-boat
+ *    figures, models and bases all use members only. Month / check-in figures use all weeks of MEMBER boats (their
+ *    UNAVAILABLE weeks stay in the availability denominators);
  *  - did membership by pickup marina: c- = marina country (country.code2), r- = location_region with the search's
  *    own-country guard, l- = the marina and its same-name siblings in the same country (findMarinaIdsByFoldedName).
  *    Drop-off-only matches (one-way INTO the destination) are not counted — facts describe boats based there.
@@ -72,7 +78,15 @@ class CharterFactsComputeService(
         val millis: Long,
     )
 
-    fun recompute(): Summary {
+    /** Newest stored computed_at (null = table empty) — for the job's staleness check. */
+    fun latestComputedAt(): Instant? =
+        jdbcTemplate.queryForObject("SELECT max(computed_at) FROM charter_facts", java.sql.Timestamp::class.java)?.toInstant()
+
+    /**
+     * [force] = skip the "fewer than half of the stored rows" guard (ops, for a legitimate large shrink). The
+     * empty-result guard always applies: zero rows is never a legitimate outcome.
+     */
+    fun recompute(force: Boolean = false): Summary {
         val start = System.currentTimeMillis()
         val summary =
             jdbcTemplate.execute(
@@ -80,7 +94,7 @@ class CharterFactsComputeService(
                     val autoCommit = conn.autoCommit
                     conn.autoCommit = false
                     try {
-                        val result = computeAndReplace(JdbcTemplate(SingleConnectionDataSource(conn, true)), start)
+                        val result = computeAndReplace(JdbcTemplate(SingleConnectionDataSource(conn, true)), start, force)
                         if (result.stored) conn.commit() else conn.rollback()
                         result
                     } catch (e: Exception) {
@@ -107,6 +121,7 @@ class CharterFactsComputeService(
     private fun computeAndReplace(
         jdbc: JdbcTemplate,
         start: Long,
+        force: Boolean,
     ): Summary {
         // SET LOCAL: reset automatically at COMMIT / ROLLBACK, so the pooled connection goes back clean.
         jdbc.execute("SET LOCAL statement_timeout = '${STATEMENT_TIMEOUT_SECONDS}s'")
@@ -176,10 +191,11 @@ class CharterFactsComputeService(
 
         val previous = jdbc.queryForObject("SELECT count(*) FROM charter_facts", Int::class.java) ?: 0
         val dids = payloads.map { it.first.did }.distinct().size
-        val tooFew = payloads.isEmpty() || payloads.size * 2 < previous
+        val tooFew = payloads.isEmpty() || (!force && payloads.size * 2 < previous)
         if (tooFew) {
             log.error(
-                "Charter facts: only {} rows computed vs {} stored — refusing to replace (empty/broken offer data?)",
+                "Charter facts: only {} rows computed vs {} stored — refusing to replace (empty/broken offer data?). " +
+                    "If the shrink is legitimate: POST /admin/charter-facts/recompute?force=true on the scheduler node",
                 payloads.size,
                 previous,
             )
@@ -191,6 +207,9 @@ class CharterFactsComputeService(
             "INSERT INTO charter_facts (did, vessel_type, computed_at, payload) VALUES (?, ?, now(), CAST(? AS jsonb))",
             payloads.map { (k, p) -> arrayOf<Any?>(k.did, k.vesselType, objectMapper.writeValueAsString(p)) },
         )
+        if (force && payloads.size * 2 < previous) {
+            log.warn("Charter facts: forced replace of {} stored rows with {} rows", previous, payloads.size)
+        }
         return Summary(true, payloads.size, previous, weeks, boats, dids, System.currentTimeMillis() - start)
     }
 
@@ -233,6 +252,7 @@ class CharterFactsComputeService(
                o.location_from AS location_id,
                y.vessel_type,
                bool_or(o.status = 'FREE') OVER wk AS is_free,
+               bool_or(o.status <> 'UNAVAILABLE') OVER wk AS has_bookable,
                min(o.client_price) FILTER (WHERE o.status <> 'UNAVAILABLE' AND o.client_price > 0) OVER wk AS price
         FROM offer o
         JOIN yacht y     ON y.id = o.yacht_id AND y.entry_type = 'EXTERNAL' AND y.sys_active
@@ -259,6 +279,8 @@ class CharterFactsComputeService(
             CREATE TEMP TABLE cf_boat ON COMMIT DROP AS
             WITH boats AS (SELECT DISTINCT yacht_id FROM cf_member),
             sk AS (
+                -- The site's canonical Skipper extra (extras_id 1, R__1_04: "Skipper" anywhere in the name, e.g.
+                -- "Professional skipper") or a name starting with "Skipper"; SKIPPER_EXCLUDE drops the non-skipper rows.
                 -- One skipper figure per boat: a plain "Skipper" row wins over variants ("Skipper + food"), then the
                 -- cheapest. Optional or obligatory; free (included) and non-weekly units are skipped; weekly amounts
                 -- outside [$SKIPPER_MIN_WEEKLY, $SKIPPER_MAX_WEEKLY] EUR are partner unit mistakes (a per-day price
@@ -266,7 +288,7 @@ class CharterFactsComputeService(
                 SELECT DISTINCT ON (ye.yacht_id) ye.yacht_id, ye.price * $m AS weekly
                 FROM yacht_extras ye
                 JOIN boats b ON b.yacht_id = ye.yacht_id
-                WHERE ye.name ILIKE 'skipper%'
+                WHERE (ye.extras_id = $SKIPPER_EXTRAS_ID OR ye.name ILIKE 'skipper%')
                   AND ye.name !~* '$SKIPPER_EXCLUDE'
                   AND ye.price > 0
                   AND ye.price * $m BETWEEN $SKIPPER_MIN_WEEKLY AND $SKIPPER_MAX_WEEKLY
@@ -330,6 +352,9 @@ class CharterFactsComputeService(
         const val SKIPPER_MIN_WEEKLY = 500
         const val SKIPPER_MAX_WEEKLY = 7000
 
+        /** extras.id of the canonical "Skipper" extra (R__1_04_extras_import.sql). */
+        const val SKIPPER_EXTRAS_ID = 1
+
         /** Skipper-named rows that are not "a skipper for the week". */
         const val SKIPPER_EXCLUDE = "training|trainer|cook|hostess|advance|certificate|licen[cs]e"
 
@@ -366,6 +391,7 @@ class CharterFactsComputeService(
             CREATE TEMP TABLE cf_member ON COMMIT DROP AS
             SELECT DISTINCT s.did, w.yacht_id, w.vessel_type
             FROM cf_week w JOIN cf_scope s ON s.location_id = w.location_id
+            WHERE w.has_bookable
             """.trimIndent()
 
         val KEY_SQL =
@@ -412,7 +438,9 @@ class CharterFactsComputeService(
                    percentile_cont(0.5) WITHIN GROUP (ORDER BY price) AS median,
                    percentile_cont(0.75) WITHIN GROUP (ORDER BY price) AS p75
             FROM (SELECT s.did, w.vessel_type, to_char(w.date_from, 'YYYY-MM') AS month, w.is_free, w.price
-                  FROM cf_week w JOIN cf_scope s ON s.location_id = w.location_id) x
+                  FROM cf_week w
+                  JOIN cf_scope s ON s.location_id = w.location_id
+                  JOIN cf_member m ON m.did = s.did AND m.yacht_id = w.yacht_id) x
             GROUP BY GROUPING SETS ((did, month), (did, vessel_type, month))
             """.trimIndent()
 
@@ -420,7 +448,9 @@ class CharterFactsComputeService(
             """
             SELECT did, $VT, dow, count(*) AS weeks
             FROM (SELECT s.did, w.vessel_type, extract(isodow FROM w.date_from)::int AS dow
-                  FROM cf_week w JOIN cf_scope s ON s.location_id = w.location_id) x
+                  FROM cf_week w
+                  JOIN cf_scope s ON s.location_id = w.location_id
+                  JOIN cf_member m ON m.did = s.did AND m.yacht_id = w.yacht_id) x
             GROUP BY GROUPING SETS ((did, dow), (did, vessel_type, dow))
             """.trimIndent()
 
@@ -454,7 +484,7 @@ class CharterFactsComputeService(
             ),
             x AS (
                 SELECT s.did, yl.vessel_type, yl.yacht_id, yl.location_id, g.gkey
-                FROM (SELECT DISTINCT yacht_id, vessel_type, location_id FROM cf_week) yl
+                FROM (SELECT DISTINCT yacht_id, vessel_type, location_id FROM cf_week WHERE has_bookable) yl
                 JOIN cf_scope s ON s.location_id = yl.location_id
                 JOIN g ON g.location_id = yl.location_id
                 WHERE s.did NOT LIKE 'l-%'

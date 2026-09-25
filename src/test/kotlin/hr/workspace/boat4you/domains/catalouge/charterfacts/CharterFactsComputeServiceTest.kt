@@ -28,16 +28,18 @@ import java.time.temporal.TemporalAdjusters
 
 /**
  * Runs the real aggregation SQL of [CharterFactsComputeService] and the real V9_61 migration against a throw-away
- * PostgreSQL, on a fixture small enough to check every figure by hand. Same approach as YachtSearchViewRefresherTest:
- * no Spring context / Flyway (the versioned history cannot be replayed on an empty database), a minimal schema with
- * exactly the columns the job reads.
+ * PostgreSQL 18 (prod major), on a fixture small enough to check every figure by hand. Same approach as
+ * YachtSearchViewRefresherTest: no Spring context / Flyway (the versioned history cannot be replayed on an empty
+ * database — V9_18 is a prod data fix that assumes seeded rows), a minimal schema with exactly the columns the job reads.
  *
  * Fixture (dates relative to the container's CURRENT_DATE): month M = next calendar month, W1 / W2 = its first two
  * Saturdays, W3 = first Saturday of M+1.
  *  - yachts 1-10 CATAMARAN at Marina Kaštela (l-1), 11-12 SAILING_YACHT at Marina Kastela (l-2, same-name sibling),
  *    13 SAILING_YACHT at ACI Split (l-3); all in Croatia (c-54) and region r-5.
  *  - excluded on purpose: 14 inactive yacht, 15 inactive agency, 16 availability-blocked agency, 17 non-promoted
- *    country (NO), 18 CUSTOM entry.
+ *    country (NO), 18 CUSTOM entry, 19 a catamaran at l-1 whose every week is UNAVAILABLE (search never lists it, so
+ *    it must not count as a boat, a model, a base or a week).
+ *  - skipper: yacht 12 has only "Professional skipper" tagged with the canonical Skipper extra (extras_id 1).
  */
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -47,7 +49,7 @@ class CharterFactsComputeServiceTest {
         @Container
         @JvmStatic
         val postgres: PostgreSQLContainer<Nothing> =
-            PostgreSQLContainer<Nothing>("postgres:17-alpine").apply {
+            PostgreSQLContainer<Nothing>("postgres:18-alpine").apply {
                 withDatabaseName("boat4you_db")
                 withInitScript("init/00_roles.sql")
             }
@@ -69,7 +71,8 @@ class CharterFactsComputeServiceTest {
                                 location_to bigint NOT NULL, date_from date NOT NULL, date_to date NOT NULL,
                                 client_price numeric NOT NULL, status varchar(31) NOT NULL);
             CREATE TABLE yacht_extras (id bigserial PRIMARY KEY, yacht_id bigint NOT NULL, name varchar, price numeric NOT NULL,
-                                       unit varchar(31) NOT NULL, obligatory boolean NOT NULL, valid_from date, valid_to date);
+                                       unit varchar(31) NOT NULL, obligatory boolean NOT NULL, valid_from date, valid_to date,
+                                       extras_id bigint);
             """.trimIndent()
     }
 
@@ -148,7 +151,8 @@ class CharterFactsComputeServiceTest {
                                      (15, 2, 'EXTERNAL', true, 2020, 1, 'CATAMARAN', NULL, NULL),
                                      (16, 3, 'EXTERNAL', true, 2020, 1, 'CATAMARAN', NULL, NULL),
                                      (17, 1, 'EXTERNAL', true, 2020, 1, 'CATAMARAN', NULL, NULL),
-                                     (18, 1, 'CUSTOM', true, 2020, 1, 'CATAMARAN', NULL, NULL);
+                                     (18, 1, 'CUSTOM', true, 2020, 1, 'CATAMARAN', NULL, NULL),
+                                     (19, 1, 'EXTERNAL', true, 2020, 1, 'CATAMARAN', 3000, 'EUR');
             """.trimIndent(),
         )
 
@@ -187,6 +191,9 @@ class CharterFactsComputeServiceTest {
         // excluded boats, all at l-1 in W1
         for (y in listOf(14, 15, 16, 18)) offer(y, 1, w1, 7, 100, "FREE")
         offer(17, 5, w1, 7, 100, "FREE")
+        // yacht 19: listed nowhere by search - every week UNAVAILABLE (withdrawn / owner-blocked)
+        for (d in listOf(w1, w2, w3)) offer(19, 1, d, 7, 3000, "UNAVAILABLE")
+        extra(19, "Skipper", 200, "PER_NIGHT")
 
         // Skipper: yachts 1-5 per night (160..200)*7 = 1120..1400, 6-10 per week 1600..2000
         for (i in 1..10) {
@@ -214,6 +221,8 @@ class CharterFactsComputeServiceTest {
         extra(11, "APA", 30, "PERCENTAGE", obligatory = true)
         extra(11, "Final cleaning", 100, "PER_BOOKING", obligatory = true)
         extra(12, "Snorkelling set", 50, "PER_BOOKING")
+        // canonical Skipper extra (extras_id 1) whose name does not start with "Skipper": counts
+        extra(12, "Professional skipper", 1500, "PER_WEEK", extrasId = 1)
     }
 
     private fun extra(
@@ -224,9 +233,11 @@ class CharterFactsComputeServiceTest {
         obligatory: Boolean = false,
         validFrom: LocalDate? = null,
         validTo: LocalDate? = null,
+        extrasId: Int? = null,
     ) = jdbc.update(
-        "INSERT INTO yacht_extras (yacht_id, name, price, unit, obligatory, valid_from, valid_to) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO yacht_extras (yacht_id, name, price, unit, obligatory, valid_from, valid_to, extras_id) VALUES (?,?,?,?,?,?,?,?)",
         yacht, name, price, unit, obligatory, validFrom?.let { java.sql.Date.valueOf(it) }, validTo?.let { java.sql.Date.valueOf(it) },
+        extrasId,
     )
 
     private fun rows(): List<Pair<String, String?>> =
@@ -322,6 +333,11 @@ class CharterFactsComputeServiceTest {
         f["skipperWeekly"]["p25"].asLong() shouldBe percentileCont(skipper, 0.25)
         f["skipperWeekly"]["p75"].asLong() shouldBe percentileCont(skipper, 0.75)
 
+        // all types: + yacht 12's "Professional skipper" (extras_id 1) 1500/week; yacht 19 (never bookable) not counted
+        val skipperAll = skipper + 1500
+        facts("c-54")["skipperWeekly"]["n"].asLong() shouldBe 11L
+        facts("c-54")["skipperWeekly"]["median"].asLong() shouldBe percentileCont(skipperAll, 0.5)
+
         // 9 boats x 350, yacht 2 = 260 + 150 = 410
         f["obligatoryExtrasWeekly"]["median"].asLong() shouldBe 350L
         f["obligatoryExtrasWeekly"]["n"].asLong() shouldBe 10L
@@ -365,7 +381,7 @@ class CharterFactsComputeServiceTest {
         service.recompute().stored shouldBe true
         rows() shouldContainExactly first
 
-        // an incident empties most of the offer table: 8 rows would become 2 -> refused, old rows stay
+        // an incident empties most of the offer table: 8 rows would become 1 -> refused, old rows stay
         jdbc.update("DELETE FROM offer WHERE yacht_id BETWEEN 3 AND 12")
         val summary = service.recompute()
         summary.stored shouldBe false
@@ -373,5 +389,18 @@ class CharterFactsComputeServiceTest {
         // the connection went back to the pool clean (SET LOCAL + ON COMMIT DROP)
         jdbc.queryForObject("SHOW statement_timeout", String::class.java) shouldBe "0"
         jdbc.queryForObject("SELECT count(*) FROM pg_class WHERE relname = 'cf_week'", Int::class.java) shouldBe 0
+        val before = service.latestComputedAt()!!
+
+        // ops: the shrink is legitimate -> force replaces (boats 1, 2, 13 left: only the country row qualifies)
+        val forced = service.recompute(force = true)
+        forced.stored shouldBe true
+        rows() shouldContainExactly listOf("c-54" to null)
+        facts("c-54")["activeBoats"].asLong() shouldBe 3L
+        (service.latestComputedAt()!! >= before) shouldBe true
+
+        // force never overrides the empty-result guard
+        jdbc.update("DELETE FROM offer")
+        service.recompute(force = true).stored shouldBe false
+        rows() shouldContainExactly listOf("c-54" to null)
     }
 }

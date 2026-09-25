@@ -1,5 +1,36 @@
 # Backend deploy notes
 
+## 2026-09-25 — Charter facts (V9_61) review fixes: 08:00 UTC slot, search-consistent boat count, skipper by extras_id, ?force, stale alert — ⏳ BUILT, not deployed
+
+Follow-up to the V9_61 entry below (same unreleased feature, deploy both together). No new migration.
+- **Schedule 04:20 → 08:00 UTC** (`CharterFactsJob.CRON = "0 0 8 * * *"`, zone UTC). Why: the NauSys nightly
+  yacht + offer sync starts 23:20 and was measured at 6 h 39 m (`NausysSyncJob.runYachtSync`, PT10H lock), so 04:20
+  sat in the middle of the heaviest write load of the day — the facts would read a half-refreshed offer grid while
+  adding a 12-month window-sort/percentile scan (work_mem 128MB) on the cusma4 PG that cusma2 also uses. 08:00 is
+  inside the 07:50-08:40 quiet window, after NauSys (~06:00), the 05:30 cleanup and the 06:00-07:20 MMK morning
+  runs, so the facts are also the freshest. The old note "far from NauSys 23:00" was wrong.
+- **Boats counted like search counts them:** search hides `UNAVAILABLE` rows (`YachtQueryingService`, every public
+  caller), but a boat whose every week was UNAVAILABLE (MMK reverifier withdrawal V9_59, owner-blocked) still counted
+  in activeBoats and all per-boat figures. Now `cf_week.has_bookable` (any non-UNAVAILABLE row in the yacht-week);
+  did membership needs ≥1 bookable week based there; topBases counts only bookable bases; month / check-in figures use
+  all weeks of MEMBER boats (their UNAVAILABLE weeks stay in the availability denominators).
+- **Skipper = canonical Skipper extra:** `(ye.extras_id = 1 OR ye.name ILIKE 'skipper%')` — extras_id 1 is the site's
+  "Skipper" key (R__1_04, "Skipper" anywhere in the name, e.g. "Professional skipper"), which the pricing/detail pages
+  group by. SKIPPER_EXCLUDE and the 500-7000 EUR/week band unchanged.
+- **`POST /admin/charter-facts/recompute?force=true`** (cusma3, SYSTEM_ADMIN) → 202 `{"status":"STARTED_FORCED"}`:
+  bypasses the "fewer than half of the stored rows" guard for a legitimate large shrink (shorter
+  `charter-facts.countries`, big agency blocked); the empty-result guard always applies. Without force: unchanged
+  (202 `STARTED` / 409 `ALREADY_RUNNING`).
+- **Stale alert:** after every daily run the job checks `max(computed_at)`; older than 48 h (or table empty) → ERROR
+  `Charter facts are STALE: newest computed_at = …` every day until fixed (the refusal alone only logged once/day
+  while the endpoint kept serving old facts indefinitely).
+**Tests (21, green):** CharterFactsComputeServiceTest (5, now PG18: fixture + yacht 19 all-UNAVAILABLE must not count
+anywhere, "Professional skipper" extras_id 1 counts, force replaces a shrink, force never overrides the empty guard),
+CharterFactsJobTests (5: + force passthrough, staleness 24 h/49 h/empty, cron = 08:00 UTC), controller 4, math 7.
+Mutation-checked: reverting the has_bookable filter or the extras_id match fails the suite.
+**After deploy (cusma3):** first cron run next 08:00 UTC, log `Charter facts: N rows …`; no `STALE` line.
+**Undo:** `webservice.jar.prev` (no schema change in this fix).
+
 ## 2026-09-25 — Review collection: booking + yacht review requests, magic-link form, admin moderation (V9_62) — ⏳ BUILT, not deployed
 
 **🔴 BEFORE DEPLOY:** the web page `/[locale/]review/{token}` does not exist yet. `application.reviews.enabled` is
@@ -72,16 +103,17 @@ unused). **Undo the migration** (only if wanted; deletes collected reviews):
 
 **What:** landing pages (`/search?destinations=<slug>[&boatTypes=X]` → did c-/r-/l-) get a block of real inventory
 facts. New table `charter_facts` (did, vessel_type NULL = all types, computed_at, payload jsonb; unique index on
-`(did, COALESCE(vessel_type,''))`), filled nightly by `CharterFactsJob` **04:20 UTC on the scheduler node only**
-(`@Profile("data-sync")`, `@SchedulerLock("charterFactsRecompute", PT1H)`). 04:20 = after the 03:25-03:40
-voucher / inquiry / retention-reaper jobs, before the 05:30 cleanup and the 06:00 MMK sync, far from NauSys 23:00.
+`(did, COALESCE(vessel_type,''))`), filled daily by `CharterFactsJob` **08:00 UTC on the scheduler node only**
+(`@Profile("data-sync")`, `@SchedulerLock("charterFactsRecompute", PT1H)`). *(Was 04:20 in the first build — wrong,
+that is inside the NauSys nightly sync; corrected, see the "review fixes" entry above.)*
 **Why precomputed:** cusma2 is the only API node (OOM history) — it only does one indexed row read per request.
 **Endpoints:**
 - `GET /public/charter-facts?did=c-54[&vesselType=CATAMARAN]` → 200 payload + `computedAt`,
   `Cache-Control: max-age=3600, public`; 404 no row; 400 malformed did (`^[clr]-\d{1,12}$`), missing did or
   unknown vesselType. `/public/**` is already permitAll — no security change.
 - `POST /admin/charter-facts/recompute` (SYSTEM_ADMIN, **cusma3 only** like the other /admin job triggers) → 202
-  `STARTED` (runs in background under the SAME ShedLock lock as the cron) / 409 `ALREADY_RUNNING`.
+  `STARTED` (runs in background under the SAME ShedLock lock as the cron) / 409 `ALREADY_RUNNING`;
+  `?force=true` → 202 `STARTED_FORCED` (skips the < 50 % guard, never the empty guard).
 **Computation (set-based, one transaction, temp tables ON COMMIT DROP, `SET LOCAL statement_timeout 600s`,
 work_mem 128MB, jit off):** population = search's (EXTERNAL, sys_active, agency active + not availability_blocked),
 7-night offers with date_from in [today, +12 months), pickup marina in the 12 promoted countries
