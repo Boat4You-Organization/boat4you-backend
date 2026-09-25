@@ -1,6 +1,9 @@
 # Backend deploy notes
 
-## 2026-09-25 — Sea charter only: inland (river/canal/lake) vessels, operators and bases blocked in the sync (V9_63 + V9_64) — ⏳ BUILT, not deployed
+## 2026-09-25 — Sea charter only: inland (river/canal/lake) vessels, operators and bases blocked in the sync (V9_63 + V9_64) — ✅ LIVE cusma2 17:51 + cusma3 17:52 UTC (jar `2c45c2f8`)
+
+**Live check 17:55 UTC (prod DB):** Flyway 9.64; `location.inland` = 93 rows (all id+name guards matched); visible yachts at inland bases 0; visible yachts of river builders 0; 17 river/lake agencies inactive; visible fleet 13,187. `/public/yachts/17148` (Le Boat) → 400, web boat page 404. Same day, before the deploy: the 13 river agencies (15:51 UTC) and the 4 lake agencies + 28 lake-base yachts (~16:05 UTC) were switched off by hand (backup tables `ops_river_agency_backup_20260925`, `ops_lake_yacht_backup_20260925`); API restarted 15:53 to drop caches. Reviews: `REVIEWS_ENABLED=true` added to both env files 15:45 UTC (backups `*.env.bak-20260925-reviews`), first sweep 26.9. 09:10 UTC.
+
 
 Le Boat "Caprice Comfort 51" was live on www.boat4you.com: since 5.7.2026 the MMK agency mirror auto-creates every
 unknown company ACTIVE, and 13 river operators came in that way (their cruisers are MOTORBOAT / MOTOR_YACHT, so the
