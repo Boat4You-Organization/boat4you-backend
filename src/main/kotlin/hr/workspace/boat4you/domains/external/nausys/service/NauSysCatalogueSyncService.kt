@@ -30,6 +30,7 @@ import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.ManufacturerAliasResolver
 import hr.workspace.boat4you.domains.catalouge.services.applyLocationRegions
 import hr.workspace.boat4you.domains.catalouge.services.ModelNameNormaliser
+import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import org.openapitools.client.nausys.model.RestCharterBaseList
@@ -128,7 +129,10 @@ class NauSysCatalogueSyncService(
                     }
 
                 val resolvedAgency = if (agency == null) {
-                    // create new agency for unmatched NauSYS company
+                    // create new agency for unmatched NauSYS company. Sea charter only: a river/canal operator
+                    // (InlandVesselRules.isRiverOperator) is created INACTIVE with syncDeactivatedBy=null — a manual
+                    // OFF the mirror never re-activates; an admin decides.
+                    val riverOperator = InlandVesselRules.isRiverOperator(it.name)
                     val newAgency = Agency()
                     newAgency.name = it.name?.take(255)
                     newAgency.address = it.address?.take(255)
@@ -139,14 +143,21 @@ class NauSysCatalogueSyncService(
                     newAgency.email = it.email?.take(150)
                     newAgency.phone = it.phone?.take(200)
                     newAgency.mobile = it.mobile?.take(200)
-                    newAgency.active = true
+                    newAgency.active = !riverOperator
 
                     val countryMapping = allCountryMappings.find { cm -> cm.externalId == it.countryId }
                     val country = if (countryMapping != null) allCountries.find { c -> c.id == countryMapping.systemId?.toInt() } else null
                     newAgency.country = country?.name
 
                     agencyRepository.saveAndFlush(newAgency)
-                    log.info("Created NEW agency ${newAgency.id} (${newAgency.name}) for NauSYS company ${it.id}")
+                    if (riverOperator) {
+                        log.warn(
+                            "Created NEW agency ${newAgency.id} (${newAgency.name}) for NauSYS company ${it.id} INACTIVE — " +
+                                "name reads like a river/canal operator (sea charter only); switch it on in admin if it sells sea charter",
+                        )
+                    } else {
+                        log.info("Created NEW agency ${newAgency.id} (${newAgency.name}) for NauSYS company ${it.id}")
+                    }
                     newAgency
                 } else {
                     // re-activate so it gets picked up by yacht sync — but ONLY if the NauSys

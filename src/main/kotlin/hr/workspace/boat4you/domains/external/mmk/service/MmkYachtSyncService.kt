@@ -39,6 +39,7 @@ import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.ModelQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
+import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
@@ -109,6 +110,8 @@ class MmkYachtSyncService(
         val syncedYachts = mutableSetOf<Long>()
         var skippedNoProducts = 0
         var skippedVesselType = 0
+        var skippedInland = 0
+        val inlandShipyardIds = inlandShipyardIds()
 
         mmkYachts.forEach { mmkYacht ->
             // Track every partner-reported id up front (before shouldSkip) —
@@ -116,7 +119,23 @@ class MmkYachtSyncService(
             // the partner catalogue but we choose to skip our own update
             // (e.g. unsupported product mix), it must NOT be deactivated.
             mmkYacht.id?.let { syncedYachts.add(it) }
-            when (skipReason(mmkYacht)) {
+            when (skipReason(mmkYacht, inlandShipyardIds)) {
+                SkipReason.INLAND_VESSEL -> {
+                    // Sea charter only: unlike the other skips, a river/canal cruiser imported earlier (before its
+                    // builder was recognised) must go off the sites now — take-back keeps it, the partner still
+                    // lists it. Row and mapping stay (no delete); nothing re-activates it while the rule matches.
+                    skippedInland++
+                    allMappings
+                        .find { it.externalId == mmkYacht.id }
+                        ?.let { yachtRepository.findById(it.systemId!!).orElse(null) }
+                        ?.takeIf { it.sysActive == true }
+                        ?.let {
+                            it.sysActive = false
+                            yachtRepository.save(it)
+                            log.warn("Deactivated MMK yacht ${it.id} (${it.name}, mmkId=${mmkYacht.id}) of agency ${agency.id} — inland builder, sea charter only")
+                        }
+                    return@forEach
+                }
                 SkipReason.NO_VALID_PRODUCTS -> {
                     skippedNoProducts++
                     return@forEach
@@ -214,7 +233,7 @@ class MmkYachtSyncService(
             yachtRepository.findAllByAgencyAndExternalIdNotIn(agency, syncedYachts.toList())
         log.warn(
             "MMK take-back for agency ${agency.id} ${agency.name}: partner returned " +
-                "${syncedYachts.size} yachts (skipped: noProducts=$skippedNoProducts vesselType=$skippedVesselType); " +
+                "${syncedYachts.size} yachts (skipped: noProducts=$skippedNoProducts vesselType=$skippedVesselType inland=$skippedInland); " +
                 "deactivating ${yachtsToDeactivate.size} no longer in catalogue.",
         )
         yachtsToDeactivate.forEach {
@@ -749,15 +768,44 @@ class MmkYachtSyncService(
         reservationOptionRepository.save(reservationOption)
     }
 
-    enum class SkipReason { NO_VALID_PRODUCTS, VESSEL_TYPE }
+    enum class SkipReason { INLAND_VESSEL, NO_VALID_PRODUCTS, VESSEL_TYPE }
 
     // Also used by ConsistencyVerifierJob so the weekly inventory counts the
     // partner fleet with the exact same eligibility rules the sync applies.
-    fun shouldSkip(mmkYacht: org.openapitools.client.mmk.model.Yacht): Boolean = skipReason(mmkYacht) != null
+    fun shouldSkip(
+        mmkYacht: org.openapitools.client.mmk.model.Yacht,
+        inlandShipyardIds: Set<Long>,
+    ): Boolean = skipReason(mmkYacht, inlandShipyardIds) != null
+
+    /**
+     * MMK shipyard ids whose manufacturer builds only river/canal cruisers ([InlandVesselRules.isInlandBuilder]).
+     * Read once per agency / inventory run and handed to [skipReason]: the MMK yacht carries only its shipyardId,
+     * the name comes from our manufacturer row (mapped by the catalogue manufacturerSync, same lookup as syncModel).
+     */
+    fun inlandShipyardIds(): Set<Long> {
+        val inlandManufacturerIds =
+            manufacturerRepository.findAll().filter { InlandVesselRules.isInlandBuilder(it.name) }.mapNotNull { it.id }.toSet()
+        if (inlandManufacturerIds.isEmpty()) return emptySet()
+        val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
+        return externalMappingService
+            .getAllMappingsByType(Manufacturer::class.simpleName.toString(), externalSystem)
+            .filter { it.systemId in inlandManufacturerIds }
+            .mapNotNull { it.externalId }
+            .toSet()
+    }
 
     /** Why a partner yacht is not synced, or null when it is eligible. Per-yacht detail is DEBUG
      * (~2.8k lines/week); the per-agency take-back line carries the counts. */
-    fun skipReason(mmkYacht: org.openapitools.client.mmk.model.Yacht): SkipReason? {
+    fun skipReason(
+        mmkYacht: org.openapitools.client.mmk.model.Yacht,
+        inlandShipyardIds: Set<Long>,
+    ): SkipReason? {
+        // First: an inland yacht is switched off by the sync, whatever else is wrong with it.
+        if (mmkYacht.shipyardId != null && mmkYacht.shipyardId in inlandShipyardIds) {
+            log.debug("Skipping MMK yacht ${mmkYacht.id}: inland builder (shipyardId ${mmkYacht.shipyardId})")
+            return SkipReason.INLAND_VESSEL
+        }
+
         val filteredProducts =
             mmkYacht.products?.filter { MMK_ALLOWED_PRODUCTS.contains(it.name.lowercase()) }
         if (filteredProducts.isNullOrEmpty()) {

@@ -19,6 +19,7 @@ import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.ManufacturerAliasResolver
 import hr.workspace.boat4you.domains.catalouge.services.applyLocationRegions
+import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import org.openapitools.client.mmk.model.Base
@@ -55,6 +56,9 @@ class MmkCatalogueSyncService(
      *    Deliberately NO name/VAT merge into an existing NauSys agency: yachts only sync
      *    through an agency's PRIMARY system, so merging would leave the MMK fleet invisible.
      *    Same-group companies (FX Yachting vs Fyly Yachting) stay separate rows — Mario decision.
+     *    Sea charter only: a company whose name reads like a river/canal operator
+     *    ([InlandVesselRules.isRiverOperator]; Le Boat, Riverly, Canal Evasion... came in active this way) is
+     *    created INACTIVE with syncDeactivatedBy=null, i.e. a manual OFF the mirror never re-activates.
      *  - known PRIMARY-MMK company → refresh fields; re-activate ONLY if the MMK mirror itself
      *    deactivated it (syncDeactivatedBy=MMK) — a manual admin blacklist stays off.
      *  - known but NON-primary source (dual-source agency owned by NauSys) → leave it to the
@@ -87,8 +91,9 @@ class MmkCatalogueSyncService(
                         log.warn("MMK company $mmkCompanyId (${mmkAgency.name}) duplicated in response — skipping second occurrence")
                         return@forEach
                     }
+                    val riverOperator = InlandVesselRules.isRiverOperator(mmkAgency.name)
                     val newAgency = Agency()
-                    newAgency.active = true
+                    newAgency.active = !riverOperator
                     applyMmkCompanyFields(newAgency, mmkAgency)
                     agencyRepository.saveAndFlush(newAgency)
 
@@ -102,7 +107,14 @@ class MmkCatalogueSyncService(
                     newSource.agency = newAgency
                     newSource.externalSystem = externalSystem
                     agencySourceRepository.save(newSource)
-                    log.info("Created NEW agency ${newAgency.id} (${newAgency.name}) for MMK company $mmkCompanyId")
+                    if (riverOperator) {
+                        log.warn(
+                            "Created NEW agency ${newAgency.id} (${newAgency.name}) for MMK company $mmkCompanyId INACTIVE — " +
+                                "name reads like a river/canal operator (sea charter only); switch it on in admin if it sells sea charter",
+                        )
+                    } else {
+                        log.info("Created NEW agency ${newAgency.id} (${newAgency.name}) for MMK company $mmkCompanyId")
+                    }
                     return@forEach
                 }
 

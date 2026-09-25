@@ -36,6 +36,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslationRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
+import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
@@ -145,6 +146,13 @@ class NauSysYachtSyncService(
                 return@forEach
             }
             if (shouldSkip(nausysYacht, model)) {
+                // Sea charter only: a river/canal cruiser imported earlier (before its builder was recognised) must
+                // go off the sites now — take-back keeps it, the partner still lists it. Row and mapping stay.
+                if (mapping != null && yacht.sysActive == true && InlandVesselRules.isInlandBuilder(model.manufacturer?.name)) {
+                    yacht.sysActive = false
+                    yachtRepository.saveAndFlush(yacht)
+                    log.warn("Deactivated NauSYS yacht ${yacht.id} (${yacht.name}) of agency ${agency.id} — inland builder, sea charter only")
+                }
                 return@forEach
             }
 
@@ -699,7 +707,10 @@ class NauSysYachtSyncService(
             log.info("Skipping NauSYS yacht ${nausysYacht.id} with vessel type $vesselType")
             return true
         }
-        return false
+        // River/canal cruisers come as MOTORBOAT / MOTOR_YACHT — only the builder gives them away.
+        val inland = InlandVesselRules.isInlandBuilder(model.manufacturer?.name)
+        if (inland) log.info("Skipping NauSYS yacht ${nausysYacht.id}: inland builder ${model.manufacturer?.name}")
+        return inland
     }
 
     private fun createTranslations(

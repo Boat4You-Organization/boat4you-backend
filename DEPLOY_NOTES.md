@@ -1,5 +1,23 @@
 # Backend deploy notes
 
+## 2026-09-25 — Sea charter only: inland (river/canal) vessels and operators blocked in the sync (V9_63) — ⏳ BUILT, not deployed
+
+Le Boat "Caprice Comfort 51" was live on www.boat4you.com: since 5.7.2026 the MMK agency mirror auto-creates every
+unknown company ACTIVE, and 13 river operators came in that way (their cruisers are MOTORBOAT / MOTOR_YACHT, so the
+VesselType skip never caught them). The 13 agencies were switched off by hand in prod at 16:51 UTC (backup table
+`ops_river_agency_backup_20260925`); V9_63 records that fix (idempotent, `AND active` → 0 rows on prod).
+- `InlandVesselRules` (catalouge/utils): inland-only builders (Le Boat, Nicols, Pénichette, Linssen, De Drait, Gruno,
+  houseboat/Hausboot, ...) + river-operator company names (le boat, riverly, canal/kanal, péniche, river, ...).
+- MMK + NauSys yacht sync: a yacht from an inland builder is skipped (MMK SkipReason INLAND_VESSEL via shipyardId →
+  our manufacturer name; NauSys via Model.manufacturer), and one already imported is set `sys_active=false` (no delete).
+  The weekly inventory applies the same rule ("fali kod nas" does not count them).
+- Agency mirrors (MMK + NauSys): a NEW company whose name matches the operator rule is created `active=false`,
+  `sync_deactivated_by=NULL` (manual OFF, never re-activated by the mirror) + WARN "Created NEW agency ... INACTIVE".
+  Existing agencies untouched.
+- **After deploy:** the first MMK / NauSys yacht sync may switch off inland-builder yachts that SEA agencies also list
+  (WARN "Deactivated MMK|NauSYS yacht ... inland builder") — expected; check the counts (`inland=` in the MMK take-back
+  line). No pre-deploy action; normal jar deploy (cusma3 then cusma2).
+
 ## 2026-09-25 — V9_61 charter facts + V9_62 review collection ✅ LIVE cusma2 13:50 + cusma3 13:56 UTC
 
 Jar md5 `784f2919…` (HEAD `d562fc0`). Flyway 9.61 + 9.62 applied on cusma2 in 0.041 s; cusma3 "up to date" (deployed after

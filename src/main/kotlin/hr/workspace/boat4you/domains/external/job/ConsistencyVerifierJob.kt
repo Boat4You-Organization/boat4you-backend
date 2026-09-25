@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.external.job
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
+import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.mmk.client.MmkAuditedClient
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtSyncService
@@ -31,7 +32,8 @@ import org.springframework.stereotype.Component
  *     (Mario 11.7.2026): houseboats/river boats, rubber boats, trimarans,
  *     "other" and MMK day-charter-only yachts are deliberately never imported,
  *     so they must not show up as drift. The eligibility rules are the SAME
- *     ones the sync applies (MmkYachtSyncService.shouldSkip / VesselType).
+ *     ones the sync applies (MmkYachtSyncService.shouldSkip / VesselType /
+ *     InlandVesselRules — inland builders, 25.9.2026).
  *     "We have, partner doesn't" still uses the partner's FULL list — that is
  *     the take-back baseline.
  *  B. DB invariants (pure SQL, no partner calls): orphaned yacht mappings,
@@ -106,13 +108,14 @@ class ConsistencyVerifierJob(
         val drifts = mutableListOf<AgencyDrift>()
         var checked = 0
         var failures = 0
-        val nausysModelCategories = loadNausysModelCategories()
+        val nausysModels = loadNausysModels()
+        val mmkInlandShipyardIds = mmkYachtSyncService.inlandShipyardIds()
 
         for (system in listOf(ExternalSystemEnum.MMK, ExternalSystemEnum.NAUSYS)) {
             val agencies = agencyRepository.findAllActiveByPrimarySyncProvider(system.value.toLong())
             for (agency in agencies) {
                 val extId = agency.getExternalId() ?: continue
-                val partner = runCatching { partnerFleet(system, extId, nausysModelCategories) }
+                val partner = runCatching { partnerFleet(system, extId, nausysModels, mmkInlandShipyardIds) }
                     .getOrElse {
                         failures++
                         continue
@@ -202,13 +205,14 @@ class ConsistencyVerifierJob(
     private fun partnerFleet(
         system: ExternalSystemEnum,
         agencyExternalId: Long,
-        nausysModelCategories: Map<Long, Long?>,
+        nausysModels: Map<Long, NausysModel>,
+        mmkInlandShipyardIds: Set<Long>,
     ): PartnerFleet = when (system) {
         ExternalSystemEnum.MMK -> {
             val yachts = mmkAuditedClient.getYachts(companyId = agencyExternalId)
             PartnerFleet(
                 allIds = yachts.map { it.id }.toSet(),
-                eligibleIds = yachts.filterNot { mmkYachtSyncService.shouldSkip(it) }.map { it.id }.toSet(),
+                eligibleIds = yachts.filterNot { mmkYachtSyncService.shouldSkip(it, mmkInlandShipyardIds) }.map { it.id }.toSet(),
             )
         }
         ExternalSystemEnum.NAUSYS -> {
@@ -227,13 +231,12 @@ class ConsistencyVerifierJob(
                 eligibleIds = yachts
                     .filter { y ->
                         // Mirror of NauSysYachtSyncService: unresolvable model → the
-                        // sync never imports it; otherwise skip by vessel category.
-                        val modelId = y.yachtModelId
-                        modelId != null &&
-                            nausysModelCategories.containsKey(modelId) &&
-                            !VesselType.shouldSkipVesselType(
-                                VesselType.fromNauSysCategoryId(nausysModelCategories[modelId]),
-                            )
+                        // sync never imports it; otherwise skip by vessel category
+                        // and by inland builder.
+                        val model = y.yachtModelId?.let { nausysModels[it] }
+                        model != null &&
+                            !VesselType.shouldSkipVesselType(VesselType.fromNauSysCategoryId(model.categoryId)) &&
+                            !InlandVesselRules.isInlandBuilder(model.manufacturerName)
                     }.mapNotNull { it.id }
                     .toSet(),
             )
@@ -241,15 +244,21 @@ class ConsistencyVerifierJob(
         else -> PartnerFleet(emptySet(), emptySet())
     }
 
-    /** NauSys model external id → external_category_id (one query, reused for every agency). */
-    private fun loadNausysModelCategories(): Map<Long, Long?> =
+    private data class NausysModel(
+        val categoryId: Long?,
+        val manufacturerName: String?,
+    )
+
+    /** NauSys model external id → external_category_id + manufacturer name (one query, reused for every agency). */
+    private fun loadNausysModels(): Map<Long, NausysModel> =
         jdbcTemplate.query(
             """
-            SELECT em.external_id, m.external_category_id FROM external_mapping em
+            SELECT em.external_id, m.external_category_id, mf.name FROM external_mapping em
             JOIN model m ON m.id = em.system_id
+            LEFT JOIN manufacturer mf ON mf.id = m.manufacturer_id
             WHERE em.type = 'Model' AND em.external_system_id = ?
             """.trimIndent(),
-            { rs, _ -> rs.getLong(1) to rs.getObject(2)?.let { (it as Number).toLong() } },
+            { rs, _ -> rs.getLong(1) to NausysModel(rs.getObject(2)?.let { (it as Number).toLong() }, rs.getString(3)) },
             ExternalSystemEnum.NAUSYS.value,
         ).toMap()
 }
