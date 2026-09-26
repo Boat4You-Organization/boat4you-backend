@@ -18,14 +18,15 @@ object CharterFactsTestDb {
         CREATE TABLE region (id int PRIMARY KEY, name varchar(100), country_code varchar(2));
         CREATE TABLE location_region (region_id int NOT NULL, location_id bigint NOT NULL);
         CREATE TABLE agency (id bigint PRIMARY KEY, name text, active boolean NOT NULL DEFAULT true,
-                             availability_blocked boolean NOT NULL DEFAULT false, recommended boolean);
+                             availability_blocked boolean NOT NULL DEFAULT false, recommended boolean,
+                             inquiry_only boolean NOT NULL DEFAULT false);
         CREATE TABLE manufacturer (id bigint PRIMARY KEY, name varchar(255) NOT NULL);
         CREATE TABLE model (id bigint PRIMARY KEY, name varchar(255) NOT NULL, manufacturer_id bigint);
         CREATE TABLE yacht (id bigint PRIMARY KEY, name text, agency_id bigint, entry_type varchar(31) NOT NULL,
                             sys_active boolean NOT NULL DEFAULT true, build_year smallint, model_id bigint,
                             vessel_type varchar(31) NOT NULL, deposit numeric, deposit_currency varchar(20),
                             location_id bigint, mainsail_type text, max_persons smallint, cabins smallint, berths smallint,
-                            length numeric, wc smallint, engine_power numeric, main_image_id bigint);
+                            length numeric, wc smallint, engine_power numeric, main_image_id bigint, option_approval boolean);
         CREATE TABLE yacht_charter_type (id bigserial PRIMARY KEY, yacht_id bigint, type text);
         CREATE TABLE custom_yacht_details (yacht_id bigint PRIMARY KEY, low_price numeric);
         CREATE TABLE offer (id bigserial PRIMARY KEY, yacht_id bigint NOT NULL, location_from bigint NOT NULL,

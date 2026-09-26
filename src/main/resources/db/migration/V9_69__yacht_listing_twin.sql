@@ -9,17 +9,29 @@
 -- partner system. One agency on one system naming several boats alike is a fleet, not a duplicate: The Moorings lists
 -- several "Moorings 41.3 Exclusive" at one base (replay on a real catalogue: 259 such pairs, all distinct boats). A
 -- name that is only a model, a number or a placeholder ("Bavaria Cruiser 46", "(2021)", "no name") never pairs.
--- The copy shown is the one with the most bookable future offers, then the older id. The undated search (landings,
--- sitemap, counts), its facets and the charter facts skip the listed copies; dated searches keep every copy
--- (availability can differ between two channels).
+-- The copy shown follows a STABLE rule, never a count that moves every day (review 26.9.2026: "most future offers"
+-- swapped the shown copy - and with it the sitemap entry and the boat page's canonical - in 10 of 496 pairs within a
+-- month and 31 within three months of a real catalogue, from the passage of time alone):
+--   1. a copy with a week left to sell (FREE / OPTION / OPTION_WAITING from today) before one without - a sold-out copy
+--      never hides the one that can still be booked;
+--   2. a directly bookable copy (agency not inquiry-only, no option approval: Yacht.isInquireOnly) before an
+--      inquiry-only one;
+--   3. the older (lower) id.
+-- Only a copy the undated listing can show (an offer from today that is not UNAVAILABLE) is ever the copy shown, so
+-- hiding the other never takes the boat off a landing. Each flag changes only when a copy sells out, gets weeks
+-- again or changes channel. The undated search (landings, sitemap, counts), its facets and the charter facts skip
+-- the listed copies; dated searches keep every copy (availability can differ between two channels).
 --
 -- Refreshed CONCURRENTLY right after yacht_search_view (YachtSearchViewRefresher). Created WITH DATA here: one pass over
--- yacht + the future offers, well under a second; a new relation, so no lock on existing ones.
+-- yacht + the future offers, well under a second; a new relation, so no lock on existing ones. Reads
+-- agency.inquiry_only (V9_36) and yacht.option_approval.
 SET LOCAL lock_timeout = '5s';
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS public.yacht_listing_twin AS
-WITH weeks AS (
-    SELECT o.yacht_id, count(*) AS n
+WITH future AS (
+    -- what the undated listing can show (offer from today, not UNAVAILABLE) and whether a week is left to sell
+    SELECT o.yacht_id,
+           bool_or(o.status IN ('FREE', 'OPTION', 'OPTION_WAITING')) AS sellable
     FROM offer o
     WHERE o.date_from >= CURRENT_DATE
       AND o.status <> 'UNAVAILABLE'
@@ -49,11 +61,13 @@ listed AS (
            y.build_year,
            y.name_key,
            l.country_code || ':' || translate(lower(btrim(split_part(l.name, ' | ', 1))), 'šžčćđ', 'szccd') AS base_key,
-           COALESCE(w.n, 0) AS weeks
+           f.yacht_id IS NOT NULL AS listable,
+           COALESCE(f.sellable, false) AS sellable,
+           NOT (COALESCE(y.option_approval, false) OR COALESCE(a.inquiry_only, false)) AS bookable
     FROM named y
-    JOIN agency a     ON a.id = y.agency_id AND a.active AND NOT a.availability_blocked
-    JOIN location l   ON l.id = y.location_id
-    LEFT JOIN weeks w ON w.yacht_id = y.id
+    JOIN agency a      ON a.id = y.agency_id AND a.active AND NOT a.availability_blocked
+    JOIN location l    ON l.id = y.location_id
+    LEFT JOIN future f ON f.yacht_id = y.id
     LEFT JOIN source s ON s.yacht_id = y.id
     WHERE y.entry_type = 'EXTERNAL'
       AND y.sys_active
@@ -65,7 +79,7 @@ listed AS (
 better AS (
     SELECT y.id AS yacht_id,
            c.id AS canonical_yacht_id,
-           row_number() OVER (PARTITION BY y.id ORDER BY c.weeks DESC, c.id) AS rn
+           row_number() OVER (PARTITION BY y.id ORDER BY c.sellable DESC, c.bookable DESC, c.id) AS rn
     FROM listed y
     JOIN listed c
       ON c.name_key = y.name_key
@@ -78,11 +92,20 @@ better AS (
      AND (c.length IS NULL OR abs(c.length - y.length) <= 0.5)
      AND (c.build_year IS NULL) = (y.build_year IS NULL)
      AND (c.build_year IS NULL OR abs(c.build_year - y.build_year) <= 1)
-     AND (c.weeks > y.weeks OR (c.weeks = y.weeks AND c.id < y.id))
+     -- the copy shown: listable, and first by the stable rule above (false < true; the lower id wins a tie)
+     AND c.listable
+     AND (c.sellable, c.bookable, -c.id) > (y.sellable, y.bookable, -y.id)
+),
+pick AS (
+    SELECT yacht_id, canonical_yacht_id
+    FROM better
+    WHERE rn = 1
 )
-SELECT yacht_id, canonical_yacht_id
-FROM better
-WHERE rn = 1;
+-- Pairing is not transitive (length within 0.5 m, year within 1): when A~B and B~C but not A~C, C's best copy B is
+-- itself hidden behind A. One more hop names the copy that is shown.
+SELECT p.yacht_id, COALESCE(q.canonical_yacht_id, p.canonical_yacht_id) AS canonical_yacht_id
+FROM pick p
+LEFT JOIN pick q ON q.yacht_id = p.canonical_yacht_id;
 
 CREATE UNIQUE INDEX IF NOT EXISTS yacht_listing_twin_yacht_uidx ON public.yacht_listing_twin (yacht_id);
 
