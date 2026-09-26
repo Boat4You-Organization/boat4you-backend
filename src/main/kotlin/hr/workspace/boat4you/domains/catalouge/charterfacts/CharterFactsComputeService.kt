@@ -56,8 +56,9 @@ import java.time.ZoneOffset
  *    one name inside the other, curated location_same_place pairs — vetoed by coordinates / city). Drop-off-only
  *    matches (one-way INTO the destination) are not counted — facts describe boats based there.
  *
- * Keys written: every promoted country (c-) with at least one boat, every r- / l- with >= [MIN_BOATS] boats, each
- * for all types plus every vessel type with >= [MIN_BOATS] boats in that did.
+ * Keys written: every promoted country (c-) with at least one boat, every r- / l- with >= [MIN_BOATS] boats, every
+ * dual-source region pair ("r-187,r-19", REGION_PAIR_SCOPE_SQL) with >= [MIN_BOATS] boats, each for all types plus
+ * every vessel type with >= [MIN_BOATS] boats in that did.
  *
  * Everything happens in ONE transaction on one connection (temp tables ON COMMIT DROP, SET LOCAL limits), and the
  * table is replaced at the end of it: readers see the old snapshot until COMMIT, never a half-written one. A run
@@ -157,6 +158,7 @@ class CharterFactsComputeService(
         jdbc.execute(sql.listed(codes))
         createPlaces(jdbc)
         jdbc.execute(SCOPE_SQL)
+        jdbc.execute(REGION_PAIR_SCOPE_SQL)
         jdbc.execute(sql.member())
         jdbc.execute(KEY_SQL.replace(":minBoats", MIN_BOATS.toString()))
         jdbc.execute("DELETE FROM cf_scope s WHERE NOT EXISTS (SELECT 1 FROM cf_key k WHERE k.did = s.did)")
@@ -631,6 +633,39 @@ class CharterFactsComputeService(
             FROM used u
             JOIN cf_place p ON p.location_id = u.id
             JOIN cf_place m ON m.place_id = p.place_id
+            """.trimIndent()
+
+        /**
+         * Dual-source region pairs (26.9.2026 audit B13: "ionian region", 1,364 boats, had no facts block). One sailing
+         * area often exists as two region rows, one per partner ("Ionian" r-187 from MMK, "Ionian Islands" r-19 from
+         * NauSys), and the landing lists both (did=r-187,r-19). The pairs are the ones the location list and the web's
+         * popular searches treat as one area: two listed regions of the same country (or one without a country) whose
+         * names start with the same word ("Ionian" / "Ionian Islands", "Athens / Saronic Gulf" / "Athens area/Saronic/
+         * Peloponese"). Their marinas are different rows per partner, so no place rule can find them. Each pair gets a
+         * row keyed by both ids, sorted as strings and comma-joined ("r-187,r-19" - JavaScript's default sort), over
+         * the union of their scopes; the ordinary key rules then apply.
+         */
+        val REGION_PAIR_SCOPE_SQL =
+            """
+            INSERT INTO cf_scope (did, location_id)
+            WITH r AS (
+                SELECT DISTINCT s.did,
+                       lower(split_part(regexp_replace(btrim(g.name), '[/,]', ' ', 'g'), ' ', 1)) AS word,
+                       NULLIF(g.country_code, '') AS country_code
+                FROM cf_scope s
+                JOIN region g ON 'r-' || g.id = s.did
+                WHERE s.did LIKE 'r-%'
+            ),
+            pairs AS (
+                SELECT a.did AS a, b.did AS b
+                FROM r a
+                JOIN r b ON b.word = a.word AND a.did < b.did
+                WHERE a.word <> ''
+                  AND (a.country_code IS NULL OR b.country_code IS NULL OR a.country_code = b.country_code)
+            )
+            SELECT DISTINCT pr.a || ',' || pr.b, s.location_id
+            FROM pairs pr
+            JOIN cf_scope s ON s.did IN (pr.a, pr.b)
             """.trimIndent()
 
         val KEY_SQL =

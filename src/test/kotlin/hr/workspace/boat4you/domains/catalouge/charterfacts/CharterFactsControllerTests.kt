@@ -36,8 +36,23 @@ class CharterFactsControllerTests {
     }
 
     @Test
+    fun `a dual-source region pair reads its one row, in either order`() {
+        val node = ObjectMapper().createObjectNode().put("did", "r-187,r-19").put("activeBoats", 1364)
+        `when`(readService.find("r-187,r-19", null)).thenReturn(node)
+
+        listOf("r-187,r-19", "r-19,r-187").forEach { did ->
+            mvc.get("/public/charter-facts") { param("did", did) }.andExpect {
+                status { isOk() }
+                jsonPath("$.activeBoats") { value(1364) }
+            }
+        }
+        // two did params arrive joined the same way
+        mvc.get("/public/charter-facts") { param("did", "r-19", "r-187") }.andExpect { status { isOk() } }
+    }
+
+    @Test
     fun `malformed did - 400 before any database read`() {
-        listOf("l-l-19", "c-54,r-5", "x-1", "c-", "c-99999999999999").forEach { did ->
+        listOf("l-l-19", "c-54,r-5", "r-5,r-5", "r-1,r-2,r-3", "l-1,l-2", "x-1", "c-", "c-99999999999999").forEach { did ->
             mvc.get("/public/charter-facts") { param("did", did) }.andExpect {
                 status { isBadRequest() }
                 jsonPath("$.code") { value(1102) }

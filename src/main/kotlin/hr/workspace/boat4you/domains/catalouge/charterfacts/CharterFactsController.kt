@@ -27,16 +27,17 @@ class CharterFactsController(
         @RequestParam did: String,
         @RequestParam(required = false) vesselType: VesselType?,
     ): ResponseEntity<Any> {
-        if (!CharterFactsMath.isValidDid(did)) {
-            return ResponseEntity.badRequest().body(
-                ErrorSchema(
-                    ApiErrorCodes.INVALID_REQUEST_PARAMETERS.code,
-                    ApiErrorCodes.INVALID_REQUEST_PARAMETERS.message + ": {did=must be c-<id>, r-<id> or l-<id>}",
-                ),
-            )
-        }
+        // one did, or a dual-source region pair ("r-187,r-19", either order - audit B13)
+        val key =
+            CharterFactsMath.factsKey(did)
+                ?: return ResponseEntity.badRequest().body(
+                    ErrorSchema(
+                        ApiErrorCodes.INVALID_REQUEST_PARAMETERS.code,
+                        ApiErrorCodes.INVALID_REQUEST_PARAMETERS.message + ": {did=must be c-<id>, r-<id>, l-<id> or r-<id>,r-<id>}",
+                    ),
+                )
         val facts =
-            readService.find(did, vesselType)
+            readService.find(key, vesselType)
                 ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                     ErrorSchema(ApiErrorCodes.RESOURCE_NOT_FOUND.code, ApiErrorCodes.RESOURCE_NOT_FOUND.message),
                 )

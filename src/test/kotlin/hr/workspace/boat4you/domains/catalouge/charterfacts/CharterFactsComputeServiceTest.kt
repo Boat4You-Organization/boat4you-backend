@@ -107,8 +107,10 @@ class CharterFactsComputeServiceTest {
                 (9, 'Marina Baotić', 'HR', 'Seget Donji', NULL, NULL);
             -- r-5 Split region; r-7 claims a Croatian marina but is a Greek area -> the own-country guard drops it
             INSERT INTO region VALUES (5, 'Split region', 'HR'), (6, 'Dubrovnik region', 'HR'), (7, 'Greek area', 'GR'),
-                                      (98, 'Ionian', NULL);
-            INSERT INTO location_region VALUES (5, 1), (5, 2), (5, 3), (5, 6), (5, 8), (5, 9), (6, 7), (7, 1), (98, 4);
+                                      (98, 'Ionian', NULL), (100, 'Split', 'HR');
+            -- r-100 is the other partner's "Split" (same first word as "Split region"): Marina Kastela and ACI Split
+            INSERT INTO location_region VALUES (5, 1), (5, 2), (5, 3), (5, 6), (5, 8), (5, 9), (6, 7), (7, 1), (98, 4),
+                                               (100, 2), (100, 3);
             INSERT INTO agency (id, active, availability_blocked) VALUES (1, true, false), (2, false, false), (3, true, true);
             INSERT INTO manufacturer VALUES (1, 'Lagoon'), (2, 'Bavaria'), (3, 'Beneteau'), (4, 'Gulet');
             INSERT INTO model VALUES (1, 'Lagoon 42', 1), (2, 'Lagoon 46', 1), (3, 'Cruiser 46', 2), (5, 'Oceanis 40', 3),
@@ -286,11 +288,13 @@ class CharterFactsComputeServiceTest {
         summary.boats shouldBe 26L
         // c-54 + CAT + SAILING; r-5 the same; l-1 + CAT and l-2 + CAT (one place). Not: l-3 (4 boats), l-6 / l-8 / l-9
         // (5), r-7 (own-country guard), c-86 (no boats), c-160 (not promoted), GULET (1 boat).
+        // r-100 alone: 11, 12, 13, 20, 21, 33 (6 boats); r-5 + r-100 ("Split region" / "Split"): all 26
         rows() shouldContainExactly
             listOf(
                 "c-54" to null, "c-54" to "CATAMARAN", "c-54" to "SAILING_YACHT",
                 "l-1" to null, "l-1" to "CATAMARAN",
                 "l-2" to null, "l-2" to "CATAMARAN",
+                "r-100,r-5" to null, "r-100,r-5" to "CATAMARAN", "r-100,r-5" to "SAILING_YACHT",
                 "r-5" to null, "r-5" to "CATAMARAN", "r-5" to "SAILING_YACHT",
             )
     }
@@ -345,6 +349,7 @@ class CharterFactsComputeServiceTest {
         facts("c-54", VesselType.CATAMARAN)["activeBoats"].asLong() shouldBe 11L
         facts("c-54", VesselType.CATAMARAN)["boatsWithWeeklyPrices"].asLong() shouldBe 10L
         facts("r-5")["activeBoats"].asLong() shouldBe 27L
+        facts("r-100,r-5")["activeBoats"].asLong() shouldBe 27L
         // l-1 = the Kaštela place (l-1 + l-2): 1-12 + custom 18
         facts("l-1")["activeBoats"].asLong() shouldBe 13L
         facts("l-2")["activeBoats"].asLong() shouldBe 13L
@@ -433,7 +438,7 @@ class CharterFactsComputeServiceTest {
         service.recompute(today = TODAY).stored shouldBe true
         rows() shouldContainExactly first
 
-        // an incident empties most of the offer table: 10 rows would become 4 -> refused, old rows stay
+        // an incident empties most of the offer table: 13 rows would become 6 -> refused, old rows stay
         jdbc.update("DELETE FROM offer WHERE yacht_id BETWEEN 3 AND 12")
         CharterFactsTestDb.refreshSearchView(jdbc)
         val summary = service.recompute(today = TODAY)
@@ -447,7 +452,11 @@ class CharterFactsComputeServiceTest {
         // ops: the shrink is legitimate -> force replaces
         val forced = service.recompute(force = true, today = TODAY)
         forced.stored shouldBe true
-        rows() shouldContainExactly listOf("c-54" to null, "c-54" to "SAILING_YACHT", "r-5" to null, "r-5" to "SAILING_YACHT")
+        rows() shouldContainExactly
+            listOf(
+                "c-54" to null, "c-54" to "SAILING_YACHT", "r-100,r-5" to null, "r-100,r-5" to "SAILING_YACHT",
+                "r-5" to null, "r-5" to "SAILING_YACHT",
+            )
         // 1, 2, 13, 20-26, 28-33 + custom 18
         facts("c-54")["activeBoats"].asLong() shouldBe 17L
         (service.latestComputedAt()!! >= before) shouldBe true
@@ -455,6 +464,6 @@ class CharterFactsComputeServiceTest {
         // force never overrides the empty-result guard
         jdbc.update("DELETE FROM offer")
         service.recompute(force = true, today = TODAY).stored shouldBe false
-        rows() shouldContainExactly listOf("c-54" to null, "c-54" to "SAILING_YACHT", "r-5" to null, "r-5" to "SAILING_YACHT")
+        rows().size shouldBe 6
     }
 }

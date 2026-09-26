@@ -69,6 +69,20 @@ object CharterFactsMath {
 
     fun isValidDid(did: String?): Boolean = did != null && DID_PATTERN.matches(did)
 
+    private val REGION_DID = Regex("""^r-\d{1,12}$""")
+
+    /**
+     * The facts key of a request: one c- / r- / l- did as is, or a dual-source region pair ("r-19,r-187" in any order)
+     * as its two ids sorted as strings and comma-joined ("r-187,r-19"). Null for anything else.
+     */
+    fun factsKey(did: String?): String? {
+        if (did == null) return null
+        if (isValidDid(did)) return did
+        val parts = did.split(',')
+        if (parts.size != 2 || parts.any { !REGION_DID.matches(it) } || parts[0] == parts[1]) return null
+        return parts.sorted().joinToString(",")
+    }
+
     /**
      * How many times an extra's price is charged for one 7-night charter, or null when that cannot be known
      * without the party size or a quantity (per person, per hour, per litre, percentage, unknown unit) — such
