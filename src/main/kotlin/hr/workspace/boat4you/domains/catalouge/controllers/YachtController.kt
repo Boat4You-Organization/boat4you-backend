@@ -109,6 +109,13 @@ class YachtController(
          * or absent, keeps the existing pricing (sister sites, admin, AI chat).
          */
         @RequestParam(name = "priceBasis", required = false) priceBasis: String? = null,
+        /**
+         * Sitemap shards (audit B03): restrict to yacht ids in [idFrom, idTo). Combine with `sortBy=id` (stable,
+         * ascending id; `idDesc` = descending, e.g. size=1 for the highest id) so a shard lists the same boats
+         * whatever the prices do.
+         */
+        @RequestParam(name = "idFrom", required = false) idFrom: Long? = null,
+        @RequestParam(name = "idTo", required = false) idTo: Long? = null,
         @RequestParam(name = "page", defaultValue = "0") page: Int,
         @RequestParam(name = "size", defaultValue = "10") size: Int,
         @RequestHeader(name = "Accept-Language", required = false) lang: String? = null,
@@ -170,6 +177,8 @@ class YachtController(
                 includeUnavailable = includeUnavailable,
                 countryCodes = countryCodes,
                 weeklyPrice = priceBasis.equals("week", ignoreCase = true),
+                idFrom = idFrom,
+                idTo = idTo,
                 language = language,
             )
 

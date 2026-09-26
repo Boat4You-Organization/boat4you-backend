@@ -124,8 +124,9 @@ class YachtSearchWeeklyPriceTest {
                 // 2 "Short stays only".
                 SeedOffer(2, week(2), 3, 450, 500, "FREE"),
                 SeedOffer(2, week(3), 1, 150, 150, "FREE"),
-                // 3 "Typo": one week at a tenth of the others.
-                SeedOffer(3, week(2), 7, 294.5, 310, "FREE"),
+                // 3 "Typo": one week at a fourteenth of the dearest (350 among 2,945-4,940; a week below 300 EUR is
+                // a placeholder and not even a candidate since 26.9.2026, so the typo week sits above that floor).
+                SeedOffer(3, week(2), 7, 350, 370, "FREE"),
                 SeedOffer(3, week(3), 7, 2945, 3100, "FREE"),
                 SeedOffer(3, week(4), 7, 4940, 5200, "FREE"),
                 // 4 "Only 0 €".
@@ -341,13 +342,14 @@ class YachtSearchWeeklyPriceTest {
     }
 
     @Test
-    fun `default undated pricing no longer reads a 0 € row when a positive one exists`() {
+    fun `default undated pricing never reads a 0 € row`() {
         val (rows, count) = search(params(weekly = false))
         val byId = rows.associateBy { it.id }
 
         assertEquals(7L, count)
         assertEquals(BigDecimal("700.00"), total(byId.getValue(7)), "yacht 7: its 700 € week, not the 0 € one")
-        assertEquals(0, BigDecimal.ZERO.compareTo(byId.getValue(4).clientPrice), "yacht 4: only 0 € rows → still 0")
+        // 26.9.2026: the default path never shows 0 EUR either - no positive row, no price ("price on request")
+        assertNull(byId.getValue(4).clientPrice, "yacht 4: only 0 € rows → no price")
     }
 
     @Test

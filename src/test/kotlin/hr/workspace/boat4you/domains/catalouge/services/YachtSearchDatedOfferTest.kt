@@ -5,7 +5,6 @@ import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.dto.YachtSearchParamObject
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
-import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtDetailRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtViewRepository
@@ -24,11 +23,9 @@ import jakarta.persistence.EntityManager
 import jakarta.persistence.EntityManagerFactory
 import org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
 import org.junit.jupiter.api.AfterAll
-import org.junit.jupiter.api.Assertions.assertAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
-import org.junit.jupiter.api.function.Executable
 import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockingDetails
@@ -41,27 +38,25 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
- * 22.9.2026: `GET /public/yachts?…&sortBy=asc&size=100` over Croatian catamarans reported 897 rows on
- * 9 pages, but walking the pages yielded only 894 DISTINCT yachts — three came back on two neighbouring
- * pages and three others on none. Every `sortBy` branch ordered by its key alone (searched-week total,
- * deposit, length, partner boost) and hundreds of yachts tie on those keys. Postgres gives no stable
- * order among ties, and its bounded top-N heap sort even orders the SAME ties differently for each
- * LIMIT/OFFSET, so consecutive page boundaries cut through a tie at different places. Paging is stable
- * only under a total order — hence the trailing `id` tiebreak on every sort (the query groups by id).
- *
- * Real Hibernate + real Postgres (Testcontainers) on the real R__1_03 matview, the recipe of
- * [YachtSearchViewRefresherTest]: a criteria ORDER BY cannot be proven stable with mocks. Minimal
- * schema = the columns the view reads + the three tables the search query touches next to the view
- * (hard-block subquery, card amenities). The seed is an all-tie catalogue: every yacht carries the same
- * price, list price, deposit, length and agency, so every sort key ties on every row.
+ * 26.9.2026 audit B15: a dated search whose length differs from the boat's offers priced one offer and linked another.
+ * "Croatia, 12-15 June 2027" (3 nights): 16 of 18 cards said "Price for 7 days" and 14 linked startDate = endDate =
+ * 12 June (the end of the week BEFORE), one linked an end date before its start. Each card now shows ONE offer - the
+ * exact period, else the searched length nearest the searched start, else an offer covering the searched nights, else
+ * the nearest - with that offer's own price, day count and dates; searched-length cards rank before longer ones, cards
+ * without a price last. Also: the undated weekly card carries its priced week's dates, and no path shows 0 EUR or a
+ * 10 EUR placeholder week. Real Hibernate + Postgres on the real R__1_03 matview (recipe of YachtSearchWeeklyPriceTest).
  */
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class YachtSearchPagingStabilityTest {
+class YachtSearchDatedOfferTest {
     companion object {
         @Container
         @JvmStatic
@@ -71,19 +66,8 @@ class YachtSearchPagingStabilityTest {
                 withInitScript("init/00_roles.sql")
             }
 
-        private const val YACHTS = 300
-        private const val PAGE_SIZE = 30
-        private val WEEK_FROM: LocalDate = LocalDate.of(2026, 10, 3)
-        private val WEEK_TO: LocalDate = LocalDate.of(2026, 10, 10)
+        private val TODAY: LocalDate = LocalDate.now()
 
-        /** Every `sortBy` the controller accepts, plus the empty and unknown values that fall back to Recommended. */
-        private val SORT_VARIANTS =
-            listOf(
-                "asc", "desc", "lowestPrepayment", "discount", "lengthAsc", "lengthDesc", "recommendedScore", "recommended", "id", "idDesc",
-                "", "bogus",
-            )
-
-        /** Only the columns R__1_03_yacht_search_view.sql reads, plus the tables the search query joins beside the view. */
         private val MINIMAL_SCHEMA =
             """
             CREATE TABLE location (id bigint PRIMARY KEY, display_name text, country_code varchar(2));
@@ -111,18 +95,67 @@ class YachtSearchPagingStabilityTest {
                                 quantity numeric, comment text);
             """.trimIndent()
 
-        /** One agency, one marina, [YACHTS] identical catamarans each with one identical FREE week. */
-        private val ALL_TIE_SEED =
-            """
-            INSERT INTO location (id, display_name, country_code) VALUES (1, 'Marina Kastela | Split', 'HR');
-            INSERT INTO agency (id, name, active, availability_blocked, recommended) VALUES (1, 'Tie agency', true, false, false);
-            INSERT INTO yacht (id, name, agency_id, entry_type, sys_active, vessel_type, build_year, max_persons, cabins, berths, length, wc)
-              SELECT g, 'Tie yacht ' || g, 1, 'EXTERNAL', true, 'CATAMARAN', 2020, 8, 4, 8, 12.5, 2 FROM generate_series(1, $YACHTS) g;
-            INSERT INTO yacht_charter_type (id, yacht_id, type) SELECT g, g, 'BAREBOAT' FROM generate_series(1, $YACHTS) g;
-            INSERT INTO offer (id, yacht_id, location_from, location_to, date_from, date_to, client_price, ext_base_price,
-                               broker_commission, deposit, status)
-              SELECT g, g, 1, 1, DATE '$WEEK_FROM', DATE '$WEEK_TO', 3500, 4200, 350, 1750, 'FREE' FROM generate_series(1, $YACHTS) g;
-            """.trimIndent()
+        /** One offer row; client/list are the offer TOTALS (the view divides them per day). */
+        private data class SeedOffer(
+            val yacht: Int,
+            val from: LocalDate,
+            val nights: Int,
+            val client: Number,
+            val status: String = "FREE",
+        )
+
+        private val S: LocalDate = LocalDate.of(2030, 6, 15)
+        private val E: LocalDate = S.plusDays(3)
+
+        private val OFFERS: List<SeedOffer> =
+            listOf(
+                // 1: only weeks - the week BEFORE (ends on the searched start) and the week that covers the search
+                SeedOffer(1, S.minusDays(7), 7, 1000),
+                SeedOffer(1, S, 7, 2000),
+                // 2: a 3-night offer one day later, and the covering week
+                SeedOffer(2, S.plusDays(1), 3, 900),
+                SeedOffer(2, S, 7, 2100),
+                // 3: the exact 3 nights, and the covering week
+                SeedOffer(3, S, 3, 1200),
+                SeedOffer(3, S, 7, 1800),
+                // 4: 0 EUR rows only
+                SeedOffer(4, S, 7, 0),
+                SeedOffer(4, S, 3, 0),
+                // 5: a Thursday week covering the search (2 days before) and the next one (5 days after)
+                SeedOffer(5, S.minusDays(2), 7, 1500),
+                SeedOffer(5, S.plusDays(5), 7, 1400),
+                // 6: two weeks that tile a 14-night search exactly
+                SeedOffer(6, LocalDate.of(2030, 7, 6), 7, 1000),
+                SeedOffer(6, LocalDate.of(2030, 7, 13), 7, 1100),
+                // 7: undated weekly - a past week, two future weeks
+                SeedOffer(7, TODAY.minusWeeks(2), 7, 500),
+                SeedOffer(7, TODAY.plusWeeks(2), 7, 2100),
+                SeedOffer(7, TODAY.plusWeeks(3), 7, 1500),
+                // 8: undated weekly - a grid of 10 EUR placeholder weeks
+                SeedOffer(8, TODAY.plusWeeks(2), 7, 10),
+                SeedOffer(8, TODAY.plusWeeks(3), 7, 10),
+            )
+
+        private val SEED: String =
+            buildString {
+                appendLine("INSERT INTO location (id, display_name, country_code) VALUES (1, 'Marina Kastela | Split', 'HR');")
+                appendLine("INSERT INTO agency (id, name, active, availability_blocked, recommended) VALUES (1, 'Agency', true, false, false);")
+                (1..8).forEach { id ->
+                    appendLine(
+                        "INSERT INTO yacht (id, name, agency_id, entry_type, sys_active, vessel_type, location_id) " +
+                            "VALUES ($id, 'Yacht $id', 1, 'EXTERNAL', true, 'SAILING_YACHT', 1);",
+                    )
+                    appendLine("INSERT INTO yacht_charter_type (id, yacht_id, type) VALUES ($id, $id, 'BAREBOAT');")
+                }
+                OFFERS.forEachIndexed { i, (yacht, start, nights, client, status) ->
+                    val end = start.plusDays(nights.toLong())
+                    appendLine(
+                        "INSERT INTO offer (id, yacht_id, location_from, location_to, date_from, date_to, client_price, " +
+                            "ext_base_price, broker_commission, deposit, status) VALUES (${i + 1}, $yacht, 1, 1, " +
+                            "DATE '$start', DATE '$end', $client, $client, 0, 1000, '$status');",
+                    )
+                }
+            }
     }
 
     private lateinit var dataSource: HikariDataSource
@@ -142,8 +175,7 @@ class YachtSearchPagingStabilityTest {
             }
         val jdbcTemplate = JdbcTemplate(dataSource)
         jdbcTemplate.execute(MINIMAL_SCHEMA)
-        jdbcTemplate.execute(ALL_TIE_SEED)
-        // Seed first, then build the matview: CREATE MATERIALIZED VIEW … AS SELECT populates it.
+        jdbcTemplate.execute(SEED)
         applyRepeatableLikeFlyway(jdbcTemplate)
 
         entityManagerFactory = buildEntityManagerFactory()
@@ -176,7 +208,6 @@ class YachtSearchPagingStabilityTest {
         dataSource.close()
     }
 
-    /** The whole R__1_03 file on one connection in one transaction — exactly what Flyway does. */
     private fun applyRepeatableLikeFlyway(jdbcTemplate: JdbcTemplate) {
         val sql = ClassPathResource("db/migration/R__1_03_yacht_search_view.sql").inputStream.bufferedReader().readText()
         jdbcTemplate.execute(
@@ -195,7 +226,6 @@ class YachtSearchPagingStabilityTest {
         )
     }
 
-    /** Real Hibernate over the production entity mappings, without a Spring context; no schema generation. */
     private fun buildEntityManagerFactory(): EntityManagerFactory {
         val factoryBean = LocalContainerEntityManagerFactoryBean()
         factoryBean.dataSource = dataSource
@@ -212,14 +242,15 @@ class YachtSearchPagingStabilityTest {
         return factoryBean.`object`!!
     }
 
-    private fun searchParams(
-        dated: Boolean,
-        weekly: Boolean = false,
+    private fun params(
+        weekly: Boolean,
+        start: LocalDate? = null,
+        end: LocalDate? = null,
     ): YachtSearchParamObject =
         YachtSearchParamObject(
             locationIds = null,
             charterTypes = null,
-            vesselTypes = listOf(VesselType.CATAMARAN),
+            vesselTypes = null,
             manufacturers = null,
             models = null,
             mainSailTypes = null,
@@ -235,8 +266,8 @@ class YachtSearchPagingStabilityTest {
             maxLength = null,
             minPrice = null,
             maxPrice = null,
-            startDate = WEEK_FROM.takeIf { dated },
-            endDate = WEEK_TO.takeIf { dated },
+            startDate = start,
+            endDate = end,
             minWc = null,
             maxWc = null,
             minEnginePower = null,
@@ -249,73 +280,93 @@ class YachtSearchPagingStabilityTest {
             language = LanguageEnum.EN,
         )
 
-    /**
-     * Walks every page the way the admin Offers workspace and the web listing do, page 0 upwards until
-     * `totalPages`. The yacht ids of a page are read off the mapper calls (one `toDto` per row, in page
-     * order), so the check stays on the query and never on DTO shape.
-     */
-    private fun walk(
-        sortBy: String,
-        dated: Boolean,
-        weekly: Boolean = false,
-    ): List<List<Long>> {
-        val params = searchParams(dated, weekly)
-        val pages = mutableListOf<List<Long>>()
-        var page = 0
-        do {
-            clearInvocations(yachtMapper)
-            val result = service.getYachts(params, sortBy, LanguageEnum.EN, page, PAGE_SIZE, isAdmin = false)
-            assertEquals(YACHTS.toLong(), result.totalElements, "sortBy='$sortBy' dated=$dated: totalElements")
-            pages += mockingDetails(yachtMapper).invocations.map { it.getArgument<YachtSearchSelectResult>(0).id }
-            page++
-        } while (page < result.totalPages)
-        return pages
-    }
-
-    private fun pagesAreDisjointCompleteAndRepeatable(
-        sortBy: String,
-        dated: Boolean,
-        weekly: Boolean = false,
-    ): Executable =
-        Executable {
-            val label = "sortBy='$sortBy' dated=$dated weekly=$weekly"
-            val pages = walk(sortBy, dated, weekly)
-            val seen = mutableSetOf<Long>()
-            val duplicated = pages.flatten().filter { !seen.add(it) }.toSortedSet()
-            val missing = ((1L..YACHTS).toSet() - seen).toSortedSet()
-            assertEquals(emptySet<Long>(), duplicated, "$label: yachts returned on more than one page")
-            assertEquals(emptySet<Long>(), missing, "$label: yachts returned on no page at all")
-            assertEquals(pages, walk(sortBy, dated, weekly), "$label: two walks of the same search must page identically")
-        }
-
-    /**
-     * 26.9.2026 audit B03: the yacht sitemap shards paged the price-ordered listing, and shards cached an hour apart
-     * saw different orders (1,404 duplicate and 156 missing boat URLs at 08:14). `sortBy=id` is the stable catalogue
-     * order the shards page instead: ascending id, independent of prices and availability.
-     */
-    @Test
-    fun `sortBy id pages the catalogue in ascending id order, idFrom-idTo cut an id range`() {
-        listOf(false, true).forEach { weekly ->
-            assertEquals((1L..YACHTS).toList(), walk("id", dated = false, weekly = weekly).flatten(), "weekly=$weekly")
-        }
-        assertEquals((YACHTS.toLong() downTo 1L).toList(), walk("idDesc", dated = false).flatten())
+    /** Rows in page order, read off the mapper calls (one toDto per row). */
+    private fun search(
+        params: YachtSearchParamObject,
+        sortBy: String = "",
+    ): Pair<List<YachtSearchSelectResult>, Long> {
         clearInvocations(yachtMapper)
-        val range = service.getYachts(searchParams(dated = false, weekly = false).copy(idFrom = 5, idTo = 9), "id", LanguageEnum.EN, 0, 100, false)
-        assertEquals(4L, range.totalElements)
-        assertEquals(listOf(5L, 6L, 7L, 8L), mockingDetails(yachtMapper).invocations.map { it.getArgument<YachtSearchSelectResult>(0).id })
+        val page = service.getYachts(params, sortBy, LanguageEnum.EN, 0, 50, isAdmin = false)
+        val rows = mockingDetails(yachtMapper).invocations.map { it.getArgument<YachtSearchSelectResult>(0) }
+        return rows to page.totalElements
+    }
+
+    /** The period total the card shows: per-day × days, to the cent. */
+    private fun total(row: YachtSearchSelectResult): BigDecimal? {
+        val perDay = row.clientPrice ?: return null
+        val days = row.numberOfDays ?: return null
+        return perDay.multiply(BigDecimal(days)).setScale(2, RoundingMode.HALF_UP)
+    }
+
+    private fun byId(rows: List<YachtSearchSelectResult>) = rows.associateBy { it.id }
+
+    @Test
+    fun `a 3-night search - one offer per card, its own price, day count and dates`() {
+        val (rows, count) = search(params(weekly = true, start = S, end = E))
+        val byId = byId(rows)
+        assertEquals(5L, count)
+
+        fun check(
+            id: Long,
+            total: String?,
+            days: Int?,
+            from: LocalDate?,
+            to: LocalDate?,
+        ) {
+            val row = byId.getValue(id)
+            assertEquals(total?.let { BigDecimal(it) }, total(row), "yacht $id total")
+            assertEquals(days, row.numberOfDays, "yacht $id days")
+            assertEquals(from, row.offerDateFrom, "yacht $id from")
+            assertEquals(to, row.offerDateTo, "yacht $id to")
+            if (from != null && to != null) assertTrue(to.isAfter(from), "yacht $id: a card never links end <= start")
+        }
+        // the covering week, not "7 days 1,000" of the week before with an end date = the searched start
+        check(1, "2000.00", 7, S, S.plusDays(7))
+        // the searched length, one day later - not the week
+        check(2, "900.00", 3, S.plusDays(1), S.plusDays(4))
+        check(3, "1200.00", 3, S, E)
+        check(4, null, null, null, null)
+        // the week covering the search (starts 2 days before), not the cheaper week starting 5 days after
+        check(5, "1500.00", 7, S.minusDays(2), S.plusDays(5))
+
+        // searched-length cards first (cheapest first), then the longer offers, then no price
+        assertEquals(listOf(2L, 3L, 5L, 1L, 4L), rows.map { it.id })
+        val (desc, _) = search(params(weekly = false, start = S, end = E), sortBy = "desc")
+        assertEquals(listOf(3L, 2L, 1L, 5L, 4L), desc.map { it.id })
     }
 
     @Test
-    fun `every sort variant pages an all-tie catalogue into disjoint, complete and repeatable pages`() {
-        assertAll(
-            SORT_VARIANTS.flatMap { sortBy ->
-                listOf(
-                    pagesAreDisjointCompleteAndRepeatable(sortBy, dated = true),
-                    pagesAreDisjointCompleteAndRepeatable(sortBy, dated = false),
-                    // Undated weekly "from" price (priceBasis=week, 25.9.2026) orders by its own expressions.
-                    pagesAreDisjointCompleteAndRepeatable(sortBy, dated = false, weekly = true),
-                )
-            },
-        )
+    fun `a 14-night search tiled by two weeks shows the period total and links the searched dates`() {
+        val start = LocalDate.of(2030, 7, 6)
+        val end = start.plusDays(14)
+        val (rows, _) = search(params(weekly = false, start = start, end = end))
+        val row = rows.single { it.id == 6L }
+        assertEquals(BigDecimal("2100.00"), total(row))
+        assertEquals(14, row.numberOfDays)
+        assertEquals(start, row.offerDateFrom)
+        assertEquals(end, row.offerDateTo)
+    }
+
+    @Test
+    fun `undated weekly card - the priced week's own dates, and no 10 EUR placeholder price`() {
+        val (rows, _) = search(params(weekly = true))
+        val byId = byId(rows)
+        val seven = byId.getValue(7)
+        assertEquals(BigDecimal("1500.00"), total(seven))
+        assertEquals(TODAY.plusWeeks(3), seven.offerDateFrom)
+        assertEquals(TODAY.plusWeeks(3).plusDays(7), seven.offerDateTo)
+        val eight = byId.getValue(8)
+        assertNull(eight.clientPrice, "a 10 EUR week is a placeholder, never a weekly price")
+        assertNull(eight.offerDateFrom)
+    }
+
+    @Test
+    fun `the default undated path never returns a price of 0 or less`() {
+        val (rows, _) = search(params(weekly = false))
+        rows.forEach { row ->
+            val price = row.clientPrice
+            assertTrue(price == null || price > BigDecimal.ZERO, "yacht ${row.id}: $price")
+        }
+        assertNull(byId(rows).getValue(4).clientPrice, "yacht 4: only 0 EUR rows -> no price")
     }
 }

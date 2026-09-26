@@ -76,6 +76,12 @@ data class YachtSearchParamObject(
      * request"). Ignored when a date is given. See YachtQueryingService.weeklyFromValue.
      */
     val weeklyPrice: Boolean = false,
+    /**
+     * Sitemap shards by id range (26.9.2026 audit B03): `idFrom` inclusive, `idTo` exclusive. A shard that pages a
+     * price-ordered listing moves boats between shards whenever prices change; an id range never does.
+     */
+    val idFrom: Long? = null,
+    val idTo: Long? = null,
     val language: LanguageEnum,
 ) {
     fun getMinLengthInMeters(): BigDecimal? {

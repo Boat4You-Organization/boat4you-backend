@@ -50,4 +50,10 @@ data class YachtSearchSelectResult(
     val coveringListTotal: BigDecimal?,
     val coveringCommissionTotal: BigDecimal?,
     val coveringNights: Int?,
+    /**
+     * The ONE offer the card shows, encoded so that MIN() over the yacht's rows picks it (26.9.2026 audit B15): dated
+     * searches - see YachtQueryingService.offerChoiceKey; undated priceBasis=week - the cheapest trusted week, see
+     * weeklyWeekKey. Null on the other paths. Decoded by YachtQueryingService.applyChosenOffer.
+     */
+    val chosenOfferKey: String? = null,
 )

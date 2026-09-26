@@ -106,6 +106,33 @@ class YachtQueryingService(
         private val WEEKLY_PRICE_OUTLIER_RATIO = BigDecimal("0.12")
 
         /**
+         * A 7-night charter below this (EUR) is a partner placeholder (Valencia 26.9.2026: whole grids of "10 EUR"
+         * weeks), never a real week price: such a week is not a weekly "from" price candidate (the charter facts use
+         * the same floor, CharterFactsMath.MIN_WEEK_PRICE). Compared per day (the matview's unit).
+         */
+        private val MIN_WEEK_PRICE_PER_DAY: BigDecimal = BigDecimal(300).divide(BigDecimal(WEEK_NIGHTS), 10, java.math.RoundingMode.HALF_UP)
+
+        /**
+         * [offerChoiceKey] tiers, best first: the exact searched period; the searched length at the nearest start;
+         * an offer covering the searched nights; any other offer; a row without a positive price (never shown as a
+         * price).
+         */
+        private const val CHOICE_EXACT = "0"
+        private const val CHOICE_SAME_LENGTH = "1"
+        private const val CHOICE_COVERS = "2"
+        private const val CHOICE_OTHER = "3"
+        private const val CHOICE_NO_PRICE = "9"
+
+        /** Fixed-width parts of the choice key: tier(1) distance(4) from(8) to(8) client total(15) |list|commission. */
+        private const val KEY_DISTANCE_WIDTH = 4
+        private const val KEY_DISTANCE_FORMAT = "FM0000"
+        private const val KEY_TOTAL_START = 22
+        private const val KEY_TOTAL_WIDTH = 15
+        private const val KEY_TOTAL_FORMAT = "FM000000000000.00"
+        private const val KEY_TOTAL_PARSE = "000000000000.00"
+        private const val NO_DATE = "00000000"
+
+        /**
          * Honest "shifted week" reach (Deploy 4). A published offer slot
          * qualifies if its OWN window overlaps [from - N, to + N] — judged on
          * the slot's real dateFrom/dateTo, NOT a start-day clamp. So a 04.07.–
@@ -289,6 +316,17 @@ class YachtQueryingService(
             }
         }
 
+        // The ONE offer a card shows (26.9.2026 audit B15). Dated: exact period, else the same length nearest the
+        // searched start, else an offer covering the searched nights, else the nearest; its price, day count and dates
+        // come from that same row. Weekly mode: the dates of the cheapest trusted week. See offerChoiceKey.
+        val datedSearch = searchParams.startDate != null && searchParams.endDate != null
+        val chosenKeyExpr: Expression<String> =
+            when {
+                datedSearch -> cb.least(offerChoiceKey(cb, root, searchParams.startDate!!, searchParams.endDate!!, requestedNights!!))
+                weeklyMode -> cb.least(weeklyWeekKey(cb, root))
+                else -> cb.nullLiteral(String::class.java)
+            }
+
         // GROUP BY id ONLY (9.7.2026); every other selected yacht attribute is
         // functionally dependent on it (same yacht ⇒ same name/model/agency/…)
         // and gets wrapped in MIN()/LEAST() to stay valid SQL. Grouping by the
@@ -349,6 +387,7 @@ class YachtQueryingService(
             coveringListTotalExpr,
             coveringCommissionTotalExpr,
             coveringNightsExpr,
+            chosenKeyExpr,
         )
 
         val predicates =
@@ -392,7 +431,27 @@ class YachtQueryingService(
         // exists), order by the TRUE summed period total — the same number the card now shows —
         // so price-asc/desc stays consistent with the displayed price (the 7.6.2026 invariant).
         val totalPriceExpr: Expression<out Number> =
-            if (requestedNights != null && requestedNights > WEEK_NIGHTS) {
+            if (datedSearch) {
+                // The chosen offer's total — the figure the card shows — or the multi-week covering sum when the
+                // weekly offers tile a longer request and no exact-period offer exists (applyCoveringPeriodPrice).
+                val chosenTotal = chosenOfferTotal(cb, chosenKeyExpr)
+                if (requestedNights!! > WEEK_NIGHTS) {
+                    val coveringTotal =
+                        coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)!!
+                    val coveringNights =
+                        coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)!!
+                    cb.selectCase<BigDecimal>()
+                        .`when`(
+                            cb.and(
+                                cb.equal(coveringNights, cb.literal(requestedNights)),
+                                cb.notEqual(cb.substring(chosenKeyExpr, 1, 1), cb.literal(CHOICE_EXACT)),
+                            ),
+                            coveringTotal,
+                        ).otherwise(chosenTotal)
+                } else {
+                    chosenTotal
+                }
+            } else if (requestedNights != null && requestedNights > WEEK_NIGHTS) {
                 val coveringTotal =
                     coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)!!
                 val coveringNights =
@@ -426,19 +485,22 @@ class YachtQueryingService(
         // came back on none (22.9.2026: Croatia catamarans 897 rows / 894 distinct over 9 pages;
         // the admin Offers walk reported the 3 missing). Appended after the `when` so no branch can
         // forget it; see YachtSearchPagingStabilityTest.
+        // Dated searches rank the cards that match the searched length (exact or shifted) before the longer / other
+        // offers, and cards without a price last — a 7-night price is never ranked among 3-night prices (audit B15).
+        val lengthGroup: List<Order> = if (datedSearch) listOf(cb.asc(choiceGroup(cb, chosenKeyExpr))) else emptyList()
         val primaryOrders: List<Order> =
             when (sortBy) {
                 "asc" -> {
-                    listOf(cb.asc(totalPriceExpr))
+                    lengthGroup + cb.asc(totalPriceExpr)
                 }
 
                 "desc" -> {
-                    // Weekly mode: a yacht without a bookable week has no price (NULL); Postgres puts
-                    // NULLs FIRST on DESC, so map them below every real total.
+                    // A yacht without a price (weekly mode: no bookable week; default path: no positive
+                    // offer) is NULL; Postgres puts NULLs FIRST on DESC, so map them below every real total.
                     if (weeklyMode) {
                         listOf(cb.desc(cb.coalesce(exactTotalExpr, cb.literal(BigDecimal.ONE.negate()))))
                     } else {
-                        listOf(cb.desc(totalPriceExpr))
+                        lengthGroup + cb.desc(cb.coalesce(totalPriceExpr as Expression<BigDecimal>, cb.literal(BigDecimal.ONE.negate())))
                     }
                 }
 
@@ -464,7 +526,7 @@ class YachtQueryingService(
                             ).`as`(BigDecimal::class.java),
                             cb.literal(BigDecimal.ONE),
                         )
-                    listOf(cb.asc(savingRatio), cb.asc(totalPriceExpr))
+                    lengthGroup + listOf(cb.asc(savingRatio), cb.asc(totalPriceExpr))
                 }
 
                 "lengthAsc" -> {
@@ -488,12 +550,24 @@ class YachtQueryingService(
                     // then cheapest within each bucket. The legacy
                     // `recommended_score` column is left in the view but no longer
                     // drives this sort.
-                    listOf(cb.desc(recommendedBoost), cb.asc(totalPriceExpr))
+                    listOf(cb.desc(recommendedBoost)) + lengthGroup + cb.asc(totalPriceExpr)
+                }
+
+                "id" -> {
+                    // Stable catalogue order for the yacht sitemap shards (audit B03): a price-ordered
+                    // listing moves boats between shards as prices change, so shards cached an hour
+                    // apart listed some boats twice and others never. Only the id (appended below).
+                    emptyList()
+                }
+
+                "idDesc" -> {
+                    // The highest id first (size=1: the upper end of the id-range shards).
+                    listOf(cb.desc(root.get<Long>("id")))
                 }
 
                 else -> {
                     // Empty / unknown sortBy ⇒ same behaviour as the Recommended tab.
-                    listOf(cb.desc(recommendedBoost), cb.asc(totalPriceExpr))
+                    listOf(cb.desc(recommendedBoost)) + lengthGroup + cb.asc(totalPriceExpr)
                 }
             }
         cq.orderBy(primaryOrders + cb.asc(root.get<Long>("id")))
@@ -566,7 +640,13 @@ class YachtQueryingService(
                 // Multi-week period price: when the searched window is fully tiled by weekly offers
                 // (and no exact-period offer exists), swap the single-week per-day rate for the summed
                 // period total so the card shows the true 2-week price (e.g. 7615.30, not 5212.90).
-                val view = applyCoveringPeriodPrice(rawView, requestedNights)
+                val view =
+                    applyCoveringPeriodPrice(
+                        applyChosenOffer(rawView, datedSearch, weeklyMode),
+                        requestedNights,
+                        searchParams.startDate,
+                        searchParams.endDate,
+                    )
                 // isOption requires BOTH the aggregated offerStatus to flag
                 // OPTION(2) / OPTION_WAITING(3) AND a live external reservation
                 // ROW backing it (row presence, not expiry presence — a hold
@@ -759,11 +839,15 @@ class YachtQueryingService(
         // fallback MIN therefore prefers the positive rows and only reads 0 when nothing else is
         // there. The exact searched-period row stays as it is: swapping in another week's price
         // for the searched week would be worse than no price (the web shows "price on request").
+        //
+        // 26.9.2026: and never reads 0 at all - a yacht whose every matching row is 0 EUR has no price (NULL: the web
+        // says "price on request"), not "0 EUR". Dated searches override this column with the chosen offer
+        // (offerChoiceKey), so this only prices the undated default path (sister sites, admin, AI chat).
         val positiveOnly =
             cb.selectCase<BigDecimal>()
                 .`when`(cb.greaterThan(value, BigDecimal.ZERO), value)
                 .otherwise(cb.nullLiteral(BigDecimal::class.java))
-        val minAll = cb.coalesce(cb.min(positiveOnly), cb.min(value))
+        val minAll = cb.min(positiveOnly)
         if (start == null || end == null) return minAll
         val exactOnly =
             cb.selectCase<BigDecimal>()
@@ -773,8 +857,9 @@ class YachtQueryingService(
     }
 
     /**
-     * One row of the undated weekly "from" price: a 7-night offer with a positive price that
-     * starts today or later and is not firmly sold (RESERVED / SERVICE) — an option still counts,
+     * One row of the undated weekly "from" price: a 7-night offer of at least 300 EUR (below that it
+     * is a partner placeholder) that starts today or later and is not firmly sold (RESERVED /
+     * SERVICE) — an option still counts,
      * the card badges it. Custom (admin-managed) yachts have no offer dates and carry their
      * weekly low price as a 7-day row, so they always qualify.
      */
@@ -785,7 +870,7 @@ class YachtQueryingService(
         val dateFrom = root.get<LocalDate>("dateFrom")
         return cb.and(
             cb.equal(root.get<Int>("numberOfDays"), WEEK_NIGHTS),
-            cb.greaterThan(root.get<BigDecimal>("clientPrice"), BigDecimal.ZERO),
+            cb.greaterThanOrEqualTo(root.get<BigDecimal>("clientPrice"), MIN_WEEK_PRICE_PER_DAY),
             cb.or(cb.isNull(dateFrom), cb.greaterThanOrEqualTo(dateFrom, (cb as HibernateCriteriaBuilder).localDate())),
             cb.not(root.get<OfferStatus>("offerStatus").`in`(OfferStatus.RESERVED, OfferStatus.SERVICE)),
         )
@@ -824,6 +909,175 @@ class YachtQueryingService(
             .`when`(trusted, cb.min(weeklyValue))
             .otherwise(cb.nullLiteral(type))
     }
+
+    /**
+     * Dated searches (26.9.2026 audit B15): the card priced one offer and linked another. Price, day count and the two
+     * offer dates were separate aggregates, so a 3-night search (12-15 June) showed "Price for 7 days" from one row and
+     * linked startDate=endDate=12 June (the dateTo of the week BEFORE) - "not available for your selected dates".
+     *
+     * This key makes MIN() over a yacht's rows pick ONE offer and carry all of its figures: tier (see [CHOICE_EXACT]),
+     * distance of its start from the searched start in days, its dates, its client total, then list and commission
+     * totals. Lexicographic order = the preference order; [applyChosenOffer] decodes the winner.
+     */
+    private fun offerChoiceKey(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        start: LocalDate,
+        end: LocalDate,
+        nights: Int,
+    ): Expression<String> {
+        val dateFrom = root.get<LocalDate>("dateFrom")
+        val dateTo = root.get<LocalDate>("dateTo")
+        val days = root.get<Int>("numberOfDays")
+        val client = root.get<BigDecimal>("clientPrice")
+        val tier =
+            cb.selectCase<String>()
+                .`when`(cb.or(cb.isNull(client), cb.lessThanOrEqualTo(client, BigDecimal.ZERO)), CHOICE_NO_PRICE)
+                // custom (admin-managed) yachts have no offer dates: their weekly low price, any week
+                .`when`(cb.isNull(dateFrom), CHOICE_SAME_LENGTH)
+                .`when`(cb.and(cb.equal(dateFrom, start), cb.equal(dateTo, end)), CHOICE_EXACT)
+                .`when`(cb.equal(days, nights), CHOICE_SAME_LENGTH)
+                .`when`(cb.and(cb.lessThanOrEqualTo(dateFrom, start), cb.greaterThanOrEqualTo(dateTo, end)), CHOICE_COVERS)
+                .otherwise(CHOICE_OTHER)
+        // abs(date_from - start) in days, 4 digits: Postgres' date_mi(date, date) is the `-` operator on dates;
+        // a custom yacht (no dates) reads 0000
+        val distance =
+            cb.coalesce(
+                cb.function(
+                    "to_char",
+                    String::class.java,
+                    cb.function("abs", Int::class.javaObjectType, cb.function("date_mi", Int::class.javaObjectType, dateFrom, cb.literal(start))),
+                    cb.literal(KEY_DISTANCE_FORMAT),
+                ),
+                "0".repeat(KEY_DISTANCE_WIDTH),
+            )
+        return concat(
+            cb,
+            tier,
+            distance,
+            dayKey(cb, dateFrom),
+            dayKey(cb, dateTo),
+            totalKey(cb, client, days),
+            cb.literal("|"),
+            cb.coalesce(totalKey(cb, root.get("listPrice"), days), ""),
+            cb.literal("|"),
+            cb.coalesce(totalKey(cb, root.get("brokerCommission"), days), ""),
+        )
+    }
+
+    /**
+     * Undated priceBasis=week: the dates of the cheapest weekly candidate ([weeklyCandidate]) — the week whose price the
+     * card shows (before, the card carried the earliest offer's dates, possibly a past week). Key = client total(15),
+     * date from(8), date to(8): MIN() = the cheapest week, the earliest on a tie. NULL for other rows.
+     */
+    private fun weeklyWeekKey(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+    ): Expression<String> =
+        cb.selectCase<String>()
+            .`when`(
+                weeklyCandidate(cb, root),
+                concat(cb, totalKey(cb, root.get("clientPrice"), root.get("numberOfDays")), dayKey(cb, root.get("dateFrom")), dayKey(cb, root.get("dateTo"))),
+            ).otherwise(cb.nullLiteral(String::class.java))
+
+    /** yyyyMMdd, or [NO_DATE] for a custom yacht (no offer dates). */
+    private fun dayKey(
+        cb: CriteriaBuilder,
+        date: Expression<LocalDate>,
+    ): Expression<String> = cb.coalesce(cb.function("to_char", String::class.java, date, cb.literal("YYYYMMDD")), NO_DATE)
+
+    /** Per-day price × days as a fixed-width string (lexicographic = numeric order for non-negative totals). */
+    private fun totalKey(
+        cb: CriteriaBuilder,
+        perDay: Expression<BigDecimal>,
+        days: Expression<Int>,
+    ): Expression<String> =
+        cb.function("to_char", String::class.java, cb.prod(perDay, cb.toBigDecimal(days)), cb.literal(KEY_TOTAL_FORMAT))
+
+    private fun concat(
+        cb: CriteriaBuilder,
+        vararg parts: Expression<String>,
+    ): Expression<String> = parts.reduce { acc, part -> cb.concat(acc, part) }
+
+    /** The chosen offer's client total (numeric), for the price sorts — the same figure the card shows. */
+    private fun chosenOfferTotal(
+        cb: CriteriaBuilder,
+        key: Expression<String>,
+    ): Expression<BigDecimal> {
+        val total =
+            cb.function("to_number", BigDecimal::class.java, cb.substring(key, KEY_TOTAL_START, KEY_TOTAL_WIDTH), cb.literal(KEY_TOTAL_PARSE))
+        return cb.selectCase<BigDecimal>()
+            .`when`(cb.equal(cb.substring(key, 1, 1), CHOICE_NO_PRICE), cb.nullLiteral(BigDecimal::class.java))
+            .otherwise(total)
+    }
+
+    /** 0 = the searched length (exact / shifted), 1 = a longer or other offer, 2 = no price. */
+    private fun choiceGroup(
+        cb: CriteriaBuilder,
+        key: Expression<String>,
+    ): Expression<Int> {
+        val tier = cb.substring(key, 1, 1)
+        return cb.selectCase<Int>()
+            .`when`(tier.`in`(CHOICE_EXACT, CHOICE_SAME_LENGTH), 0)
+            .`when`(tier.`in`(CHOICE_COVERS, CHOICE_OTHER), 1)
+            .otherwise(2)
+    }
+
+    /**
+     * Replace the aggregate price / days / dates with the chosen offer's own (see [offerChoiceKey], [weeklyWeekKey]).
+     * Dated: all four come from the one chosen row; a yacht whose only rows have no positive price gets no price.
+     * Weekly mode: only the dates (the price columns already are that week's); a yacht without a trusted week (price
+     * NULL) carries no dates, so no card links to a week nobody can book.
+     */
+    private fun applyChosenOffer(
+        view: YachtSearchSelectResult,
+        dated: Boolean,
+        weekly: Boolean,
+    ): YachtSearchSelectResult {
+        if (!dated && !weekly) return view
+        val key = view.chosenOfferKey
+        if (weekly) {
+            return if (key == null || view.clientPrice == null) {
+                view.copy(offerDateFrom = null, offerDateTo = null)
+            } else {
+                view.copy(offerDateFrom = keyDate(key, KEY_TOTAL_WIDTH), offerDateTo = keyDate(key, KEY_TOTAL_WIDTH + 8))
+            }
+        }
+        // a custom yacht keeps its weekly low price, without dates
+        if (key == null || key.substring(5, 13) == NO_DATE) return view
+        if (key.startsWith(CHOICE_NO_PRICE)) {
+            // "price on request" for the searched period: no offer dates, so a card link uses the searched pair
+            return view.copy(
+                clientPrice = null,
+                listPrice = null,
+                brokerCommission = null,
+                numberOfDays = null,
+                offerDateFrom = null,
+                offerDateTo = null,
+            )
+        }
+        val from = keyDate(key, 5)!!
+        val to = keyDate(key, 13)!!
+        val nights = java.time.temporal.ChronoUnit.DAYS.between(from, to).toInt().coerceAtLeast(1)
+        val totals = key.substring(KEY_TOTAL_START - 1).split('|')
+        fun perDay(total: String?): BigDecimal? =
+            total?.takeIf { it.isNotBlank() }?.toBigDecimal()?.divide(BigDecimal(nights), 10, java.math.RoundingMode.HALF_UP)
+        return view.copy(
+            clientPrice = perDay(totals.getOrNull(0)),
+            listPrice = perDay(totals.getOrNull(1)),
+            brokerCommission = perDay(totals.getOrNull(2)),
+            numberOfDays = nights,
+            offerDateFrom = from,
+            offerDateTo = to,
+        )
+    }
+
+    /** yyyyMMdd at the 0-based [index] of a choice key; null for [NO_DATE]. */
+    private fun keyDate(
+        key: String,
+        index: Int,
+    ): LocalDate? =
+        key.substring(index, index + 8).takeIf { it != NO_DATE }?.let { LocalDate.parse(it, java.time.format.DateTimeFormatter.BASIC_ISO_DATE) }
 
     private fun exactPeriodDaysOrMin(
         cb: CriteriaBuilder,
@@ -924,6 +1178,8 @@ class YachtQueryingService(
     private fun applyCoveringPeriodPrice(
         view: YachtSearchSelectResult,
         requestedNights: Int?,
+        start: LocalDate?,
+        end: LocalDate?,
     ): YachtSearchSelectResult {
         if (requestedNights == null || requestedNights <= WEEK_NIGHTS) return view
         val coveringNights = view.coveringNights ?: return view
@@ -936,6 +1192,9 @@ class YachtQueryingService(
             listPrice = perDay(view.coveringListTotal),
             brokerCommission = perDay(view.coveringCommissionTotal),
             numberOfDays = requestedNights,
+            // the tiled weeks ARE the searched period: the card links exactly those dates
+            offerDateFrom = start ?: view.offerDateFrom,
+            offerDateTo = end ?: view.offerDateTo,
         )
     }
 
@@ -1130,6 +1389,8 @@ class YachtQueryingService(
                 root.get<Long>("id").`in`(searchParams.yachtIds),
             )
         }
+        searchParams.idFrom?.let { predicates.add(cb.greaterThanOrEqualTo(root.get("id"), it)) }
+        searchParams.idTo?.let { predicates.add(cb.lessThan(root.get("id"), it)) }
 
         // Offer-availability filter — hide `UNAVAILABLE=4` rows (owner weeks,
         // regattas, bookings that the agency already took outside our system)
