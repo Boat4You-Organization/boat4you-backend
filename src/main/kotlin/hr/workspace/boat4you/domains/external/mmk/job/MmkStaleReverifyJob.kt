@@ -39,7 +39,7 @@ class MmkStaleReverifyJob(
         log.info("Nightly MMK stale-offer reverify took ${System.currentTimeMillis() - start} ms")
     }
 
-    // The other direction (FREE weeks MMK no longer sells). 13:30 UTC: the 12:40 MMK availability run takes 10-40 min
+    // The other direction (bookable-looking periods MMK no longer sells). 13:30 UTC: the 12:40 MMK availability run takes 10-40 min
     // (measured up to 09:20 for the 08:40 run, hence the 09:25 slot above), so 13:30 gives it the same margin and the
     // two MMK consumers never call the partner together. Budgeted at 100 min inside the service; lock covers that.
     @Scheduled(cron = "0 30 13 * * ?")
@@ -50,7 +50,7 @@ class MmkStaleReverifyJob(
         val r = mmkFreeOfferReverifyService.reverifyFreeOffers()
         log.info(
             "Daily MMK free-offer reverify took ${System.currentTimeMillis() - start} ms: ${r.seasons} seasons, ${r.emptySeasons} unquoted, " +
-                "${r.firstStrikes} first strikes, ${r.hiddenWeeks} weeks hidden (${r.hiddenRows} rows)${r.aborted?.let { "; ABORTED: $it" } ?: ""}",
+                "${r.firstStrikes} first strikes, ${r.hiddenPeriods} periods hidden (${r.hiddenRows} rows)${r.aborted?.let { "; ABORTED: $it" } ?: ""}",
         )
     }
 

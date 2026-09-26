@@ -1,7 +1,6 @@
 package hr.workspace.boat4you.domains.external.mmk.service
 
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
-import hr.workspace.boat4you.domains.catalouge.jpa.StaleMmkOfferCombo
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.mmk.client.MmkRetryableClient
 import hr.workspace.boat4you.domains.external.mmk.model.MmkDateTimeWrapper
@@ -15,6 +14,7 @@ import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
+import java.time.temporal.ChronoUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
@@ -22,7 +22,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Mirror image of [MmkStaleOfferReverifyService]: hides FREE 7-night weeks that MMK no longer sells.
+ * Mirror image of [MmkStaleOfferReverifyService]: hides offers the site shows as bookable that MMK no longer sells —
+ * FREE rows of any length and OPTION rows no live option backs (26.9.2026: EMA 12210 showed a phantom 28-night block
+ * 12.6.-10.7.2027 as the match for a one-week search; its weeks were already hidden, the long OPTION rows were not).
  *
  * Why: since the agency-level sweep became upsert-only (20.7.2026) nothing removes a FREE week the partner has
  * withdrawn. An agency that has not published next season's price list keeps showing a full year of "free" weeks
@@ -31,20 +33,27 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Evidence rules, all learned the hard way (55de710 hid ~81k sellable weeks and was reverted in 58d4623):
  *  - The ONLY accepted evidence is the one call shape MMK answers reliably: exact dates, `flexibility=1`, a single
- *    `yachtId`. The agency feed and the per-yacht year call are NOT evidence.
- *  - Evidence scope == write scope: we ask about a 7-night week, we flip that 7-night week's rows and nothing else.
+ *    `yachtId`. The agency feed and the per-yacht year call are NOT evidence. The same call quotes periods of any
+ *    length (26.9.2026: 114 of 120 random FREE 3-28-night rows quoted; the 6 empty ones started within 2 days or
+ *    were a Sunday check-in MMK does not sell).
+ *  - Evidence scope == write scope: we ask about a period with its own dates and flip only rows with exactly those
+ *    dates, never a row that merely overlaps.
  *  - A call failure is "unknown", never "withdrawn".
- *  - A week is hidden only when two DAILY runs on different days both found it empty (`mmk_free_week_strike`,
+ *  - A period is hidden only when two DAILY runs on different days both found it empty (`mmk_free_week_strike`,
  *    V9_59). Two calls 150 ms apart see the same 200-[] maintenance window; two days do not.
- *  - Breakers before any write: too few decided seasons, too many call failures, too large a share of the fleet
- *    empty, or too large a share of ONE agency empty (an agency whose feed broke looks exactly like one that
- *    withdrew its list; that decision goes to a human via the ERROR log).
+ *  - Periods are grouped per yacht, year and shape (7-night weeks / every other length), and each group is sampled
+ *    from its own periods: a long block MMK stopped quoting is found even while the yacht's weeks still sell.
+ *  - Breakers before any write: too few decided week groups, too many call failures, too large a share of the
+ *    fleet's week groups empty (then nothing is written), too large a share of the other groups empty (then only
+ *    those are skipped), or too large a share of ONE agency's groups of a shape empty (an agency whose feed broke
+ *    looks exactly like one that withdrew its list; that decision goes to a human via the ERROR log).
  *  - A wall-clock budget, because `getOffers` retries 3x with a 60 s read timeout and an outage would otherwise
  *    run into the 16:40 availability slot.
  *
- * A hidden week stays a candidate of the nightly UNAVAILABLE->FREE reverifier (with a 7-day back-off), which turns
+ * A hidden period stays a candidate of the nightly UNAVAILABLE->FREE reverifier (with a 7-day back-off), which turns
  * it back to FREE with the new price once the agency publishes it; the strike row is deleted the moment MMK quotes
- * the week again.
+ * the period again. A hidden period that comes back without a quote (the agency sweep, an on-demand search) starts a
+ * new two-day cycle.
  */
 @Service
 class MmkFreeOfferReverifyService(
@@ -61,7 +70,8 @@ class MmkFreeOfferReverifyService(
         private const val MAX_CONSECUTIVE_ERRORS_PER_YACHT = 3
         private const val PROGRESS_LOG_EVERY = 250
 
-        // 21.9.2026 baseline: 199 of 6,929 yacht-seasons (2.9 %) fully unquoted. Three times that is not a normal day.
+        // 21.9.2026 baseline: 199 of 6,929 yacht-seasons (2.9 %) fully unquoted; 22.9.2026 first run: 222 of 13,954
+        // (1.6 %). Three times that is not a normal day. Applied to each shape (weeks / other lengths) on its own.
         const val MAX_EMPTY_SHARE = 0.10
         // One agency at a time is the realistic failure (credentials, a company flag, a 200-[] answer for its
         // yachts). Above this share of an agency's seasons we stop trusting the answer and ask a human.
@@ -75,13 +85,25 @@ class MmkFreeOfferReverifyService(
         val RUN_BUDGET: Duration = Duration.ofMinutes(100)
     }
 
+    /** One probed period. Copied off the JPA projection at once: ~470k proxies would hold ~250 MB for the whole run. */
+    private class Period(
+        val externalYachtId: Long,
+        val agencyId: Long,
+        val dateFrom: LocalDate,
+        val dateTo: LocalDate,
+    )
+
+    /** The bookable-looking periods of one yacht, year and shape ([weekly] = 7 nights). */
     private class Season(
         val yachtId: Long,
         val externalYachtId: Long,
         val agencyId: Long,
         val year: Int,
-        val weeks: List<StaleMmkOfferCombo>,
-    )
+        val weekly: Boolean,
+        val periods: List<Period>,
+    ) {
+        val label get() = "$year ${if (weekly) "weeks" else "other lengths"}"
+    }
 
     private enum class Probe { QUOTED, EMPTY, UNKNOWN }
 
@@ -89,7 +111,7 @@ class MmkFreeOfferReverifyService(
         val seasons: Int,
         val emptySeasons: Int,
         val firstStrikes: Int,
-        val hiddenWeeks: Int,
+        val hiddenPeriods: Int,
         val hiddenRows: Int,
         val aborted: String?,
     )
@@ -114,82 +136,115 @@ class MmkFreeOfferReverifyService(
         val deadline = System.currentTimeMillis() + RUN_BUDGET.toMillis()
         val outOfTime = AtomicBoolean(false)
         val seasons =
-            offerRepository.findFreeWeeklyMmkCombos(ExternalSystemEnum.MMK.value.toLong())
-                .groupBy { it.yachtId to it.dateFrom.year }
-                .map { (key, weeks) ->
-                    Season(key.first, weeks.first().externalYachtId, weeks.first().agencyId, key.second, weeks.sortedBy { it.dateFrom })
+            offerRepository.findShownFreeMmkCombos(ExternalSystemEnum.MMK.value.toLong())
+                .asSequence()
+                .map { c -> c.yachtId to Period(c.externalYachtId, c.agencyId, c.dateFrom, c.dateTo) }
+                .groupBy({ (yachtId, p) -> Triple(yachtId, p.dateFrom.year, ChronoUnit.DAYS.between(p.dateFrom, p.dateTo) == 7L) }, { it.second })
+                .map { (key, periods) ->
+                    Season(key.first, periods.first().externalYachtId, periods.first().agencyId, key.second, key.third, periods.sortedBy { it.dateFrom })
                 }
-        log.info("MMK free-offer reverify: ${seasons.size} yacht-seasons, ${seasons.sumOf { it.weeks.size }} FREE weeks")
+        log.info(
+            "MMK free-offer reverify: ${seasons.size} yacht-season groups (${seasons.count { it.weekly }} of weeks), " +
+                "${seasons.sumOf { it.periods.size }} bookable-looking periods",
+        )
         if (seasons.isEmpty()) return RunResult(0, 0, 0, 0, 0, null)
 
-        // Step 1 - probe every season (first, middle, last FREE week), no writes: the breakers need the whole picture.
+        // Step 1 - probe every group (its first, middle, last period), no writes: the breakers need the whole picture.
         val probed = AtomicInteger()
         val empty = ConcurrentLinkedQueue<Season>()
-        val decidedByAgency = ConcurrentHashMap<Long, AtomicInteger>()
-        val emptyByAgency = ConcurrentHashMap<Long, AtomicInteger>()
+        // per shape: weekly=true / other lengths=false
+        val decidedByShape = mapOf(true to AtomicInteger(), false to AtomicInteger())
+        val emptyByShape = mapOf(true to AtomicInteger(), false to AtomicInteger())
+        val decidedByAgency = ConcurrentHashMap<Pair<Long, Boolean>, AtomicInteger>()
+        val emptyByAgency = ConcurrentHashMap<Pair<Long, Boolean>, AtomicInteger>()
         val unknown = AtomicInteger()
         runWorkers("mmk-free-probe", ConcurrentLinkedQueue(seasons), deadline, outOfTime) { season ->
+            val agencyKey = season.agencyId to season.weekly
             when (probeSeason(season)) {
                 Probe.EMPTY -> {
                     empty.add(season)
-                    decidedByAgency.getOrPut(season.agencyId) { AtomicInteger() }.incrementAndGet()
-                    emptyByAgency.getOrPut(season.agencyId) { AtomicInteger() }.incrementAndGet()
+                    decidedByShape.getValue(season.weekly).incrementAndGet()
+                    emptyByShape.getValue(season.weekly).incrementAndGet()
+                    decidedByAgency.getOrPut(agencyKey) { AtomicInteger() }.incrementAndGet()
+                    emptyByAgency.getOrPut(agencyKey) { AtomicInteger() }.incrementAndGet()
                 }
-                Probe.QUOTED -> decidedByAgency.getOrPut(season.agencyId) { AtomicInteger() }.incrementAndGet()
+                Probe.QUOTED -> {
+                    decidedByShape.getValue(season.weekly).incrementAndGet()
+                    decidedByAgency.getOrPut(agencyKey) { AtomicInteger() }.incrementAndGet()
+                }
                 Probe.UNKNOWN -> unknown.incrementAndGet()
             }
             val done = probed.incrementAndGet()
             if (done % PROGRESS_LOG_EVERY == 0) log.info("MMK free-offer reverify probe progress: $done/${seasons.size}")
         }
-        val decided = probed.get() - unknown.get()
-        val emptyCount = empty.size
-        val emptyShare = if (decided == 0) 0.0 else emptyCount.toDouble() / decided
+        fun share(weekly: Boolean): Double {
+            val d = decidedByShape.getValue(weekly).get()
+            return if (d == 0) 0.0 else emptyByShape.getValue(weekly).get().toDouble() / d
+        }
+        val weeklyShare = share(true)
+        val otherShare = share(false)
         log.info(
-            "MMK free-offer reverify probe: $decided decided, $emptyCount fully unquoted (${"%.1f".format(emptyShare * 100)} %), " +
+            "MMK free-offer reverify probe: weeks ${decidedByShape.getValue(true)} decided, ${emptyByShape.getValue(true)} fully unquoted " +
+                "(${"%.1f".format(weeklyShare * 100)} %); other lengths ${decidedByShape.getValue(false)} decided, " +
+                "${emptyByShape.getValue(false)} fully unquoted (${"%.1f".format(otherShare * 100)} %); " +
                 "${unknown.get()} unknown (call failures)${if (outOfTime.get()) ", STOPPED at the time budget" else ""}",
         )
-        abortReason(seasons.size, decided, unknown.get(), emptyShare)?.let {
+        // The week groups are the calibrated baseline: if they look wrong, the partner is sick and nothing is written.
+        abortReason(seasons.size, decidedByShape.getValue(true).get(), unknown.get(), weeklyShare)?.let {
             log.error("MMK free-offer reverify ABORTED, nothing written: $it")
-            return RunResult(seasons.size, emptyCount, 0, 0, 0, it)
+            return RunResult(seasons.size, empty.size, 0, 0, 0, it)
         }
-        if (emptyCount == 0) return RunResult(seasons.size, 0, 0, 0, 0, null)
+        if (empty.isEmpty()) return RunResult(seasons.size, 0, 0, 0, 0, null)
 
-        // Agencies whose whole fleet answers empty are not decided by this job.
-        val suspectAgencies =
-            emptyByAgency.filter { (agency, e) ->
-                val d = decidedByAgency[agency]?.get() ?: 0
-                d >= MIN_AGENCY_SEASONS_FOR_CAP && e.get().toDouble() / d > MAX_EMPTY_SHARE_PER_AGENCY
-            }.keys
-        suspectAgencies.forEach { agency ->
+        // Other lengths are judged on their own share once there are enough of them to have one; the weeks vouch that
+        // the partner is healthy, so a high share here means MMK stopped quoting such periods, not that they are gone.
+        val skipOtherLengths = decidedByShape.getValue(false).get() >= MIN_DECIDED_SEASONS && otherShare > MAX_EMPTY_SHARE
+        if (skipOtherLengths) {
             log.error(
-                "MMK free-offer reverify: agency $agency has ${emptyByAgency[agency]} of ${decidedByAgency[agency]} yacht-seasons unquoted " +
-                    "- looks like a broken feed or a whole-fleet withdrawal; NOT hidden automatically, decide by hand",
+                "MMK free-offer reverify: ${"%.1f".format(otherShare * 100)} % of the non-weekly groups unquoted - " +
+                    "not a plausible withdrawal; non-weekly periods NOT hidden this run, decide by hand",
             )
         }
+
+        // Agencies whose whole fleet answers empty are not decided by this job - per shape, and a broken week feed
+        // makes the agency's other lengths suspect as well.
+        val suspect =
+            emptyByAgency.filter { (key, e) ->
+                val d = decidedByAgency[key]?.get() ?: 0
+                d >= MIN_AGENCY_SEASONS_FOR_CAP && e.get().toDouble() / d > MAX_EMPTY_SHARE_PER_AGENCY
+            }.keys
+        suspect.forEach { (agency, weekly) ->
+            log.error(
+                "MMK free-offer reverify: agency $agency has ${emptyByAgency[agency to weekly]} of ${decidedByAgency[agency to weekly]} " +
+                    "${if (weekly) "week" else "non-weekly"} groups unquoted - looks like a broken feed or a whole-fleet withdrawal; " +
+                    "NOT hidden automatically, decide by hand",
+            )
+        }
+        fun isSuspect(s: Season) = (s.agencyId to s.weekly) in suspect || (s.agencyId to true) in suspect
         val toVerify =
-            empty.filter { it.agencyId !in suspectAgencies }
-                .sortedWith(compareBy({ it.yachtId }, { it.year }))
+            empty.filter { !isSuspect(it) && (it.weekly || !skipOtherLengths) }
+                .sortedWith(compareBy({ it.yachtId }, { it.year }, { !it.weekly }))
                 .take(MAX_SEASONS_VERIFIED_PER_RUN)
-        if (toVerify.size < emptyCount) {
-            log.info("MMK free-offer reverify: verifying ${toVerify.size} of $emptyCount unquoted yacht-seasons this run (agency cap / per-run cap)")
+        if (toVerify.size < empty.size) {
+            log.info("MMK free-offer reverify: verifying ${toVerify.size} of ${empty.size} unquoted groups this run (breakers / per-run cap)")
         }
 
-        // Step 2 - every FREE week of the unquoted seasons; a week is hidden only on its second strike on a later day.
+        // Step 2 - every period of the unquoted groups; a period is hidden only on its second strike on a later day.
         val firstStrikes = AtomicInteger()
-        val hiddenWeeks = AtomicInteger()
+        val hiddenPeriods = AtomicInteger()
         val hiddenRows = AtomicInteger()
         val seasonsDone = AtomicInteger()
         runWorkers("mmk-free-verify", ConcurrentLinkedQueue(toVerify), deadline, outOfTime) { season ->
-            verifySeason(season, today, firstStrikes, hiddenWeeks, hiddenRows)
+            verifySeason(season, today, firstStrikes, hiddenPeriods, hiddenRows)
             val done = seasonsDone.incrementAndGet()
-            if (done % 25 == 0) log.info("MMK free-offer reverify verify progress: $done/${toVerify.size} yacht-seasons")
+            if (done % 25 == 0) log.info("MMK free-offer reverify verify progress: $done/${toVerify.size} groups")
         }
         log.info(
-            "MMK free-offer reverify done: ${firstStrikes.get()} weeks got their first strike (hidden tomorrow if still empty), " +
-                "${hiddenWeeks.get()} weeks hidden on their second strike (${hiddenRows.get()} offer rows)" +
+            "MMK free-offer reverify done: ${firstStrikes.get()} periods got their first strike (hidden tomorrow if still empty), " +
+                "${hiddenPeriods.get()} periods hidden on their second strike (${hiddenRows.get()} offer rows)" +
                 if (outOfTime.get()) "; STOPPED at the time budget, the rest runs tomorrow" else "",
         )
-        return RunResult(seasons.size, emptyCount, firstStrikes.get(), hiddenWeeks.get(), hiddenRows.get(), null)
+        return RunResult(seasons.size, empty.size, firstStrikes.get(), hiddenPeriods.get(), hiddenRows.get(), null)
     }
 
     internal fun abortReason(
@@ -199,17 +254,20 @@ class MmkFreeOfferReverifyService(
         emptyShare: Double,
     ): String? =
         when {
-            decided < MIN_DECIDED_SEASONS -> "only $decided of $total yacht-seasons could be decided - partner unreachable"
+            decided < MIN_DECIDED_SEASONS -> "only $decided week groups of $total yacht-season groups could be decided - partner unreachable"
             unknown.toDouble() / total > MAX_UNKNOWN_SHARE -> "$unknown of $total probes failed - partner degraded"
-            emptyShare > MAX_EMPTY_SHARE -> "${"%.1f".format(emptyShare * 100)} % of decided yacht-seasons unquoted - MMK outage, not a fleet-wide withdrawal"
+            emptyShare > MAX_EMPTY_SHARE -> "${"%.1f".format(emptyShare * 100)} % of decided week groups unquoted - MMK outage, not a fleet-wide withdrawal"
             else -> null
         }
 
     private fun probeSeason(season: Season): Probe {
-        val w = season.weeks
-        val samples = listOf(w.first(), w[w.size / 2], w.last()).distinctBy { it.dateFrom }
-        for (week in samples) {
-            when (ask(season.externalYachtId, week.dateFrom, week.dateTo)) {
+        // A group is sampled from its own periods only: a quoted week says nothing about a long block MMK stopped
+        // quoting (EMA 12210 2027), so weeks and other lengths never vouch for each other. A group quoted on one
+        // sample but empty elsewhere is left alone (under-hide, never over-hide).
+        val p = season.periods
+        val samples = listOf(p.first(), p[p.size / 2], p.last()).distinctBy { it.dateFrom to it.dateTo }
+        for (period in samples) {
+            when (ask(season.externalYachtId, period.dateFrom, period.dateTo)) {
                 Probe.QUOTED -> return Probe.QUOTED
                 Probe.UNKNOWN -> return Probe.UNKNOWN
                 Probe.EMPTY -> {}
@@ -222,47 +280,53 @@ class MmkFreeOfferReverifyService(
         season: Season,
         today: LocalDate,
         firstStrikes: AtomicInteger,
-        hiddenWeeks: AtomicInteger,
+        hiddenPeriods: AtomicInteger,
         hiddenRows: AtomicInteger,
     ) {
         var consecutiveErrors = 0
-        val emptyToday = mutableListOf<StaleMmkOfferCombo>()
-        val quotedToday = mutableListOf<StaleMmkOfferCombo>()
-        for (week in season.weeks) {
-            when (ask(season.externalYachtId, week.dateFrom, week.dateTo)) {
+        val emptyToday = mutableListOf<Period>()
+        val quotedToday = mutableListOf<Period>()
+        for (period in season.periods) {
+            when (ask(season.externalYachtId, period.dateFrom, period.dateTo)) {
                 Probe.EMPTY -> {
                     consecutiveErrors = 0
-                    emptyToday += week
+                    emptyToday += period
                 }
                 Probe.QUOTED -> {
                     consecutiveErrors = 0
-                    quotedToday += week
+                    quotedToday += period
                 }
                 Probe.UNKNOWN -> {
                     consecutiveErrors++
                     if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS_PER_YACHT) {
-                        log.warn("MMK free-offer reverify: abandoning yacht=${season.yachtId} ${season.year} after $consecutiveErrors consecutive call failures")
+                        log.warn("MMK free-offer reverify: abandoning yacht=${season.yachtId} ${season.label} after $consecutiveErrors consecutive call failures")
                         break
                     }
                 }
             }
         }
-        // A quote is positive evidence with a price; it clears any earlier strike for that week.
+        // A quote is positive evidence with a price; it clears any earlier strike for that period.
         quotedToday.forEach { clearStrike(season.yachtId, it.dateFrom, it.dateTo) }
         if (emptyToday.isEmpty()) return
 
         val ran =
             yachtSyncMutex.runExclusiveYachtWrite(season.yachtId) {
-                for (week in emptyToday) {
-                    val firstEmptyOn = firstStrike(season.yachtId, week.dateFrom, week.dateTo)
+                for (period in emptyToday) {
+                    val firstEmptyOn = firstStrike(season.yachtId, period.dateFrom, period.dateTo)
                     if (firstEmptyOn == null) {
-                        recordFirstStrike(season.yachtId, week.dateFrom, week.dateTo, today)
+                        recordFirstStrike(season.yachtId, period.dateFrom, period.dateTo, today)
                         firstStrikes.incrementAndGet()
                     } else if (firstEmptyOn.isBefore(today)) {
-                        val flipped = offerRepository.markWeekUnavailable(season.yachtId, week.dateFrom, week.dateTo)
-                        recordHidden(season.yachtId, week.dateFrom, week.dateTo, today, flipped)
-                        hiddenWeeks.incrementAndGet()
-                        hiddenRows.addAndGet(flipped)
+                        val flipped = offerRepository.markPeriodUnavailable(season.yachtId, period.dateFrom, period.dateTo)
+                        if (flipped > 0) {
+                            recordHidden(season.yachtId, period.dateFrom, period.dateTo, today, flipped)
+                            hiddenPeriods.incrementAndGet()
+                            hiddenRows.addAndGet(flipped)
+                        } else {
+                            // Nothing left to flip: a partner option or our own booking arrived since the candidate
+                            // query, or another writer already hid it. No hide happened, so no hide is recorded.
+                            clearStrike(season.yachtId, period.dateFrom, period.dateTo)
+                        }
                     }
                     // firstEmptyOn == today: the same run already struck it (a restart), nothing to add.
                 }
@@ -272,7 +336,7 @@ class MmkFreeOfferReverifyService(
             return
         }
         log.info(
-            "MMK free-offer reverify: yacht=${season.yachtId} agency=${season.agencyId} ${season.year}: ${emptyToday.size} weeks not sold by MMK " +
+            "MMK free-offer reverify: yacht=${season.yachtId} agency=${season.agencyId} ${season.label}: ${emptyToday.size} periods not sold by MMK " +
                 "(${emptyToday.first().dateFrom}..${emptyToday.last().dateTo}), ${quotedToday.size} quoted",
         )
     }
@@ -296,9 +360,12 @@ class MmkFreeOfferReverifyService(
         dateTo: LocalDate,
         today: LocalDate,
     ) {
+        // A row with hidden_on set belongs to an earlier hide; the period is shown again without MMK having quoted it
+        // (the agency sweep, an on-demand search), so a new two-day cycle starts. An open strike is never moved.
         jdbcTemplate.update(
             "INSERT INTO mmk_free_week_strike (yacht_id, date_from, date_to, first_empty_on) VALUES (?, ?, ?, ?) " +
-                "ON CONFLICT (yacht_id, date_from, date_to) DO NOTHING",
+                "ON CONFLICT (yacht_id, date_from, date_to) DO UPDATE SET first_empty_on = EXCLUDED.first_empty_on, " +
+                "hidden_on = NULL, hidden_rows = 0 WHERE mmk_free_week_strike.hidden_on IS NOT NULL",
             yachtId,
             dateFrom,
             dateTo,
@@ -323,7 +390,7 @@ class MmkFreeOfferReverifyService(
         )
     }
 
-    /** Called when MMK quotes the week again — by this job's probe and by the UNAVAILABLE->FREE reverifier. */
+    /** Called when MMK quotes the period again — by this job's probe and by the UNAVAILABLE->FREE reverifier. */
     fun clearStrike(
         yachtId: Long,
         dateFrom: LocalDate,
@@ -376,7 +443,7 @@ class MmkFreeOfferReverifyService(
                         try {
                             work(season)
                         } catch (e: Exception) {
-                            log.error("MMK free-offer reverify failed on yacht=${season.yachtId} ${season.year}", e)
+                            log.error("MMK free-offer reverify failed on yacht=${season.yachtId} ${season.label}", e)
                         }
                     }
                 } finally {

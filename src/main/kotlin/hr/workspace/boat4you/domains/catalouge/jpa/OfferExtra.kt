@@ -99,4 +99,15 @@ open class OfferExtra {
     fun extrasKey(): String {
         return extrasId?.toString() ?: name!!
     }
+
+    /**
+     * Which partner charge this row is. The offer syncs upsert on externalId, so
+     * it is unique per offer when present; without one, name + price stand in.
+     * Unlike [extrasKey] — our fuzzy catalogue match, which puts "Skipper's
+     * liability insurance" under Skipper — two different partner items never
+     * share it.
+     */
+    fun partnerIdentity(): String =
+        externalId?.let { "x:$it" }
+            ?: "n:${name?.trim()?.lowercase()}|${price?.stripTrailingZeros()?.toPlainString()}"
 }
