@@ -40,6 +40,8 @@ class YachtSearchViewRefresher(
                     st.execute("SET jit = off")
                     try {
                         st.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY public.yacht_search_view")
+                        // The duplicate-listing map (V9_69, audit B17) follows the same catalogue: ~0.2 s.
+                        st.execute("REFRESH MATERIALIZED VIEW CONCURRENTLY public.yacht_listing_twin")
                     } finally {
                         st.execute("RESET work_mem")
                         st.execute("RESET lock_timeout")

@@ -41,6 +41,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtEquipment
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtraRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtListingTwin
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtSearchSelectResult
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtSearchView
@@ -1579,6 +1580,12 @@ class YachtQueryingService(
                 ),
             )
         } else {
+            // Undated: one card per physical boat (audit B17) - a copy another channel already lists is skipped
+            // (yacht_listing_twin, V9_69). Dated searches keep every copy: two channels can differ in availability.
+            val twins = cq.subquery(Long::class.java)
+            val twin = twins.from(YachtListingTwin::class.java)
+            twins.select(twin.get("yachtId")).where(cb.equal(twin.get<Long>("yachtId"), root.get<Long>("id")))
+            predicates.add(cb.not(cb.exists(twins)))
             // Undated (the destination landings, the sitemap, the gate counts): only offers that can still be booked,
             // i.e. starting today or later. The matview keeps offers up to 30 days after they end (RetentionReaper
             // OFFER_GRACE_DAYS), so a boat whose partner stopped publishing stayed listed - and priced by a week in the
@@ -1957,7 +1964,23 @@ class YachtQueryingService(
                 periodLocation,
             )
 
-        return result
+        return listingCanonicalSlug(id)?.let { result.copy(listingCanonicalSlug = it) } ?: result
+    }
+
+    /**
+     * The slug of the copy the listings show when [id] is a second listing of the same boat (yacht_listing_twin,
+     * audit B17) - for the boat page's canonical link. Null for every other boat.
+     */
+    private fun listingCanonicalSlug(id: Long): String? {
+        val canonicalId =
+            entityManager
+                .createNativeQuery("SELECT canonical_yacht_id FROM yacht_listing_twin WHERE yacht_id = :id")
+                .setParameter("id", id)
+                .resultList
+                .firstOrNull()
+                ?.let { (it as Number).toLong() } ?: return null
+        val canonical = yachtRepository.findById(canonicalId).orElse(null) ?: return null
+        return SlugUtils.toSlugWithId(canonical.model?.manufacturer?.name, canonical.model?.name, canonical.name, canonicalId)
     }
 
     fun getYachtAvailability(

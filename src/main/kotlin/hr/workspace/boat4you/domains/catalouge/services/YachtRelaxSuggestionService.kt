@@ -138,8 +138,10 @@ class YachtRelaxSuggestionService(
             params["endMinusFlex"] = it.minusDays(DATE_FLEX_DAYS)
             params["endPlusFlex"] = it.plusDays(DATE_FLEX_DAYS)
         } ?: run {
-            // Undated: bookable offers only (starting today or later), like the search (audit B12).
+            // Undated: bookable offers only (starting today or later), like the search (audit B12), one card per
+            // physical boat (audit B17).
             clauses += "(date_from IS NULL OR date_from >= CURRENT_DATE)"
+            clauses += "NOT EXISTS (SELECT 1 FROM yacht_listing_twin t WHERE t.yacht_id = yacht_search_view.id)"
         }
         if (!filters.vesselTypes.isNullOrEmpty()) {
             clauses += "vessel_type IN (:vesselTypeNames)"

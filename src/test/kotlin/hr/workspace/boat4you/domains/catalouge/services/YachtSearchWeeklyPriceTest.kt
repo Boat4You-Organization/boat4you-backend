@@ -186,6 +186,7 @@ class YachtSearchWeeklyPriceTest {
         val jdbcTemplate = JdbcTemplate(dataSource)
         jdbcTemplate.execute(MINIMAL_SCHEMA)
         jdbcTemplate.execute(SEED)
+        ListingTwinTestSupport.createAndRefresh(jdbcTemplate)
         applyRepeatableLikeFlyway(jdbcTemplate)
 
         entityManagerFactory = buildEntityManagerFactory()

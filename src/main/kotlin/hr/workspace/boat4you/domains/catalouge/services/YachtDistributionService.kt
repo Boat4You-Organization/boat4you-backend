@@ -332,8 +332,10 @@ class YachtDistributionService(
             // Open-ended end: slot's window must start on/before the padded end.
             parts.add(" AND (date_from IS NULL OR date_from < :endPlus)")
         } else {
-            // Undated: bookable offers only (starting today or later), like the search (audit B12).
+            // Undated: bookable offers only (starting today or later), like the search (audit B12), one card per
+            // physical boat (audit B17, yacht_listing_twin).
             parts.add(" AND (date_from IS NULL OR date_from >= CURRENT_DATE)")
+            parts.add(" AND NOT EXISTS (SELECT 1 FROM yacht_listing_twin t WHERE t.yacht_id = yacht_search_view.id)")
         }
         if (!ctx.regionCountryCodes.isNullOrEmpty()) {
             // A region search lists only boats in the region's own country (search: deriveRegionCountryCodes), so

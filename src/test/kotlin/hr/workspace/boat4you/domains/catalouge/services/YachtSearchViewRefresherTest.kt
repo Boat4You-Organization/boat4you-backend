@@ -95,6 +95,7 @@ class YachtSearchViewRefresherTest {
         jdbcTemplate = JdbcTemplate(dataSource)
         refresher = YachtSearchViewRefresher(jdbcTemplate)
         jdbcTemplate.execute(MINIMAL_SCHEMA)
+        ListingTwinTestSupport.createAndRefresh(jdbcTemplate)
         applyRepeatableLikeFlyway()
     }
 

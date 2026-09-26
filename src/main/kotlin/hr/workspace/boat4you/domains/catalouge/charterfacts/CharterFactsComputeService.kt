@@ -33,7 +33,8 @@ import java.time.ZoneOffset
  *
  * Population (mirrors the search, R__1_03 + YachtQueryingService):
  *  - EXTERNAL yachts, sys_active, agency active and not availability_blocked (dual-source agencies are synced from
- *    their one primary source, so each boat exists once);
+ *    their one primary source), minus the second listings of a boat another channel lists (yacht_listing_twin, V9_69),
+ *    so each boat counts once;
  *  - weekly offers = exactly 7 nights, date_from from today, pickup marina in a promoted country;
  *  - one row per yacht-week (a week can have a BAREBOAT and a CREWED row, or a one-way variant): the round-trip,
  *    bookable (not UNAVAILABLE), cheapest row names the base, the price is the cheapest non-UNAVAILABLE client_price (EUR,
@@ -359,6 +360,8 @@ class CharterFactsComputeService(
                 WHERE o.date_from >= $today
                   AND o.date_from < $weeksTo
                   AND o.date_to = o.date_from + 7
+                  -- one physical boat once: a second listing of it (another channel) is not a second boat (B17)
+                  AND NOT EXISTS (SELECT 1 FROM yacht_listing_twin t WHERE t.yacht_id = o.yacht_id)
                   AND o.status NOT IN ('UNKNOWN', 'CANCELLED', 'INFO')
                   AND lf.country_code IN ($codes)
                 WINDOW yw AS (PARTITION BY o.yacht_id, o.date_from)
@@ -382,7 +385,8 @@ class CharterFactsComputeService(
 
         /**
          * What the undated landing lists (B12): the matview rows the public search keeps — not UNAVAILABLE, starting
-         * today or later (custom boats have no dates) — picked up in a promoted country.
+         * today or later (custom boats have no dates), not a second listing of a boat (B17) — picked up in a promoted
+         * country.
          */
         fun listed(codes: String) =
             """
@@ -393,6 +397,7 @@ class CharterFactsComputeService(
               AND (v.date_from IS NULL OR v.date_from >= $today)
               AND v.country_code IN ($codes)
               AND v.location_from IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM yacht_listing_twin t WHERE t.yacht_id = v.id)
             """.trimIndent()
 
         fun member() =

@@ -46,6 +46,11 @@ data class YachtDetailsDto(
     val charterType: Set<CharterType> = emptySet(),
     val inquireOnly: Boolean = false,
     val vesselType: VesselType,
+    /**
+     * Set only when this boat is a second listing of a boat another channel lists (26.9.2026 audit B17): the slug of
+     * the copy the listings and the sitemap show - the boat page's canonical target.
+     */
+    val listingCanonicalSlug: String? = null,
 )
 
 data class CustomYachtDetailsDto(

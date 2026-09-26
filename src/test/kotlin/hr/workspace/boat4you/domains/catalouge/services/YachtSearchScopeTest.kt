@@ -118,7 +118,7 @@ class YachtSearchScopeTest {
                     UPDATE location SET display_name = name || COALESCE(' | ' || city, '');
                     INSERT INTO region (id, name, country_id, country_code) VALUES (5, 'Split', 54, 'HR'), (6, 'Dubrovnik region', 54, 'HR');
                     INSERT INTO location_region VALUES (5, 1), (5, 2), (5, 4), (5, 7), (6, 3), (6, 5);
-                    INSERT INTO agency (id, name) VALUES (1, 'Agency');
+                    INSERT INTO agency (id, name) VALUES (1, 'Agency'), (2, 'Broker');
                     """.trimIndent(),
                 )
                 // yacht -> home base
@@ -134,6 +134,19 @@ class YachtSearchScopeTest {
                     )
                     appendLine("INSERT INTO yacht_charter_type (id, yacht_id, type) VALUES ($id, $id, 'BAREBOAT');")
                 }
+                // B17: 113 "Pampero" and 114 "PAMPERO" (a broker's listing of the same boat, a year apart) at Frapa
+                // Dubrovnik; 115 / 116 are two fleet boats one agency names alike - not duplicates
+                appendLine(
+                    """
+                    INSERT INTO yacht (id, name, agency_id, entry_type, vessel_type, location_id, build_year, length) VALUES
+                        (113, 'Pampero', 1, 'EXTERNAL', 'CATAMARAN', 5, 2018, 11.55),
+                        (114, 'PAMPERO', 2, 'EXTERNAL', 'CATAMARAN', 5, 2019, 11.60),
+                        (115, 'Fleet Cat Exclusive', 1, 'EXTERNAL', 'CATAMARAN', 5, 2020, 12.00),
+                        (116, 'Fleet Cat Exclusive', 1, 'EXTERNAL', 'CATAMARAN', 5, 2020, 12.00);
+                    INSERT INTO yacht_charter_type (id, yacht_id, type) VALUES (113, 113, 'BAREBOAT'), (114, 114, 'BAREBOAT'),
+                        (115, 115, 'BAREBOAT'), (116, 116, 'BAREBOAT');
+                    """.trimIndent(),
+                )
                 var offerId = 0
                 fun offer(
                     yacht: Int,
@@ -152,6 +165,9 @@ class YachtSearchScopeTest {
                 offer(102, 1, 3, w.plusWeeks(1), 2500)
                 // 105: based in Dubrovnik, but every offer is in the past (still in the matview for 30 days)
                 offer(105, 3, 3, TODAY.minusDays(17))
+                // the twins and the fleet boats: 113 has the fuller calendar, so it is the copy shown
+                listOf(113, 114, 115, 116).forEach { offer(it, 5, 5, w) }
+                offer(113, 5, 5, w.plusWeeks(1))
             }
     }
 
@@ -177,6 +193,7 @@ class YachtSearchScopeTest {
         jdbc.execute("BEGIN; $sameplace; COMMIT;")
         jdbc.execute(SEED)
         jdbc.update("INSERT INTO location_same_place (location_id, same_as_location_id) VALUES (8, 9)")
+        ListingTwinTestSupport.createAndRefresh(jdbc)
         applyRepeatable(jdbc, "R__1_03_yacht_search_view.sql")
 
         entityManagerFactory = buildEntityManagerFactory()
@@ -302,9 +319,19 @@ class YachtSearchScopeTest {
     @Test
     fun `a region lists its based boats only - Frapa Rogoznica is not in the Dubrovnik region`() {
         val (ids, total, chips) = landing("r-6")
-        ids shouldContainExactlyInAnyOrder listOf(103L, 107L)
-        total shouldBe 2L
-        chips shouldBe 2L
+        ids shouldContainExactlyInAnyOrder listOf(103L, 107L, 113L, 115L, 116L)
+        total shouldBe 5L
+        chips shouldBe 5L
+    }
+
+    @Test
+    fun `B17 - one card per physical boat undated, every copy on a dated search`() {
+        landing("l-5").first.contains(114L) shouldBe false
+        clearInvocations(yachtMapper)
+        val start = TODAY.plusWeeks(3)
+        service.getYachts(params(listOf("l-5")).copy(startDate = start, endDate = start.plusDays(7)), "", LanguageEnum.EN, 0, 50, false)
+        mockingDetails(yachtMapper).invocations.map { it.getArgument<YachtSearchSelectResult>(0).id } shouldContainExactlyInAnyOrder
+            listOf(107L, 113L, 114L, 115L, 116L)
     }
 
     @Test
@@ -315,8 +342,9 @@ class YachtSearchScopeTest {
         landing("l-7").first shouldContainExactlyInAnyOrder listOf(108L)
         landing("l-10").first shouldContainExactlyInAnyOrder listOf(111L)
         landing("l-11").first shouldContainExactlyInAnyOrder listOf(112L)
-        // Frapa Dubrovnik is not Frapa (Rogoznica)
-        landing("l-5").first shouldContainExactlyInAnyOrder listOf(107L)
+        // Frapa Dubrovnik is not Frapa (Rogoznica); 114 is a second listing of 113 (another channel), 115 / 116 are
+        // two fleet boats of one agency
+        landing("l-5").first shouldContainExactlyInAnyOrder listOf(107L, 113L, 115L, 116L)
         // the curated D-Marin Lefkas pair
         landing("l-8").first shouldContainExactlyInAnyOrder listOf(109L, 110L)
         landing("l-9").first shouldContainExactlyInAnyOrder listOf(109L, 110L)
@@ -325,8 +353,8 @@ class YachtSearchScopeTest {
     @Test
     fun `a country counts bookable boats - the H2 and the chips agree`() {
         val (ids, total, chips) = landing("c-54")
-        ids shouldContainExactlyInAnyOrder listOf(101L, 102L, 103L, 104L, 106L, 107L, 108L, 111L, 112L)
-        total shouldBe 9L
-        chips shouldBe 9L
+        ids shouldContainExactlyInAnyOrder listOf(101L, 102L, 103L, 104L, 106L, 107L, 108L, 111L, 112L, 113L, 115L, 116L)
+        total shouldBe 12L
+        chips shouldBe 12L
     }
 }
