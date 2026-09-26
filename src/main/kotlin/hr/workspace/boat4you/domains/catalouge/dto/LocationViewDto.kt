@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.dto
 
+import com.fasterxml.jackson.annotation.JsonIgnore
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
@@ -23,4 +24,11 @@ data class LocationViewDto(
     @get:JsonProperty("aliases")
     @get:JsonInclude(JsonInclude.Include.NON_EMPTY)
     val aliases: List<String>? = null,
+    /** MARINA only, internal: the same-place check of the dual-source merge (not part of the public payload). */
+    @get:JsonIgnore
+    val city: String? = null,
+    @get:JsonIgnore
+    val lat: Double? = null,
+    @get:JsonIgnore
+    val lon: Double? = null,
 )

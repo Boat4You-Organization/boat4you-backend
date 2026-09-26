@@ -54,7 +54,7 @@ class RegionCanonicalNamesMigrationTest {
             CREATE TABLE country (id int PRIMARY KEY, name varchar(100), code2 varchar(2));
             CREATE TABLE region (id serial PRIMARY KEY, name varchar(100), country_id int, country_code varchar(2));
             CREATE TABLE location (id bigint PRIMARY KEY, name varchar(255), city varchar(100), country_code varchar(2),
-                                   country_id int);
+                                   country_id int, lat numeric, lon numeric);
             CREATE TABLE yacht (id bigint PRIMARY KEY, location_id bigint);
             CREATE TABLE location_region (region_id int, location_id bigint);
             INSERT INTO country VALUES (54, 'Croatia', 'HR');
@@ -68,7 +68,7 @@ class RegionCanonicalNamesMigrationTest {
                 (6, 'Dubrovnik region', 54, 'HR'),
                 (8, 'Split region', 54, 'HR'),
                 (193, 'Kvarner', 54, 'HR');
-            INSERT INTO location VALUES (1, 'Marina A', NULL, 'HR', 54);
+            INSERT INTO location (id, name, city, country_code, country_id) VALUES (1, 'Marina A', NULL, 'HR', 54);
             INSERT INTO yacht VALUES (1, 1);
             INSERT INTO location_region VALUES (3, 1), (4, 1), (5, 1), (6, 1), (8, 1), (193, 1);
             """.trimIndent(),

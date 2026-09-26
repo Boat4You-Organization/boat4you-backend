@@ -57,11 +57,16 @@ class MarinaPlacesTests {
     }
 
     @Test
-    fun `same spelling far apart stays two places`() {
+    fun `same spelling far apart stays two places, a row without data cannot be placed and stays alone`() {
         val a = Marina(1, "Port of Kos", "GR", lat = 36.89, lon = 27.29)
         val b = Marina(2, "Port of Kos", "GR", lat = 38.00, lon = 23.70)
-        val places = MarinaPlaces.placeIds(listOf(a, b))
+        val near = a.copy(id = 3, lat = 36.90)
+        val unknown = Marina(4, "Port of Kos", "GR")
+        val places = MarinaPlaces.placeIds(listOf(a, b, near, unknown))
         (places.getValue(1) == places.getValue(2)) shouldBe false
-        MarinaPlaces.sameArea(a, a.copy(id = 3, lat = 36.90), MarinaPlaces.SAME_SPELLING_MAX_KM) shouldBe true
+        places.getValue(3) shouldBe 1L
+        places.getValue(4) shouldBe 4L
+        // without the far row the spelling is unambiguous again
+        MarinaPlaces.placeIds(listOf(a, near, unknown)).values.toSet() shouldBe setOf(1L)
     }
 }

@@ -118,10 +118,15 @@ object MarinaPlaces {
         return pairs
     }
 
+    /** Whether a row carries any location data (usable coordinates or a city) — SQL: location_has_area (V9_67). */
+    fun hasArea(m: Marina): Boolean = coordinates(m) != null || spellingFold(m.city).isNotEmpty()
+
     /**
      * Place id (the smallest member id) for every row in [marinas]: rows are joined when they share a [spellingFold]
      * name in the same country ([SAME_SPELLING_MAX_KM] veto), by [containmentPairs], and by the [curated] pairs whose
-     * both ends are present.
+     * both ends are present. When one spelling covers two places (two rows with data that are not [sameArea]), the
+     * rows with data join only the rows proven near them and a row without data stays alone — the same rule as
+     * LocationRepository.findSamePlaceMarinaIds.
      */
     fun placeIds(
         marinas: List<Marina>,
@@ -157,9 +162,18 @@ object MarinaPlaces {
             .values
             .filter { it.size > 1 }
             .forEach { group ->
-                for (i in group.indices) {
-                    for (j in i + 1 until group.size) {
-                        if (sameArea(group[i], group[j], SAME_SPELLING_MAX_KM)) union(group[i].id, group[j].id)
+                val located = group.filter { hasArea(it) }
+                val ambiguous =
+                    located.indices.any { i ->
+                        (i + 1 until located.size).any { j -> !sameArea(located[i], located[j], SAME_SPELLING_MAX_KM) }
+                    }
+                if (!ambiguous) {
+                    group.forEach { union(group.first().id, it.id) }
+                } else {
+                    for (i in located.indices) {
+                        for (j in i + 1 until located.size) {
+                            if (sameArea(located[i], located[j], SAME_SPELLING_MAX_KM)) union(located[i].id, located[j].id)
+                        }
                     }
                 }
             }

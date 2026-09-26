@@ -9,6 +9,7 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.validation.constraints.Size
 import org.hibernate.annotations.Immutable
+import java.math.BigDecimal
 
 /**
  * Mapping for DB view
@@ -47,5 +48,18 @@ open class LocationView protected constructor() {
     /** REGION only: other known spellings, '|'-separated (R__1_07, region_alias). */
     @Column(name = "aliases", length = Integer.MAX_VALUE)
     open var aliases: String? = null
+        protected set
+
+    /** MARINA only: the dual-source merge's same-place check (MarinaPlaces). */
+    @Column(name = "city", length = Integer.MAX_VALUE)
+    open var city: String? = null
+        protected set
+
+    @Column(name = "lat")
+    open var lat: BigDecimal? = null
+        protected set
+
+    @Column(name = "lon")
+    open var lon: BigDecimal? = null
         protected set
 }

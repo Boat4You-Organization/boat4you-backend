@@ -117,12 +117,13 @@ class YachtRelaxSuggestionService(
             !hasMarinas && !hasDidCountries -> clauses += "FALSE"
             else -> {
                 val ors = mutableListOf<String>()
+                // Pickup only, like the search (26.9.2026 audit B14).
                 if (hasMarinas) {
-                    ors += "location_from IN (:marinaIds) OR location_to IN (:marinaIds)"
+                    ors += "location_from IN (:marinaIds)"
                     params["marinaIds"] = filters.marinaIds!!
                 }
                 if (hasDidCountries) {
-                    ors += "country_code IN (:didCountryCodes) OR country_code_to IN (:didCountryCodes)"
+                    ors += "country_code IN (:didCountryCodes)"
                     params["didCountryCodes"] = filters.didCountryCodes!!
                 }
                 clauses += "(${ors.joinToString(" OR ")})"
@@ -136,6 +137,9 @@ class YachtRelaxSuggestionService(
             clauses += "date_to BETWEEN :endMinusFlex AND :endPlusFlex"
             params["endMinusFlex"] = it.minusDays(DATE_FLEX_DAYS)
             params["endPlusFlex"] = it.plusDays(DATE_FLEX_DAYS)
+        } ?: run {
+            // Undated: bookable offers only (starting today or later), like the search (audit B12).
+            clauses += "(date_from IS NULL OR date_from >= CURRENT_DATE)"
         }
         if (!filters.vesselTypes.isNullOrEmpty()) {
             clauses += "vessel_type IN (:vesselTypeNames)"
@@ -176,8 +180,10 @@ class YachtRelaxSuggestionService(
                 // destination like any other, not a 500 (16.9.2026 cusma2 load incident review).
                 val numeric = id.drop(2).toIntOrNull() ?: return@flatMap emptyList()
                 when (type) {
+                    // Same-place siblings, like the search's getMarinas (audit B14).
                     LocationType.MARINA -> locationRepository.findById(numeric.toLong())
-                        .map { listOfNotNull(it.id) }.orElse(emptyList())
+                        .map { m -> locationRepository.findSamePlaceMarinaIds(m.id!!).ifEmpty { listOfNotNull(m.id) } }
+                        .orElse(emptyList())
                     LocationType.REGION -> locationRepository.findMarinasByRegionId(numeric).mapNotNull { it.id }
                     else -> emptyList()
                 }

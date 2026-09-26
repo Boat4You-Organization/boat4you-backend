@@ -112,56 +112,55 @@ class LocationQueryingService(
      * clearing the chip wipes both. Durable here (search-time) — a DB merge gets
      * reverted by the catalogue sync.
      *
-     * Match rule (deliberately conservative): a MARINA whose folded name is a
-     * proper substring of EXACTLY ONE other MARINA's folded name in the same
-     * country, within this result set. The "exactly one" guard keeps a city
-     * name that is a substring of several distinct marinas ("Ibiza" ⊂ "Marina
-     * Ibiza" / "Club Nautico Ibiza" / "Port of Ibiza") from collapsing
-     * unrelated marinas — a name-filtered autocomplete query pulls all of a
-     * city's marinas into the same page, so such a name matches >1 and is left
-     * alone.
+     * Match rule (deliberately conservative, [MarinaPlaces.containmentPairs]): a
+     * MARINA whose folded name is a proper substring of EXACTLY ONE other
+     * MARINA's folded name in the same country, within this result set. The
+     * "exactly one" guard keeps a city name that is a substring of several
+     * distinct marinas ("Ibiza" ⊂ "Marina Ibiza" / "Club Nautico Ibiza" / "Port
+     * of Ibiza") from collapsing unrelated marinas. Since 26.9.2026 (audit B14)
+     * the data can veto a name pair: "Marina Frapa" (Rogoznica) sits inside
+     * "Marina Frapa Dubrovnik" but 170 km away, and the merged row put 17
+     * Rogoznica boats on the Dubrovnik catamaran landing. Plus the curated
+     * location_same_place pairs no name rule finds (V9_67: "D-Marin Marina
+     * Lefkas" / "Lefkas, D-Marin"), folded the same way.
      */
-    private fun mergeDualSourceMarinas(items: List<LocationViewDto>): List<LocationViewDto> {
-        fun fold(s: String?): String = (s ?: "").lowercase().replace(Regex("[^\\p{L}\\p{N}]"), "")
-
-        val marinas = items.filter { it.locationType == LocationType.MARINA && it.id != null && fold(it.name).length >= 4 }
+    internal fun mergeDualSourceMarinas(items: List<LocationViewDto>): List<LocationViewDto> {
+        val marinas =
+            items.filter { it.locationType == LocationType.MARINA && it.realId != null && it.id == "l-${it.realId}" }
         if (marinas.size < 2) return items
+        val byId = marinas.associateBy { it.realId!! }
+        val rows =
+            marinas.map { MarinaPlaces.Marina(it.realId!!, it.name.orEmpty(), it.countryCode, it.city, it.lat, it.lon) }
 
-        val removedIds = mutableSetOf<String>()
-        val replacements = mutableMapOf<String, LocationViewDto>()
-
-        for (shorter in marinas) {
-            val shorterId = shorter.id ?: continue
-            val fs = fold(shorter.name)
-            val containers =
-                marinas.filter { longer ->
-                    longer.id != shorter.id &&
-                        longer.countryCode == shorter.countryCode &&
-                        fold(longer.name).length > fs.length &&
-                        fold(longer.name).contains(fs)
-                }
-            if (containers.size != 1) continue
-            val longer = containers.first()
-            val longerId = longer.id ?: continue
-            // Skip chained nestings (A ⊂ B ⊂ C) — only collapse a leaf shorter
-            // into a row that is not itself being folded away.
-            if (longerId in removedIds || shorterId in replacements.keys) continue
-            val current = replacements[longerId] ?: longer
-            replacements[longerId] = current.copy(id = "${current.id},$shorterId")
-            removedIds.add(shorterId)
+        // shorter -> longer (the row that stays)
+        val pairs = MarinaPlaces.containmentPairs(rows).map { it.first.id to it.second.id }.toMutableList()
+        val paired = pairs.flatMap { listOf(it.first, it.second) }.toMutableSet()
+        curatedSamePlacePairs().forEach { (a, b) ->
+            val rowA = byId[a]
+            val rowB = byId[b]
+            if (rowA == null || rowB == null || a in paired || b in paired) return@forEach
+            val aShorter = MarinaPlaces.containmentFold(rowA.name).length <= MarinaPlaces.containmentFold(rowB.name).length
+            pairs.add(if (aShorter) a to b else b to a)
+            paired.add(a)
+            paired.add(b)
         }
-        if (replacements.isEmpty()) return items
+        if (pairs.isEmpty()) return items
 
+        val removed = pairs.map { "l-${it.first}" }.toSet()
+        val absorbed = pairs.groupBy({ "l-${it.second}" }, { "l-${it.first}" })
         return items.mapNotNull { item ->
             val iid = item.id
             when {
                 iid == null -> item
-                iid in removedIds -> null
-                replacements.containsKey(iid) -> replacements[iid]
+                iid in removed -> null
+                iid in absorbed -> item.copy(id = (listOf(iid) + absorbed.getValue(iid)).joinToString(","))
                 else -> item
             }
         }
     }
+
+    private fun curatedSamePlacePairs(): List<Pair<Long, Long>> =
+        locationRepository.findCuratedSamePlacePairs().map { (it[0] as Number).toLong() to (it[1] as Number).toLong() }
 
     fun getAllCountries(
         name: String?,

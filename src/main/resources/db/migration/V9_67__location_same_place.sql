@@ -12,7 +12,44 @@
 -- names verified on 26.9.2026 - a mismatch inserts nothing. Idempotent. A new small table: no lock on existing ones
 -- beyond the FK's SHARE ROW EXCLUSIVE on location, hence the short lock_timeout (a timeout rolls back cleanly and the
 -- restart retries).
+--
+-- The two IMMUTABLE functions are the SQL side of MarinaPlaces.sameArea (the search's l- resolution uses them): name
+-- rules pair two rows, the data may veto the pair - both rows with coordinates further apart than max_km, or (without
+-- coordinates) two known cities that differ. "Marina Frapa" (Rogoznica) sits inside "Marina Frapa Dubrovnik" by name,
+-- 170 km away, and the merged row put Rogoznica boats on the Dubrovnik landing.
 SET LOCAL lock_timeout = '5s';
+
+-- lower case, common diacritics stripped, letters and digits only ("Kaštel Gomilica" -> "kastelgomilica")
+CREATE OR REPLACE FUNCTION location_fold_text(t text) RETURNS text
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE AS
+$$
+SELECT regexp_replace(translate(lower(COALESCE(t, '')), 'šžčćđáàâäãåéèêëíìîïóòôöõúùûüçñ', 'szccdaaaaaaeeeeiiiiooooouuuucn'),
+                      '[^a-z0-9]', '', 'g')
+$$;
+
+-- whether a row carries any location data (usable coordinates or a city)
+CREATE OR REPLACE FUNCTION location_has_area(lat numeric, lon numeric, city text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE AS
+$$
+SELECT (lat IS NOT NULL AND lon IS NOT NULL AND NOT (lat = 0 AND lon = 0)) OR location_fold_text(city) <> ''
+$$;
+
+-- whether the data allows two name-paired rows to be one place
+CREATE OR REPLACE FUNCTION location_same_area(lat1 numeric, lon1 numeric, city1 text,
+                                              lat2 numeric, lon2 numeric, city2 text, max_km numeric) RETURNS boolean
+    LANGUAGE sql IMMUTABLE PARALLEL SAFE AS
+$$
+SELECT CASE
+           WHEN lat1 IS NOT NULL AND lon1 IS NOT NULL AND lat2 IS NOT NULL AND lon2 IS NOT NULL
+               AND NOT (lat1 = 0 AND lon1 = 0) AND NOT (lat2 = 0 AND lon2 = 0)
+               THEN 2 * 6371 * asin(least(1.0, sqrt(power(sin(radians(lat2 - lat1) / 2), 2)
+                   + cos(radians(lat1)) * cos(radians(lat2)) * power(sin(radians(lon2 - lon1) / 2), 2)))) <= max_km
+           WHEN location_fold_text(city1) <> '' AND location_fold_text(city2) <> ''
+               THEN position(location_fold_text(city1) IN location_fold_text(city2)) > 0
+                   OR position(location_fold_text(city2) IN location_fold_text(city1)) > 0
+           ELSE true
+       END
+$$;
 
 CREATE TABLE IF NOT EXISTS location_same_place (
     location_id         BIGINT      NOT NULL REFERENCES location (id) ON DELETE CASCADE,

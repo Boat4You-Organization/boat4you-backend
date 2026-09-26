@@ -1103,15 +1103,19 @@ class YachtQueryingService(
         // accidentally matched Location.id=8 (ACI Marina Trogir) and pulled
         // unrelated Croatian yachts into Greek region searches. The marina
         // selector closes that gap at the data layer instead.
+        //
+        // PICKUP ONLY (26.9.2026 audit B14): a destination lists the boats that START there. Matching the drop-off
+        // too put boats based elsewhere on every landing that is a one-way end point — the Dubrovnik catamaran
+        // landing listed Kaštela boats with a one-way week into Dubrovnik ("Catamaran charter in ACI Marina
+        // Dubrovnik", 0 of 18 cards based in Dubrovnik). The facets (YachtDistributionService) and the charter facts
+        // use the same pickup rule, so the H2, the type chips and the facts tile count the same boats.
         val did = resolveSearchDidScope(searchParams.locationIds)
         val didPredicates = mutableListOf<Predicate>()
         if (did.marinaIds.isNotEmpty()) {
             didPredicates.add(root.get<String>("locationFrom").`in`(did.marinaIds))
-            didPredicates.add(root.get<String>("locationTo").`in`(did.marinaIds))
         }
         if (did.countryCodes.isNotEmpty()) {
             didPredicates.add(root.get<String>("countryCode").`in`(did.countryCodes))
-            didPredicates.add(root.get<String>("countryCodeTo").`in`(did.countryCodes))
         }
         when {
             didPredicates.isNotEmpty() -> predicates.add(cb.or(*didPredicates.toTypedArray()))
@@ -1311,6 +1315,18 @@ class YachtQueryingService(
                 cb.or(
                     isCustomYacht,
                     cb.lessThan(root.get<LocalDate>("dateFrom"), searchParams.endDate.plusDays(NEARBY_WINDOW_DAYS)),
+                ),
+            )
+        } else {
+            // Undated (the destination landings, the sitemap, the gate counts): only offers that can still be booked,
+            // i.e. starting today or later. The matview keeps offers up to 30 days after they end (RetentionReaper
+            // OFFER_GRACE_DAYS), so a boat whose partner stopped publishing stayed listed - and priced by a week in the
+            // past - for a month. "N boats available" now counts bookable boats, the same definition as the charter
+            // facts tile (audit B12). Custom yachts have no dates and always stay.
+            predicates.add(
+                cb.or(
+                    isCustomYacht,
+                    cb.greaterThanOrEqualTo(root.get<LocalDate>("dateFrom"), (cb as HibernateCriteriaBuilder).localDate()),
                 ),
             )
         }
@@ -1514,7 +1530,9 @@ class YachtQueryingService(
         return when (locationType) {
             // A marina can exist twice (one row per provider, spelled differently —
             // "Marina Kastela" vs "Marina Kaštela"); pull every same-place sibling so the
-            // search returns BOTH fleets, not just the picked id's.
+            // search returns BOTH fleets, not just the picked id's — but never a same-named
+            // marina elsewhere, and the curated pairs no name rule finds (audit B14,
+            // LocationRepository.findSamePlaceMarinaIds).
             LocationType.MARINA -> {
                 val marina = locationRepository.findById(id.toLong()).orElse(null)
                 when {
@@ -1523,7 +1541,7 @@ class YachtQueryingService(
                     else -> {
                         // IDs first (native query can't map Location's @Formula display_name),
                         // then re-fetch via findAllById (HQL → formula-safe).
-                        val ids = locationRepository.findMarinaIdsByFoldedName(marina.name!!, marina.countryCode)
+                        val ids = locationRepository.findSamePlaceMarinaIds(marina.id!!)
                         if (ids.isEmpty()) listOf(marina) else locationRepository.findAllById(ids)
                     }
                 }

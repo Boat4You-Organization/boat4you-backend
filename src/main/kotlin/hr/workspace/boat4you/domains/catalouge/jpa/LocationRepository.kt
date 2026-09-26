@@ -57,29 +57,62 @@ interface LocationRepository : JpaRepository<Location, Long> {
     fun findInlandExternalIds(externalSystemId: Long): List<Long>
 
     /**
-     * IDs of all marinas that are the SAME place as [name] under a spelling/diacritic variant,
-     * within the same country. The catalogue holds the same marina twice when providers spell it
-     * differently — e.g. "Marina Kastela" (212 yachts) and "Marina Kaštela" (138 yachts) — so a
-     * search picking one location id silently drops the other provider's fleet. translate() folds
-     * Croatian diacritics (š ž č ć đ) without the unaccent extension. split_part strips any " | city"
-     * display suffix (names are bare now, so it's a no-op, but stays defensive). countryCode CAST
-     * guards the PG18 untyped-null → bytea trap on the IS NULL branch.
+     * Every location row that is the SAME physical marina as [id] (incl. [id]), for the search's `l-` resolution and
+     * the facet counts. The catalogue holds one marina once per provider under spelling/diacritic variants - "Marina
+     * Kastela" (212 yachts) and "Marina Kaštela" (138) - so a search picking one id would silently drop the other
+     * provider's fleet: same-spelling rows of the same country are siblings (translate() folds Croatian diacritics
+     * without the unaccent extension; split_part strips a legacy " | city" suffix) - unless the data says they are
+     * different places (26.9.2026 audit B14: both rows have coordinates more than 50 km apart, or no coordinates and two
+     * different known cities - the V9_67 functions location_same_area / location_has_area; MarinaPlaces holds the same
+     * rule for the location list and the facts). When the same name covers two different places, a row WITHOUT
+     * location data cannot be placed and stays alone, and a row with data keeps only the rows proven near it. Plus the curated
+     * pairs of location_same_place (V9_67), which no name rule can find ("D-Marin Marina Lefkas" / "Lefkas, D-Marin").
+     * One-name-inside-the-other pairs ("Marina Baotić" / "Trogir, Yachtclub Seget (Marina Baotić)") reach the search
+     * as the location list's compound did "l-57,l-1749", so they are not repeated here.
      *
-     * Returns IDs, NOT Location entities, on purpose: Location has an @Formula `display_name` that
-     * Hibernate cannot resolve from a native `SELECT *` result set (it looks for a "displayName"
-     * column and throws). The caller re-fetches via findAllById (HQL → formula-safe).
+     * Returns IDs, NOT Location entities, on purpose: Location has an @Formula `display_name` that Hibernate cannot
+     * resolve from a native `SELECT *` result set. The caller re-fetches via findAllById (HQL -> formula-safe).
      */
     @Query(
         value = """
-        SELECT l.id FROM location l
-        WHERE translate(lower(trim(split_part(l.name, ' | ', 1))), 'šžčćđ', 'szccd')
-            = translate(lower(trim(split_part(CAST(:name AS varchar), ' | ', 1))), 'šžčćđ', 'szccd')
-          AND (CAST(:countryCode AS varchar) IS NULL OR l.country_code = :countryCode)
+        WITH anchor AS (SELECT * FROM location WHERE id = :id),
+        same_name AS (
+            SELECT l.*
+            FROM anchor a
+            JOIN location l
+              ON l.country_code = a.country_code
+             AND translate(lower(trim(split_part(l.name, ' | ', 1))), 'šžčćđ', 'szccd')
+               = translate(lower(trim(split_part(a.name, ' | ', 1))), 'šžčćđ', 'szccd')
+        ),
+        -- two rows WITH location data that are different places: the name no longer tells which one a row
+        -- without data belongs to, so such a row stays alone
+        ambiguous AS (
+            SELECT EXISTS (
+                SELECT 1
+                FROM same_name s1
+                JOIN same_name s2 ON s1.id < s2.id
+                WHERE location_has_area(s1.lat, s1.lon, s1.city) AND location_has_area(s2.lat, s2.lon, s2.city)
+                  AND NOT location_same_area(s1.lat, s1.lon, s1.city, s2.lat, s2.lon, s2.city, 50)
+            ) AS yes
+        )
+        SELECT s.id
+        FROM same_name s, anchor a, ambiguous amb
+        WHERE NOT amb.yes
+           OR s.id = a.id
+           OR (location_has_area(a.lat, a.lon, a.city) AND location_has_area(s.lat, s.lon, s.city)
+               AND location_same_area(a.lat, a.lon, a.city, s.lat, s.lon, s.city, 50))
+        UNION
+        SELECT CASE WHEN sp.location_id = :id THEN sp.same_as_location_id ELSE sp.location_id END
+        FROM location_same_place sp
+        WHERE sp.location_id = :id OR sp.same_as_location_id = :id
         """,
         nativeQuery = true,
     )
-    fun findMarinaIdsByFoldedName(
-        @Param("name") name: String,
-        @Param("countryCode") countryCode: String?,
+    fun findSamePlaceMarinaIds(
+        @Param("id") id: Long,
     ): List<Long>
+
+    /** The curated same-marina pairs (location_same_place, V9_67): [location_id, same_as_location_id] rows. */
+    @Query(value = "SELECT location_id, same_as_location_id FROM location_same_place", nativeQuery = true)
+    fun findCuratedSamePlacePairs(): List<Array<Any>>
 }

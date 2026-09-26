@@ -72,7 +72,7 @@ class YachtSearchDidScopeTests {
             this.countryCode = countryCode
         }
 
-    /** Mirrors the real lookup chain in `getMarinas`: findById, then the folded-name sibling ids,
+    /** Mirrors the real lookup chain in `getMarinas`: findById, then the same-place sibling ids,
      *  then the formula-safe re-fetch of those ids. */
     private fun stubMarina(
         id: Long,
@@ -80,7 +80,7 @@ class YachtSearchDidScopeTests {
         siblings: List<Long> = listOf(id),
     ) {
         `when`(locationRepository.findById(id)).thenReturn(Optional.of(marina(id, name)))
-        `when`(locationRepository.findMarinaIdsByFoldedName(name, "HR")).thenReturn(siblings)
+        `when`(locationRepository.findSamePlaceMarinaIds(id)).thenReturn(siblings)
         `when`(locationRepository.findAllById(siblings)).thenReturn(siblings.map { marina(it, name) })
     }
 

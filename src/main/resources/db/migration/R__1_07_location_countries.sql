@@ -3,8 +3,12 @@
 -- aliases (26.9.2026 audit B01): for a REGION, its other known spellings (region_alias, V9_68) - old names and the
 -- partners' current names - '|'-separated, never the canonical name itself and never a spelling that is another
 -- listed region's canonical name. The web resolves an alias to the canonical row and 301s the alias URL; the autocomplete
--- matches it too (search_filed). NULL for countries and marinas. Appended at the end: CREATE OR REPLACE VIEW may only
--- add columns after the existing ones.
+-- matches it too (search_filed). NULL for countries and marinas.
+--
+-- city / lat / lon (audit B14): MARINA only, for the dual-source merge of the location list (MarinaPlaces): "Marina
+-- Frapa" (Rogoznica) is inside "Marina Frapa Dubrovnik" by name but 170 km away, so the coordinates / city veto it.
+--
+-- New columns are appended at the end: CREATE OR REPLACE VIEW may only add columns after the existing ones.
 CREATE OR REPLACE VIEW public.location_view
 AS
 SELECT 'l-' || l.id            as id,
@@ -13,7 +17,10 @@ SELECT 'l-' || l.id            as id,
        'MARINA'                as location_type,
        country_code            as country_code,
        l.name || ' ' || COALESCE(l.city, '') as search_filed,
-       NULL::text              as aliases
+       NULL::text              as aliases,
+       l.city::text            as city,
+       l.lat::numeric          as lat,
+       l.lon::numeric          as lon
 FROM location l
 WHERE EXISTS (SELECT 1
               FROM yacht y
@@ -25,7 +32,10 @@ SELECT 'r-' || r.id            as id,
        'REGION',
        r.country_code            as country_code,
        r.name || ' ' || COALESCE(c.name, '') || COALESCE(' ' || ra.aliases, '') as search_filed,
-       ra.aliases
+       ra.aliases,
+       NULL::text,
+       NULL::numeric,
+       NULL::numeric
 FROM region r
          LEFT JOIN boat4you_db.public.country c
                    ON r.country_id = c.id
@@ -56,7 +66,10 @@ SELECT 'c-' || c.id as id,
        'COUNTRY',
        code2        as country_code,
        c.name       as search_filed,
-       NULL::text   as aliases
+       NULL::text   as aliases,
+       NULL::text,
+       NULL::numeric,
+       NULL::numeric
 FROM country c
 WHERE EXISTS (SELECT 1
               FROM yacht y

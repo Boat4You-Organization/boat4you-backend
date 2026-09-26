@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
 import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import jakarta.persistence.EntityManager
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
@@ -38,6 +39,7 @@ class YachtDistributionService(
     private val entityManager: EntityManager,
     private val locationRepository: LocationRepository,
     private val countryRepository: CountryRepository,
+    private val regionRepository: RegionRepository,
 ) {
     // Cache the whole facet payload (all 9-11 COUNT(DISTINCT)/histogram/percentile
     // scans collapse into one entry) keyed on the full 24-param filter set, so
@@ -87,6 +89,7 @@ class YachtDistributionService(
         val ctx = FilterContext(
             marinaIds = didScope.marinaIds,
             didCountryCodes = didScope.countryCodes,
+            regionCountryCodes = regionCountryCodes(locationIds),
             startDate = startDate,
             endDate = endDate,
             vesselTypeNames = vesselTypes?.map { it.name },
@@ -166,6 +169,8 @@ class YachtDistributionService(
          *  country_code/country_code_to columns instead of a 200+ marina IN-list
          *  (which forced a full-view walk on every country facet query). */
         val didCountryCodes: List<String>? = null,
+        /** Own countries of the `r-…` did entries (search: deriveRegionCountryCodes). */
+        val regionCountryCodes: List<String>? = null,
         val startDate: LocalDate?,
         val endDate: LocalDate?,
         val vesselTypeNames: List<String>? = null,
@@ -220,6 +225,15 @@ class YachtDistributionService(
         return DidScope(marinaIds, countryCodes)
     }
 
+    /** Mirror of YachtQueryingService.deriveRegionCountryCodes: the own countries of the region ids in `did`. */
+    private fun regionCountryCodes(locationIds: List<String>?): List<String>? =
+        locationIds
+            ?.filter { it.firstOrNull() == 'r' }
+            ?.mapNotNull { it.drop(2).toLongOrNull() }
+            ?.mapNotNull { regionRepository.findById(it).orElse(null)?.countryCode?.uppercase() }
+            ?.distinct()
+            ?.takeIf { it.isNotEmpty() }
+
     private fun resolveOne(locationId: String): List<Long> {
         val type =
             when (locationId.firstOrNull()) {
@@ -243,7 +257,7 @@ class YachtDistributionService(
                     marina == null -> emptyList()
                     marina.name.isNullOrBlank() -> listOfNotNull(marina.id)
                     else ->
-                        locationRepository.findMarinaIdsByFoldedName(marina.name!!, marina.countryCode)
+                        locationRepository.findSamePlaceMarinaIds(marina.id!!)
                             .ifEmpty { listOfNotNull(marina.id) }
                 }
             }
@@ -292,8 +306,9 @@ class YachtDistributionService(
             !hasMarinas && !hasDidCountries -> parts.add(" AND FALSE")
             else -> {
                 val ors = mutableListOf<String>()
-                if (hasMarinas) ors.add("location_from IN (:marinaIds) OR location_to IN (:marinaIds)")
-                if (hasDidCountries) ors.add("country_code IN (:didCountryCodes) OR country_code_to IN (:didCountryCodes)")
+                // Pickup only, like the search (audit B14): a destination counts the boats that start there.
+                if (hasMarinas) ors.add("location_from IN (:marinaIds)")
+                if (hasDidCountries) ors.add("country_code IN (:didCountryCodes)")
                 parts.add(" AND (${ors.joinToString(" OR ")})")
             }
         }
@@ -316,6 +331,14 @@ class YachtDistributionService(
         } else if (ctx.endDate != null) {
             // Open-ended end: slot's window must start on/before the padded end.
             parts.add(" AND (date_from IS NULL OR date_from < :endPlus)")
+        } else {
+            // Undated: bookable offers only (starting today or later), like the search (audit B12).
+            parts.add(" AND (date_from IS NULL OR date_from >= CURRENT_DATE)")
+        }
+        if (!ctx.regionCountryCodes.isNullOrEmpty()) {
+            // A region search lists only boats in the region's own country (search: deriveRegionCountryCodes), so
+            // MMK's sea-wide "Ionian" does not count Italian boats in a Greek landing's chips.
+            parts.add(" AND country_code IN (:regionCountryCodes)")
         }
         if (!ctx.vesselTypeNames.isNullOrEmpty()) {
             parts.add(" AND vessel_type IN (:vesselTypeNames)")
@@ -417,6 +440,7 @@ class YachtDistributionService(
     private fun bindFilters(q: jakarta.persistence.Query, ctx: FilterContext) {
         if (!ctx.marinaIds.isNullOrEmpty()) q.setParameter("marinaIds", ctx.marinaIds)
         if (!ctx.didCountryCodes.isNullOrEmpty()) q.setParameter("didCountryCodes", ctx.didCountryCodes)
+        if (!ctx.regionCountryCodes.isNullOrEmpty()) q.setParameter("regionCountryCodes", ctx.regionCountryCodes)
         // Honest interval-overlap bind, matching buildYachtSearchPredicates:
         // padded window for the slot overlap, RAW window for the live hard-block.
         if (ctx.startDate != null && ctx.endDate != null) {
