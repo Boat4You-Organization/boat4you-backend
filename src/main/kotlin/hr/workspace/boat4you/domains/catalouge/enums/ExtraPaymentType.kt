@@ -124,8 +124,9 @@ enum class ExtraPaymentType(
          *
          * Historical NOTE: the old generic `classify()` used to map
          * `payableInBase == false` to WITH_BOOKING by default, which was
-         * wrong for MMK — partner doesn't bundle those into the base
-         * price. Keep MMK behavior isolated here.
+         * wrong for MMK YACHT-level and optional extras — partner doesn't
+         * bundle those into the base price. The offer's own obligatory
+         * extras are the exception: see [fromMmkOfferObligatory].
          */
         fun fromMmkPayableInBase(
             name: String?,
@@ -138,6 +139,31 @@ enum class ExtraPaymentType(
                 return ADVANCE_TO_OPERATOR
             }
             return ON_SITE
+        }
+
+        /**
+         * MMK classifier for the OFFER's own `obligatoryExtras` — the list MMK
+         * attaches to a reservation when the option is placed. MMK bills every
+         * one of them with `payableInBase=false` inside the reservation
+         * clientPrice and payment plan, i.e. in advance with the booking:
+         * clientPrice = basePrice x (1 - discount%) + sum of those items, to the
+         * cent, on all 165 reservations our account held for 2026-2027
+         * (checked 26.9.2026 — Additional fixed part, handling fees, APA,
+         * captain, charter/comfort packs, Greek VAT alike). Mario's rule: what
+         * the partner bills with the booking is paid with the booking here too,
+         * so these fold into our online total. `payableInBase=true` items stay
+         * outside it (collected at the base).
+         *
+         * Yacht-level extras keep [fromMmkPayableInBase]: MMK bills only what
+         * the offer lists, and yacht rows also back the extras list shown on
+         * existing bookings, which must not change.
+         */
+        fun fromMmkOfferObligatory(
+            price: java.math.BigDecimal?,
+            payableInBase: Boolean,
+        ): ExtraPaymentType {
+            if (price == null || price.signum() == 0) return INCLUDED
+            return if (payableInBase) ON_SITE else WITH_BOOKING
         }
     }
 }

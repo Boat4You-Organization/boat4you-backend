@@ -318,12 +318,14 @@ class MmkYachtOfferSyncService(
                 }
 
             val mmkPrice = mmkExtra.price?.toBigDecimal()
-            // See MmkYachtSyncService for rationale — MMK `payableInBase=false`
-            // means "outside base", not "included". fromMmkPayableInBase
-            // defaults non-crew extras to ON_SITE.
+            // These are the offer's obligatoryExtras — exactly what MMK bills in
+            // the reservation. payableInBase=false ones go into MMK's clientPrice
+            // (paid in advance with the booking), so they fold into our total too
+            // (26.9.2026; 1441012 had a 350 EUR fixed part billed by MMK but
+            // shown to the client as payable at the marina). Null counts as
+            // false, same as offer.totalPrice above.
             val mmkPaymentType =
-                ExtraPaymentType.fromMmkPayableInBase(
-                    name = mmkExtra.name,
+                ExtraPaymentType.fromMmkOfferObligatory(
                     price = mmkPrice,
                     payableInBase = mmkExtra.payableInBase ?: false,
                 )
