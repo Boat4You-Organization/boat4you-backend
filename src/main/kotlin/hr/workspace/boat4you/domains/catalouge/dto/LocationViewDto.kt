@@ -18,8 +18,10 @@ data class LocationViewDto(
     val countryCode: String? = null,
     /**
      * REGION only (26.9.2026 audit B01): the region's other known spellings — names it carried before its name became
-     * canonical and the partners' current names ("Zadar region" for "Zadar"). A landing addressed by an alias is the
-     * same place: resolve it to this row and redirect to the canonical name. Never another row's canonical name.
+     * canonical and the partners' current names ("Zadar region" for "Zadar"). Never another listed region's canonical
+     * name. A resolution FALLBACK for the web: used only when a spelling resolves through no pinned landing, popular
+     * search (label or member) or catalogue name; a spelling that resolves directly is never redirected because it is
+     * also an alias ("split region" stays the "Split Region" landing).
      */
     @get:JsonProperty("aliases")
     @get:JsonInclude(JsonInclude.Include.NON_EMPTY)

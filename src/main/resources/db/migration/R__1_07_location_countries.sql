@@ -2,8 +2,10 @@
 --
 -- aliases (26.9.2026 audit B01): for a REGION, its other known spellings (region_alias, V9_68) - old names and the
 -- partners' current names - '|'-separated, never the canonical name itself and never a spelling that is another
--- listed region's canonical name. The web resolves an alias to the canonical row and 301s the alias URL; the autocomplete
--- matches it too (search_filed). NULL for countries and marinas.
+-- listed region's canonical name. The autocomplete matches them (search_filed). For the web an alias is a FALLBACK
+-- only: consulted after its pinned landings, popular searches and catalogue names have all failed to resolve a
+-- spelling, and never a reason to redirect a spelling that resolves directly or is a popular label or member
+-- ("split region" is the "Split Region" landing, not an alias URL of r-5 "Split"). NULL for countries and marinas.
 --
 -- city / lat / lon (audit B14): MARINA only, for the dual-source merge of the location list (MarinaPlaces): "Marina
 -- Frapa" (Rogoznica) is inside "Marina Frapa Dubrovnik" by name but 170 km away, so the coordinates / city veto it.

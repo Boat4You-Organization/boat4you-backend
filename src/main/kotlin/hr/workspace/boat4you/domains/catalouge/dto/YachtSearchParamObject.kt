@@ -78,7 +78,8 @@ data class YachtSearchParamObject(
     val weeklyPrice: Boolean = false,
     /**
      * Sitemap shards by id range (26.9.2026 audit B03): `idFrom` inclusive, `idTo` exclusive. A shard that pages a
-     * price-ordered listing moves boats between shards whenever prices change; an id range never does.
+     * listing by offset moves boats between shards whenever one drops out or prices change; a fixed id range never
+     * does (see YachtController.getYachts).
      */
     val idFrom: Long? = null,
     val idTo: Long? = null,

@@ -110,9 +110,11 @@ class YachtController(
          */
         @RequestParam(name = "priceBasis", required = false) priceBasis: String? = null,
         /**
-         * Sitemap shards (audit B03): restrict to yacht ids in [idFrom, idTo). Combine with `sortBy=id` (stable,
-         * ascending id; `idDesc` = descending, e.g. size=1 for the highest id) so a shard lists the same boats
-         * whatever the prices do.
+         * Sitemap shards (audit B03): restrict to yacht ids in [idFrom, idTo). Shard ONLY by fixed-width id range:
+         * shard k = `idFrom=k*100&idTo=(k+1)*100&sortBy=id&size=100` (100 = the page cap, so one page holds a whole
+         * shard), shard count from the highest id (`sortBy=idDesc&size=1`). Never offset paging (`page=N`) over
+         * `sortBy=id`: one boat leaving the list below a shard boundary shifts every later shard by one, and shards
+         * cached at different moments list boats twice or miss them. An empty shard is a valid empty answer.
          */
         @RequestParam(name = "idFrom", required = false) idFrom: Long? = null,
         @RequestParam(name = "idTo", required = false) idTo: Long? = null,
