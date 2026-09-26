@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-09-26 — Undated landings priced per week (`priceBasis=week`) + positive-price fallback — ✅ LIVE cusma2 23:13 UTC 25.9. (jar `5a2bddc2`, merge `175630d`); cusma3 scheduled 26.9. 07:52 UTC (quiet-window script)
+## 2026-09-26 — Undated landings priced per week (`priceBasis=week`) + positive-price fallback — ✅ LIVE cusma2 23:13 UTC 25.9. (jar `5a2bddc2`, merge `175630d`); cusma3 ✅ 26.9. 07:52 UTC (quiet window, 0 sync lines, started 12 s)
 
 `GET /public/yachts?priceBasis=week` (web sends it only on undated fetches): each yacht is priced by its cheapest bookable 7-night offer (from today, > 0 €, not RESERVED/SERVICE; typo guard: cheapest < 12 % of the dearest week → no price, card "Price on request"); unpriced yachts sort last. Default path (sister sites, admin, AI chat): the fallback MIN prefers positive prices (18 future 0 € offers existed). No migration; count query unchanged.
 Review (adversarial, EXPLAIN on a 4× local copy): page query +12 % default / +36 % weekly, HashAggregate 17.9 MB, no spill; custom plans kept (`plan_cache_mode=auto` — never force_generic_plan). Prod: 0 offers with list price 0 and client price > 0 (the per-column MIN caveat is moot).
