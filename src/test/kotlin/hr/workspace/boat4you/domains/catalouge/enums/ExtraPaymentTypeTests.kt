@@ -30,6 +30,25 @@ class ExtraPaymentTypeTests {
     }
 
     @Test
+    fun `NauSys offer obligatory ADVANCE_PAYMENT extra is paid with the booking`() {
+        assertEquals(
+            ExtraPaymentType.WITH_BOOKING,
+            ExtraPaymentType.fromNausysOfferObligatory("ADVANCE_PAYMENT", BigDecimal("440")),
+        )
+        // The other NauSys types keep their meaning.
+        assertEquals(ExtraPaymentType.ON_SITE, ExtraPaymentType.fromNausysOfferObligatory("SEPARATE_PAYMENT", BigDecimal("370")))
+        assertEquals(ExtraPaymentType.WITH_BOOKING, ExtraPaymentType.fromNausysOfferObligatory("INCLUDED_IN_PRICE", BigDecimal("90")))
+        assertEquals(ExtraPaymentType.INCLUDED, ExtraPaymentType.fromNausysOfferObligatory("ADVANCE_PAYMENT", BigDecimal.ZERO))
+        // Unknown type: no partner signal that it is prepaid, so it stays where it was.
+        assertEquals(ExtraPaymentType.ADVANCE_TO_OPERATOR, ExtraPaymentType.fromNausysOfferObligatory(null, BigDecimal("100")))
+        // Optional NauSys extras keep the plain mapping.
+        assertEquals(
+            ExtraPaymentType.ADVANCE_TO_OPERATOR,
+            ExtraPaymentType.fromNausysCalculationType("ADVANCE_PAYMENT", BigDecimal("1540")),
+        )
+    }
+
+    @Test
     fun `MMK yacht-level classification is unchanged`() {
         assertEquals(ExtraPaymentType.ON_SITE, ExtraPaymentType.fromMmkPayableInBase("Kayak", BigDecimal("150"), payableInBase = false))
         assertEquals(

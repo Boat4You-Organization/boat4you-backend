@@ -484,8 +484,11 @@ class NauSysYachtOfferSyncService(
 
             val obligPrice = nausysExtra.totalPrice?.toBigDecimal()
             val obligPayable = nausysExtra.calculationType?.value == "SEPARATE_PAYMENT"
+            // Obligatory ADVANCE_PAYMENT items are part of NauSys's advance total
+            // (totalPriceWithExtras), so they are paid with the booking here too
+            // (26.9.2026, see fromNausysOfferObligatory).
             val obligPaymentType =
-                hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
+                hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysOfferObligatory(
                     calculationType = nausysExtra.calculationType?.value,
                     price = obligPrice,
                 )

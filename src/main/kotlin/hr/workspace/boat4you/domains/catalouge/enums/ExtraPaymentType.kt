@@ -142,6 +142,28 @@ enum class ExtraPaymentType(
         }
 
         /**
+         * NauSys classifier for the OFFER's own `obligatoryExtras`. NauSys says
+         * how each is paid through `calculationType`, and its own advance total
+         * (`totalPriceWithExtras`: "total price to be paid in advance by the
+         * Agency to the Fleet operator, including discounts and all extras
+         * marked as advance payment") always contains the ADVANCE_PAYMENT ones:
+         * on 80,691 of 87,392 future NauSys offers it equals clientPrice + those
+         * items to the cent, and on none does it leave them out (26.9.2026; the
+         * rest carry further taxes/percentages on top). So an obligatory
+         * ADVANCE_PAYMENT extra is paid with the booking and folds into our
+         * online total (Mario's rule, same as [fromMmkOfferObligatory]).
+         * SEPARATE_PAYMENT stays at the base and INCLUDED_IN_PRICE is already
+         * WITH_BOOKING — both unchanged, as are optional extras and yacht rows.
+         */
+        fun fromNausysOfferObligatory(
+            calculationType: String?,
+            price: java.math.BigDecimal?,
+        ): ExtraPaymentType {
+            val byType = fromNausysCalculationType(calculationType, price)
+            return if (calculationType == "ADVANCE_PAYMENT" && byType != INCLUDED) WITH_BOOKING else byType
+        }
+
+        /**
          * MMK classifier for the OFFER's own `obligatoryExtras` — the list MMK
          * attaches to a reservation when the option is placed. MMK bills every
          * one of them with `payableInBase=false` inside the reservation

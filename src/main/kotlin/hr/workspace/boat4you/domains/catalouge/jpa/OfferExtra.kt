@@ -81,8 +81,8 @@ open class OfferExtra {
     /**
      * Refined payment classification — replaces the overloaded `payableInBase`
      * boolean for customer-facing display. Backfilled by V1_57 + populated by
-     * the sync mappers (MMK offers: `fromMmkOfferObligatory`; NauSys:
-     * `fromNausysCalculationType`). Drives the in-price / at-base split in
+     * the sync mappers (MMK offers: `fromMmkOfferObligatory`; NauSys offers:
+     * `fromNausysOfferObligatory` / `fromNausysCalculationType`). Drives the in-price / at-base split in
      * PriceCalculationService.
      */
     @Enumerated(EnumType.STRING)
