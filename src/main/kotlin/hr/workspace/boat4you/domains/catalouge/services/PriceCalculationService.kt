@@ -99,20 +99,7 @@ class PriceCalculationService(
         //     partner ids) -> dedup by extrasKey (name).
         // Keying on externalId alone double-charged handling/prep; keying on name
         // alone double-listed the renamed Comfort Pack. Union both lookups.
-        val flattenedList = mutableListOf<InternalCalcDto>()
-        val indexByKey = HashMap<String, Int>()
-        val indexByExternalId = HashMap<String, Int>()
-        fun mergeExtra(extra: InternalCalcDto) {
-            val key = extra.extrasKey()
-            val externalId = extra.externalId?.toString()
-            val existingIndex = indexByKey[key] ?: externalId?.let { indexByExternalId[it] }
-            val index = existingIndex ?: flattenedList.size
-            if (existingIndex == null) flattenedList.add(extra) else flattenedList[index] = extra
-            indexByKey[key] = index
-            if (externalId != null) indexByExternalId[externalId] = index
-        }
-        allYachtExtras.forEach { mergeExtra(it) } // yacht first
-        allOfferExtras.forEach { mergeExtra(it) } // offer overrides on either key
+        val flattenedList = mergeYachtAndOfferExtras(allYachtExtras, allOfferExtras) // yacht first, offer overrides
 
         // 3. split into "at base" (paid separately — on-site at the marina or
         //    wired to the operator in advance) vs "in price" (folded into OUR
@@ -261,11 +248,18 @@ class PriceCalculationService(
         alreadyCounted += ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, allYachtExtras)
 
         val yachtExtrasByName = allYachtExtras.associateBy { it.name }
+        // The re-quote returns the whole obligatory list, base items included. With
+        // several offer rows under one catalogue key (Skipper + "Skipper's liability
+        // insurance") a base item can come back under its own name rather than the
+        // shared key, so names already in the price count as accounted for too.
+        val namesCounted =
+            (base.selectedExtrasInPrice + base.selectedExtrasAtBase).mapTo(HashSet()) { it.name.trim().lowercase() }
 
         val promoted =
             obligatory.mapNotNull { o ->
                 val ye = yachtExtrasByName[o.name]
                 val key = ye?.extrasKey() ?: o.name
+                if (o.name.trim().lowercase() in namesCounted) return@mapNotNull null
                 // add() == false -> already accounted for (base obligatory / selected) -> skip
                 if (key.isBlank() || !alreadyCounted.add(key)) return@mapNotNull null
                 ExtrasPriceDto(
@@ -295,4 +289,51 @@ class PriceCalculationService(
             totalPriceInfo = exchangeRateCalculationService.calculatePriceInfo(newTotal, currency),
         )
     }
+}
+
+/**
+ * One entry per logical extra: yacht rows first, then offer rows, an offer row
+ * replacing the yacht row it duplicates by catalogue key OR partner externalId
+ * (see the comment at the call site). Two OBLIGATORY offer rows are two partner
+ * charges — Offer.filterDuplicateExtras has already folded genuine duplicates —
+ * so the second never overwrites the first just because our catalogue key
+ * matches (Skipper + "Skipper's liability insurance", 26.9.2026); it takes a
+ * yacht slot of its own or a new one.
+ */
+internal fun mergeYachtAndOfferExtras(
+    yachtRows: List<InternalCalcDto>,
+    offerRows: List<InternalCalcDto>,
+): MutableList<InternalCalcDto> {
+    val merged = mutableListOf<InternalCalcDto>()
+    val indexByKey = HashMap<String, Int>()
+    val indexByExternalId = HashMap<String, Int>()
+    val offerOwned = HashSet<Int>()
+
+    fun mergeExtra(
+        extra: InternalCalcDto,
+        fromOffer: Boolean,
+    ) {
+        val key = extra.extrasKey()
+        val externalId = extra.externalId?.toString()
+        val keyIndex = indexByKey[key]
+        val externalIndex = externalId?.let { indexByExternalId[it] }
+        val existingIndex =
+            when {
+                !(fromOffer && extra.obligatory) -> keyIndex ?: externalIndex
+                keyIndex != null && keyIndex !in offerOwned -> keyIndex
+                // A second partner charge under a key an offer row already holds: it
+                // may only take the yacht row of this very charge (same name), never a
+                // yacht row that merely shares a numeric id from another id space.
+                keyIndex != null -> externalIndex?.takeIf { it !in offerOwned && merged[it].name == extra.name }
+                else -> externalIndex?.takeIf { it !in offerOwned }
+            }
+        val index = existingIndex ?: merged.size
+        if (existingIndex == null) merged.add(extra) else merged[index] = extra
+        indexByKey[key] = index
+        if (externalId != null) indexByExternalId[externalId] = index
+        if (fromOffer) offerOwned += index
+    }
+    yachtRows.forEach { mergeExtra(it, fromOffer = false) }
+    offerRows.forEach { mergeExtra(it, fromOffer = true) }
+    return merged
 }

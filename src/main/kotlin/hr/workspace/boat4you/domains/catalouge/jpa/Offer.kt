@@ -171,20 +171,66 @@ open class Offer {
         return clientPrice!!.divide(numberOfDays().toBigDecimal(), 2, RoundingMode.HALF_UP)
     }
 
+    /**
+     * One entry per charge the client can meet on this offer, paired with "has
+     * dearer options" (only ever true for optional rows).
+     *
+     * Obligatory rows are what the partner bills, one charge each: MMK's
+     * obligatoryExtrasPrice and NauSys's advance total count every row they list
+     * (26.9.2026: all 266 MMK and 48 NauSys offers where our catalogue key put two
+     * of them together). So they are told apart by partner identity, not by
+     * [OfferExtra.extrasKey] — the fuzzy catalogue match that put "Skipper's
+     * liability insurance" under Skipper and charged only one of the two.
+     * One exception, pending the owner's call: rows that differ only by a season
+     * qualifier ("APA / High season (30%)", "APA / Low season II (30%)") are kept
+     * as one item, the dearest, as before (MMK lists and bills them all).
+     *
+     * Optional rows: unchanged — the cheapest per catalogue key, flagged when
+     * dearer variants exist, and hidden behind an obligatory row with that key.
+     */
     fun filterDuplicateExtras(): List<Pair<OfferExtra, Boolean>> {
-        return this.offerExtras
-            .groupBy { it.extrasKey() }
-            .mapValues { (_, extras) ->
-                val obligatory = extras.find { it.obligatory == true }
+        // Stable order: offerExtras has no @OrderBy, and which row survived a
+        // collapse used to depend on load order.
+        val (obligatoryRows, optionalRows) =
+            offerExtras.sortedBy { it.id ?: Long.MAX_VALUE }.partition { it.obligatory == true }
 
-                if (obligatory != null) {
-                    obligatory to false // obligatory item, no higher price options
-                } else {
-                    val minPrice = extras.minByOrNull { it.price ?: BigDecimal.ZERO }!!
+        val obligatory =
+            obligatoryRows
+                .distinctBy { it.partnerIdentity() }
+                .groupBy { it.extrasKey() to seasonVariantStem(it.name) }
+                .values
+                .flatMap { rows ->
+                    // Only a real season qualifier makes rows variants of one item; a
+                    // difference in case or punctuation alone ("Preparation fee" /
+                    // "Preparation Fee") is still two partner charges.
+                    val seasonVariants =
+                        rows.mapTo(HashSet()) { it.name?.trim() }.size > 1 &&
+                            rows.any { SEASON_QUALIFIER.containsMatchIn(it.name ?: "") }
+                    if (seasonVariants) listOf(rows.maxBy { it.price ?: BigDecimal.ZERO }) else rows
+                }.map { it to false }
+
+        val obligatoryKeys = obligatory.mapTo(HashSet()) { it.first.extrasKey() }
+        val optional =
+            optionalRows
+                .filter { it.extrasKey() !in obligatoryKeys }
+                .groupBy { it.extrasKey() }
+                .values
+                .map { extras ->
+                    val minPrice = extras.minBy { it.price ?: BigDecimal.ZERO }
                     val hasHigherPrices = extras.any { (it.price ?: BigDecimal.ZERO) > (minPrice.price ?: BigDecimal.ZERO) }
                     minPrice to hasHigherPrices
                 }
-            }.values
-            .toList()
+
+        return obligatory + optional
+    }
+
+    companion object {
+        private val SEASON_QUALIFIER =
+            Regex("\\b(high|low|mid|middle|peak|shoulder|off|pre|post)[\\s-]*season\\b(\\s+[ivx]+\\b)?", RegexOption.IGNORE_CASE)
+        private val NON_ALNUM = Regex("[^a-z0-9]+")
+
+        /** The name with any season qualifier removed, for spotting seasonal variants of one item. */
+        internal fun seasonVariantStem(name: String?): String =
+            (name ?: "").replace(SEASON_QUALIFIER, " ").lowercase().replace(NON_ALNUM, " ").trim()
     }
 }
