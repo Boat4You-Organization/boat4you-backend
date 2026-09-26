@@ -181,9 +181,10 @@ open class Offer {
      * of them together). So they are told apart by partner identity, not by
      * [OfferExtra.extrasKey] — the fuzzy catalogue match that put "Skipper's
      * liability insurance" under Skipper and charged only one of the two.
-     * One exception, pending the owner's call: rows that differ only by a season
-     * qualifier ("APA / High season (30%)", "APA / Low season II (30%)") are kept
-     * as one item, the dearest, as before (MMK lists and bills them all).
+     * One exception, by the owner's decision (Mario, 26.9.2026): rows that differ
+     * only by a season qualifier ("APA / High season (30%)", "APA / Low season II
+     * (30%)") are one item, the dearest — MMK lists and bills them all, which is an
+     * agency set-up error settled with the agency, not passed on to the client.
      *
      * Optional rows: unchanged — the cheapest per catalogue key, flagged when
      * dearer variants exist, and hidden behind an obligatory row with that key.
