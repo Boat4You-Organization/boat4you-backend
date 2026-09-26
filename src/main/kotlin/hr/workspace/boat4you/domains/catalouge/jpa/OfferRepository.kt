@@ -224,12 +224,15 @@ interface OfferRepository : JpaRepository<Offer, Long> {
     ): List<StaleMmkOfferCombo>
 
     /**
-     * Mirror image of [findStaleUnavailableMmkCombos]: future FREE 7-night offers of active MMK-primary yachts. These
-     * are the candidates for [MmkFreeOfferReverifyService] — since the agency-level yearly sweep became upsert-only
-     * (20.7.2026) nothing removes a FREE week the partner no longer sells (a withdrawn next-season price list,
-     * 21.9.2026: 10,375 rows on 189 yachts). Only 7-night rows: they are the only shape the exact-date probe asks
-     * about, and the flip is scoped to exactly the same rows (evidence scope == write scope). Distinct per
-     * yacht+dates: one partner call covers every product/route row of that week.
+     * Mirror image of [findStaleUnavailableMmkCombos]: future FREE rows of any length of active MMK-primary yachts, and
+     * OPTION rows that neither a live partner option or booking nor our own reservation flow backs (the read path
+     * demotes those to FREE: OfferQueryingService, OPTION_ECHO_GRACE_HOURS). OPTION_WAITING is left alone on purpose
+     * (pre-reserved, owner's rule). These are the candidates for
+     * [MmkFreeOfferReverifyService] — since the agency-level yearly sweep became upsert-only (20.7.2026) nothing
+     * removes an offer the partner no longer sells (a withdrawn next-season price list, 21.9.2026: 10,375 rows on
+     * 189 yachts; a 28-night block MMK stopped quoting, EMA 12210, 26.9.2026). Each row is probed with its OWN dates
+     * and only rows with exactly those dates are flipped (evidence scope == write scope). Distinct per yacht+dates:
+     * one partner call covers every product/route row of that period.
      */
     @Query(
         """
@@ -241,31 +244,64 @@ interface OfferRepository : JpaRepository<Offer, Long> {
         JOIN agency_source s ON s.agency_id = a.id AND s."primary" = true AND s.external_system_id = :mmkSystemId
         JOIN external_mapping em ON em.type = 'Yacht' AND em.external_system_id = :mmkSystemId
              AND em.system_id = o.yacht_id AND em.extended_type = 'Yacht-AgencyId-' || y.agency_id
-        WHERE o.status = 'FREE'
-        AND o.date_from >= CURRENT_DATE
-        AND o.date_to - o.date_from = 7
+        WHERE o.date_from >= CURRENT_DATE
+        AND o.date_to > o.date_from
+        AND (
+            o.status = 'FREE'
+            OR (
+                o.status = 'OPTION'
+                AND NOT EXISTS (
+                    SELECT 1 FROM external_reservations r
+                    WHERE r.yacht_id = o.yacht_id
+                    AND r.date_from < o.date_to AND r.date_to > o.date_from
+                    AND (
+                        r.status IN ('RESERVATION','SERVICE')
+                        OR (r.status = 'OPTION' AND (r.option_expiration IS NULL OR r.option_expiration > NOW() - INTERVAL '48 hours'))
+                    )
+                )
+                AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = o.id)
+            )
+        )
         ORDER BY "yachtId", "dateFrom"
         """,
         nativeQuery = true,
     )
-    fun findFreeWeeklyMmkCombos(
+    fun findShownFreeMmkCombos(
         @Param("mmkSystemId") mmkSystemId: Long,
     ): List<StaleMmkOfferCombo>
 
     /**
-     * Hides the FREE 7-night rows of ONE probed week (all its product/route variants). Exactly the rows the probe
-     * asked MMK about — never a 14/21/28-night row that merely overlaps (the 20.7.2026 lesson: a fate decided on
-     * evidence never gathered for that row). Returns the number of rows flipped.
+     * Hides the rows of ONE probed period (all its product/route variants): FREE rows, and OPTION rows no live
+     * option, booking or reservation flow backs — exactly the rows [findShownFreeMmkCombos] offered and the probe
+     * asked MMK about, re-checked at write time. Never a row with other dates that merely overlaps (the 20.7.2026
+     * lesson: a fate decided on evidence never gathered for that row), never an option the partner or our customer
+     * still holds. Returns the number of rows flipped.
      */
     @Modifying
     @Query(
         """
         UPDATE offer o SET status = 'UNAVAILABLE'
-        WHERE o.yacht_id = :yachtId AND o.status = 'FREE' AND o.date_from = :dateFrom AND o.date_to = :dateTo
+        WHERE o.yacht_id = :yachtId AND o.date_from = :dateFrom AND o.date_to = :dateTo
+        AND (
+            o.status = 'FREE'
+            OR (
+                o.status = 'OPTION'
+                AND NOT EXISTS (
+                    SELECT 1 FROM external_reservations r
+                    WHERE r.yacht_id = o.yacht_id
+                    AND r.date_from < o.date_to AND r.date_to > o.date_from
+                    AND (
+                        r.status IN ('RESERVATION','SERVICE')
+                        OR (r.status = 'OPTION' AND (r.option_expiration IS NULL OR r.option_expiration > NOW() - INTERVAL '48 hours'))
+                    )
+                )
+                AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = o.id)
+            )
+        )
         """,
         nativeQuery = true,
     )
-    fun markWeekUnavailable(
+    fun markPeriodUnavailable(
         @Param("yachtId") yachtId: Long,
         @Param("dateFrom") dateFrom: LocalDate,
         @Param("dateTo") dateTo: LocalDate,
@@ -273,7 +309,7 @@ interface OfferRepository : JpaRepository<Offer, Long> {
 }
 
 /**
- * Native projection for [OfferRepository.findStaleUnavailableMmkCombos] and [OfferRepository.findFreeWeeklyMmkCombos].
+ * Native projection for [OfferRepository.findStaleUnavailableMmkCombos] and [OfferRepository.findShownFreeMmkCombos].
  */
 interface StaleMmkOfferCombo {
     val yachtId: Long
