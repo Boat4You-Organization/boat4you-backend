@@ -107,9 +107,11 @@ class YachtQueryingService(
         private val WEEKLY_PRICE_OUTLIER_RATIO = BigDecimal("0.12")
 
         /**
-         * A 7-night charter below this (EUR) is a partner placeholder (Valencia 26.9.2026: whole grids of "10 EUR"
-         * weeks), never a real week price: such a week is not a weekly "from" price candidate (the charter facts use
-         * the same floor, CharterFactsMath.MIN_WEEK_PRICE). Compared per day (the matview's unit).
+         * An offer priced below 300 EUR a week (per night: 300 / 7, for an offer of ANY length) is a partner
+         * placeholder (Valencia 26.9.2026: whole grids of "10 EUR" weeks, 1.49 EUR a day), never a real price: it is
+         * not a weekly "from" price candidate, not a dated card's price (the card says "price on request"), not a
+         * week of a multi-week tiling and not the undated default path's price. The charter facts use the same floor
+         * (CharterFactsMath.MIN_WEEK_PRICE). Compared per day, the matview's unit.
          */
         private val MIN_WEEK_PRICE_PER_DAY: BigDecimal = BigDecimal(300).divide(BigDecimal(WEEK_NIGHTS), 10, java.math.RoundingMode.HALF_UP)
 
@@ -280,19 +282,20 @@ class YachtQueryingService(
                 searchParams.endDate?.let { e -> java.time.temporal.ChronoUnit.DAYS.between(s, e).toInt() }
             }
         val daysPath = root.get<Int>("numberOfDays")
+        val clientPath = root.get<BigDecimal>("clientPrice")
         val dateFromPath = root.get<LocalDate>("dateFrom")
         val dateToPath = root.get<LocalDate>("dateTo")
         val coveringClientTotalExpr =
-            coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+            coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)
                 ?: cb.nullLiteral(BigDecimal::class.java)
         val coveringListTotalExpr =
-            coveringPeriodTotal(cb, root.get("listPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+            coveringPeriodTotal(cb, root.get("listPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)
                 ?: cb.nullLiteral(BigDecimal::class.java)
         val coveringCommissionTotalExpr =
-            coveringPeriodTotal(cb, root.get("brokerCommission"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+            coveringPeriodTotal(cb, root.get("brokerCommission"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)
                 ?: cb.nullLiteral(BigDecimal::class.java)
         val coveringNightsExpr =
-            coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+            coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)
                 ?: cb.nullLiteral(Int::class.javaObjectType)
 
         // Undated listing priced per WEEK (priceBasis=week, sent by the web's undated landings,
@@ -306,7 +309,7 @@ class YachtQueryingService(
             if (weeklyMode) {
                 weeklyFromValue(cb, root, value, BigDecimal::class.java)
             } else {
-                exactPeriodOrMin(cb, value, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
+                exactPeriodOrMin(cb, value, clientPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)
             }
         }
         val periodDays: () -> Expression<Int> = {
@@ -438,9 +441,9 @@ class YachtQueryingService(
                 val chosenTotal = chosenOfferTotal(cb, chosenKeyExpr)
                 if (requestedNights!! > WEEK_NIGHTS) {
                     val coveringTotal =
-                        coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)!!
+                        coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)!!
                     val coveringNights =
-                        coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)!!
+                        coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)!!
                     cb.selectCase<BigDecimal>()
                         .`when`(
                             cb.and(
@@ -454,9 +457,9 @@ class YachtQueryingService(
                 }
             } else if (requestedNights != null && requestedNights > WEEK_NIGHTS) {
                 val coveringTotal =
-                    coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)!!
+                    coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)!!
                 val coveringNights =
-                    coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate)!!
+                    coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)!!
                 cb.selectCase<BigDecimal>()
                     .`when`(
                         cb.and(
@@ -830,6 +833,7 @@ class YachtQueryingService(
     private fun exactPeriodOrMin(
         cb: CriteriaBuilder,
         value: Expression<BigDecimal>,
+        client: Expression<BigDecimal>,
         dateFrom: Expression<LocalDate>,
         dateTo: Expression<LocalDate>,
         start: LocalDate?,
@@ -844,15 +848,18 @@ class YachtQueryingService(
         // 26.9.2026: and never reads 0 at all - a yacht whose every matching row is 0 EUR has no price (NULL: the web
         // says "price on request"), not "0 EUR". Dated searches override this column with the chosen offer
         // (offerChoiceKey), so this only prices the undated default path (sister sites, admin, AI chat).
+        // Nor a placeholder: only rows whose CLIENT price reaches the floor ([MIN_WEEK_PRICE_PER_DAY], 300 EUR a week)
+        // count, for all three price columns, so the list price and commission come from the same trusted rows.
+        val trusted = cb.greaterThanOrEqualTo(client, MIN_WEEK_PRICE_PER_DAY)
         val positiveOnly =
             cb.selectCase<BigDecimal>()
-                .`when`(cb.greaterThan(value, BigDecimal.ZERO), value)
+                .`when`(cb.and(trusted, cb.greaterThan(value, BigDecimal.ZERO)), value)
                 .otherwise(cb.nullLiteral(BigDecimal::class.java))
         val minAll = cb.min(positiveOnly)
         if (start == null || end == null) return minAll
         val exactOnly =
             cb.selectCase<BigDecimal>()
-                .`when`(cb.and(cb.equal(dateFrom, start), cb.equal(dateTo, end)), value)
+                .`when`(cb.and(cb.equal(dateFrom, start), cb.equal(dateTo, end), trusted), value)
                 .otherwise(cb.nullLiteral(BigDecimal::class.java))
         return cb.coalesce(cb.min(exactOnly), minAll)
     }
@@ -933,7 +940,8 @@ class YachtQueryingService(
         val client = root.get<BigDecimal>("clientPrice")
         val tier =
             cb.selectCase<String>()
-                .`when`(cb.or(cb.isNull(client), cb.lessThanOrEqualTo(client, BigDecimal.ZERO)), CHOICE_NO_PRICE)
+                // no price, 0 EUR or a placeholder below the floor (a "10 EUR" week): never the card's price
+                .`when`(cb.or(cb.isNull(client), cb.lessThan(client, MIN_WEEK_PRICE_PER_DAY)), CHOICE_NO_PRICE)
                 // custom (admin-managed) yachts have no offer dates: their weekly low price, any week
                 .`when`(cb.isNull(dateFrom), CHOICE_SAME_LENGTH)
                 .`when`(cb.and(cb.equal(dateFrom, start), cb.equal(dateTo, end)), CHOICE_EXACT)
@@ -1119,9 +1127,10 @@ class YachtQueryingService(
         dateTo: Expression<LocalDate>,
         start: LocalDate?,
         end: LocalDate?,
+        client: Expression<BigDecimal>,
     ): Expression<BigDecimal>? {
         if (start == null || end == null) return null
-        val inRange = coveringWeekPredicate(cb, days, dateFrom, dateTo, start, end)
+        val inRange = coveringWeekPredicate(cb, days, dateFrom, dateTo, start, end, client)
         val perOfferTotal = cb.prod(perDay, cb.toBigDecimal(days))
         return cb.sum(
             cb.selectCase<BigDecimal>().`when`(inRange, perOfferTotal).otherwise(cb.literal(BigDecimal.ZERO)),
@@ -1135,9 +1144,10 @@ class YachtQueryingService(
         dateTo: Expression<LocalDate>,
         start: LocalDate?,
         end: LocalDate?,
+        client: Expression<BigDecimal>,
     ): Expression<Int>? {
         if (start == null || end == null) return null
-        val inRange = coveringWeekPredicate(cb, days, dateFrom, dateTo, start, end)
+        val inRange = coveringWeekPredicate(cb, days, dateFrom, dateTo, start, end, client)
         return cb.sum(
             cb.selectCase<Int>().`when`(inRange, days).otherwise(cb.literal(0)),
         )
@@ -1150,7 +1160,8 @@ class YachtQueryingService(
      * search summed 28+21+14+14+14 = 91 nights, the check failed and the card fell back to the
      * cheapest week's per-day rate x 28, quoting a total no partner honours). Weeks are the
      * tiling unit; an exact single-period offer still wins via the numberOfDays check in
-     * applyCoveringPeriodPrice.
+     * applyCoveringPeriodPrice. A placeholder week below [MIN_WEEK_PRICE_PER_DAY] is not a tile, so a period
+     * of "10 EUR" weeks never sums to a price (26.9.2026 review: 2 x 10 EUR = "21 EUR for 14 days").
      */
     private fun coveringWeekPredicate(
         cb: CriteriaBuilder,
@@ -1159,10 +1170,12 @@ class YachtQueryingService(
         dateTo: Expression<LocalDate>,
         start: LocalDate,
         end: LocalDate,
+        client: Expression<BigDecimal>,
     ) = cb.and(
         cb.greaterThanOrEqualTo(dateFrom, start),
         cb.lessThanOrEqualTo(dateTo, end),
         cb.equal(days, WEEK_NIGHTS),
+        cb.greaterThanOrEqualTo(client, MIN_WEEK_PRICE_PER_DAY),
     )
 
     /**
@@ -1367,17 +1380,28 @@ class YachtQueryingService(
         // PICKUP ONLY (26.9.2026 audit B14): a destination lists the boats that START there. Matching the drop-off
         // too put boats based elsewhere on every landing that is a one-way end point — the Dubrovnik catamaran
         // landing listed Kaštela boats with a one-way week into Dubrovnik ("Catamaran charter in ACI Marina
-        // Dubrovnik", 0 of 18 cards based in Dubrovnik). The facets (YachtDistributionService) and the charter facts
-        // use the same pickup rule, so the H2, the type chips and the facts tile count the same boats.
+        // Dubrovnik", 0 of 18 cards based in Dubrovnik).
+        //
+        // BASED HERE on an undated search (the landings, the sitemap, the gate counts; review 26.9.2026): a pickup
+        // is not enough either. The Dubrovnik landings' headline cards were "ACI Marina Dubrovnik » Marina Kaštela":
+        // Kaštela boats whose one-way week STARTS in Dubrovnik (repositioning weeks back to their base). An undated
+        // row counts only when the boat also ends the charter in the destination (no
+        // drop-off, the same place, or another place in scope) or is based there (yacht.location_id in scope). A
+        // dated search keeps every pickup: for the searched dates a one-way is a real option. The facets, the relax
+        // suggestions (DestinationScopeSql) and the charter facts apply the same rule, so the H2, the type chips and
+        // the facts tile count the same boats.
         val did = resolveSearchDidScope(searchParams.locationIds)
         val didPredicates = mutableListOf<Predicate>()
         if (did.marinaIds.isNotEmpty()) {
-            didPredicates.add(root.get<String>("locationFrom").`in`(did.marinaIds))
+            didPredicates.add(root.get<Long>("locationFrom").`in`(did.marinaIds))
         }
         if (did.countryCodes.isNotEmpty()) {
             didPredicates.add(root.get<String>("countryCode").`in`(did.countryCodes))
         }
+        val undatedSearch = searchParams.startDate == null && searchParams.endDate == null
         when {
+            didPredicates.isNotEmpty() && undatedSearch ->
+                predicates.add(cb.and(cb.or(*didPredicates.toTypedArray()), basedHere(cq, cb, root, did)))
             didPredicates.isNotEmpty() -> predicates.add(cb.or(*didPredicates.toTypedArray()))
             // An asked-for destination that resolves to nothing restricts to nothing — see
             // [resolveSearchDidScope] (16.9.2026 cusma2 load incident). `cb.disjunction()` is
@@ -1714,6 +1738,34 @@ class YachtQueryingService(
         val countryCodes: List<String>,
         val matchesNothing: Boolean,
     )
+
+    /**
+     * The undated "based here" half of a destination match (26.9.2026 audit B14, see buildYachtSearchPredicates): the
+     * row's drop-off is empty or in scope, or the boat's home base (yacht.location_id) is in scope. The home-base
+     * subquery is uncorrelated (a hashed sub-plan over the ~15k yachts). SQL twin: [DestinationScopeSql.basedHere].
+     */
+    private fun basedHere(
+        cq: CriteriaQuery<*>,
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        did: SearchDidScope,
+    ): Predicate {
+        val locationTo = root.get<Long>("locationTo")
+        val ends = mutableListOf<Predicate>(cb.isNull(locationTo))
+        val homes = cq.subquery(Long::class.java)
+        val yacht = homes.from(Yacht::class.java)
+        val home = mutableListOf<Predicate>()
+        if (did.marinaIds.isNotEmpty()) {
+            ends.add(locationTo.`in`(did.marinaIds))
+            home.add(yacht.get<Location>("location").get<Long>("id").`in`(did.marinaIds))
+        }
+        if (did.countryCodes.isNotEmpty()) {
+            ends.add(root.get<String>("countryCodeTo").`in`(did.countryCodes))
+            home.add(yacht.get<Location>("location").get<String>("countryCode").`in`(did.countryCodes))
+        }
+        homes.select(yacht.get("id")).where(cb.or(*home.toTypedArray()))
+        return cb.or(*ends.toTypedArray(), root.get<Long>("id").`in`(homes))
+    }
 
     /**
      * Resolve `did=c-54 / r-12 / l-9001` into the ids the search can match on.

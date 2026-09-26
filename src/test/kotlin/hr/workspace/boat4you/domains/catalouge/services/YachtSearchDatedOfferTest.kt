@@ -107,6 +107,9 @@ class YachtSearchDatedOfferTest {
         private val S: LocalDate = LocalDate.of(2030, 6, 15)
         private val E: LocalDate = S.plusDays(3)
 
+        /** A Saturday far from the other fixtures: yacht 9's placeholder weeks. */
+        private val P: LocalDate = LocalDate.of(2030, 8, 3)
+
         private val OFFERS: List<SeedOffer> =
             listOf(
                 // 1: only weeks - the week BEFORE (ends on the searched start) and the week that covers the search
@@ -134,13 +137,19 @@ class YachtSearchDatedOfferTest {
                 // 8: undated weekly - a grid of 10 EUR placeholder weeks
                 SeedOffer(8, TODAY.plusWeeks(2), 7, 10),
                 SeedOffer(8, TODAY.plusWeeks(3), 7, 10),
+                // 9: dated - a grid of 10 EUR placeholder weeks (Valencia, 1.49 EUR a day), and one 3-night row at
+                // 120 EUR (40 EUR a night, below the 300 EUR-a-week floor)
+                SeedOffer(9, P, 7, 10),
+                SeedOffer(9, P.plusDays(7), 7, 10),
+                SeedOffer(9, P.plusDays(14), 7, 10),
+                SeedOffer(9, P.plusDays(7), 3, 120),
             )
 
         private val SEED: String =
             buildString {
                 appendLine("INSERT INTO location (id, display_name, country_code) VALUES (1, 'Marina Kastela | Split', 'HR');")
                 appendLine("INSERT INTO agency (id, name, active, availability_blocked, recommended) VALUES (1, 'Agency', true, false, false);")
-                (1..8).forEach { id ->
+                (1..9).forEach { id ->
                     appendLine(
                         "INSERT INTO yacht (id, name, agency_id, entry_type, sys_active, vessel_type, location_id) " +
                             "VALUES ($id, 'Yacht $id', 1, 'EXTERNAL', true, 'SAILING_YACHT', 1);",
@@ -369,5 +378,22 @@ class YachtSearchDatedOfferTest {
             assertTrue(price == null || price > BigDecimal.ZERO, "yacht ${row.id}: $price")
         }
         assertNull(byId(rows).getValue(4).clientPrice, "yacht 4: only 0 EUR rows -> no price")
+        assertNull(byId(rows).getValue(8).clientPrice, "yacht 8: only 10 EUR weeks -> no price, never 1.43 EUR a day")
+        assertNull(byId(rows).getValue(9).clientPrice, "yacht 9: only placeholder rows -> no price")
+    }
+
+    @Test
+    fun `dated 7- and 14-night searches over 10 EUR placeholder weeks - price on request, never 10 or 21 EUR`() {
+        listOf(7L, 14L, 3L).forEach { nights ->
+            val start = if (nights == 3L) P.plusDays(7) else P
+            val (rows, _) = search(params(weekly = false, start = start, end = start.plusDays(nights)))
+            val nine = rows.single { it.id == 9L }
+            assertNull(nine.clientPrice, "$nights nights: a placeholder is never the card's price")
+            assertNull(nine.numberOfDays, "$nights nights")
+            assertNull(nine.offerDateFrom, "$nights nights: no offer dates, the card links the searched pair")
+            assertNull(nine.offerDateTo, "$nights nights")
+            // ranked after every priced card
+            assertEquals(9L, search(params(weekly = false, start = start, end = start.plusDays(nights)), sortBy = "desc").first.last().id)
+        }
     }
 }

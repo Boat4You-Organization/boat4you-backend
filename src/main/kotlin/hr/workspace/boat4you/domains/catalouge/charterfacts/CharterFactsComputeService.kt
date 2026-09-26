@@ -54,7 +54,10 @@ import java.time.ZoneOffset
  *  - did membership by pickup marina: c- = marina country (country.code2), r- = location_region with the search's
  *    own-country guard, l- = the marina and every row of the same physical place ([MarinaPlaces]: same spelling,
  *    one name inside the other, curated location_same_place pairs — vetoed by coordinates / city). Drop-off-only
- *    matches (one-way INTO the destination) are not counted — facts describe boats based there.
+ *    matches (one-way INTO the destination) are not counted — facts describe boats based there. Like the undated
+ *    listing (YachtQueryingService, "based here"), a week counts for a did only when it also ends there (no
+ *    drop-off, the same place, or another place of the did) or the boat's home base (yacht.location_id) is in the
+ *    did: a Kaštela boat's one-way week from Dubrovnik back to Kaštela is not a Dubrovnik boat ([based]).
  *
  * Keys written: every promoted country (c-) with at least one boat, every r- / l- with >= [MIN_BOATS] boats, every
  * dual-source region pair ("r-187,r-19", REGION_PAIR_SCOPE_SQL) with >= [MIN_BOATS] boats, each for all types plus
@@ -269,7 +272,8 @@ class CharterFactsComputeService(
                 SELECT l.id, l.name, l.country_code, l.city, l.lat, l.lon
                 FROM location l
                 WHERE l.name IS NOT NULL
-                  AND (l.id IN (SELECT location_id FROM cf_week UNION SELECT location_id FROM cf_listed)
+                  AND (l.id IN (SELECT location_id FROM cf_week UNION SELECT location_to FROM cf_week
+                                UNION SELECT location_id FROM cf_listed UNION SELECT location_to FROM cf_listed)
                        OR EXISTS (SELECT 1 FROM yacht y WHERE y.location_id = l.id))
                 """.trimIndent(),
             ) { rs, _ ->
@@ -351,6 +355,8 @@ class CharterFactsComputeService(
                        o.yacht_id,
                        o.date_from,
                        o.location_from AS location_id,
+                       o.location_to,
+                       y.location_id AS home_id,
                        y.vessel_type,
                        bool_or(o.status = 'FREE') OVER yw AS is_free,
                        bool_or(o.status <> 'UNAVAILABLE') OVER yw AS has_bookable,
@@ -393,8 +399,10 @@ class CharterFactsComputeService(
         fun listed(codes: String) =
             """
             CREATE TEMP TABLE cf_listed ON COMMIT DROP AS
-            SELECT DISTINCT v.id AS yacht_id, v.location_from AS location_id, v.vessel_type::varchar AS vessel_type
+            SELECT DISTINCT v.id AS yacht_id, v.location_from AS location_id, v.location_to, y.location_id AS home_id,
+                   v.vessel_type::varchar AS vessel_type
             FROM yacht_search_view v
+            LEFT JOIN yacht y ON y.id = v.id
             WHERE v.offer_status <> 'UNAVAILABLE'
               AND (v.date_from IS NULL OR v.date_from >= $today)
               AND v.country_code IN ($codes)
@@ -407,7 +415,7 @@ class CharterFactsComputeService(
             CREATE TEMP TABLE cf_member ON COMMIT DROP AS
             SELECT DISTINCT s.did, w.yacht_id, w.vessel_type
             FROM cf_week w JOIN cf_scope s ON s.location_id = w.location_id
-            WHERE w.has_bookable AND w.date_from < $membershipTo
+            WHERE w.has_bookable AND w.date_from < $membershipTo AND ${based("s", "w")}
             """.trimIndent()
 
         fun months() =
@@ -425,7 +433,7 @@ class CharterFactsComputeService(
                   FROM cf_week w
                   JOIN cf_scope s ON s.location_id = w.location_id
                   JOIN cf_member m ON m.did = s.did AND m.yacht_id = w.yacht_id
-                  WHERE w.date_from >= $monthsFrom AND w.date_from < $monthsTo) x
+                  WHERE w.date_from >= $monthsFrom AND w.date_from < $monthsTo AND ${based("s", "w")}) x
             GROUP BY GROUPING SETS ((did, month), (did, vessel_type, month))
             """.trimIndent()
 
@@ -443,7 +451,7 @@ class CharterFactsComputeService(
                 JOIN cf_member m ON m.did = s.did AND m.yacht_id = w.yacht_id
                 JOIN cf_key_month k ON k.did = s.did AND (k.vessel_type IS NULL OR k.vessel_type = w.vessel_type)
                                    AND k.month = to_char(w.date_from, 'YYYY-MM')
-                WHERE w.stat_price IS NOT NULL AND w.date_from >= $monthsFrom AND w.date_from < $monthsTo
+                WHERE w.stat_price IS NOT NULL AND w.date_from >= $monthsFrom AND w.date_from < $monthsTo AND ${based("s", "w")}
             ),
             need AS (SELECT did, vessel_type, count(*) AS months FROM cf_key_month GROUP BY did, vessel_type),
             panel AS (
@@ -474,7 +482,7 @@ class CharterFactsComputeService(
                   FROM cf_week w
                   JOIN cf_scope s ON s.location_id = w.location_id
                   JOIN cf_member m ON m.did = s.did AND m.yacht_id = w.yacht_id
-                  WHERE w.date_from < $membershipTo) x
+                  WHERE w.date_from < $membershipTo AND ${based("s", "w")}) x
             GROUP BY GROUPING SETS ((did, dow), (did, vessel_type, dow))
             """.trimIndent()
 
@@ -487,11 +495,11 @@ class CharterFactsComputeService(
             """
             WITH x AS (
                 SELECT s.did, yl.vessel_type, yl.yacht_id, p.place_id
-                FROM (SELECT DISTINCT yacht_id, vessel_type, location_id
+                FROM (SELECT DISTINCT yacht_id, vessel_type, location_id, location_to, home_id
                       FROM cf_week WHERE has_bookable AND date_from < $membershipTo) yl
                 JOIN cf_scope s ON s.location_id = yl.location_id
                 JOIN cf_place p ON p.location_id = yl.location_id
-                WHERE s.did NOT LIKE 'l-%'
+                WHERE s.did NOT LIKE 'l-%' AND ${based("s", "yl")}
             ),
             agg AS (
                 SELECT did, $VT, place_id, count(DISTINCT yacht_id) AS n
@@ -610,6 +618,19 @@ class CharterFactsComputeService(
         private val COUNTRY_CODE = Regex("^[A-Z]{2}$")
 
         /**
+         * "Based here" (26.9.2026 audit B14, the undated listing's rule): a row [w] (location_id = pickup, location_to,
+         * home_id = yacht.location_id) counts for the did of scope row [s] only when it ends in the did - no drop-off,
+         * the pickup itself, or another location of the did - or the boat's home base is in the did. Uncorrelated
+         * row IN lists (one hashed sub-plan each) over cf_scope, which also holds every drop-off and home base (used).
+         */
+        fun based(
+            s: String,
+            w: String,
+        ) = "($w.location_to IS NULL OR $w.location_to = $w.location_id " +
+            "OR ($s.did, $w.location_to) IN (SELECT did, location_id FROM cf_scope) " +
+            "OR ($s.did, $w.home_id) IN (SELECT did, location_id FROM cf_scope))"
+
+        /**
          * Every location the run sees mapped to its dids. The same did can map a marina more than once (two regions,
          * sibling rows of one place) — DISTINCT via UNION. l- = every row of the location's physical place (cf_place).
          */
@@ -617,9 +638,12 @@ class CharterFactsComputeService(
             """
             CREATE TEMP TABLE cf_scope ON COMMIT DROP AS
             WITH used AS (
+                -- pickups, drop-offs and home bases: the based-here test (based) looks the last two up in cf_scope
                 SELECT l.id, l.country_code
                 FROM location l
-                WHERE l.id IN (SELECT location_id FROM cf_week UNION SELECT location_id FROM cf_listed)
+                WHERE l.id IN (SELECT location_id FROM cf_week UNION SELECT location_to FROM cf_week UNION SELECT home_id FROM cf_week
+                               UNION SELECT location_id FROM cf_listed UNION SELECT location_to FROM cf_listed
+                               UNION SELECT home_id FROM cf_listed)
             )
             SELECT 'c-' || c.id AS did, u.id AS location_id
             FROM used u JOIN country c ON c.code2 = u.country_code
@@ -707,7 +731,8 @@ class CharterFactsComputeService(
         val LISTED_COUNT_SQL =
             """
             SELECT did, $VT, count(DISTINCT yacht_id) AS boats
-            FROM (SELECT s.did, li.vessel_type, li.yacht_id FROM cf_listed li JOIN cf_scope s ON s.location_id = li.location_id) x
+            FROM (SELECT s.did, li.vessel_type, li.yacht_id FROM cf_listed li JOIN cf_scope s ON s.location_id = li.location_id
+                  WHERE ${based("s", "li")}) x
             GROUP BY GROUPING SETS ((did), (did, vessel_type))
             """.trimIndent()
 

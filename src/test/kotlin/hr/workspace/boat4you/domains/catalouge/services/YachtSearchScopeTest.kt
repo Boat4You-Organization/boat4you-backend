@@ -46,6 +46,8 @@ import java.time.LocalDate
 /**
  * 26.9.2026 audit B14 / B12: a destination lists the boats BASED there, and only bookable ones.
  *  - pickup only: the Dubrovnik catamaran landing listed Kaštela boats with a one-way week into Dubrovnik;
+ *  - undated, based here (review): nor a Kaštela boat whose one-way week STARTS in Dubrovnik and ends at home (117);
+ *    a Dubrovnik boat with only a one-way week out still is one (118, home base); a dated search keeps the one-way;
  *  - one physical marina, all its rows: "Marina Kaštela" / "Marina Kastela" (same spelling) and the curated
  *    "D-Marin Marina Lefkas" / "Lefkas, D-Marin" (location_same_place) - but never a same-named marina 170 km away;
  *  - undated = bookable: a boat whose offers all lie in the past is neither listed nor counted.
@@ -125,7 +127,7 @@ class YachtSearchScopeTest {
                 val boats =
                     mapOf(
                         101 to 1, 102 to 1, 103 to 3, 104 to 2, 105 to 3, 106 to 4, 107 to 5, 108 to 7, 109 to 8, 110 to 9,
-                        111 to 10, 112 to 11,
+                        111 to 10, 112 to 11, 117 to 1,
                     )
                 boats.forEach { (id, home) ->
                     appendLine(
@@ -163,6 +165,12 @@ class YachtSearchScopeTest {
                 boats.forEach { (id, home) -> if (id != 105) offer(id, home, home, w) }
                 // 102: also a one-way week from Kaštela INTO Dubrovnik
                 offer(102, 1, 3, w.plusWeeks(1), 2500)
+                // 117 (home Kaštela): also a one-way week from Dubrovnik back to Kaštela - "ACI Marina Dubrovnik » Marina
+                // Kaštela", the Dubrovnik landing's headline cards; 118 (home Dubrovnik): only a one-way week out
+                offer(117, 3, 1, w.plusWeeks(1), 2600)
+                appendLine("INSERT INTO yacht (id, name, agency_id, entry_type, vessel_type, location_id) VALUES (118, 'Yacht 118', 1, 'EXTERNAL', 'CATAMARAN', 3);")
+                appendLine("INSERT INTO yacht_charter_type (id, yacht_id, type) VALUES (118, 118, 'BAREBOAT');")
+                offer(118, 3, 1, w, 2700)
                 // 105: based in Dubrovnik, but every offer is in the past (still in the matview for 30 days)
                 offer(105, 3, 3, TODAY.minusDays(17))
                 // the twins and the fleet boats: 113 has the fuller calendar, so it is the copy shown
@@ -311,17 +319,32 @@ class YachtSearchScopeTest {
     @Test
     fun `a marina lists the boats that start there, not a one-way week into it, nor a boat with only past offers`() {
         val (ids, total, chips) = landing("l-3")
-        ids shouldContainExactlyInAnyOrder listOf(103L)
-        total shouldBe 1L
-        chips shouldBe 1L
+        ids shouldContainExactlyInAnyOrder listOf(103L, 118L)
+        total shouldBe 2L
+        chips shouldBe 2L
+    }
+
+    @Test
+    fun `undated, a one-way week back to another base is not a boat based here - dated, it is a real option`() {
+        // 117 (Kaštela) starts a one-way week in Dubrovnik: not on the Dubrovnik marina or region landing, still on
+        // Kaštela's and on the country's (both ends in Croatia); 118 is based in Dubrovnik, its one-way week counts
+        landing("l-3").first.contains(117L) shouldBe false
+        landing("r-6").first.contains(117L) shouldBe false
+        landing("l-1").first.contains(117L) shouldBe true
+        landing("c-54").first.contains(117L) shouldBe true
+        landing("r-6").first.contains(118L) shouldBe true
+        clearInvocations(yachtMapper)
+        val start = TODAY.plusWeeks(4)
+        service.getYachts(params(listOf("l-3")).copy(startDate = start, endDate = start.plusDays(7)), "", LanguageEnum.EN, 0, 50, false)
+        mockingDetails(yachtMapper).invocations.map { it.getArgument<YachtSearchSelectResult>(0).id }.contains(117L) shouldBe true
     }
 
     @Test
     fun `a region lists its based boats only - Frapa Rogoznica is not in the Dubrovnik region`() {
         val (ids, total, chips) = landing("r-6")
-        ids shouldContainExactlyInAnyOrder listOf(103L, 107L, 113L, 115L, 116L)
-        total shouldBe 5L
-        chips shouldBe 5L
+        ids shouldContainExactlyInAnyOrder listOf(103L, 107L, 113L, 115L, 116L, 118L)
+        total shouldBe 6L
+        chips shouldBe 6L
     }
 
     @Test
@@ -336,8 +359,8 @@ class YachtSearchScopeTest {
 
     @Test
     fun `one marina, all its rows - never the same name 170 km away`() {
-        landing("l-1").first shouldContainExactlyInAnyOrder listOf(101L, 102L, 104L)
-        landing("l-2").first shouldContainExactlyInAnyOrder listOf(101L, 102L, 104L)
+        landing("l-1").first shouldContainExactlyInAnyOrder listOf(101L, 102L, 104L, 117L)
+        landing("l-2").first shouldContainExactlyInAnyOrder listOf(101L, 102L, 104L, 117L)
         // one name, two places 280 km apart: each keeps its own boats, the row without data cannot be placed
         landing("l-7").first shouldContainExactlyInAnyOrder listOf(108L)
         landing("l-10").first shouldContainExactlyInAnyOrder listOf(111L)
@@ -353,8 +376,9 @@ class YachtSearchScopeTest {
     @Test
     fun `a country counts bookable boats - the H2 and the chips agree`() {
         val (ids, total, chips) = landing("c-54")
-        ids shouldContainExactlyInAnyOrder listOf(101L, 102L, 103L, 104L, 106L, 107L, 108L, 111L, 112L, 113L, 115L, 116L)
-        total shouldBe 12L
-        chips shouldBe 12L
+        ids shouldContainExactlyInAnyOrder
+            listOf(101L, 102L, 103L, 104L, 106L, 107L, 108L, 111L, 112L, 113L, 115L, 116L, 117L, 118L)
+        total shouldBe 14L
+        chips shouldBe 14L
     }
 }

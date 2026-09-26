@@ -116,17 +116,13 @@ class YachtRelaxSuggestionService(
             filters.marinaIds == null && filters.didCountryCodes == null -> {}
             !hasMarinas && !hasDidCountries -> clauses += "FALSE"
             else -> {
-                val ors = mutableListOf<String>()
-                // Pickup only, like the search (26.9.2026 audit B14).
-                if (hasMarinas) {
-                    ors += "location_from IN (:marinaIds)"
-                    params["marinaIds"] = filters.marinaIds!!
+                // Pickup only, and undated also based here, like the search (26.9.2026 audit B14).
+                if (hasMarinas) params["marinaIds"] = filters.marinaIds!!
+                if (hasDidCountries) params["didCountryCodes"] = filters.didCountryCodes!!
+                clauses += DestinationScopeSql.pickup(hasMarinas, hasDidCountries)
+                if (filters.startDate == null && filters.endDate == null) {
+                    clauses += DestinationScopeSql.basedHere(hasMarinas, hasDidCountries)
                 }
-                if (hasDidCountries) {
-                    ors += "country_code IN (:didCountryCodes)"
-                    params["didCountryCodes"] = filters.didCountryCodes!!
-                }
-                clauses += "(${ors.joinToString(" OR ")})"
             }
         }
         filters.startDate?.let {

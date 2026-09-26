@@ -305,11 +305,9 @@ class YachtDistributionService(
             ctx.marinaIds == null && ctx.didCountryCodes == null -> {}
             !hasMarinas && !hasDidCountries -> parts.add(" AND FALSE")
             else -> {
-                val ors = mutableListOf<String>()
-                // Pickup only, like the search (audit B14): a destination counts the boats that start there.
-                if (hasMarinas) ors.add("location_from IN (:marinaIds)")
-                if (hasDidCountries) ors.add("country_code IN (:didCountryCodes)")
-                parts.add(" AND (${ors.joinToString(" OR ")})")
+                // Pickup only, and undated also based here, like the search (audit B14).
+                parts.add(" AND ${DestinationScopeSql.pickup(hasMarinas, hasDidCountries)}")
+                if (ctx.startDate == null && ctx.endDate == null) parts.add(" AND ${DestinationScopeSql.basedHere(hasMarinas, hasDidCountries)}")
             }
         }
         if (ctx.startDate != null && ctx.endDate != null) {

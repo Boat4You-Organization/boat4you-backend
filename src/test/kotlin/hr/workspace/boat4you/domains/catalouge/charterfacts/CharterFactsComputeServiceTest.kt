@@ -433,6 +433,46 @@ class CharterFactsComputeServiceTest {
 
     @Test
     @Order(7)
+    fun `B14 - a one-way week back to another base is not a boat based at its pickup`() {
+        // 34 (home ACI Split) and 35 (home Kaštela) each have only one-way weeks Kaštela -> ACI Split. 34 is an ACI
+        // Split boat on a repositioning week: not a Kaštela boat (l-1 / l-2), but a Croatian and a Split-region one
+        // (both ends in scope). 35 is based at Kaštela: its one-way week out still makes it a Kaštela boat.
+        jdbc.update(
+            "INSERT INTO yacht (id, name, agency_id, entry_type, sys_active, build_year, model_id, vessel_type, location_id) VALUES " +
+                "(34, 'Yacht 34', 1, 'EXTERNAL', true, 2019, 3, 'SAILING_YACHT', 3), (35, 'Yacht 35', 1, 'EXTERNAL', true, 2019, 3, 'SAILING_YACHT', 1)",
+        )
+        jdbc.update("INSERT INTO yacht_charter_type (yacht_id, type) VALUES (34, 'BAREBOAT'), (35, 'BAREBOAT')")
+        for (y in listOf(34, 35)) {
+            for (d in listOf(W1, W3)) {
+                jdbc.update(
+                    "INSERT INTO offer (yacht_id, location_from, location_to, date_from, date_to, client_price, status, ext_base_price, " +
+                        "broker_commission, deposit) VALUES (?, 1, 3, ?, ?, 1500, 'FREE', 1500, 0, 0)",
+                    y, java.sql.Date.valueOf(d), java.sql.Date.valueOf(d.plusDays(7)),
+                )
+            }
+        }
+        try {
+            CharterFactsTestDb.refreshSearchView(jdbc)
+            service.recompute(today = TODAY).stored shouldBe true
+            // l-1 = the Kaštela place: 1-12 + 35 (+ custom 18 listed); never 34
+            facts("l-1")["boatsWithWeeklyPrices"].asLong() shouldBe 13L
+            facts("l-1")["activeBoats"].asLong() shouldBe 14L
+            facts("l-2")["activeBoats"].asLong() shouldBe 14L
+            // the country and the Split region: both ends in scope, both boats count
+            facts("c-54")["boatsWithWeeklyPrices"].asLong() shouldBe 28L
+            facts("c-54")["activeBoats"].asLong() shouldBe 29L
+            facts("r-5")["boatsWithWeeklyPrices"].asLong() shouldBe 28L
+        } finally {
+            jdbc.update("DELETE FROM offer WHERE yacht_id IN (34, 35)")
+            jdbc.update("DELETE FROM yacht_charter_type WHERE yacht_id IN (34, 35)")
+            jdbc.update("DELETE FROM yacht WHERE id IN (34, 35)")
+            CharterFactsTestDb.refreshSearchView(jdbc)
+            service.recompute(today = TODAY).stored shouldBe true
+        }
+    }
+
+    @Test
+    @Order(8)
     fun `re-run replaces the snapshot, a collapsed input keeps yesterday's facts`() {
         val first = rows()
         service.recompute(today = TODAY).stored shouldBe true
