@@ -23,10 +23,12 @@ import hr.workspace.boat4you.domains.catalouge.jpa.ManufacturerRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Model
 import hr.workspace.boat4you.domains.catalouge.jpa.ModelRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Region
+import hr.workspace.boat4you.domains.catalouge.jpa.RegionAliasRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
+import hr.workspace.boat4you.domains.catalouge.services.RegionNames
 import hr.workspace.boat4you.domains.catalouge.services.ManufacturerAliasResolver
 import hr.workspace.boat4you.domains.catalouge.services.applyLocationRegions
 import hr.workspace.boat4you.domains.catalouge.services.ModelNameNormaliser
@@ -56,6 +58,7 @@ class NauSysCatalogueSyncService(
     private val externalMappingService: ExternalMappingService,
     private val countryRepository: CountryRepository,
     private val regionRepository: RegionRepository,
+    private val regionAliasRepository: RegionAliasRepository,
     private val locationRepository: LocationRepository,
     private val locationQueryingService: LocationQueryingService,
     private val manufacturerRepository: ManufacturerRepository,
@@ -301,14 +304,15 @@ class NauSysCatalogueSyncService(
             val mapping = allMappings.find { mapping -> mapping.externalId == it.id }
 
             val region =
-                if (mapping != null) {
-                    regionRepository.findById(mapping.systemId!!).get()
-                } else {
-                    val r = regionRepository.findByName(it.name!!.textEN!!)
-                    r ?: Region()
-                }
+                RegionNames.findOrNew(
+                    mapping?.let { m -> regionRepository.findById(m.systemId!!).get() },
+                    it.name!!.textEN!!,
+                    regionRepository,
+                )
 
-            region.name = it.name?.textEN
+            // region.name is the landing key (URL, canonical, sitemap, index gate): set it only on a new region,
+            // keep NauSys's spelling as an alias. Overwriting it flipped r-3/r-4/r-5/r-193 with every sync (audit B01).
+            RegionNames.nameNewRegion(region, it.name?.textEN)
 
             val countryMapping = allCountryMappings.find { countryMapping -> countryMapping.externalId == it.countryId }
             val country = countryRepository.findById(countryMapping?.systemId!!).get()
@@ -316,6 +320,7 @@ class NauSysCatalogueSyncService(
             region.country = country
             region.countryCode = country.code2
             regionRepository.saveAndFlush(region)
+            RegionNames.recordSpelling(region, it.name?.textEN, RegionNames.SOURCE_NAUSYS, regionAliasRepository)
 
             if (mapping == null) {
                 externalMappingService.saveMapping(

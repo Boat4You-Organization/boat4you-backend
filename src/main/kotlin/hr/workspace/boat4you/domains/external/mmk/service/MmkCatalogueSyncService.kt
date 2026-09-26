@@ -14,9 +14,11 @@ import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Manufacturer
 import hr.workspace.boat4you.domains.catalouge.jpa.ManufacturerRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Region
+import hr.workspace.boat4you.domains.catalouge.jpa.RegionAliasRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
+import hr.workspace.boat4you.domains.catalouge.services.RegionNames
 import hr.workspace.boat4you.domains.catalouge.services.ManufacturerAliasResolver
 import hr.workspace.boat4you.domains.catalouge.services.applyLocationRegions
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
@@ -39,6 +41,7 @@ class MmkCatalogueSyncService(
     private val agencyRepository: AgencyRepository,
     private val agencySourceRepository: AgencySourceRepository,
     private val regionRepository: RegionRepository,
+    private val regionAliasRepository: RegionAliasRepository,
     private val manufacturerRepository: ManufacturerRepository,
     private val locationQueryingService: LocationQueryingService,
     private val locationRepository: LocationRepository,
@@ -198,15 +201,17 @@ class MmkCatalogueSyncService(
             val mapping = allMappings.find { mapping -> mapping.externalId == mmkSailingArea.id }
 
             val region =
-                if (mapping != null) {
-                    regionRepository.findById(mapping.systemId!!).get()
-                } else {
-                    val r = regionRepository.findByName(mmkSailingArea.name)
-                    r ?: Region()
-                }
+                RegionNames.findOrNew(
+                    mapping?.let { regionRepository.findById(it.systemId!!).get() },
+                    mmkSailingArea.name,
+                    regionRepository,
+                )
 
-            region.name = mmkSailingArea.name
+            // region.name is the landing key (URL, canonical, sitemap, index gate): set it only on a new region,
+            // keep MMK's spelling as an alias. Overwriting it flipped r-3/r-4/r-5/r-193 with every sync (audit B01).
+            RegionNames.nameNewRegion(region, mmkSailingArea.name)
             regionRepository.saveAndFlush(region)
+            RegionNames.recordSpelling(region, mmkSailingArea.name, RegionNames.SOURCE_MMK, regionAliasRepository)
 
             if (mapping == null) {
                 externalMappingService.saveMapping(

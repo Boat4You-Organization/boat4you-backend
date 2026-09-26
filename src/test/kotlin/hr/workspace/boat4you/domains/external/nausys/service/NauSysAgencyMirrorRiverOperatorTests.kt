@@ -37,6 +37,7 @@ class NauSysAgencyMirrorRiverOperatorTests {
             externalMappingService = any(),
             countryRepository = any(),
             regionRepository = any(),
+            regionAliasRepository = any(),
             locationRepository = any(),
             locationQueryingService = any(),
             manufacturerRepository = any(),

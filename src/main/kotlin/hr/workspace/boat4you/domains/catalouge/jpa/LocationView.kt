@@ -43,4 +43,9 @@ open class LocationView protected constructor() {
     @Column(name = "search_filed", length = Integer.MAX_VALUE)
     open var searchFiled: String? = null
         protected set
+
+    /** REGION only: other known spellings, '|'-separated (R__1_07, region_alias). */
+    @Column(name = "aliases", length = Integer.MAX_VALUE)
+    open var aliases: String? = null
+        protected set
 }

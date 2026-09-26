@@ -30,6 +30,7 @@ fun LocationView.toLocationViewDto(): LocationViewDto =
         name = name,
         locationType = locationType,
         countryCode = countryCode,
+        aliases = aliases?.split('|')?.map { it.trim() }?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() },
     )
 
 fun AllLocationView.toLocationViewDto(): LocationViewDto =

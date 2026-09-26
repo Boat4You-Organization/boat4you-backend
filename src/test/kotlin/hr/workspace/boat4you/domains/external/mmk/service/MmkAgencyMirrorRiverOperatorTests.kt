@@ -43,6 +43,7 @@ class MmkAgencyMirrorRiverOperatorTests {
             agencyRepository = agencies,
             agencySourceRepository = sources,
             regionRepository = any(),
+            regionAliasRepository = any(),
             manufacturerRepository = any(),
             locationQueryingService = any(),
             locationRepository = any(),
