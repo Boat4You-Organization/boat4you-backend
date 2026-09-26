@@ -242,8 +242,8 @@ class CharterFactsComputeService(
 
     /**
      * Like-for-like month prices (B11): per key, the months [CharterFactsMath.priceMonths] shows, priced over the panel
-     * of boats that have a trusted price in EVERY one of them. A month then reads dearer only because the same boats
-     * cost more in it — never because only the big crewed yachts publish December prices.
+     * of boats that have a trusted price in (nearly) every one of them. A month then reads dearer only because the same
+     * boats cost more in it — never because only the big crewed yachts publish December prices.
      */
     private fun panelMonths(
         jdbc: JdbcTemplate,
@@ -431,7 +431,8 @@ class CharterFactsComputeService(
 
         /**
          * Price figures of the chosen months (cf_key_month, vessel_type NULL = all types) over the key's panel: boats
-         * with a trusted price in every chosen month. Weeks, not boats, are the values (as in [months]).
+         * with a trusted price in (nearly) every chosen month - at least PANEL_MONTH_SHARE of them, so one sold-out
+         * August does not drop a popular boat from the whole table. Weeks, not boats, are the values (as in [months]).
          */
         fun panel() =
             """
@@ -450,7 +451,7 @@ class CharterFactsComputeService(
                 FROM bm
                 JOIN need n ON n.did = bm.did AND n.vessel_type IS NOT DISTINCT FROM bm.vessel_type
                 GROUP BY bm.did, bm.vessel_type, bm.yacht_id, n.months
-                HAVING count(DISTINCT bm.month) = n.months
+                HAVING count(DISTINCT bm.month) >= ceil(n.months * ${CharterFactsMath.PANEL_MONTH_SHARE})
             )
             SELECT bm.did, bm.vessel_type, bm.month,
                    0::bigint AS weeks,

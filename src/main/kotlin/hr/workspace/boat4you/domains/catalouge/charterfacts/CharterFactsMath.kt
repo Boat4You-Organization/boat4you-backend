@@ -19,9 +19,9 @@ import java.time.LocalDate
  *  - a thin month (only the few boats that publish winter prices) was ranked against a fully covered one, and every
  *    month described a different fleet (Croatia's November median above October's, Kornati motor yachts "dearest in
  *    November"): a month is shown only when at least [MONTH_COVERAGE] of the best-covered month's boats have a price in
- *    it (and at least [MIN_SAMPLE] boats), and the shown months are then priced LIKE FOR LIKE - over the same boats,
- *    those with a price in every shown month (the compute service's panel) - so a month can only read dearer because
- *    the same boats cost more in it;
+ *    it (and at least [MIN_SAMPLE] boats), and the shown months are then priced LIKE FOR LIKE - over one panel of
+ *    boats, those with a price in (nearly) every shown month ([PANEL_MONTH_SHARE]) - so a month can only read dearer
+ *    because the same boats cost more in it;
  *  - placeholder and typo prices were medians: a week below [MIN_WEEK_PRICE] EUR, and every week of a boat whose
  *    cheapest week is below [OUTLIER_RATIO] of its dearest (the same guard as the listing's priceBasis=week), never
  *    enters a price figure (SQL side, see [CharterFactsComputeService]).
@@ -42,6 +42,13 @@ object CharterFactsMath {
      * are not comparable with the season: their median describes another fleet.
      */
     val MONTH_COVERAGE: BigDecimal = BigDecimal("0.5")
+
+    /**
+     * The like-for-like panel of a price table: boats with a trusted price in at least this share of the shown months
+     * (3 of 3, 6 of 8). Stricter would drop every boat with one sold-out month (booked weeks are UNAVAILABLE, without a
+     * price) and bias the summer towards the less popular boats; looser would let the fleet change month to month again.
+     */
+    val PANEL_MONTH_SHARE: BigDecimal = BigDecimal("0.75")
 
     /** Cheapest / priciest month are only named when the dearest shown month is at least 10 % above the cheapest. */
     val MIN_PRICE_SPREAD: BigDecimal = BigDecimal("1.10")
@@ -210,8 +217,8 @@ object CharterFactsMath {
         /** Every full month: availability, and the price coverage [priceMonths] chooses the shown months by. */
         val months: List<MonthStats> = emptyList(),
         /**
-         * The like-for-like price figures of the months [priceMonths] chose: over the panel of boats priced in every
-         * one of them (same `pricedBoats` in each). Null = price [months] directly (unit tests of the rules).
+         * The like-for-like price figures of the months [priceMonths] chose: over the panel of boats priced in (nearly)
+         * every one of them ([PANEL_MONTH_SHARE]). Null = price [months] directly (unit tests of the rules).
          */
         val panelMonths: List<MonthStats>? = null,
         /** ISO day of week (1 = Monday) -> weeks starting that day. */
