@@ -253,12 +253,15 @@ class PaymentPendingNotificationService(
         val extrasInBase = resvExtras.filter { it.payableAtBase != true }.map(::extraToView)
         val extrasOnSite = resvExtras.filter { it.payableAtBase == true }.map(::extraToView)
         val addedExtraIds = resvExtras.mapNotNull { it.extras?.id }.toSet()
+        // Same partner charge under another catalogue name — match by partner id too (see ReservationEmailService).
+        val addedExternalIds = resvExtras.mapNotNull { it.externalId }.toSet()
         // Wrong-period siblings of obligatory rows the booking carries (e.g.
         // "Comfort Pack 2/3 weeks" on a one-week charter) stay out of the
         // marina catalogue too. See ExtrasVariantResolver.
         val supersededKeys = ExtrasVariantResolver.supersededByReservation(resvExtras, yacht.yachtExtras)
         val availableAtMarina: List<Map<String, Any?>> = yacht.yachtExtras
             .filter { it.extras?.id !in addedExtraIds }
+            .filter { it.externalId == null || it.externalId !in addedExternalIds }
             .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }
             .map { ye ->
                 mapOf(

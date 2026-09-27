@@ -218,12 +218,17 @@ class ReservationEmailService(
         // check-in, water toys, skipper, …) without going back to the
         // boat page.
         val addedExtraIds = resvExtras.mapNotNull { it.extras?.id }.toSet()
+        // The same partner charge can sit on the catalogue under another name (an MMK rename the
+        // catalogue has not picked up yet) — match it by partner id too, or the booked "Transit log"
+        // is listed again as available at the marina (1441015/2027).
+        val addedExternalIds = resvExtras.mapNotNull { it.externalId }.toSet()
         // Wrong-period siblings of obligatory rows the booking carries (e.g.
         // "Comfort Pack 2/3 weeks" on a one-week charter) stay out of the
         // marina catalogue too. See ExtrasVariantResolver.
         val supersededKeys = ExtrasVariantResolver.supersededByReservation(resvExtras, yacht.yachtExtras)
         val availableAtMarina: List<Map<String, Any?>> = yacht.yachtExtras
             .filter { it.extras?.id !in addedExtraIds }
+            .filter { it.externalId == null || it.externalId !in addedExternalIds }
             .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }
             .map { ye ->
                 mapOf(
@@ -442,12 +447,17 @@ class ReservationEmailService(
         val extrasInBase = resvExtras.filter { it.payableAtBase != true }.map(::extraToView)
         val extrasOnSite = resvExtras.filter { it.payableAtBase == true }.map(::extraToView)
         val addedExtraIds = resvExtras.mapNotNull { it.extras?.id }.toSet()
+        // The same partner charge can sit on the catalogue under another name (an MMK rename the
+        // catalogue has not picked up yet) — match it by partner id too, or the booked "Transit log"
+        // is listed again as available at the marina (1441015/2027).
+        val addedExternalIds = resvExtras.mapNotNull { it.externalId }.toSet()
         // Wrong-period siblings of obligatory rows the booking carries (e.g.
         // "Comfort Pack 2/3 weeks" on a one-week charter) stay out of the
         // marina catalogue too. See ExtrasVariantResolver.
         val supersededKeys = ExtrasVariantResolver.supersededByReservation(resvExtras, yacht.yachtExtras)
         val availableAtMarina: List<Map<String, Any?>> = yacht.yachtExtras
             .filter { it.extras?.id !in addedExtraIds }
+            .filter { it.externalId == null || it.externalId !in addedExternalIds }
             .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }
             .map { ye ->
                 mapOf(

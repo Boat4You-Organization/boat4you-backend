@@ -228,7 +228,10 @@ class ReservationMappers(
                     // (3.5.2026): no duplicates in customer-facing extras list.
                     .groupBy { Triple(it.name?.trim()?.lowercase().orEmpty(), it.payableInBase ?: false, it.unit) }
                     .map { (_, rows) -> rows.maxBy { it.price ?: java.math.BigDecimal.ZERO } }
-                    .map { extrasMapper.toDto(it, currency) },
+                    .map { ye ->
+                        val dto = extrasMapper.toDto(ye, currency)
+                        bookedIdentity(ye, reservationExtras)?.let { (name, key) -> dto.copy(name = name, key = key) } ?: dto
+                    },
             // Admin-curated docs (crew list pdf/docx, pickup info, contract
             // scans). Customer downloads via /secured/reservations/my-reservations/{id}/documents/{docId}.
             crewListUrl = reservationView.reservationCrewListUrl,
@@ -389,9 +392,30 @@ class ReservationMappers(
                     // (3.5.2026): no duplicates in customer-facing extras list.
                     .groupBy { Triple(it.name?.trim()?.lowercase().orEmpty(), it.payableInBase ?: false, it.unit) }
                     .map { (_, rows) -> rows.maxBy { it.price ?: java.math.BigDecimal.ZERO } }
-                    .map { extrasMapper.toDto(it, currency) },
+                    .map { ye ->
+                        val dto = extrasMapper.toDto(ye, currency)
+                        bookedIdentity(ye, reservationExtras)?.let { (name, key) -> dto.copy(name = name, key = key) } ?: dto
+                    },
         )
     }
+    /**
+     * A catalogue row the partner renamed in place — same partner id as a booked extra, other name,
+     * so another key ("Transit Log (… cooking gas)" vs the booked "Transit log (… mooring fees …)",
+     * 1441015/2027, 27.9.2026) — takes the booked row's name and key. Admin and my-bookings merge the
+     * catalogue with the booking by key, so the charge then shows once. The partner id itself never
+     * leaves the backend (MMK ids end in the operator's company id). NauSys booked rows carry
+     * synthetic per-offer ids, so they never match here and keep the plain key merge.
+     */
+    private fun bookedIdentity(
+        catalogueRow: YachtExtra,
+        reservationExtras: List<ReservationExtra>,
+    ): Pair<String?, String>? {
+        val externalId = catalogueRow.externalId ?: return null
+        val booked = reservationExtras.firstOrNull { it.externalId == externalId } ?: return null
+        val bookedKey = booked.yachtExtrasKey ?: return null
+        return if (bookedKey == catalogueRow.extrasKey()) null else booked.name to bookedKey
+    }
+
     private fun supersededSiblings(
         reservationExtras: List<ReservationExtra>,
         yacht: Yacht,

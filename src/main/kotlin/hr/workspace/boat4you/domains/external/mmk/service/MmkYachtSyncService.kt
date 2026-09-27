@@ -655,6 +655,13 @@ class MmkYachtSyncService(
                     payableInBase = mmkExtra.payableInBase ?: false,
                 )
                 if (extraAlreadyOnYacht != null) {
+                    // The partner renames items in place (same id): "Transit Log (… cooking gas)" became
+                    // "Transit log (… cooking gas, mooring fees for first and last night)" and the catalogue
+                    // kept the old text while offers and bookings carried the new one (1441015/2027, 27.9.2026).
+                    // The first product carrying the id names it, so a per-product label never flips daily.
+                    if (extraAlreadyOnYacht.id !in matchedIds) {
+                        extraAlreadyOnYacht.name = ExtraNameNormalizer.normalize(mmkExtra.name)
+                    }
                     extraAlreadyOnYacht.extras = boat4youExtrasMatch
                     extraAlreadyOnYacht.price = mmkPrice
                     extraAlreadyOnYacht.payableInBase = mmkExtra.payableInBase
