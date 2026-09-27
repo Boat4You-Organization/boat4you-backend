@@ -2016,8 +2016,22 @@ class YachtQueryingService(
                 periodLocation,
             )
 
-        return listingCanonicalSlug(id)?.let { result.copy(listingCanonicalSlug = it) } ?: result
+        val withCanonical = listingCanonicalSlug(id)?.let { result.copy(listingCanonicalSlug = it) } ?: result
+        return withCanonical.copy(hasBookableFutureOffer = hasBookableFutureOffer(id))
     }
+
+    /**
+     * Same test as the undated branch of [buildYachtSearchPredicates] - a search-view row starting today or later,
+     * not UNAVAILABLE (CUSTOM boats have no dates and always count) - so the boat page and the listings never
+     * disagree about whether the boat is offered. The view lags the offer table by one refresh (<= 10 min).
+     */
+    private fun hasBookableFutureOffer(id: Long): Boolean =
+        entityManager
+            .createNativeQuery(
+                "SELECT EXISTS (SELECT 1 FROM yacht_search_view v WHERE v.id = :id " +
+                    "AND (v.date_from IS NULL OR (v.date_from >= CURRENT_DATE AND v.offer_status <> 'UNAVAILABLE')))",
+            ).setParameter("id", id)
+            .singleResult as Boolean
 
     /**
      * The slug of the copy the listings show when [id] is a second listing of the same boat (yacht_listing_twin,

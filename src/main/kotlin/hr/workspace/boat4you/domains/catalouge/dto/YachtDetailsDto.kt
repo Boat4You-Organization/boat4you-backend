@@ -51,6 +51,13 @@ data class YachtDetailsDto(
      * the copy the listings and the sitemap show - the boat page's canonical target.
      */
     val listingCanonicalSlug: String? = null,
+    /**
+     * True when the undated listings (and therefore the sitemaps, which walk `/public/yachts`) show this boat: it has
+     * an offer starting today or later that is not UNAVAILABLE - the undated predicate of `/public/yachts`. False for
+     * a boat no partner offers anything for any more (Mario 27.9.2026): it is in no listing or sitemap, and its page
+     * stays reachable as an inquiry form without price or calendar. Null only if the check could not run.
+     */
+    val hasBookableFutureOffer: Boolean? = null,
 )
 
 data class CustomYachtDetailsDto(
