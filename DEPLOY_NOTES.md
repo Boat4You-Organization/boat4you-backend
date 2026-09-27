@@ -1,10 +1,10 @@
 # Backend deploy notes
 
-## 2026-09-27 — `/public/yachts/{slug}` returns `hasBookableFutureOffer` — ✅ LIVE cusma2 17:12 UTC; cusma3 ⏳ gated (jar `c9718df7`, commit `517582e`, includes `e6e896a`)
+## 2026-09-27 — `/public/yachts/{slug}` returns `hasBookableFutureOffer` — ✅ LIVE cusma2 17:12 + cusma3 17:12 UTC (gate 0 sync lines; jar `c9718df7`, commit `517582e`, includes `e6e896a`)
 
 Mario (27.9., via BOAT4YOU 3): boats with no future offer leave every listing and sitemap on all 7 sites; their page stays reachable as an inquiry form without price/calendar (no 404, no noindex); the web renders that from this field. Definition = the undated `/public/yachts` predicate (search-view row with date_from >= today, offer_status <> 'UNAVAILABLE'; CUSTOM rows without dates count), so page and listings never disagree; lags the view by <= 10 min; ~3 ms. The listing side needed no change: the undated predicate (419db41) already drops them (60/60 past-only boats checked) and boats with no offer at all are not in the view. Prod: 1,233 visible yachts false (859 without any future row + boats whose future rows are all UNAVAILABLE). Verified: 4788 Saxdor 270 GTO false, 1883 GOLDFINCH true. The 300 €/week placeholder floor is NOT part of it (owner decision 5 pending). Tests 418, same 31 pre-existing failures.
 
-## 2026-09-27 — `/public/yachts?includeUnavailable=true` is admin only (agency names leaked anonymously) — ✅ LIVE cusma2 17:04 UTC; cusma3 ⏳ gated (jar `1feeef38`, commit `e6e896a`)
+## 2026-09-27 — `/public/yachts?includeUnavailable=true` is admin only (agency names leaked anonymously) — ✅ LIVE cusma2 17:04 UTC (jar `1feeef38`); cusma3 17:12 UTC with jar `c9718df7` (commit `e6e896a`)
 
 Found in the 26.9 unpriced-yachts analysis (point 12), confirmed on prod by BOAT4YOU 3: `GET /public/yachts?did=c-54&includeUnavailable=true` returned `agencyName` for anyone ("Butterfly Water Sports Croatia", "Euromarine charter", …) — owner rule: never show who runs a boat. The replacement path (`getYachtsForReplacement`, admin Create-Reservation wizard) now runs only for SYSTEM_ADMIN (1 user on prod, 0 MANAGER); everyone else falls through to the regular search, where YachtMapper already nulls agencyName/commission. Verified anonymous after deploy: 5 rows, agencyName null. Tests 418, same 31 pre-existing failures.
 
