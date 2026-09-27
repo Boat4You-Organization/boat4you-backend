@@ -214,7 +214,11 @@ class YachtController(
         // already sold (and therefore have NO offer row in our DB) still
         // surface. See YachtQueryingService.getYachtsForReplacement for the
         // rationale. Regular customer/admin search stays on the main view.
-        if (includeUnavailable) {
+        // Admin only: this path returns the agency name and prices over every
+        // year, and an anonymous caller got it (27.9.2026, did=c-54 listed five
+        // charter companies by name) — the owner never shows who runs a boat.
+        // Anyone else falls through to the regular search.
+        if (includeUnavailable && isAdmin) {
             return ResponseEntity.ok(
                 PagedModel(
                     yachtQueryingService.getYachtsForReplacement(
