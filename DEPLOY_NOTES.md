@@ -1,5 +1,9 @@
 # Backend deploy notes
 
+## 2026-09-27 — `/public/yachts?includeUnavailable=true` is admin only (agency names leaked anonymously) — ✅ LIVE cusma2 17:04 UTC; cusma3 ⏳ gated (jar `1feeef38`, commit `e6e896a`)
+
+Found in the 26.9 unpriced-yachts analysis (point 12), confirmed on prod by BOAT4YOU 3: `GET /public/yachts?did=c-54&includeUnavailable=true` returned `agencyName` for anyone ("Butterfly Water Sports Croatia", "Euromarine charter", …) — owner rule: never show who runs a boat. The replacement path (`getYachtsForReplacement`, admin Create-Reservation wizard) now runs only for SYSTEM_ADMIN (1 user on prod, 0 MANAGER); everyone else falls through to the regular search, where YachtMapper already nulls agencyName/commission. Verified anonymous after deploy: 5 rows, agencyName null. Tests 418, same 31 pre-existing failures.
+
 ## 2026-09-27 — A partner charge renamed in place shows once on bookings (Transit log ×2 on 1441015/2027) — ✅ LIVE cusma2 14:27 + cusma3 14:27 UTC (jar `b4b4d1d1`, commit `ae64ce7`)
 
 Mario: admin booking 1441015/2027 (MMK, Bali 4.2, yacht 8382) listed "Transit log" twice under "Obligatory - Paid at marina" and summed 900 € instead of 450 €. MMK renamed partner extra 6452581432503926 in place ("Transit Log (… cooking gas)" → "Transit log (… mooring fees for first and last night)"); offers + the booking carry the new name, `yacht_extras` kept the old one because the MMK yacht sync update branch never rewrote `name`. Admin and my-bookings merge booked extras with the catalogue by key (extras_id or name), so both showed. Price calc already merged by partner id — nobody was charged twice.
