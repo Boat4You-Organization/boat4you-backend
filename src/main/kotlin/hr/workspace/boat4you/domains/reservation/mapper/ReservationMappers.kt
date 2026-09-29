@@ -403,8 +403,9 @@ class ReservationMappers(
      * so another key ("Transit Log (… cooking gas)" vs the booked "Transit log (… mooring fees …)",
      * 1441015/2027, 27.9.2026) — takes the booked row's name and key. Admin and my-bookings merge the
      * catalogue with the booking by key, so the charge then shows once. The partner id itself never
-     * leaves the backend (MMK ids end in the operator's company id). NauSys booked rows carry
-     * synthetic per-offer ids, so they never match here and keep the plain key merge.
+     * leaves the backend (MMK ids end in the operator's company id). NauSys obligatory offer rows
+     * carry synthetic per-offer ids and never match here; its optional rows share the catalogue id
+     * and merge like the price calc does.
      */
     private fun bookedIdentity(
         catalogueRow: YachtExtra,

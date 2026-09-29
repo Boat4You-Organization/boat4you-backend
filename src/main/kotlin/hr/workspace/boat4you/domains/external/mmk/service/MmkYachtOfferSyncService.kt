@@ -330,6 +330,9 @@ class MmkYachtOfferSyncService(
                     payableInBase = mmkExtra.payableInBase ?: false,
                 )
             if (extraAlreadyOnOffer != null) {
+                // A partner rename in place (same id) reaches existing offers too, not only new ones — the yacht
+                // catalogue follows it since ae64ce7 and the two must not drift (29.9.2026).
+                mmkExtra.name?.takeIf { it.isNotBlank() }?.let { extraAlreadyOnOffer.name = ExtraNameNormalizer.normalize(it) }
                 extraAlreadyOnOffer.extras = boat4youExtrasMatch
                 extraAlreadyOnOffer.price = mmkPrice
                 extraAlreadyOnOffer.payableInBase = mmkExtra.payableInBase

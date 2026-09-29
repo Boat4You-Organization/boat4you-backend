@@ -9,6 +9,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationExtra
+import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
 
@@ -16,6 +17,16 @@ import java.math.BigDecimal
 class YachtExtrasMapper(
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
 ) {
+    /**
+     * The partner row id is served to SYSTEM_ADMIN only: MMK ids end in the operator's company id, and the
+     * operator is never shown publicly. Same null-safe authority check as YachtMapper.isAdminUser().
+     */
+    private fun partnerIdForAdmin(externalId: Long?): Long? {
+        val authentication = SecurityContextHolder.getContext().authentication
+        val isAdmin = authentication?.authorities?.any { it.authority == "SYSTEM_ADMIN" } ?: false
+        return if (isAdmin) externalId else null
+    }
+
     fun toDto(
         extras: YachtExtra,
         currency: CurrencyEnum?,
@@ -37,6 +48,7 @@ class YachtExtrasMapper(
             isStartingPrice = null,
             description = extras.description,
             paymentType = extras.paymentType,
+            externalId = partnerIdForAdmin(extras.externalId),
         )
     }
 
@@ -61,6 +73,7 @@ class YachtExtrasMapper(
             isStartingPrice = null,
             description = extras.description,
             paymentType = extras.paymentType,
+            externalId = partnerIdForAdmin(extras.externalId),
         )
     }
 
@@ -86,6 +99,7 @@ class YachtExtrasMapper(
             isStartingPrice = isStartingPrice,
             description = extras.description,
             paymentType = extras.paymentType,
+            externalId = partnerIdForAdmin(extras.externalId),
         )
     }
 

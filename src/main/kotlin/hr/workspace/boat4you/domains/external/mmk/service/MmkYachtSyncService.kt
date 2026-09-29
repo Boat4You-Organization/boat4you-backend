@@ -660,7 +660,7 @@ class MmkYachtSyncService(
                     // kept the old text while offers and bookings carried the new one (1441015/2027, 27.9.2026).
                     // The first product carrying the id names it, so a per-product label never flips daily.
                     if (extraAlreadyOnYacht.id !in matchedIds) {
-                        extraAlreadyOnYacht.name = ExtraNameNormalizer.normalize(mmkExtra.name)
+                        mmkExtra.name?.takeIf { it.isNotBlank() }?.let { extraAlreadyOnYacht.name = ExtraNameNormalizer.normalize(it) }
                     }
                     extraAlreadyOnYacht.extras = boat4youExtrasMatch
                     extraAlreadyOnYacht.price = mmkPrice
