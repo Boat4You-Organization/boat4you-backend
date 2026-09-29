@@ -84,4 +84,20 @@ interface InquiryRepository : JpaRepository<Inquiry, Long> {
     fun deleteByCreatedAtBefore(
         @Param("cutoff") cutoff: java.time.LocalDateTime,
     ): Int
+
+    /**
+     * Serialises concurrent submits of the same inquiry (a double tap, a network retry) on one advisory lock,
+     * held until the transaction ends, so the duplicate check below cannot race.
+     */
+    @Query(value = "SELECT 1 FROM (SELECT pg_advisory_xact_lock(hashtext(:key))) l", nativeQuery = true)
+    fun lockSubmitKey(
+        @Param("key") key: String,
+    ): Int
+
+    /** Inquiries from this e-mail since [since] — the candidates for the duplicate-submit check. */
+    @Query("SELECT i FROM Inquiry i WHERE LOWER(TRIM(i.email)) = :email AND i.createdAt > :since")
+    fun findRecentByEmail(
+        @Param("email") email: String,
+        @Param("since") since: java.time.LocalDateTime,
+    ): List<Inquiry>
 }
