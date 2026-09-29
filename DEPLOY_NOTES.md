@@ -1,6 +1,14 @@
 # Backend deploy notes
 
-## 2026-09-29 — Renamed partner charge listed once in admin client offers; partner id for admins only; MMK offer extras follow renames — ✅ LIVE cusma2 10:22 UTC; cusma3 ⏳ gated (jar `90099988`, commit `1d0ac4a`; admin `4d3fa3f` LIVE 10:21 UTC first)
+## 2026-09-29 — One inquiry per submit, enforced in the backend — ✅ LIVE cusma2 10:31 UTC (jar `0acbaa29`, commit `f5e6b02`, includes `1d0ac4a`); cusma3 ⏳ gated (same jar)
+
+Mario 27.9. (via BOAT4YOU 3): the inquiry form may send only one inquiry per submit; the boat4you-web guard is in-memory per Node process. `InquiryMutationService.createNewInquiry` builds a key (lower(trim(email)), yacht, dates, phone digits, trim+lower name/surname, whitespace-collapsed message — same as the web guard; a corrected phone/name/message is a new inquiry), takes `pg_advisory_xact_lock(hashtext(key))` and returns 200 without a row or e-mail when an identical inquiry from that e-mail exists in the last 10 minutes. E-mails stay inline — EmailService already defers the SMTP submit to afterCommit; wrapping the call in our own afterCommit (first draft) would have silenced every inquiry e-mail (Spring never runs a synchronization registered inside afterCommit) — caught in review before deploy.
+- Prod history: 3 of 7 same-email pairs (4.8 s / 33 s / 91 s apart) would have collapsed; a changed message after 7m48s stays separate.
+- Sister sites do not call /public/inquiries (their /api/yacht routes mail via nodemailer) — only their own web guard protects them.
+- Pre-existing, NOT changed: an exception while rendering an inquiry e-mail marks the transaction rollback-only → the lead is lost with a 500 (SMTP failures are async and safe). Candidate fix: `noRollbackFor` on the two InquiryEmailService send methods.
+- Tests 421 (+3 InquirySubmitKeyTests), same 31 pre-existing failures.
+
+## 2026-09-29 — Renamed partner charge listed once in admin client offers; partner id for admins only; MMK offer extras follow renames — ✅ LIVE cusma2 10:22 UTC (jar `90099988`, then `0acbaa29` 10:31); cusma3 ⏳ gated (commit `1d0ac4a`; admin `4d3fa3f` LIVE 10:21 UTC first)
 
 Mario: the client offer e-mail for Fico - Premium line (13311, 11–18.9.2027) listed "Premium Line Pack (… Outboard Engine)" and "(… Outboard Engine; 1 SUP)" — one MMK charge (id 37419011718800129) renamed in place. ae64ce7's yacht-sync rename (28.9 06:10) gave the catalogue the new name; the matched offer 8773185 (product CREWED) kept the old one because `MmkYachtOfferSyncService` never rewrote `offer_extras.name` (~60k future obligatory rows on ~1,070 MMK yachts). MMK live quotes one offer for that week (Crewed, 08:00, new name); our second row 11996909 (product UNKNOWN, 09:00) is a duplicate from another sync path — separate issue, not touched.
 - `YachtExtrasDto.externalId` (partner row id) is set only for SYSTEM_ADMIN (`YachtExtrasMapper.partnerIdForAdmin`), serialized as a string (ids > 2^53). Anonymous /public/yachts/{slug} verified after deploy: 0 of 26 non-null. No cache holds the DTO; nginx caches /public/image only.
