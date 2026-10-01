@@ -41,6 +41,7 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.time.Instant
 import java.time.LocalDate
 import kotlin.test.assertEquals
 
@@ -109,6 +110,7 @@ class YachtSearchPagingStabilityTest {
             CREATE TABLE yacht_equipment (id bigint PRIMARY KEY, yacht_id bigint NOT NULL, equipment_id bigint,
                                 name text, external_id bigint, highlight boolean NOT NULL DEFAULT false,
                                 quantity numeric, comment text);
+            CREATE TABLE yacht_content_modified (yacht_id bigint PRIMARY KEY, modified_at timestamptz NOT NULL);
             """.trimIndent()
 
         /** One agency, one marina, [YACHTS] identical catamarans each with one identical FREE week. */
@@ -305,6 +307,33 @@ class YachtSearchPagingStabilityTest {
         val range = service.getYachts(searchParams(dated = false, weekly = false).copy(idFrom = 5, idTo = 9), "id", LanguageEnum.EN, 0, 100, false)
         assertEquals(4L, range.totalElements)
         assertEquals(listOf(5L, 6L, 7L, 8L), mockingDetails(yachtMapper).invocations.map { it.getArgument<YachtSearchSelectResult>(0).id })
+    }
+
+    /**
+     * Codex audit N7: a sitemap shard hands each boat's last change of its own public record (V9_71
+     * yacht_content_modified) to the card for `<lastmod>`, in whole seconds; a boat without a recorded change gets none.
+     */
+    @Test
+    fun `an id-range shard hands each boat's last content change to the card, none when unrecorded`() {
+        val jdbcTemplate = JdbcTemplate(dataSource)
+        jdbcTemplate.update(
+            "INSERT INTO yacht_content_modified (yacht_id, modified_at) " +
+                "VALUES (5, '2026-09-29 08:15:42.734+00'), (7, '2026-10-01 08:03:00+02')",
+        )
+        try {
+            clearInvocations(yachtMapper)
+            service.getYachts(searchParams(dated = false).copy(idFrom = 5, idTo = 9), "id", LanguageEnum.EN, 0, 100, false)
+            val updatedAt =
+                mockingDetails(yachtMapper).invocations.associate {
+                    it.getArgument<YachtSearchSelectResult>(0).id to it.getArgument<Instant?>(8)
+                }
+            assertEquals(
+                mapOf(5L to Instant.parse("2026-09-29T08:15:42Z"), 6L to null, 7L to Instant.parse("2026-10-01T06:03:00Z"), 8L to null),
+                updatedAt,
+            )
+        } finally {
+            jdbcTemplate.update("DELETE FROM yacht_content_modified")
+        }
     }
 
     @Test

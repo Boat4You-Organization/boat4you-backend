@@ -93,6 +93,7 @@ class YachtSearchDatedOfferTest {
             CREATE TABLE yacht_equipment (id bigint PRIMARY KEY, yacht_id bigint NOT NULL, equipment_id bigint,
                                 name text, external_id bigint, highlight boolean NOT NULL DEFAULT false,
                                 quantity numeric, comment text);
+            CREATE TABLE yacht_content_modified (yacht_id bigint PRIMARY KEY, modified_at timestamptz NOT NULL);
             """.trimIndent()
 
         /** One offer row; client/list are the offer TOTALS (the view divides them per day). */

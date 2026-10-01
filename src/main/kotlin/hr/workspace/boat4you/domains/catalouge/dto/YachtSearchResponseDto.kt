@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.MatchKind
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import java.math.BigDecimal
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -110,4 +111,13 @@ data class YachtSearchResponseDto(
      * Sourced from yacht_search_view.entry_type == CUSTOM (2).
      */
     val custom: Boolean? = null,
+    /**
+     * When the boat's own public record last changed (UTC, whole seconds) — name, model, home base, build year,
+     * specs, main image, deposit, active / inquiry-only state: what the boat page's title, meta description, canonical
+     * slug, share image and spec table show. Written by the V9_71 trigger when the boat is created and on a real change
+     * only (a sync re-saving the same values is none). NOT moved by prices, availability, gallery, descriptions,
+     * equipment or extras. Null = no change recorded since V9_71 (1.10.2026): the sitemaps then leave `<lastmod>` out
+     * (Codex audit N7).
+     */
+    val updatedAt: Instant? = null,
 )

@@ -66,6 +66,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.concurrent.atomic.AtomicLong
@@ -620,6 +621,10 @@ class YachtQueryingService(
         // skipped entirely for customer searches (isAdmin false).
         val sourceSystemByYachtId = if (isAdmin) fetchYachtSourceSystems(results.map { it.id }) else emptyMap()
 
+        // When each boat's own public record last changed (V9_71 trigger) — the sitemaps' <lastmod> (Codex audit N7).
+        // One primary-key lookup per page on a small table, outside the listing query.
+        val contentModifiedAtByYachtId = fetchContentModifiedAt(results.map { it.id })
+
         // Bulk-fetch live option rows for the optioned yachts on this page —
         // one extra query regardless of page size. Options come from
         // `external_reservations`, populated by MMK + Nausys availability
@@ -703,6 +708,7 @@ class YachtQueryingService(
                     optionExpiryByYachtId[view.id],
                     matchKind,
                     sourceSystemByYachtId[view.id],
+                    contentModifiedAtByYachtId[view.id],
                 )
             }
 
@@ -795,6 +801,29 @@ class YachtQueryingService(
                     else -> return@mapNotNull null
                 }
             yachtId to label
+        }.toMap()
+    }
+
+    /** yacht_content_modified (V9_71) for the yachts on this page, whole seconds; a yacht without a row is absent. */
+    private fun fetchContentModifiedAt(yachtIds: List<Long>): Map<Long, Instant> {
+        if (yachtIds.isEmpty()) return emptyMap()
+
+        @Suppress("UNCHECKED_CAST")
+        val rows =
+            entityManager
+                .createNativeQuery(
+                    """
+                    SELECT m.yacht_id, CAST(FLOOR(EXTRACT(EPOCH FROM m.modified_at)) AS bigint)
+                    FROM yacht_content_modified m
+                    WHERE m.yacht_id IN (:yachtIds)
+                    """.trimIndent(),
+                ).setParameter("yachtIds", yachtIds)
+                .resultList as List<Array<Any?>>
+
+        return rows.mapNotNull { row ->
+            val yachtId = (row[0] as? Number)?.toLong() ?: return@mapNotNull null
+            val epochSecond = (row[1] as? Number)?.toLong() ?: return@mapNotNull null
+            yachtId to Instant.ofEpochSecond(epochSecond)
         }.toMap()
     }
 

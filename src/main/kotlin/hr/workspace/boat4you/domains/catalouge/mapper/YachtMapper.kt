@@ -52,6 +52,7 @@ class YachtMapper(
         optionExpiresAt: java.time.LocalDateTime? = null,
         matchKind: MatchKind? = null,
         sourceSystem: String? = null,
+        updatedAt: java.time.Instant? = null,
     ): YachtSearchResponseDto {
         val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName)
         // One-way charter: surface drop-off as separate DTO only when
@@ -125,6 +126,7 @@ class YachtMapper(
             matchKind = matchKind,
             optionExpiresAt = optionExpiresAt,
             custom = result.entryType == hr.workspace.boat4you.domains.catalouge.enums.EntryType.CUSTOM,
+            updatedAt = updatedAt,
         )
     }
 
