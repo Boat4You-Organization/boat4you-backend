@@ -1,5 +1,29 @@
 # Backend deploy notes
 
+## 2026-10-01 — Review vala 2: V9_71 idempotentan (ručna primjena prije restarta), provjera locka prije restarta, test JSON oblika `updatedAt` — ⏳ NIJE DEPLOYANO (commit `54a8665`, nadograđuje `4d3a303`)
+
+**Ispravak tvrdnje iz unosa ispod:** „čitanja NIKAD ne čekaju taj lock" vrijedi samo u bazi. Flyway radi PRIJE nego API počne posluživati, a cusma2 je jedini API čvor. Svaka sekunda koju `CREATE TRIGGER` čeka na sync koji piše `yacht` zato je ispad API-ja (do ~1 min), a nakon 10. pokušaja API se ne digne (restart petlja).
+
+**Promjene:**
+
+- **V9_71 je idempotentan** (još nigdje primijenjen, pa izmjena checksuma ne smeta; provjereno: cusma4 `flyway_schema_history` zadnji 9.70, lokalni Postgresi nemaju 9.71). Ako oba triggera već postoje, DO blok odmah izlazi i **ne uzima nikakav lock na `yacht`**. Inače `CREATE OR REPLACE TRIGGER` (PG14+, cusma4 = 18.1), pa se i polovično stanje (jedan trigger) dovrši. Tablica `IF NOT EXISTS`, funkcija `OR REPLACE`, GRANT je no-op.
+- Komentar u migraciji sada točno opisuje rizik (zastoj starta API-ja, ne čitanja).
+- **Testovi:** `YachtContentModifiedTest` +2 (7/7 na pravom PG18): ručno primijenjen V9_71 + sync koji drži `ROW EXCLUSIVE` na `yacht` → Flyway prolaz završi ispod 1 s s `lock_timeout = 1s` (bez čekanja); polovično stanje se dovrši. Novi `YachtSearchResponseDtoJsonTest` (2) s Bootovim auto-konfiguriranim ObjectMapperom (isti kao API, nema custom mappera ni `spring.jackson` postavki): `"updatedAt":"2026-10-02T06:12:41Z"` (string, cijele sekunde) i eksplicitni `null`. ktlint čist.
+- **Odbijen nalaz „`main_image_id` nema pisca":** pišu ga MMK i NauSys sync (`MmkYachtSyncService:188`, `NauSysYachtSyncService:166`, `getMainImage(...)`) i admin (`YachtMutationService`). cusma4 1.10. (samo čitanje): 13.005 od 13.072 aktivnih brodova ima `main_image_id`, 12.914 pokazuje na sliku s `main_image = true`; triggera na `yacht`/`yacht_image` nema. Kolona u triggeru ostaje.
+
+**Deploy (zamjenjuje korak 3 unosa ispod):**
+
+1. **Ručna primjena PRIJE restarta, u mirnom trenutku** (izvan sync prozora iz unosa ispod), na cusma4 kao vlasnik sheme (Flyway radi kao `boat4you_owner`):
+   - scp `src/main/resources/db/migration/V9_71__yacht_content_modified.sql` na cusma4 `/tmp/`;
+   - `sudo -u postgres psql -d boat4you_db -v ON_ERROR_STOP=1 -c 'SET ROLE boat4you_owner' -f /tmp/V9_71__yacht_content_modified.sql`;
+   - provjera: `SELECT tgname FROM pg_trigger WHERE tgname LIKE 'yacht_content_modified_%'` → 2 retka. Ako ispiše `V9_71: yacht is being written (attempt n of 10)` i padne, samo ponoviti kasnije; API pritom radi normalno.
+2. **Neposredno prije restarta cusma2** (cusma4, mora vratiti 0 redaka; inače pričekati):
+   `SELECT a.pid, a.xact_start, a.state, left(a.query, 80) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE l.relation = 'public.yacht'::regclass AND l.mode IN ('RowExclusiveLock','ShareUpdateExclusiveLock','ShareLock','ShareRowExclusiveLock','ExclusiveLock','AccessExclusiveLock');`
+   Nakon koraka 1 ovo je samo dodatna sigurnost (Flyway tada ne uzima lock), bez koraka 1 je obavezno.
+3. Restart cusma2: Flyway zapiše V9_71 kao primijenjen (tablica i triggeri već postoje, ništa ne čeka). Ostalo kao u unosu ispod (koraci 4–5).
+
+**Rollback:** isti kao u unosu ispod.
+
 ## 2026-10-01 — `updatedAt` po brodu u javnoj listi brodova za `<lastmod>` u yacht sitemapima (V9_71, Codex N7) — ⏳ NIJE DEPLOYANO (commit `4d3a303`)
 
 **Problem (N7):** yacht sitemapi na svih 7 sajtova nemaju `<lastmod>`, a baza nije imala nikakav podatak o tome kad se brod promijenio. `yacht`, `offer`, `yacht_image` i `yacht_translations` nemaju vremensku kolonu, a `synced_entity` se nikad ne puni. Provjereno na cusma4 (samo čitanje).
@@ -25,7 +49,7 @@
 
 1. **Backend PRIJE weba koji čita `updatedAt`.** Web mora i sam tretirati polje koje nedostaje ili je `null` kao „bez `<lastmod>`", jer stari jar polje nema.
 2. Jar = `main` HEAD, pa uključuje i `4f0f815` + `f4dbb23`. Ako oni još nisu live, vrijedi njihov PREDUVJET iz unosa ispod (web prvi).
-3. **cusma2 izvan yacht syncova:** NauSys katalog 23:00+, MMK 06:00–07:30 UTC, backup 07:10/11:10/16:10, RetentionReaper 03:40. Flyway na startu kreira trigger. Čitanja (stranice brodova, liste) NIKAD ne čekaju taj lock. Ako cusma3 baš piše u `yacht`, migracija čeka najviše 3 s po pokušaju, do 10 pokušaja (oko 1 min), pa tek onda pada. U logu je to `V9_71: yacht is being written (attempt n of 10)`.
+3. **cusma2 izvan yacht syncova:** NauSys katalog 23:00+, MMK 06:00–07:30 UTC, backup 07:10/11:10/16:10, RetentionReaper 03:40. Flyway na startu kreira trigger. ~~Čitanja (stranice brodova, liste) NIKAD ne čekaju taj lock.~~ Netočno za start API-ja: Flyway radi prije posluživanja, pa čekanje = ispad. **Vidi unos iznad (ručna primjena V9_71 prije restarta + provjera locka).** Ako cusma3 baš piše u `yacht`, migracija čeka najviše 3 s po pokušaju, do 10 pokušaja (oko 1 min), pa tek onda pada. U logu je to `V9_71: yacht is being written (attempt n of 10)`.
 4. cusma3 kroz isti tvrdi gate kao u unosu ispod (jar paritet). V9_71 je tada već primijenjen.
 5. Provjere (cusma4, samo čitanje): `SELECT tgname FROM pg_trigger WHERE tgname LIKE 'yacht_content_modified_%'` daje 2 retka. Nakon idućeg yacht synca `SELECT count(*), max(modified_at) FROM yacht_content_modified` raste. API: `/public/yachts?sortBy=id&idFrom=3400&idTo=3500&size=100` ima `updatedAt` (većinom `null` prvih dana).
 
