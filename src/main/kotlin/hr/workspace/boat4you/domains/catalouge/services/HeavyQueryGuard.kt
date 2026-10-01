@@ -10,6 +10,7 @@ import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.TransactionTimedOutException
 import org.springframework.transaction.support.TransactionTemplate
 import java.sql.SQLException
+import java.sql.SQLTransientConnectionException
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -34,6 +35,16 @@ interface HeavyQueryRunner {
         query: HeavyQuery,
         block: () -> T,
     ): T
+
+    /**
+     * The same read-only transaction and timeouts as [read], without the concurrency gate: for
+     * admin tools (the Create Reservation modal searches `/public/yachts` as SYSTEM_ADMIN), whose
+     * tiny volume must never be shed with a public burst. Runners without a gate just [read].
+     */
+    fun <T> readUngated(
+        query: HeavyQuery,
+        block: () -> T,
+    ): T = read(query, block)
 }
 
 /**
@@ -70,6 +81,11 @@ class HeavyQueryGate(
         }
         return try {
             slots.tryAcquire(waitMs, TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            // The request thread was interrupted while parked (client gone, shutdown): keep the
+            // flag for whoever owns the thread and shed it like a full gate (503), not a 500.
+            Thread.currentThread().interrupt()
+            false
         } finally {
             waiting.decrementAndGet()
         }
@@ -99,7 +115,8 @@ class HeavyQueryGate(
  * 1. **Gate** per heavy query (before any connection is taken): at most `max-concurrent` run at
  *    once; the rest are shed with a fast 503 + Retry-After. Distribution 4 + listing 6 = at most
  *    10 of the 35 connections, so detail, offers and booking always find one. The DB has 2 cores,
- *    so more parallel scans would not finish sooner anyway.
+ *    so more parallel scans would not finish sooner anyway. Admin searches skip the gate
+ *    ([readUngated]) but keep 2 and 3.
  * 2. **Own read-only transaction** (TransactionTemplate) — the callers run without one
  *    (getDistribution has no @Transactional, getYachts is NOT_SUPPORTED), so a cache hit or a shed
  *    request never touches the pool, and waiting for a slot never holds a connection.
@@ -145,17 +162,19 @@ class HeavyQueryGuard(
     override fun <T> read(
         query: HeavyQuery,
         block: () -> T,
+    ): T = shedding(query) { gates.getValue(query).withSlot { inReadTransaction(block) } }
+
+    override fun <T> readUngated(
+        query: HeavyQuery,
+        block: () -> T,
+    ): T = shedding(query) { inReadTransaction(block) }
+
+    private fun <T> shedding(
+        query: HeavyQuery,
+        run: () -> T,
     ): T {
         try {
-            return gates.getValue(query).withSlot {
-                @Suppress("UNCHECKED_CAST")
-                readTx.execute { status ->
-                    // Only on a transaction we started: SET LOCAL inside a caller's transaction
-                    // would stay in force for the rest of the caller's work.
-                    if (status.isNewTransaction) applyStatementTimeout()
-                    block()
-                } as T
-            }
+            return run()
         } catch (e: HeavyQueryBusyException) {
             logShed(e.query, e.reason)
             throw e
@@ -165,6 +184,15 @@ class HeavyQueryGuard(
             throw HeavyQueryBusyException(query, Reason.TIMED_OUT, e)
         }
     }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> inReadTransaction(block: () -> T): T =
+        readTx.execute { status ->
+            // Only on a transaction we started: SET LOCAL inside a caller's transaction
+            // would stay in force for the rest of the caller's work.
+            if (status.isNewTransaction) applyStatementTimeout()
+            block()
+        } as T
 
     // set_config(…, true) == SET LOCAL, but as a SELECT: a native executeUpdate would make
     // Hibernate treat it as a bulk write. Not a write — allowed in the read-only transaction.
@@ -216,6 +244,10 @@ class HeavyQueryGuard(
                         it is org.hibernate.QueryTimeoutException ||
                         it is org.springframework.dao.QueryTimeoutException ||
                         (it is SQLException && it.sqlState == QUERY_CANCELED) ||
+                        // Hikari: no pool connection within connectionTimeout (20 s) — the pool was
+                        // emptied by work outside the gates (sync, matview refresh). Capacity, so a
+                        // 503 + Retry-After like the gate itself, not a 500.
+                        it is SQLTransientConnectionException ||
                         // Hibernate's own deadline check before the next statement.
                         (it is org.hibernate.TransactionException && it.message?.contains("timeout", ignoreCase = true) == true)
                 }

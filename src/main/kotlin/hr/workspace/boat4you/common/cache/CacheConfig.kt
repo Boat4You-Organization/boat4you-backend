@@ -26,27 +26,31 @@ import java.util.function.Supplier
 
 /**
  * TTL of `facetDistributionCache` per key. YachtDistributionService prefixes every key with
- * [UNDATED_KEY_PREFIX] or `dated:`.
+ * [LANDING_KEY_PREFIX] or [SEARCH_KEY_PREFIX].
  *
- * - **Without dates — 30 min** (1.10.2026, Codex audit F2, Mario accepted a landing-count lag of
- *   up to 30 min, display only). These are the landing pages of all 7 sites (and the b4y model
+ * - **Landing — 30 min** (1.10.2026, Codex audit F2, Mario accepted a landing-count lag of up to
+ *   30 min, display only): no dates and none of the numeric sliders (price, length, cabins, berths,
+ *   persons, WC, engine, build year). These are the landing pages of all 7 sites (and the b4y model
  *   catalogue's 12-country call, ~14 s cold): a bounded key set that crawlers walk in bursts. With
  *   3 min almost every crawl hit a cold key, and a burst of cold landings held 22 of the 35 Hikari
  *   connections in this endpoint for 60-120 s while boat pages failed. Counts can now trail the
  *   matview (refreshed every 10 min) by up to 30 min instead of 3.
- * - **With dates — 3 min, unchanged.** Interactive searches whose sidebar counts should stay close
- *   to the result total (listing cache 2 min); the key space is large (every week x filter), so a
- *   longer TTL would mostly fill the heap without more hits.
+ * - **Search — 3 min, unchanged:** any date or slider — the interactive search sidebar, whose counts
+ *   should stay close to the result list (listing cache 2 min); the key space is large (every week x
+ *   slider position), so a longer TTL would mostly fill the heap without more hits. The promo
+ *   banner's whole-catalogue week (b4y promo.service.ts) stays here too: the same key is the sidebar
+ *   of a dated search without a destination.
  *
  * Unknown key shapes fall back to the short TTL. 2,000 entries cap the heap: a whole-Croatia entry
  * is ~10 KB of JSON (~800 models), a marina far less.
  */
 internal object FacetDistributionExpiry : ExpiryPolicy<String, YachtDistributionDto> {
-    const val UNDATED_KEY_PREFIX = "undated:"
-    val UNDATED_TTL: Duration = Duration.ofMinutes(30)
-    val DATED_TTL: Duration = Duration.ofMinutes(3)
+    const val LANDING_KEY_PREFIX = "landing:"
+    const val SEARCH_KEY_PREFIX = "search:"
+    val LANDING_TTL: Duration = Duration.ofMinutes(30)
+    val SEARCH_TTL: Duration = Duration.ofMinutes(3)
 
-    fun ttlFor(key: String): Duration = if (key.startsWith(UNDATED_KEY_PREFIX)) UNDATED_TTL else DATED_TTL
+    fun ttlFor(key: String): Duration = if (key.startsWith(LANDING_KEY_PREFIX)) LANDING_TTL else SEARCH_TTL
 
     override fun getExpiryForCreation(
         key: String,
@@ -364,7 +368,8 @@ class CacheConfig {
             // entry. Facet counts are advisory (grey-out badges, landing counts); the
             // bookable result total is still recomputed per request in
             // YachtQueryingService, so a booking can never ride stale facet data.
-            // TTL per key, see FacetDistributionExpiry: 30 min without dates, 3 min with.
+            // TTL per key, see FacetDistributionExpiry: 30 min for landings (no dates, no
+            // numeric slider), 3 min for everything else.
             // String key (SpEL over all 24 filter params) — same reasoning as
             // offersByYachtAndStatusCache (avoid reference-identity hashCode).
             val facetDistributionCache =

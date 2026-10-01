@@ -32,6 +32,7 @@ import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.mockingDetails
 import org.springframework.boot.orm.jpa.hibernate.SpringImplicitNamingStrategy
+import org.springframework.cache.support.NoOpCacheManager
 import org.springframework.core.io.ClassPathResource
 import org.springframework.data.jpa.repository.support.JpaRepositoryFactory
 import org.springframework.jdbc.core.ConnectionCallback
@@ -230,7 +231,8 @@ class YachtSearchScopeTest {
                 countries,
                 PassThroughHeavyQueries,
             )
-        distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries)
+        // No cache: every call runs the scans (the cache is YachtDistributionCacheTests' subject).
+        distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager())
     }
 
     @AfterAll

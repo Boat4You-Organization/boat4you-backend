@@ -224,7 +224,9 @@ class YachtQueryingService(
     // 503 + Retry-After, in the guard's own read-only transaction with a statement
     // timeout. NOT_SUPPORTED overrides the class-level transaction, so a cache hit or a
     // shed request never takes a pool connection (a burst of cold landing pages used
-    // to empty the pool and starve the boat pages).
+    // to empty the pool and starve the boat pages). Admin searches (the Create
+    // Reservation modal, the Offers workspace) skip the gate — same transaction and
+    // timeouts, never shed with a public burst.
     @Cacheable(
         cacheNames = ["yachtSearchListCache"],
         key = "{#searchParams, #sortBy, #language, #page, #size}.toString()",
@@ -238,8 +240,10 @@ class YachtQueryingService(
         page: Int,
         size: Int,
         isAdmin: Boolean,
-    ): PageImpl<YachtSearchResponseDto> =
-        heavyQueries.read(HeavyQuery.SEARCH_LIST) { searchYachts(searchParams, sortBy, language, page, size, isAdmin) }
+    ): PageImpl<YachtSearchResponseDto> {
+        val search = { searchYachts(searchParams, sortBy, language, page, size, isAdmin) }
+        return if (isAdmin) heavyQueries.readUngated(HeavyQuery.SEARCH_LIST, search) else heavyQueries.read(HeavyQuery.SEARCH_LIST, search)
+    }
 
     private fun searchYachts(
         searchParams: YachtSearchParamObject,

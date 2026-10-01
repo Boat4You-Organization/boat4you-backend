@@ -17,8 +17,12 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 /**
  * 1.10.2026 (Codex audit F2): a facet/listing query abandoned by the web kept its Hikari
@@ -139,6 +143,39 @@ class HeavyQueryGuardTests {
         assertEquals(Reason.TIMED_OUT, shed.reason)
         assert(tookMs < 3_500) { "the read ran $tookMs ms past its 2 s transaction timeout" }
         assertEquals(0, guard.gates.getValue(HeavyQuery.DISTRIBUTION).inFlight)
+    }
+
+    @Test
+    fun `an ungated (admin) read runs while the gate is full, with the same read-only transaction`() {
+        val guard = guard(statementTimeoutMs = 1_500, transactionTimeoutSeconds = 30)
+        val gate = guard.gates.getValue(HeavyQuery.SEARCH_LIST)
+        val holderInside = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        // Holds the only slot without a connection (the pool here has one).
+        val holder =
+            thread {
+                gate.withSlot {
+                    holderInside.countDown()
+                    release.await(20, TimeUnit.SECONDS)
+                }
+            }
+        assertTrue(holderInside.await(5, TimeUnit.SECONDS))
+
+        try {
+            val shed = assertFailsWith<HeavyQueryBusyException> { guard.read(HeavyQuery.SEARCH_LIST) { sql("SELECT 1") } }
+            assertEquals(Reason.SATURATED, shed.reason)
+
+            val (timeout, readOnly) =
+                guard.readUngated(HeavyQuery.SEARCH_LIST) {
+                    sql("SELECT current_setting('statement_timeout')") to sql("SELECT current_setting('transaction_read_only')")
+                }
+            assertEquals("1500ms", timeout)
+            assertEquals("on", readOnly)
+            assertEquals(1, gate.inFlight, "the ungated read must not take a slot")
+        } finally {
+            release.countDown()
+            holder.join(5_000)
+        }
     }
 
     @Test

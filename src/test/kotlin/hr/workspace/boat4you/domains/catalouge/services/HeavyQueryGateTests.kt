@@ -4,11 +4,14 @@ import hr.workspace.boat4you.common.errorhandling.ApiErrorCodes
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.domains.catalouge.exceptions.HeavyQueryBusyException
 import hr.workspace.boat4you.domains.catalouge.exceptions.HeavyQueryBusyException.Reason
+import org.hibernate.exception.JDBCConnectionException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.orm.jpa.JpaSystemException
+import org.springframework.transaction.CannotCreateTransactionException
 import org.springframework.transaction.TransactionTimedOutException
 import java.sql.SQLException
+import java.sql.SQLTransientConnectionException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -137,12 +140,53 @@ class HeavyQueryGateTests {
     }
 
     @Test
+    fun `an interrupted caller is shed as SATURATED and keeps its interrupt flag`() {
+        val gate = HeavyQueryGate(HeavyQuery.SEARCH_LIST, permits = 1, waitMs = 10_000)
+        val holderInside = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val holder =
+            thread {
+                gate.withSlot {
+                    holderInside.countDown()
+                    release.await(20, TimeUnit.SECONDS)
+                }
+            }
+        assertTrue(holderInside.await(5, TimeUnit.SECONDS))
+
+        var shed: Throwable? = null
+        var stillInterrupted = false
+        val caller =
+            thread {
+                Thread.currentThread().interrupt()
+                shed = runCatching { gate.withSlot { "never runs" } }.exceptionOrNull()
+                stillInterrupted = Thread.currentThread().isInterrupted
+            }
+        caller.join(5_000)
+
+        // A 503, not an InterruptedException surfacing as a 500.
+        assertEquals(Reason.SATURATED, (shed as? HeavyQueryBusyException)?.reason, "got $shed")
+        assertTrue(stillInterrupted, "the interrupt flag must be restored for the thread's owner")
+        assertEquals(0, gate.queued)
+
+        release.countDown()
+        holder.join(5_000)
+        assertEquals(0, gate.inFlight)
+    }
+
+    @Test
     fun `statement and transaction timeouts are recognised anywhere in the cause chain`() {
         val statementTimeout = SQLException("ERROR: canceling statement due to statement timeout", "57014")
         assertTrue(HeavyQueryGuard.isQueryTimeout(JpaSystemException(RuntimeException(statementTimeout))))
         assertTrue(HeavyQueryGuard.isQueryTimeout(jakarta.persistence.QueryTimeoutException("timeout")))
         assertTrue(HeavyQueryGuard.isQueryTimeout(TransactionTimedOutException("deadline reached")))
         assertTrue(HeavyQueryGuard.isQueryTimeout(jakarta.persistence.PersistenceException(org.hibernate.TransactionException("transaction timeout expired"))))
+        // Hikari found no pool connection in time (pool emptied outside the gates): 503, not 500.
+        val poolTimeout = SQLTransientConnectionException("boat4you-hikari - Connection is not available, request timed out after 20000ms")
+        assertTrue(
+            HeavyQueryGuard.isQueryTimeout(
+                CannotCreateTransactionException("Could not open JPA EntityManager for transaction", JDBCConnectionException("Unable to acquire JDBC Connection", poolTimeout)),
+            ),
+        )
 
         // Anything else stays what it was (a real bug must not hide behind a 503).
         assertFalse(HeavyQueryGuard.isQueryTimeout(SQLException("relation does not exist", "42P01")))
