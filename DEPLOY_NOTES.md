@@ -1,6 +1,8 @@
 # Backend deploy notes
 
-## 2026-10-01 — Hand-verified twin pairs in the one-card-per-boat rule (V9_70, Desafinado 481 / 13163) — ⏳ NOT DEPLOYED
+## 2026-10-01 — Hand-verified twin pairs in the one-card-per-boat rule (V9_70, Desafinado 481 / 13163) — ✅ LIVE cusma2 09:01 UTC (jar `bb7901f8`, commit `58742ad`); cusma3 13:03 UTC
+
+Verified 1.10.: cusma2 Flyway "Migrating schema public to version 9.70 - yacht twin manual pair" → "Successfully applied 1 migration" (0.618 s), API health 200 after ~18 s; Desafinado `…-13163` and `…-481` both resolve to 481 with `listingCanonicalSlug` null; undated HR CATAMARAN+POWER_CATAMARAN listing 898 → 897 with only 481 (both before); twins `…-6047` (slug `…-7576`, lcs `…-6047`) and `ilia-8079` (lcs `…-3528`) unchanged; Stage B all 0 new FAIL (3 transient SM1 sitemap timeouts at 09:1x, 200 on refetch). cusma3 (Flyway pinned 1.43): "Schema up to date. No migration necessary", started 13.3 s, jar `bb7901f8`.
 
 SEO regression 1.10.2026 (SM4, Mario „sve sredi"): Fountaine Pajot Saona 47 "Desafinado" is 481 (NauSys, "Trogir, Yachtclub Seget (Marina Baotić)") and 13163 (MMK, "Marina Baotic"). `yacht_listing_twin` (V9_69) never paired them (the base names differ), so every listing and the sitemaps of boat4you, CC, CY and EY carried both, while the boat page shows one copy for either URL (twin-canonical manual group `[481, 13163]`, coverage-first: 13163 on 24.6., 481 on 1.10.) — the sitemap's `…-13163` declared `…-481` as canonical.
 
