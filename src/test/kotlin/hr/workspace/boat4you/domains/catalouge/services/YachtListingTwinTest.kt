@@ -76,7 +76,10 @@ class YachtListingTwinTest {
         jdbc.execute(
             """
             TRUNCATE offer, yacht, agency, location, model, manufacturer;
-            INSERT INTO location (id, name, country_code) VALUES (1, 'Marina Frapa Dubrovnik', 'HR');
+            TRUNCATE yacht_twin_manual_pair;
+            INSERT INTO location (id, name, country_code) VALUES (1, 'Marina Frapa Dubrovnik', 'HR'),
+                                                                 (2, 'Trogir, Yachtclub Seget (Marina Baotić)', 'HR'),
+                                                                 (3, 'Marina Baotic | Seget Donji', 'HR');
             INSERT INTO agency (id, name, inquiry_only) VALUES (1, 'Owner', false), (2, 'Broker', false), (3, 'Third', false),
                                                                (4, 'Inquiry only', true);
             """.trimIndent(),
@@ -88,10 +91,11 @@ class YachtListingTwinTest {
         agency: Int,
         length: Double = 11.55,
         optionApproval: Boolean = false,
+        location: Int = 1,
     ) = jdbc.update(
         "INSERT INTO yacht (id, name, agency_id, entry_type, location_id, build_year, vessel_type, length, option_approval) " +
-            "VALUES (?, 'Pampero', ?, 'EXTERNAL', 1, 2018, 'CATAMARAN', ?, ?)",
-        id, agency, length, optionApproval,
+            "VALUES (?, 'Pampero', ?, 'EXTERNAL', ?, 2018, 'CATAMARAN', ?, ?)",
+        id, agency, location, length, optionApproval,
     )
 
     private fun weeks(
@@ -167,5 +171,21 @@ class YachtListingTwinTest {
         yacht(233, agency = 3, length = 12.8)
         listOf(231, 232, 233).forEach { weeks(it, 1) }
         twins() shouldBe mapOf(232L to 231L, 233L to 231L)
+    }
+
+    @Test
+    fun `a hand-verified pair the name rule cannot match shows one copy by the same stable rule`() {
+        // 1.10.2026, SEO regression SM4: NauSys and MMK spell one marina differently ("Trogir, Yachtclub Seget (Marina
+        // Baotić)" / "Marina Baotic"), so the rule never paired Desafinado 481 / 13163 and every listing and sitemap
+        // carried both - while the boat page (twin-canonical manual group) shows one of them for either URL.
+        yacht(241, agency = 1, location = 2)
+        yacht(242, agency = 2, location = 3)
+        listOf(241, 242).forEach { weeks(it, 2) }
+        twins() shouldBe emptyMap()
+        jdbc.update("INSERT INTO yacht_twin_manual_pair (yacht_id, twin_yacht_id, note) VALUES (242, 241, 'test')")
+        twins() shouldBe mapOf(242L to 241L)
+        // the same rule as every other pair picks the copy shown: the older copy sold out -> the other one is shown
+        jdbc.update("UPDATE offer SET status = 'RESERVED' WHERE yacht_id = 241")
+        twins() shouldBe mapOf(241L to 242L)
     }
 }

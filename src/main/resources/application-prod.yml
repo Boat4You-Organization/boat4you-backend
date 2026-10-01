@@ -25,6 +25,8 @@ application:
     # Marina Baotic loc 1749)] = Fountaine Pajot Saona 47 "Desafinado", 2020,
     # 13.94m. Coverage-first canonical -> 13163 (45 wks incl. the Mar-Jun
     # high-season block) vs 481's 29 wks. Bypasses the pilot gate.
+    # Mirror every group as a pair in yacht_twin_manual_pair (V9_70): the listings
+    # and sitemaps then show one copy and the other names it as its canonical.
     manual-groups:
       - [481, 13163]
   external:

@@ -43,7 +43,12 @@ object CharterFactsTestDb {
     /** Schema + the real migrations the job depends on, each in a transaction like Flyway (they use SET LOCAL). */
     fun create(jdbc: JdbcTemplate) {
         jdbc.execute(MINIMAL_SCHEMA)
-        listOf("V9_61__charter_facts.sql", "V9_67__location_same_place.sql", "V9_69__yacht_listing_twin.sql").forEach { file ->
+        listOf(
+            "V9_61__charter_facts.sql",
+            "V9_67__location_same_place.sql",
+            "V9_69__yacht_listing_twin.sql",
+            "V9_70__yacht_twin_manual_pair.sql",
+        ).forEach { file ->
             val migration = ClassPathResource("db/migration/$file").inputStream.bufferedReader().readText()
             jdbc.execute("BEGIN; $migration; COMMIT;")
         }
