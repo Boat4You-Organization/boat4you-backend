@@ -11,7 +11,6 @@ import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import jakarta.persistence.EntityManager
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
@@ -40,19 +39,27 @@ class YachtDistributionService(
     private val locationRepository: LocationRepository,
     private val countryRepository: CountryRepository,
     private val regionRepository: RegionRepository,
+    private val heavyQueries: HeavyQueryRunner,
 ) {
     // Cache the whole facet payload (all 9-11 COUNT(DISTINCT)/histogram/percentile
     // scans collapse into one entry) keyed on the full 24-param filter set, so
     // identical search-sidebar requests within the TTL skip the matview entirely.
     // The SpEL inline-list `.toString()` is a total, collision-free key across all
     // dimensions (no hand-rolled hash). Annotated on this PUBLIC method, which the
-    // controller (separate bean) calls through the Spring proxy. See
-    // CacheConfig.facetDistributionCache for the 3-min TTL rationale.
+    // controller (separate bean) calls through the Spring proxy.
+    //
+    // 1.10.2026 (Codex audit F2): the key starts with `undated:` / `dated:` so
+    // CacheConfig.FacetDistributionExpiry can keep landing-page keys (no dates) for
+    // 30 min and dated searches for 3 min. `sync = true`: concurrent misses on one
+    // key run the scans ONCE and the others wait for that result — without it every
+    // concurrent miss of a cold landing ran all 9-11 scans itself. No @Transactional
+    // here: HeavyQueryGuard opens the read transaction only on a miss and only after
+    // the concurrency gate, so a cache hit or a shed request never takes a connection.
     @Cacheable(
         cacheNames = ["facetDistributionCache"],
-        key = "{#locationIds,#startDate,#endDate,#vesselTypes,#charterTypes,#mainsailTypes,#minBuildYear,#maxBuildYear,#minPersons,#maxPersons,#minCabins,#maxCabins,#minBerths,#maxBerths,#minLength,#maxLength,#minWc,#maxWc,#minEnginePower,#maxEnginePower,#minPriceWeekly,#maxPriceWeekly,#manufacturerIds,#modelIds}.toString()",
+        key = "(#startDate == null && #endDate == null ? 'undated:' : 'dated:') + {#locationIds,#startDate,#endDate,#vesselTypes,#charterTypes,#mainsailTypes,#minBuildYear,#maxBuildYear,#minPersons,#maxPersons,#minCabins,#maxCabins,#minBerths,#maxBerths,#minLength,#maxLength,#minWc,#maxWc,#minEnginePower,#maxEnginePower,#minPriceWeekly,#maxPriceWeekly,#manufacturerIds,#modelIds}.toString()",
+        sync = true,
     )
-    @Transactional(readOnly = true)
     fun getDistribution(
         locationIds: List<String>? = null,
         startDate: LocalDate? = null,
@@ -85,77 +92,79 @@ class YachtDistributionService(
         require(startDate == null || endDate == null || startDate.isBefore(endDate)) {
             "startDate must be before endDate"
         }
-        val didScope = resolveDidScope(locationIds)
-        val ctx = FilterContext(
-            marinaIds = didScope.marinaIds,
-            didCountryCodes = didScope.countryCodes,
-            regionCountryCodes = regionCountryCodes(locationIds),
-            startDate = startDate,
-            endDate = endDate,
-            vesselTypeNames = vesselTypes?.map { it.name },
-            charterTypeNames = charterTypes?.map { it.name },
-            mainsailTypeNames = mainsailTypes?.map { it.name },
-            minBuildYear = minBuildYear, maxBuildYear = maxBuildYear,
-            minPersons = minPersons, maxPersons = maxPersons,
-            minCabins = minCabins, maxCabins = maxCabins,
-            minBerths = minBerths, maxBerths = maxBerths,
-            minLength = minLength, maxLength = maxLength,
-            minWc = minWc, maxWc = maxWc,
-            minEnginePower = minEnginePower, maxEnginePower = maxEnginePower,
-            minPriceWeekly = minPriceWeekly, maxPriceWeekly = maxPriceWeekly,
-            manufacturerIds = manufacturerIds, modelIds = modelIds,
-        )
-        // Lower bound is hardcoded at €500 (raw `client_price` < that is mostly
-        // per-day rows still present in some agency data). Upper bound expands
-        // to whatever the priciest yacht in the candidate set is — that way
-        // the histogram bars span the full slider track instead of crowding
-        // into the cheap end (gulets / luxury yachts can hit €100k+ /week,
-        // boataround.com caps at €199k). Costs one SELECT MAX per call but the
-        // priciest-yacht query is light and lets the slider mirror what the
-        // user actually sees in the listing.
-        // Slider range is hardcoded weekly: €500 → €200,000 (Mario, 2026-04-26).
-        // The 50 histogram bins are logarithmically spaced over that range so
-        // the bars spread across the full track instead of crowding into the
-        // cheap end (linear bins would put all gulets/catamarans in the first
-        // 5–10% — see boataround.com which uses log binning too). bin 0 covers
-        // ~€500–580, bin 49 covers ~€173k–200k. `YachtController` still
-        // receives URL minPrice/maxPrice in linear euros (slider handle stays
-        // linear) and divides by 7 before the WHERE clause.
-        val medianWeekly = priceMedianWeekly(ctx)
-        return YachtDistributionDto(
-            priceHistogram = histogramLogWeekly(ctx),
-            priceMedian = medianWeekly,
-            priceMin = BigDecimal(PRICE_MIN_WEEKLY),
-            priceMax = BigDecimal(PRICE_MAX_WEEKLY),
-            maxDiscountPerc = maxDiscountPerc(ctx),
-            lengthHistogram = histogramLog(
-                column = "length",
-                low = LENGTH_MIN.toDouble(),
-                high = LENGTH_MAX.toDouble(),
-                buckets = LENGTH_BUCKETS,
-                ctx = ctx,
-            ),
-            engineHistogram = histogramLog(
-                column = "engine_power",
-                low = ENGINE_MIN.toDouble(),
-                high = ENGINE_MAX.toDouble(),
-                buckets = ENGINE_BUCKETS,
-                ctx = ctx,
-            ),
-            // Facet-count pattern: each tile group is counted with its own
-            // filter dimension excluded so users still see how many boats
-            // exist in unselected tiles. Without this, picking "Catamaran"
-            // would zero out Sailing/Motorboat/etc. counts (the WHERE clause
-            // filters them out before the GROUP BY). Other filters (location,
-            // dates, availability) still apply.
-            byVesselType = enumCounts("vessel_type", VesselType::valueOf, ctx.copy(vesselTypeNames = null)),
-            byCharterType = enumCounts("charter_type", CharterType::valueOf, ctx.copy(charterTypeNames = null)),
-            byMainsailType = enumCounts("mainsail_type", SailTypeEnum::valueOf, ctx.copy(mainsailTypeNames = null)),
-            byCabins = cabinsCounts(ctx.copy(minCabins = null, maxCabins = null)),
-            byManufacturer = manufacturerCounts(ctx.copy(manufacturerIds = null)),
-            byModel = modelCounts(ctx.copy(modelIds = null)),
-            byAmenity = amenityCounts(ctx),
-        )
+        return heavyQueries.read(HeavyQuery.DISTRIBUTION) {
+            val didScope = resolveDidScope(locationIds)
+            val ctx = FilterContext(
+                marinaIds = didScope.marinaIds,
+                didCountryCodes = didScope.countryCodes,
+                regionCountryCodes = regionCountryCodes(locationIds),
+                startDate = startDate,
+                endDate = endDate,
+                vesselTypeNames = vesselTypes?.map { it.name },
+                charterTypeNames = charterTypes?.map { it.name },
+                mainsailTypeNames = mainsailTypes?.map { it.name },
+                minBuildYear = minBuildYear, maxBuildYear = maxBuildYear,
+                minPersons = minPersons, maxPersons = maxPersons,
+                minCabins = minCabins, maxCabins = maxCabins,
+                minBerths = minBerths, maxBerths = maxBerths,
+                minLength = minLength, maxLength = maxLength,
+                minWc = minWc, maxWc = maxWc,
+                minEnginePower = minEnginePower, maxEnginePower = maxEnginePower,
+                minPriceWeekly = minPriceWeekly, maxPriceWeekly = maxPriceWeekly,
+                manufacturerIds = manufacturerIds, modelIds = modelIds,
+            )
+            // Lower bound is hardcoded at €500 (raw `client_price` < that is mostly
+            // per-day rows still present in some agency data). Upper bound expands
+            // to whatever the priciest yacht in the candidate set is — that way
+            // the histogram bars span the full slider track instead of crowding
+            // into the cheap end (gulets / luxury yachts can hit €100k+ /week,
+            // boataround.com caps at €199k). Costs one SELECT MAX per call but the
+            // priciest-yacht query is light and lets the slider mirror what the
+            // user actually sees in the listing.
+            // Slider range is hardcoded weekly: €500 → €200,000 (Mario, 2026-04-26).
+            // The 50 histogram bins are logarithmically spaced over that range so
+            // the bars spread across the full track instead of crowding into the
+            // cheap end (linear bins would put all gulets/catamarans in the first
+            // 5–10% — see boataround.com which uses log binning too). bin 0 covers
+            // ~€500–580, bin 49 covers ~€173k–200k. `YachtController` still
+            // receives URL minPrice/maxPrice in linear euros (slider handle stays
+            // linear) and divides by 7 before the WHERE clause.
+            val medianWeekly = priceMedianWeekly(ctx)
+            YachtDistributionDto(
+                priceHistogram = histogramLogWeekly(ctx),
+                priceMedian = medianWeekly,
+                priceMin = BigDecimal(PRICE_MIN_WEEKLY),
+                priceMax = BigDecimal(PRICE_MAX_WEEKLY),
+                maxDiscountPerc = maxDiscountPerc(ctx),
+                lengthHistogram = histogramLog(
+                    column = "length",
+                    low = LENGTH_MIN.toDouble(),
+                    high = LENGTH_MAX.toDouble(),
+                    buckets = LENGTH_BUCKETS,
+                    ctx = ctx,
+                ),
+                engineHistogram = histogramLog(
+                    column = "engine_power",
+                    low = ENGINE_MIN.toDouble(),
+                    high = ENGINE_MAX.toDouble(),
+                    buckets = ENGINE_BUCKETS,
+                    ctx = ctx,
+                ),
+                // Facet-count pattern: each tile group is counted with its own
+                // filter dimension excluded so users still see how many boats
+                // exist in unselected tiles. Without this, picking "Catamaran"
+                // would zero out Sailing/Motorboat/etc. counts (the WHERE clause
+                // filters them out before the GROUP BY). Other filters (location,
+                // dates, availability) still apply.
+                byVesselType = enumCounts("vessel_type", VesselType::valueOf, ctx.copy(vesselTypeNames = null)),
+                byCharterType = enumCounts("charter_type", CharterType::valueOf, ctx.copy(charterTypeNames = null)),
+                byMainsailType = enumCounts("mainsail_type", SailTypeEnum::valueOf, ctx.copy(mainsailTypeNames = null)),
+                byCabins = cabinsCounts(ctx.copy(minCabins = null, maxCabins = null)),
+                byManufacturer = manufacturerCounts(ctx.copy(manufacturerIds = null)),
+                byModel = modelCounts(ctx.copy(modelIds = null)),
+                byAmenity = amenityCounts(ctx),
+            )
+        }
     }
 
     /** Bundles the active filter parameters that every aggregator query

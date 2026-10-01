@@ -228,8 +228,9 @@ class YachtSearchScopeTest {
                 mock(ExternalBaseRepository::class.java),
                 regions,
                 countries,
+                PassThroughHeavyQueries,
             )
-        distribution = YachtDistributionService(entityManager, locations, countries, regions)
+        distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries)
     }
 
     @AfterAll

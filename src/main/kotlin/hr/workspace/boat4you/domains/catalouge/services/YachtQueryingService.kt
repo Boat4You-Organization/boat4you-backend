@@ -63,6 +63,7 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageImpl
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -88,6 +89,7 @@ class YachtQueryingService(
     private val externalBaseRepository: ExternalBaseRepository,
     private val regionRepository: RegionRepository,
     private val countryRepository: CountryRepository,
+    private val heavyQueries: HeavyQueryRunner,
 ) {
     companion object {
         private const val MAX_PAGE_SIZE = 100
@@ -216,12 +218,30 @@ class YachtQueryingService(
     // commission=null) are ever stored, so they are safe to share across users.
     // `isAdmin` is computed in the controller via the same SYSTEM_ADMIN authority
     // the mapper checks. Admin search volume is tiny, so no CPU cost to skipping.
+    //
+    // 1.10.2026 (Codex audit F2): a miss runs through HeavyQueryGuard — at most
+    // `application.heavy-queries.search-list.max-concurrent` listings at once, the rest
+    // 503 + Retry-After, in the guard's own read-only transaction with a statement
+    // timeout. NOT_SUPPORTED overrides the class-level transaction, so a cache hit or a
+    // shed request never takes a pool connection (a burst of cold landing pages used
+    // to empty the pool and starve the boat pages).
     @Cacheable(
         cacheNames = ["yachtSearchListCache"],
         key = "{#searchParams, #sortBy, #language, #page, #size}.toString()",
         condition = "!#isAdmin",
     )
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     fun getYachts(
+        searchParams: YachtSearchParamObject,
+        sortBy: String?,
+        language: LanguageEnum,
+        page: Int,
+        size: Int,
+        isAdmin: Boolean,
+    ): PageImpl<YachtSearchResponseDto> =
+        heavyQueries.read(HeavyQuery.SEARCH_LIST) { searchYachts(searchParams, sortBy, language, page, size, isAdmin) }
+
+    private fun searchYachts(
         searchParams: YachtSearchParamObject,
         sortBy: String?,
         language: LanguageEnum,

@@ -209,6 +209,7 @@ class YachtSearchWeeklyPriceTest {
                 mock(ExternalBaseRepository::class.java),
                 mock(RegionRepository::class.java),
                 mock(CountryRepository::class.java),
+                PassThroughHeavyQueries,
             )
     }
 

@@ -59,6 +59,7 @@ class YachtSearchDidScopeTests {
             mock(ExternalBaseRepository::class.java),
             mock(RegionRepository::class.java),
             countryRepository,
+            PassThroughHeavyQueries,
         )
 
     private fun marina(

@@ -47,6 +47,11 @@ enum class ApiErrorCodes(
     IMAGE_RESIZE_BUSY(1603, "The image is temporarily unavailable, please try again in a moment."),
     ENTITY_NOT_DELETABLE(1701, "Entity cannot be deleted because there are other entities referencing it"),
     DATA_UNAVAILABLE(2002, "Data unavailable"),
+
+    // 1.10.2026 (Codex audit F2): the facet-distribution / search-listing gate is full or the query ran
+    // past its timeout (HeavyQueryGuard). Transient capacity, served as 503 + Retry-After so boat pages
+    // keep their DB connections. Customer-facing wording stays a short, non-technical apology.
+    SEARCH_BUSY(2003, "Search is busy right now, please try again in a moment."),
     RESERVATION_FLOW_NOT_EXIST(3001, "Reservation flow does not exist"),
     RESERVATION_NOT_EXIST(3002, "Reservation does not exist"),
     RESERVATION_USER_NOT_EXIST(3003, "Reservation user does not exist"),

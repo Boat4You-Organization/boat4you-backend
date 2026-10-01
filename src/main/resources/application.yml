@@ -217,6 +217,25 @@ application:
     # parked threads at 4 permits), so a sustained burst is shed immediately instead of eating the
     # pool one 2-second park at a time.
     resize-wait-ms: ${IMAGE_RESIZE_WAIT_MS:2000}
+  heavy-queries:
+    # 1.10.2026 (Codex audit F2): bursts of cold landing pages held up to 22 of the 35 Hikari
+    # connections for 60-120 s in /public/yachts/distribution alone; boat pages and standard-offers
+    # then waited 20 s for a connection and failed. HeavyQueryGuard caps the two whole-matview
+    # reads (4 + 6 = at most 10 connections, 25+ left for detail/offers/booking/admin/sync) and sheds
+    # the rest with 503 + Retry-After 5. The DB has 2 cores: more parallel scans do not finish sooner.
+    distribution:
+      max-concurrent: ${HEAVY_QUERY_DISTRIBUTION_MAX_CONCURRENT:4}
+    search-list:
+      max-concurrent: ${HEAVY_QUERY_SEARCH_LIST_MAX_CONCURRENT:6}
+    # How long a request may park (on a Tomcat worker, holding NO connection) for a free slot.
+    # Queue depth is bounded too: 4 waiters per permit (HeavyQueryGate.MAX_WAITERS_PER_PERMIT).
+    wait-ms: ${HEAVY_QUERY_WAIT_MS:1500}
+    # SET LOCAL statement_timeout for each statement of those reads (server side). Normal
+    # statements take 0.1-3 s; the 12-country distribution is ~14 s cold in total over 9-11 statements.
+    statement-timeout-ms: ${HEAVY_QUERY_STATEMENT_TIMEOUT_MS:15000}
+    # Whole read transaction (Hibernate gives each statement only the time left), so a 9-11
+    # statement distribution cannot hold its connection for 10 x 15 s either.
+    transaction-timeout-seconds: ${HEAVY_QUERY_TRANSACTION_TIMEOUT_SECONDS:30}
   email:
     enabled: ${EMAIL_ENABLED:false}
     # From-address shown in the recipient inbox. SMTP auth happens with

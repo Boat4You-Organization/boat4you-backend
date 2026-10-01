@@ -7,6 +7,7 @@ import hr.workspace.boat4you.common.exceptions.UnmodifiableFieldsException
 import hr.workspace.boat4you.common.services.LogMasking
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
+import hr.workspace.boat4you.domains.catalouge.exceptions.HeavyQueryBusyException
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageNotFoundException
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageResizeBusyException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
@@ -67,6 +68,9 @@ internal class ApiErrorHandler {
         /** Long enough for the resize gate to drain a burst, short enough that the CDN still
          *  fills its cache on the retry rather than serving a hole. */
         private const val RESIZE_RETRY_AFTER_SECONDS = "2"
+
+        /** Long enough for a burst of cold landing pages to drain through the heavy-query gates. */
+        private const val HEAVY_QUERY_RETRY_AFTER_SECONDS = "5"
     }
 
     @ExceptionHandler(HttpMessageNotReadableException::class)
@@ -287,6 +291,23 @@ internal class ApiErrorHandler {
                 ErrorSchema(
                     ApiErrorCodes.IMAGE_RESIZE_BUSY.code,
                     ApiErrorCodes.IMAGE_RESIZE_BUSY.message,
+                ),
+            )
+    }
+
+    @ExceptionHandler(HeavyQueryBusyException::class)
+    fun handleHeavyQueryBusyException(e: HeavyQueryBusyException): ResponseEntity<ErrorSchema> {
+        // 1.10.2026 (Codex audit F2): a facet-distribution / search-listing request was shed by
+        // HeavyQueryGuard (gate full or statement/transaction timeout) so boat pages keep their DB
+        // connections. Capacity signal, not a crash: 503 + Retry-After. Deliberately NOT logged
+        // here — the guard logs throttled (once a minute, cumulative counts).
+        return ResponseEntity
+            .status(HttpStatus.SERVICE_UNAVAILABLE)
+            .header(HttpHeaders.RETRY_AFTER, HEAVY_QUERY_RETRY_AFTER_SECONDS)
+            .body(
+                ErrorSchema(
+                    ApiErrorCodes.SEARCH_BUSY.code,
+                    ApiErrorCodes.SEARCH_BUSY.message,
                 ),
             )
     }
