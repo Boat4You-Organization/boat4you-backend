@@ -1,5 +1,36 @@
 # Backend deploy notes
 
+## 2026-10-01 — `updatedAt` po brodu u javnoj listi brodova za `<lastmod>` u yacht sitemapima (V9_71, Codex N7) — ⏳ NIJE DEPLOYANO (commit `4d3a303`)
+
+**Problem (N7):** yacht sitemapi na svih 7 sajtova nemaju `<lastmod>`, a baza nije imala nikakav podatak o tome kad se brod promijenio. `yacht`, `offer`, `yacht_image` i `yacht_translations` nemaju vremensku kolonu, a `synced_entity` se nikad ne puni. Provjereno na cusma4 (samo čitanje).
+
+**Promjene:**
+
+- **V9_71:** nova tablica `yacht_content_modified (yacht_id PK, modified_at timestamptz)`. Puni je trigger na `yacht`: AFTER INSERT (novi brod) i AFTER UPDATE samo kad se promijeni polje koje javna stranica broda prikazuje. To su: ime, model, matična marina, godina, duljina, širina, kabine, WC, ležajevi, osobe, motor, tankovi, tip glavnog jedra, depozit (i osigurani, valuta), posada, check-in/out, tip plovila, entry type, `sys_active`, glavna slika i `option_approval` (inquiry-only).
+- Sync koji ponovno spremi iste vrijednosti NIJE promjena (`IS DISTINCT FROM`). Ni promjena privatnog polja nije promjena: provizija, registracija, agencija, popusti.
+- Vrijeme je `clock_timestamp()` same promjene i nikad ne ide unatrag.
+- **Namjerno se NE broje:** cijene i dostupnost (`offer`, milijuni redaka), galerija, opisi, oprema, extras, preimenovanje modela ili proizvođača (mijenja slug, pa sitemap ionako dobije novi URL), twin canonical.
+- Postojeći brodovi kreću BEZ retka. To znači da promjena nije zabilježena, a ne da se nagađa.
+- **`GET /public/yachts`:** novo polje `updatedAt` na svakoj kartici, ISO-8601 UTC u cijelim sekundama (npr. `"2026-10-02T06:12:41Z"`), ili `null`. Čita se jednim upitom po primarnom ključu po stranici, izvan upita liste. Upit liste i matview nisu dirani.
+- Polje dobivaju sve liste, pa i b4y id-range shardovi (`sortBy=id&idFrom&idTo`) i sister fleet/sitemap pozivi (`did`, `countryCodes`). Admin replacement lista (`includeUnavailable`) ga nema.
+
+**Mjerenja:**
+
+- Produkcija 1.10. (xmin redaka `yacht` prema `service_call_cache.created_at`): 10.855 od 13.072 aktivnih brodova bez ijednog upisa u 45 dana; inače 4–99 brodova dnevno (vrh 385 na 29.9.). `<lastmod>` će se zato pojavljivati postupno, samo za stvarno promijenjene i nove brodove.
+- Lookup 100 id-eva po PK na cusma4: 0,05 ms (EXPLAIN ANALYZE). Lokalni suhi prolaz na 15 tisuća brodova: puni no-op re-save ne upiše ništa, trošak triggera je u šumu, 3.000 stvarnih promjena upiše 2.990 redaka (10 brodova bez kabina, NULL + 1 = NULL).
+
+**Testovi:** 447, isti 31 pre-existing failure kao prije (popis identičan). Novi `YachtContentModifiedTest` vrti pravi V9_71 na PostgreSQL 18: insert; svako prikazano polje; re-save i privatno polje bez promjene; nikad unatrag; čekanje na lock uz istovremenog pisca dok čitatelji prolaze. Uz to novi test id-range sharda u `YachtSearchPagingStabilityTest`. Mutacijski provjereno (maknuta kolona, `<` → `IS DISTINCT FROM`, jedan pokušaj, `null` umjesto mape: svaki pada). Migracija prošla i kroz pravi Flyway (`Successfully applied`). ktlint: nijedan novi nalaz.
+
+**Deploy (redom):**
+
+1. **Backend PRIJE weba koji čita `updatedAt`.** Web mora i sam tretirati polje koje nedostaje ili je `null` kao „bez `<lastmod>`", jer stari jar polje nema.
+2. Jar = `main` HEAD, pa uključuje i `4f0f815` + `f4dbb23`. Ako oni još nisu live, vrijedi njihov PREDUVJET iz unosa ispod (web prvi).
+3. **cusma2 izvan yacht syncova:** NauSys katalog 23:00+, MMK 06:00–07:30 UTC, backup 07:10/11:10/16:10, RetentionReaper 03:40. Flyway na startu kreira trigger. Čitanja (stranice brodova, liste) NIKAD ne čekaju taj lock. Ako cusma3 baš piše u `yacht`, migracija čeka najviše 3 s po pokušaju, do 10 pokušaja (oko 1 min), pa tek onda pada. U logu je to `V9_71: yacht is being written (attempt n of 10)`.
+4. cusma3 kroz isti tvrdi gate kao u unosu ispod (jar paritet). V9_71 je tada već primijenjen.
+5. Provjere (cusma4, samo čitanje): `SELECT tgname FROM pg_trigger WHERE tgname LIKE 'yacht_content_modified_%'` daje 2 retka. Nakon idućeg yacht synca `SELECT count(*), max(modified_at) FROM yacht_content_modified` raste. API: `/public/yachts?sortBy=id&idFrom=3400&idTo=3500&size=100` ima `updatedAt` (većinom `null` prvih dana).
+
+**Rollback:** samo `webservice.jar.prev`. Stari jar ne čita tablicu, a trigger smije ostati jer samo piše u nju. Uklanjanje (samo ako baš treba, u mirnom prozoru): `SET lock_timeout = '3s'; DROP TRIGGER yacht_content_modified_update ON yacht; DROP TRIGGER yacht_content_modified_insert ON yacht; DROP FUNCTION yacht_content_modified_touch(); DROP TABLE yacht_content_modified; DELETE FROM flyway_schema_history WHERE version = '9.71';`. Pazi: `DROP TRIGGER` uzima ACCESS EXCLUSIVE, pa čitanja `yacht` čekaju do 3 s.
+
 ## 2026-10-01 — Teški upiti (distribution + lista) ograničeni da boat stranice uvijek dobiju vezu na bazu (Codex F2) — ⏳ NIJE DEPLOYANO (commit `4f0f815` + review popravci `f4dbb23`)
 
 Mario 1.10.: „DEPLOY POPRAVAK" (kratak restart cusma2 + cusma3 odobren; brojke na landinzima smiju kasniti do 30 min, samo prikaz).
