@@ -1,5 +1,54 @@
 # Backend deploy notes
 
+## 2026-10-01 — Teški upiti (distribution + lista) ograničeni da boat stranice uvijek dobiju vezu na bazu (Codex F2) — ⏳ NIJE DEPLOYANO (commit `4f0f815`)
+
+Mario 1.10.: „DEPLOY POPRAVAK" (kratak restart cusma2 + cusma3 odobren; brojke na landinzima smiju kasniti do 30 min, samo prikaz).
+
+**Problem (verificirano, `codexverify/slow.md`):** Hikari pool (35) prazan 100–400×/sat u naletima od 1–3 min (`waiting=168`). 22 veze držane 60–120 s, sve u `YachtDistributionController.getDistribution`; detalj broda i standard-offers čekali su 20 s na vezu i padali (b4y 499/503, sisteri 5.183×499 30.9.). Okidač: nalet hladnih landing stranica (svaka zove distribution + listu), `@Cacheable` bez `sync` pa je svaki istovremeni promašaj vrtio svih 9–11 skenova matviewa, TTL 3 min, bez statement_timeouta.
+
+**Promjene:**
+
+- `YachtDistributionService.getDistribution`: `@Cacheable(sync = true)` — Ehcache JCache to podržava (dokazano testom s pravim providerom: 8 istovremenih promašaja istog ključa = 1 upit). Ključ ima prefiks `undated:` / `dated:`; `CacheConfig.FacetDistributionExpiry`: **bez datuma 30 min** (landinzi svih 7 sajtova + b4y model katalog), **s datumima 3 min kao prije** (interaktivna pretraga, ogroman prostor ključeva). Hit ne produžuje TTL (provjereno: hit zove samo `getExpiryForAccess` → null). Max 2.000 unosa (cijela HR ≈ 10 KB JSON-a).
+- Novi `HeavyQueryGuard` za `GET /public/yachts/distribution` i `GET /public/yachts` (lista): (1) **gate** — distribution najviše **4**, lista **6** istovremeno (= najviše 10 od 35 veza; DB ima 2 jezgre pa više paralelnih skenova ionako ne završi brže), čekanje na slot **1,5 s**, red najviše 4 po slotu, ostalo odmah **503 + `Retry-After: 5`**, kod `2003 SEARCH_BUSY`; (2) **vlastita read-only transakcija** tek nakon gatea — `getDistribution` više nema `@Transactional`, `getYachts` je `NOT_SUPPORTED`, pa cache hit i odbijeni zahtjev nikad ne uzimaju vezu iz poola; (3) **`SET LOCAL statement_timeout` 15 s** (resetira se na commit/rollback, vraćena veza je čista — test) + **timeout transakcije 30 s** (svih 9–11 skenova zajedno; 12-zemalja distribution je ~14 s hladno). Timeout → isto 503 (ne 500 + stack trace).
+- Upozorenje u logu najviše jednom u minuti s ukupnim brojem: `Heavy query shed with 503 (DISTRIBUTION SATURATED); gates DISTRIBUTION=x/4 running, y queued, … since start N saturated, M timed out …`.
+- Sve granice preko env-a (default u `application.yml`, env NE treba mijenjati): `HEAVY_QUERY_DISTRIBUTION_MAX_CONCURRENT=4`, `HEAVY_QUERY_SEARCH_LIST_MAX_CONCURRENT=6`, `HEAVY_QUERY_WAIT_MS=1500`, `HEAVY_QUERY_STATEMENT_TIMEOUT_MS=15000`, `HEAVY_QUERY_TRANSACTION_TIMEOUT_SECONDS=30`.
+- **Nije dirano:** booking, plaćanja, sync, admin replacement lista (`includeUnavailable`, samo admin), relax-suggest, detalj/standard-offers. Matview refresh ostaje kako je: `SearchViewRefreshJob` na cusma3 (`data-sync`, `*/10`) + on-demand `SearchViewRefreshService` na cusma2, oba `REFRESH … CONCURRENTLY` (čitanja ne čekaju lock). Dok traje dugi refresh (30.9. 180–300 s, 1.10. 06:47 423 s) teški upiti su sporiji, ali drže najviše 10 veza i najviše 30 s, pa detalj broda i dalje dobiva vezu. Zašto refresh svakih 90 min traje 180–423 s, i dalje je otvoreno (nije dio ovog commita).
+- Bez Flyway migracija.
+
+**Poznati kompromisi:**
+
+- Ehcache `sync` ide kroz `invoke` → `compute` pod lockom bina u njegovom ConcurrentHashMapu i za hit. Hit čiji ključ dijeli bin s promašajem koji upravo radi (ili čeka slot ≤ 1,5 s) čeka da on završi. Procjena: pod zasićenjem ~1–4 % hitova (najviše 20 zauzetih binova u tablici od 512–4.096), inače ~0. Bez `sync` ti bi promašaji svi vrtjeli upit.
+- Pod naletom landinzi mogu dobiti 503 na distribution/listi. b4y: distribution ionako odustaje nakon 1,5 s i stranica se renderira bez brojki; `fetchWithRetry` ponavlja 0,5/1/2 s. Sisteri: `fetchWithBackendRetry` ponavlja na 5xx. Odbijanje ne košta bazu.
+- Brojke na landinzima mogu kasniti do 30 min (+ do 10 min refresh matviewa).
+
+**Testovi:** 435 (13 novih: `HeavyQueryGateTests` 6, `HeavyQueryGuardTests` 4 na pravom Postgresu, `YachtDistributionCacheTests` 3 s pravim Spring proxyjem + Ehcache), **isti 31 pre-existing failure** kao HEAD `a92edcb` (popis identičan). Mutacijska provjera: `sync = false` → test istovremenih promašaja pada. ktlint: main 0; u testovima samo pre-existing nalazi na netaknutim linijama. Full-context smoke (Spring Boot + prazni Postgres, nije commitan): beanovi se dižu, gateovi 4/6, guarded read radi, greška baze kroz sync cache stiže neomotana (`DataAccessException` → 2002).
+
+**Deploy (redom; NE u sync prozoru za cusma3):**
+
+1. `cd boat4you-backend/boat4you-ws-main && export JAVA_HOME=$(/usr/libexec/java_home -v 21) && ./gradlew bootJar` → `build/libs/boat4you-0.0.1-SNAPSHOT.jar`; `shasum` zapisati.
+2. scp na cusma2 i cusma3 kao `webservice_new.jar`.
+3. **cusma2 prvo** (jedini API): `cp -p webservice.jar webservice.jar.prev && mv webservice_new.jar webservice.jar` → `sudo systemctl restart boat4you.service` → poll `GET https://api.boat4you.com/public/settings/card-surcharge` dok ne bude 200 (~15–20 s). Restart prazni cacheve (prvi landinzi su hladni — upravo to gate sad podnosi).
+4. Provjere na cusma2 (≤ 1 zahtjev/s, bez Googlebot UA): `/public/yachts/distribution?did=c-54` 2× (drugi brzo, isti JSON); `/public/yachts?did=c-54&size=18` 200; `/public/yachts/<slug>` 200; `journalctl -u boat4you.service --since '10 min ago' | grep -c 'Connection is not available'` (očekivano 0); `… | grep 'Heavy query shed'` (rijetko ili nikad u mirnom prometu).
+5. **cusma3 samo kroz tvrdi gate** (jar paritet, isti kod; scheduler ne zove ove endpointe): u ISTOJ skripti `n=$(journalctl -u boat4youscheduler.service --since '10 minutes ago' | grep -ci 'nausys\|mmk'); [ "$n" -gt 0 ] && { echo "ABORT: $n sync linija"; exit 1; }` → tek onda `cp -p webservice.jar webservice.jar.prev && mv webservice_new.jar webservice.jar` + `sudo systemctl restart boat4youscheduler.service`. Izbjegavati slotove (UTC): MMK availability 08:40/12:40/16:40/20:40 (~17 min), MMK near-term 10:50/16:50, MMK full 06:00–07:30, NauSys availability 10:20/16:20/22:20, NauSys retry 06:15/10:15/15:15, NauSys offer 23:00+.
+6. Praćenje 24 h: broj `Connection is not available` po satu (prije 100–400 u naletima), `Heavy query shed` (zasićenje/timeout), 499/503 na boat stranicama u nginx logu cusma1/cusma5.
+
+**Rollback:**
+
+- Samo granice (bez novog jara): u `boat4you_vars.env` (backup `*.bak-YYYYMMDD-heavyq` prije edita) npr. `HEAVY_QUERY_DISTRIBUTION_MAX_CONCURRENT=12`, `HEAVY_QUERY_SEARCH_LIST_MAX_CONCURRENT=12`, `HEAVY_QUERY_STATEMENT_TIMEOUT_MS=60000` + restart; provjera da JVM vidi env: `tr '\0' '\n' < /proc/$(systemctl show -p MainPID --value boat4you.service)/environ | grep HEAVY_QUERY`.
+- Cijeli: `mv webservice.jar.prev webservice.jar` + restart (cusma2; cusma3 kroz isti gate). Nema migracija pa nema ni DB koraka.
+
+**nginx timing log (PRIPREMLJENO, NIJE PRIMIJENJENO) — cusma1, cusma2, cusma5:** sada je na sva tri nginx 1.24 s `access_log /var/log/nginx/access.log;` (combined, `/etc/nginx/nginx.conf` linija 40) pa se p95/p99 ne mogu mjeriti. `log_format` mora stajati PRIJE `access_log` koji ga koristi (conf.d se uključuje kasnije), zato ide u `nginx.conf`. Combined ostaje prefiks, nova polja su na kraju, pa postojeći parseri i dalje rade:
+
+```nginx
+# /etc/nginx/nginx.conf, http { … }, umjesto linije 40 (access_log …):
+log_format timed '$remote_addr - $remote_user [$time_local] "$request" '
+                 '$status $body_bytes_sent "$http_referer" "$http_user_agent" '
+                 'rt=$request_time urt=$upstream_response_time uct=$upstream_connect_time ucs=$upstream_cache_status';
+access_log /var/log/nginx/access.log timed;
+```
+
+Primjena po nodu: `sudo cp -p /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak-$(date +%Y%m%d)-timing` → edit → `sudo nginx -t` (MORA biti ok) → `sudo systemctl reload nginx` (reload, ne restart). Rollback: vratiti backup + `nginx -t` + reload. cusma5 `conf.d/cusmanich.conf:81 access_log off;` ostaje. p95 nakon toga: `awk -F'rt=' '/\/boat\//{split($2,a," "); print a[1]}' /var/log/nginx/access.log | sort -n | awk '{v[NR]=$1} END{print "p95", v[int(NR*0.95)], "p99", v[int(NR*0.99)]}'`.
+
 ## 2026-10-01 — Hand-verified twin pairs in the one-card-per-boat rule (V9_70, Desafinado 481 / 13163) — ✅ LIVE cusma2 09:01 UTC (jar `bb7901f8`, commit `58742ad`); cusma3 13:03 UTC
 
 Verified 1.10.: cusma2 Flyway "Migrating schema public to version 9.70 - yacht twin manual pair" → "Successfully applied 1 migration" (0.618 s), API health 200 after ~18 s; Desafinado `…-13163` and `…-481` both resolve to 481 with `listingCanonicalSlug` null; undated HR CATAMARAN+POWER_CATAMARAN listing 898 → 897 with only 481 (both before); twins `…-6047` (slug `…-7576`, lcs `…-6047`) and `ilia-8079` (lcs `…-3528`) unchanged; Stage B all 0 new FAIL (3 transient SM1 sitemap timeouts at 09:1x, 200 on refetch). cusma3 (Flyway pinned 1.43): "Schema up to date. No migration necessary", started 13.3 s, jar `bb7901f8`.
@@ -15,6 +64,7 @@ SEO regression 1.10.2026 (SM4, Mario „sve sredi"): Fountaine Pajot Saona 47 "D
 ## 2026-09-29 — One inquiry per submit, enforced in the backend — ✅ LIVE cusma2 10:31 UTC (jar `0acbaa29`, commit `f5e6b02`, includes `1d0ac4a`); cusma3 10:36 UTC same jar (gate 0 sync lines)
 
 Mario 27.9. (via BOAT4YOU 3): the inquiry form may send only one inquiry per submit; the boat4you-web guard is in-memory per Node process. `InquiryMutationService.createNewInquiry` builds a key (lower(trim(email)), yacht, dates, phone digits, trim+lower name/surname, whitespace-collapsed message — same as the web guard; a corrected phone/name/message is a new inquiry), takes `pg_advisory_xact_lock(hashtext(key))` and returns 200 without a row or e-mail when an identical inquiry from that e-mail exists in the last 10 minutes. E-mails stay inline — EmailService already defers the SMTP submit to afterCommit; wrapping the call in our own afterCommit (first draft) would have silenced every inquiry e-mail (Spring never runs a synchronization registered inside afterCommit) — caught in review before deploy.
+
 - Prod history: 3 of 7 same-email pairs (4.8 s / 33 s / 91 s apart) would have collapsed; a changed message after 7m48s stays separate.
 - Sister sites do not call /public/inquiries (their /api/yacht routes mail via nodemailer) — only their own web guard protects them.
 - Pre-existing, NOT changed: an exception while rendering an inquiry e-mail marks the transaction rollback-only → the lead is lost with a 500 (SMTP failures are async and safe). Candidate fix: `noRollbackFor` on the two InquiryEmailService send methods.
@@ -23,6 +73,7 @@ Mario 27.9. (via BOAT4YOU 3): the inquiry form may send only one inquiry per sub
 ## 2026-09-29 — Renamed partner charge listed once in admin client offers; partner id for admins only; MMK offer extras follow renames — ✅ LIVE cusma2 10:22 UTC (jar `90099988`, then `0acbaa29` 10:31); cusma3 10:36 UTC with `0acbaa29` (commit `1d0ac4a`; admin `4d3fa3f` LIVE 10:21 UTC first)
 
 Mario: the client offer e-mail for Fico - Premium line (13311, 11–18.9.2027) listed "Premium Line Pack (… Outboard Engine)" and "(… Outboard Engine; 1 SUP)" — one MMK charge (id 37419011718800129) renamed in place. ae64ce7's yacht-sync rename (28.9 06:10) gave the catalogue the new name; the matched offer 8773185 (product CREWED) kept the old one because `MmkYachtOfferSyncService` never rewrote `offer_extras.name` (~60k future obligatory rows on ~1,070 MMK yachts). MMK live quotes one offer for that week (Crewed, 08:00, new name); our second row 11996909 (product UNKNOWN, 09:00) is a duplicate from another sync path — separate issue, not touched.
+
 - `YachtExtrasDto.externalId` (partner row id) is set only for SYSTEM_ADMIN (`YachtExtrasMapper.partnerIdForAdmin`), serialized as a string (ids > 2^53). Anonymous /public/yachts/{slug} verified after deploy: 0 of 26 non-null. No cache holds the DTO; nginx caches /public/image only.
 - Admin Offers (`4d3fa3f`): cart key stays the `e.key` chain (NOT externalId — NauSys obligatory offer rows carry synthetic ids); an offer row with a catalogue row's partner id under another key drops that catalogue row (like mergeYachtAndOfferExtras). Admin deployed BEFORE the backend (the old admin keyed on `e.externalId ?? e.key` and would have split NauSys twins). Review simulation: 13311 card 22 → 21 rows, pack once; 12284 card now matches /calculate (SERVICE PACK 26 / A.P.A. 26 twins dropped).
 - MMK offer sync rewrites an existing offer extra's name (blank partner names ignored, also in the yacht sync).
@@ -40,6 +91,7 @@ Found in the 26.9 unpriced-yachts analysis (point 12), confirmed on prod by BOAT
 ## 2026-09-27 — A partner charge renamed in place shows once on bookings (Transit log ×2 on 1441015/2027) — ✅ LIVE cusma2 14:27 + cusma3 14:27 UTC (jar `b4b4d1d1`, commit `ae64ce7`)
 
 Mario: admin booking 1441015/2027 (MMK, Bali 4.2, yacht 8382) listed "Transit log" twice under "Obligatory - Paid at marina" and summed 900 € instead of 450 €. MMK renamed partner extra 6452581432503926 in place ("Transit Log (… cooking gas)" → "Transit log (… mooring fees for first and last night)"); offers + the booking carry the new name, `yacht_extras` kept the old one because the MMK yacht sync update branch never rewrote `name`. Admin and my-bookings merge booked extras with the catalogue by key (extras_id or name), so both showed. Price calc already merged by partner id — nobody was charged twice.
+
 - `MmkYachtSyncService`: existing catalogue rows are renamed (normalized); the first product carrying the id names it, so per-product labels (69 yacht+id pairs) never flip daily. Next run 06:10 UTC renames ~969 rows on ~890 yachts (~850 extrasKey changes; a checkout spanning 06:10 can lose an optional selection on its next /calculate — accepted, narrow).
 - `ReservationMappers` (admin + my-bookings `services`): a catalogue row with a booked row's partner id under another key takes the booked name + key, so the existing key merge shows it once. The partner id stays server-side — MMK ids end in the operator's company id (id % 10000 = agency, 1,206/1,206), so exposing them publicly was rejected in review.
 - Emails (option/confirmation `ReservationEmailService`, `PaymentPendingNotificationService`, `OptionExpiryService` ×2): "available at the marina" also skips booked partner ids.
@@ -60,6 +112,7 @@ Open (ADMIN session): Mario's 26.9 rule — dated searches must not show boats w
 ## 2026-09-26 — MMK phantom long / stale-option offers hidden by the free-offer reverifier — ✅ LIVE cusma2 19:15 + cusma3 19:16 UTC (jar `e780d657`, commit `dc06528`)
 
 Mario: a Split catamaran search for 3–10.7.2027 opened Lagoon 43 EMA (12210, Adriatic Sailing) on 12.6–10.7 (28 nights, 33,772 €) instead of the week. MMK quotes nothing for EMA in 2027 (exact-date `[]` for every period, twice; 2026 periods quoted). The 21.9 hand sweep hid only FREE rows; EMA's 14/21/28-night rows were `OPTION` with no live option, which the read path demotes to FREE (OPTION_ECHO_GRACE_HOURS), so they won the LONGER match.
+
 - `findShownFreeMmkCombos` (was `findFreeWeeklyMmkCombos`): future FREE rows of ANY length + OPTION rows with no live partner option/booking (same 48 h rule as the read path) and no `reservation_flow`. OPTION_WAITING untouched. Prod: 470,507 periods / 6,516 yachts, 1.7 s. 11,466 stale OPTION rows on 1,912 yachts (8,474 longer than 7 nights).
 - `markPeriodUnavailable` (was `markWeekUnavailable`): exact dates only, same guards re-checked at write time. Rolled-back prod test: no option 9 rows, live option (expiry NULL / −47 h) 0, expired −49 h 9, overlapping RESERVATION 0, RESERVATION from checkout day 9, other dates 0.
 - Groups are per yacht × year × shape (7-night / other), each sampled from its own periods; a phantom long block is found even while the weeks sell (adversarial review major). Breakers per shape: week groups keep the calibrated fleet abort (≥ 50 decided, ≤ 10 % empty, ≤ 10 % unknown); non-weekly groups are skipped (ERROR log) above 10 % empty once ≥ 50 are decided; per-agency 50 % cap per shape (a suspect week feed also blocks the agency's other lengths).
@@ -102,11 +155,11 @@ Follow-ups (minor): compare the cheapest week with a typical week instead of MAX
 
 **Live check 17:55 UTC (prod DB):** Flyway 9.64; `location.inland` = 93 rows (all id+name guards matched); visible yachts at inland bases 0; visible yachts of river builders 0; 17 river/lake agencies inactive; visible fleet 13,187. `/public/yachts/17148` (Le Boat) → 400, web boat page 404. Same day, before the deploy: the 13 river agencies (15:51 UTC) and the 4 lake agencies + 28 lake-base yachts (~16:05 UTC) were switched off by hand (backup tables `ops_river_agency_backup_20260925`, `ops_lake_yacht_backup_20260925`); API restarted 15:53 to drop caches. Reviews: `REVIEWS_ENABLED=true` added to both env files 15:45 UTC (backups `*.env.bak-20260925-reviews`), first sweep 26.9. 09:10 UTC.
 
-
 Le Boat "Caprice Comfort 51" was live on www.boat4you.com: since 5.7.2026 the MMK agency mirror auto-creates every
 unknown company ACTIVE, and 13 river operators came in that way (their cruisers are MOTORBOAT / MOTOR_YACHT, so the
 VesselType skip never caught them). The 13 agencies were switched off by hand in prod at 16:51 UTC (backup table
 `ops_river_agency_backup_20260925`); V9_63 records that fix (idempotent, `AND active` → 0 rows on prod).
+
 - `InlandVesselRules` (catalouge/utils): inland-only builders (Le Boat, Nicols, Pénichette, Linssen, De Drait, Gruno,
   houseboat/Hausboot, ...) + river-operator company names (le boat, riverly, canal/kanal, péniche, river, ...).
 - MMK + NauSys yacht sync: a yacht from an inland builder is skipped (MMK SkipReason INLAND_VESSEL via shipyardId →
@@ -154,6 +207,7 @@ self (no yacht FK); review_request 0, reservation_review 0, charter_facts 0; REV
 
 Follow-up to the V9_62 entry below (same unreleased feature; V9_62 was edited in place — it was never applied
 anywhere: not pushed, not deployed, local DB is at 1.89).
+
 - **`REVIEWS_ENABLED` default false in application-prod.yml** (was true + a note to override it on both nodes). Why:
   sending is at-most-once and the raw token is never stored, so a mail sent before the web page exists burns that
   customer's request for good (UNIQUE (reservation_id, kind) blocks every re-send) — a missing env line at restart
@@ -182,17 +236,18 @@ anywhere: not pushed, not deployed, local DB is at 1.89).
   — the chain cannot be replayed on an empty database (V9_18 inserts `location_region` for location 2029, a prod-only
   row); they now run on postgres:18-alpine (prod major) and every referenced column was cross-checked by hand against
   the migrations.
-**Tests (31, green):** ReviewCollectionIntegrationTest (9, PG18: + PUBLISHED review edited → NEW with stamp cleared,
-unsubscribe token reaches the mailer, re-send replaces the link / old token 404 / 48 h rule bypassed / refused when
-reviewed, opted-out, unpaid, unknown or disabled), ReviewControllersTests (5: + re-send status mapping, kind required),
-ReviewEmailTemplateRenderTests (4: + footer link in 2 templates × 9 languages, List-Unsubscribe headers, no token →
-no link), ReviewTokensTests (7), ReviewValidationTests (6).
-**After deploy:** `\d reservation_review` shows no yacht FK; flag off → `SELECT count(*) FROM review_request;` = 0.
-**Undo:** `webservice.jar.prev`; migration undo unchanged (see V9_62 entry).
+  **Tests (31, green):** ReviewCollectionIntegrationTest (9, PG18: + PUBLISHED review edited → NEW with stamp cleared,
+  unsubscribe token reaches the mailer, re-send replaces the link / old token 404 / 48 h rule bypassed / refused when
+  reviewed, opted-out, unpaid, unknown or disabled), ReviewControllersTests (5: + re-send status mapping, kind required),
+  ReviewEmailTemplateRenderTests (4: + footer link in 2 templates × 9 languages, List-Unsubscribe headers, no token →
+  no link), ReviewTokensTests (7), ReviewValidationTests (6).
+  **After deploy:** `\d reservation_review` shows no yacht FK; flag off → `SELECT count(*) FROM review_request;` = 0.
+  **Undo:** `webservice.jar.prev`; migration undo unchanged (see V9_62 entry).
 
 ## 2026-09-25 — Charter facts (V9_61) review fixes: 08:00 UTC slot, search-consistent boat count, skipper by extras_id, ?force, stale alert — ⏳ BUILT, not deployed
 
 Follow-up to the V9_61 entry below (same unreleased feature, deploy both together). No new migration.
+
 - **Schedule 04:20 → 08:00 UTC** (`CharterFactsJob.CRON = "0 0 8 * * *"`, zone UTC). Why: the NauSys nightly
   yacht + offer sync starts 23:20 and was measured at 6 h 39 m (`NausysSyncJob.runYachtSync`, PT10H lock), so 04:20
   sat in the middle of the heaviest write load of the day — the facts would read a half-refreshed offer grid while
@@ -214,12 +269,12 @@ Follow-up to the V9_61 entry below (same unreleased feature, deploy both togethe
 - **Stale alert:** after every daily run the job checks `max(computed_at)`; older than 48 h (or table empty) → ERROR
   `Charter facts are STALE: newest computed_at = …` every day until fixed (the refusal alone only logged once/day
   while the endpoint kept serving old facts indefinitely).
-**Tests (21, green):** CharterFactsComputeServiceTest (5, now PG18: fixture + yacht 19 all-UNAVAILABLE must not count
-anywhere, "Professional skipper" extras_id 1 counts, force replaces a shrink, force never overrides the empty guard),
-CharterFactsJobTests (5: + force passthrough, staleness 24 h/49 h/empty, cron = 08:00 UTC), controller 4, math 7.
-Mutation-checked: reverting the has_bookable filter or the extras_id match fails the suite.
-**After deploy (cusma3):** first cron run next 08:00 UTC, log `Charter facts: N rows …`; no `STALE` line.
-**Undo:** `webservice.jar.prev` (no schema change in this fix).
+  **Tests (21, green):** CharterFactsComputeServiceTest (5, now PG18: fixture + yacht 19 all-UNAVAILABLE must not count
+  anywhere, "Professional skipper" extras_id 1 counts, force replaces a shrink, force never overrides the empty guard),
+  CharterFactsJobTests (5: + force passthrough, staleness 24 h/49 h/empty, cron = 08:00 UTC), controller 4, math 7.
+  Mutation-checked: reverting the has_bookable filter or the extras_id match fails the suite.
+  **After deploy (cusma3):** first cron run next 08:00 UTC, log `Charter facts: N rows …`; no `STALE` line.
+  **Undo:** `webservice.jar.prev` (no schema change in this fix).
 
 ## 2026-09-25 — Review collection: booking + yacht review requests, magic-link form, admin moderation (V9_62) — ⏳ BUILT, not deployed
 
@@ -229,10 +284,11 @@ above) — nothing is mailed until `REVIEWS_ENABLED=true` is set on both nodes a
 
 **What / why:** phase 1 of the review plan (memory `project_review_voucher_plan_future`), collection only — nothing
 is displayed publicly, no vouchers/incentives. Two kinds per reservation:
+
 - **BOOKING** (the Boat4You booking experience) — requested right after the customer's FIRST payment. Trigger:
   `ReservationPaymentRecordedEvent`, published by the Stripe webhook (`StripePaymentService.handleWebhookEvent`) and by
   the admin bank-transfer confirm / mark-paid endpoints; `ReviewPaymentListener` = `@TransactionalEventListener(AFTER_COMMIT,
-  fallbackExecution)` → virtual thread, so a rolled-back payment never mails and the payment flow can never fail
+fallbackExecution)` → virtual thread, so a rolled-back payment never mails and the payment flow can never fail
   because of the review e-mail. "First payment" = the earliest `paid_on` of the flow is < 48 h old (a pre-existing
   booking paying its balance never qualifies). Safety net: the daily job re-checks the last 48 h.
 - **YACHT** (boat / charter) — daily job, charters with `date_to` 3-14 days ago, confirmed + at least one paid
@@ -257,12 +313,13 @@ is displayed publicly, no vouchers/incentives. Two kinds per reservation:
   Manufacturer + Model + Name (manufacturer not repeated when the model name starts with it). Inquiry e-mail untouched.
 
 **Endpoints:**
+
 - `GET /public/reviews/request/{token}` → 200 form context (kind, scoreKeys, reservationNumber, yachtId, yachtFullLabel,
   yachtMainImageId, dateFrom/dateTo, baseName/baseCountry, customerFirstName, locale, linkExpiresAt, submitted,
   editable, editableUntil, review = existing values only while editable), `Cache-Control: no-store`; 404 code 7001
   for unknown / malformed / expired link.
 - `POST /public/reviews/request/{token}` body `{rating 1-5 (required), scores{…kind keys 1-5}, title ≤120,
-  text ≤3000, publishConsent, locale}` → 201 new / 200 edit / 400 (1102, field map) / 404 (7001) / 409 (7002, edit
+text ≤3000, publishConsent, locale}` → 201 new / 200 edit / 400 (1102, field map) / 404 (7001) / 409 (7002, edit
   window over). Rate limit 10/min/IP (`application.rate-limit.public-review.*`) → 429.
 - `GET /admin/reviews?kind=&status=&page=&size=` (SYSTEM_ADMIN, both nodes) → PagedModel newest first;
   `PATCH /admin/reviews/{id}` `{"status":"PUBLISHED|HIDDEN|NEW"}` → 200 / 400 / 404 (7003). Reviews arrive as NEW.
@@ -293,41 +350,42 @@ unused). **Undo the migration** (only if wanted; deletes collected reviews):
 **What:** landing pages (`/search?destinations=<slug>[&boatTypes=X]` → did c-/r-/l-) get a block of real inventory
 facts. New table `charter_facts` (did, vessel_type NULL = all types, computed_at, payload jsonb; unique index on
 `(did, COALESCE(vessel_type,''))`), filled daily by `CharterFactsJob` **08:00 UTC on the scheduler node only**
-(`@Profile("data-sync")`, `@SchedulerLock("charterFactsRecompute", PT1H)`). *(Was 04:20 in the first build — wrong,
-that is inside the NauSys nightly sync; corrected, see the "review fixes" entry above.)*
+(`@Profile("data-sync")`, `@SchedulerLock("charterFactsRecompute", PT1H)`). _(Was 04:20 in the first build — wrong,
+that is inside the NauSys nightly sync; corrected, see the "review fixes" entry above.)_
 **Why precomputed:** cusma2 is the only API node (OOM history) — it only does one indexed row read per request.
 **Endpoints:**
+
 - `GET /public/charter-facts?did=c-54[&vesselType=CATAMARAN]` → 200 payload + `computedAt`,
   `Cache-Control: max-age=3600, public`; 404 no row; 400 malformed did (`^[clr]-\d{1,12}$`), missing did or
   unknown vesselType. `/public/**` is already permitAll — no security change.
 - `POST /admin/charter-facts/recompute` (SYSTEM_ADMIN, **cusma3 only** like the other /admin job triggers) → 202
   `STARTED` (runs in background under the SAME ShedLock lock as the cron) / 409 `ALREADY_RUNNING`;
   `?force=true` → 202 `STARTED_FORCED` (skips the < 50 % guard, never the empty guard).
-**Computation (set-based, one transaction, temp tables ON COMMIT DROP, `SET LOCAL statement_timeout 600s`,
-work_mem 128MB, jit off):** population = search's (EXTERNAL, sys_active, agency active + not availability_blocked),
-7-night offers with date_from in [today, +12 months), pickup marina in the 12 promoted countries
-(`charter-facts.countries`, default BS,ES,FR,GD,GR,HR,IT,ME,MQ,SC,TR,VG). One row per yacht-week (BAREBOAT/CREWED/
-one-way rows collapsed: price = cheapest non-UNAVAILABLE client_price EUR, available = any row FREE). did membership by
-pickup marina: c- via country.code2, r- via location_region with the search's own-country guard, l- = marina + its
-same-name siblings (findMarinaIdsByFoldedName fold). Keys: every promoted c- with boats; r-/l- with ≥10 boats; per
-vessel type with ≥10 boats. Fields: activeBoats, priceByMonth (p25/median/p75, months ≥5 offers), cheapest/
-priciestMonth, availableShareByMonth + mostBookedMonth, skipperWeekly (name starts "Skipper", no training/cook/…,
-per night ×7, per week/booking/boat/amount ×1, plain "Skipper" row preferred, 500-7000 EUR/week plausibility band),
-obligatoryExtrasWeekly (per-boat fees only — per-person items excluded; deposit/waiver/insurance excluded; boats with an
-obligatory percentage APA or no extras rows left out), deposit min/median/max (EUR ≥100 only), checkInDays,
-medianBuildYear, topModels (8), topBases (8, c-/r- only), boatTypeMix (all-types rows). Any figure with n<5 is omitted.
-**Safety:** the table is replaced (DELETE + INSERT) inside the same transaction — readers see old or new, never half.
-A run producing < 50 % of the stored rows (e.g. offer table emptied by an incident) is rolled back, old facts kept,
-ERROR logged. Measured on the local DB copy (145k yacht-weeks, 11k boats, 939k extras): whole SQL ≈ 3.5 s,
-685 keys / 264 dids.
-**Migration V9_61:** new empty table + index, `lock_timeout 5s`, idempotent (IF NOT EXISTS). No data touched.
-**After deploy:** cusma2 → `GET /public/charter-facts?did=c-54` = 404 until the first run (expected). On cusma3
-trigger once: `POST /admin/charter-facts/recompute` (202) → log line `Charter facts: N rows (M dids) from … yacht-weeks`
-→ `SELECT count(*), max(computed_at) FROM charter_facts;` → GET on cusma2 returns 200. Frontend wiring is separate.
-**Tests:** CharterFactsMathTests (7), CharterFactsControllerTests (4), CharterFactsJobTests (2),
-CharterFactsComputeServiceTest (5, Testcontainers PG17: real V9_61 + real aggregation SQL on a hand-checked fixture).
-**Rollback:** `webservice.jar.prev` on both nodes (the table stays, unused). **Undo the migration** (only if wanted):
-`DROP TABLE IF EXISTS charter_facts;` + `DELETE FROM flyway_schema_history WHERE version = '9.61';`.
+  **Computation (set-based, one transaction, temp tables ON COMMIT DROP, `SET LOCAL statement_timeout 600s`,
+  work_mem 128MB, jit off):** population = search's (EXTERNAL, sys_active, agency active + not availability_blocked),
+  7-night offers with date_from in [today, +12 months), pickup marina in the 12 promoted countries
+  (`charter-facts.countries`, default BS,ES,FR,GD,GR,HR,IT,ME,MQ,SC,TR,VG). One row per yacht-week (BAREBOAT/CREWED/
+  one-way rows collapsed: price = cheapest non-UNAVAILABLE client_price EUR, available = any row FREE). did membership by
+  pickup marina: c- via country.code2, r- via location_region with the search's own-country guard, l- = marina + its
+  same-name siblings (findMarinaIdsByFoldedName fold). Keys: every promoted c- with boats; r-/l- with ≥10 boats; per
+  vessel type with ≥10 boats. Fields: activeBoats, priceByMonth (p25/median/p75, months ≥5 offers), cheapest/
+  priciestMonth, availableShareByMonth + mostBookedMonth, skipperWeekly (name starts "Skipper", no training/cook/…,
+  per night ×7, per week/booking/boat/amount ×1, plain "Skipper" row preferred, 500-7000 EUR/week plausibility band),
+  obligatoryExtrasWeekly (per-boat fees only — per-person items excluded; deposit/waiver/insurance excluded; boats with an
+  obligatory percentage APA or no extras rows left out), deposit min/median/max (EUR ≥100 only), checkInDays,
+  medianBuildYear, topModels (8), topBases (8, c-/r- only), boatTypeMix (all-types rows). Any figure with n<5 is omitted.
+  **Safety:** the table is replaced (DELETE + INSERT) inside the same transaction — readers see old or new, never half.
+  A run producing < 50 % of the stored rows (e.g. offer table emptied by an incident) is rolled back, old facts kept,
+  ERROR logged. Measured on the local DB copy (145k yacht-weeks, 11k boats, 939k extras): whole SQL ≈ 3.5 s,
+  685 keys / 264 dids.
+  **Migration V9_61:** new empty table + index, `lock_timeout 5s`, idempotent (IF NOT EXISTS). No data touched.
+  **After deploy:** cusma2 → `GET /public/charter-facts?did=c-54` = 404 until the first run (expected). On cusma3
+  trigger once: `POST /admin/charter-facts/recompute` (202) → log line `Charter facts: N rows (M dids) from … yacht-weeks`
+  → `SELECT count(*), max(computed_at) FROM charter_facts;` → GET on cusma2 returns 200. Frontend wiring is separate.
+  **Tests:** CharterFactsMathTests (7), CharterFactsControllerTests (4), CharterFactsJobTests (2),
+  CharterFactsComputeServiceTest (5, Testcontainers PG17: real V9_61 + real aggregation SQL on a hand-checked fixture).
+  **Rollback:** `webservice.jar.prev` on both nodes (the table stays, unused). **Undo the migration** (only if wanted):
+  `DROP TABLE IF EXISTS charter_facts;` + `DELETE FROM flyway_schema_history WHERE version = '9.61';`.
 
 ## 2026-09-25 — Unusable/missing request parameters answer 400, not 500 (ce80f75, ✅ LIVE cusma2 07:57 + cusma3 07:58 UTC)
 
@@ -369,6 +427,7 @@ run on a throwaway PostgreSQL 17 with the unit-test strings (7 renamed, "Two man
 "someone man crew" / NULL untouched, 2nd run UPDATE 0). Not touched: `extras` (our labels), reservation_extras and
 external_reservation_extras (booking snapshots — old bookings keep "One man crew").
 **Before deploy (cusma4), snapshot = the only exact undo:**
+
 ```sql
 \copy (SELECT 'yacht_extras' AS t, id, name FROM yacht_extras WHERE name ~* '\mone[[:space:]-]*man[[:space:]-]*crew\M'
        UNION ALL SELECT 'offer_extras', id, name FROM offer_extras WHERE name ~* '\mone[[:space:]-]*man[[:space:]-]*crew\M')
@@ -378,6 +437,7 @@ SELECT a.yacht_id, a.name, b.name FROM yacht_extras a JOIN yacht_extras b ON b.y
    AND lower(b.name) = lower(regexp_replace(a.name, '\mone[[:space:]-]*man[[:space:]-]*crew\M', 'Skipper', 'gi'))
  WHERE a.name ~* '\mone[[:space:]-]*man[[:space:]-]*crew\M';
 ```
+
 **After:** `flyway_schema_history` has V9_60 success; the first query returns 0; admin offer builder on an NSS
 Caribbean yacht finds the Skipper row. Web ISR pages may show the old name until their revalidate (≤ 1 h).
 **Rollback:** `webservice.jar.prev` (V9_60 stays applied; the old jar shows the new names, only its NauSys obligatory
@@ -667,6 +727,7 @@ back to the earliest overlapping one (yacht still shown); the final price is re-
 429s were spread over all 24 hours — it was user traffic, not the nightly, burning the NauSys quota.
 
 **1. Search path (`SearchWarmPolicy`, `YachtController`, `ExternalSyncService`)**
+
 - Weekly ranges (duration % 7 == 0, any start day: 7/14/21/28 d) fire NO partner warm at all — neither NauSys nor MMK.
 - Non-weekly ranges keep the live async warm. New: the NauSys leg no longer swallows failures; a 429 / 5xx / timeout /
   ExternalSystemException parks the (dates, NauSys countries/regions/locations) request in the new table
@@ -731,6 +792,7 @@ Goal (Mario): "sync must run undisturbed and we must have ALL the data". Fleet-a
 investigated read-only against prod logs/DB first, then implemented in 4 isolated worktrees and merged.
 
 **1. NauSys resilience + data completeness (`domains/external/nausys/**`, V9_54)**
+
 - Company 1981 (Set Sail) failed every night since 28.8: NauSys sends `calculationType: INCLUDED_IN_PRICE`, our
   generated enum only knew ADVANCE_PAYMENT/SEPARATE_PAYMENT → whole response unparseable → 0 intervals synced,
   449 offers frozen at 2026-11-23, no 2027 season. Fix: spec enum extended + a dedicated NauSys ObjectMapper that
@@ -760,6 +822,7 @@ investigated read-only against prod logs/DB first, then implemented in 4 isolate
   17:10-20:35, 21:05-22:15 UTC.** "06:15 backup" in old notes = NauSys backup-sync cron, NOT a DB backup.
 
 **2. yacht_search_view refresh (cusma4 load) (`domains/catalouge/**`, R__1_03)**
+
 - Every 5 min REFRESH CONCURRENTLY diffed 1.7M rows with work_mem 32 MB → ~1.8 GB temp files per run,
   **530 GB/day of temp writes**, 288 × ~50 s/day; the admin on-demand refresh from cusma2 has been failing since 9.7
   (1 GB temp_file_limit). Now `YachtSearchViewRefresher` runs the refresh with session `work_mem=768MB`,
@@ -773,6 +836,7 @@ investigated read-only against prod logs/DB first, then implemented in 4 isolate
   no dependent views on the matview; owner boat4you_owner, GRANT SELECT to boat4you_app kept.
 
 **3. Transactions vs partner HTTP (`ExternalSyncService`, `ReservationSyncService`, retryable clients)**
+
 - The only confirmed prod leak/kill source: per-yacht warm held a read-only JPA tx + advisory-lock connection across
   the MMK/NauSys call (idle-in-transaction kills at ~01:00 nightly). Now: short read tx resolves the target, partner
   call runs tx-free, writes stay REQUIRES_NEW. Inert `@Transactional` on `processReservation` removed (self-invoked).
@@ -782,6 +846,7 @@ investigated read-only against prod logs/DB first, then implemented in 4 isolate
   (181/182 "leaks" were the >60 s refresh).** Stale "5 min" comments → 180 s (role idle_in_transaction timeout).
 
 **4. Logging / PII (`ExternalAvailabilityReconcileService`, MMK services, `LogMasking`, `ApiErrorHandler`)**
+
 - "Skip absent-reconcile … ZERO reservations" (4,660 WARN/day) → outcome enum + ONE run-summary INFO line per run
   (agencies, calls, empty per year with ids, unmappedNonEmpty, removed, breakerTripped); WARN only for the two real
   signals (partner rows but none mapped; breaker tripped — now WITH the agency id). Delete semantics untouched
@@ -823,6 +888,7 @@ pg_stat_statements at the next PG restart, PG 18.1 → 18.6.
 
 Fleet audit (2.9.2026) found 9 kernel OOM kills of the API JVM on cusma2 in 12 days (anon-rss 5.6 GB at
 kill = 4 GB heap + ~1.6 GB off-heap on a 5.8 GB box). Changes applied live at 22:00 UTC:
+
 - `boat4you.service` ExecStart `-Xmx4096m` → `-Xmx3072m` (backup `boat4you.service.bak-20260902`), controlled
   restart, API up in 12 s. If the app ever throws java.lang.OutOfMemoryError under this heap, that is the
   signal to fix the in-process caches (Ehcache entry-sized pools, OpenCV per-request native work) — see
@@ -967,11 +1033,12 @@ Zen test photos exist).
 
 ⚠️ **PRODUCTION INCIDENT — ~5 min API outage (~20:29–20:34 UTC):** TWO work streams were deploying
 to cusma2 at the same time (mine = trip; a parallel one = booking-number prefix 1001→1441 **V9_33**
-+ "reservation charter update" **V9_34**). Their concurrent restarts + a transient Flyway
-"Migrations have failed validation" during the migration transition crash-looped cusma2 for ~5 min
-(api.boat4you.com 502). It SELF-RECOVERED: the parallel jar (size 229964138) settled, applied V9_34
-(schema now **9.34**), booted healthy (Tomcat 20:35:03). Final state verified stable: api/www/admin/
-trip all 200/307, cusma2 no further restarts.
+
+- "reservation charter update" **V9_34**). Their concurrent restarts + a transient Flyway
+  "Migrations have failed validation" during the migration transition crash-looped cusma2 for ~5 min
+  (api.boat4you.com 502). It SELF-RECOVERED: the parallel jar (size 229964138) settled, applied V9_34
+  (schema now **9.34**), booted healthy (Tomcat 20:35:03). Final state verified stable: api/www/admin/
+  trip all 200/307, cusma2 no further restarts.
 
 **Resulting split (benign, but note for next deploy):** cusma2 (API) runs the PARALLEL jar (9.34,
 charter-update, and it DOES carry my trip code — album.zip 403-guard present, so they built from
@@ -990,6 +1057,7 @@ the parallel deploy).
 ## 2026-07-05 (noć) — Trip: GDPR-minimal admin + album ZIP download (BE 05cdd55, web tfBhU7f…, admin, ALL DEPLOYED)
 
 **Mario 5.7.2026:** the broker must NOT have casual access to the crew's private trip content.
+
 - **Admin now has NO chat / participants / photo-browsing.** AdminTripController reduced to:
   album-summary (counts only), album.zip (?marketingOnly=true = only consented), regenerate-token.
   Removed the chat DIGEST email (it carried guest PII) and the 💬 unread badge; also removed the
@@ -1165,7 +1233,6 @@ API 200, admin 200. Known gap: ACI Marina Split has NULL lat/lon → weather hid
 
 ---
 
-
 ## 2026-07-05 — Agency mirror: auto-create/auto-deactivate partner agencies (V9_28)
 
 **Rule (Mario 5.7.2026):** the partner's company list IS our agency list — every new MMK/NauSys
@@ -1179,6 +1246,7 @@ are never deactivated (logged). NauSys VAT/name match never merges into an MMK-s
 (one row per system — dual VAT duplicates exist in prod, findAllByVatCode + filter).
 
 **Pre-deploy checklist:**
+
 - `V9_28` = ALTER TABLE agency (ACCESS EXCLUSIVE!) + unique index on
   agency_source(external_system_id, external_id) (prod pre-checked: 0 duplicates 5.7.).
   ⚠️ Before restarting cusma2: check `pg_stat_activity` for idle-in-transaction backends
@@ -1229,8 +1297,7 @@ kept because sent reservation emails hotlink `/public/image/{mainImageId}`); `de
 deletes files too. Backfill target measured pre-deploy: **6.5k rows / 335 inactive yachts**.
 No migration.
 
-**Deploy (DONE 2026-07-01 ~22:31 UTC):** jar from `5e9818e` → cusma2 (22:31, `/public/countries`
-200) + cusma3 (22:32, started 10.9s). This jar also carried the two pending items below — both are
+**Deploy (DONE 2026-07-01 ~22:31 UTC):** jar from `5e9818e` → cusma2 (22:31, `/public/countries` 200) + cusma3 (22:32, started 10.9s). This jar also carried the two pending items below — both are
 now LIVE (V9_26 was already applied at 22:28 by the parallel session's own cusma2 deploy of
 `07fcff5`; this deploy supersedes that jar).
 
@@ -1278,6 +1345,7 @@ keeps its bounded read-only tx. NO migration in this commit — safe to ride alo
 the V9_26 deploy below (any jar built from main ≥ 5c7aa53 carries it).
 
 **Verify after deploy (cusma2):**
+
 - `journalctl -u boat4you --since "<deploy time>" | grep -c "Apparent connection leak"` → should stay 0
   (pre-fix: ~1700/day in 5-min lockstep on AsyncThread-*).
 - psql on cusma4: `SELECT count(*) FROM pg_stat_activity WHERE client_addr='192.168.55.2' AND state='idle in transaction' AND now()-xact_start > interval '90 seconds'` → 0 across a few samples
@@ -1315,8 +1383,9 @@ date. `V9_25` fixed pre-existing rows (live unconfirmed options, earliest unpaid
 prod dry-run + actual: exactly 1 row, the Zen reservation: 08.07 → 06.07).
 
 **Deployed 2026-07-01 ~21:52 UTC** cusma2 (V9_25 applied, verified Zen phase 88 = 2026-07-06)
-+ cusma3. Rollback: `webservice.jar.bak.e2106ce` (both). Note: an already-open booking session
-caches phases in sessionStorage — fresh page loads / my-bookings / emails read the DB.
+
+- cusma3. Rollback: `webservice.jar.bak.e2106ce` (both). Note: an already-open booking session
+  caches phases in sessionStorage — fresh page loads / my-bookings / emails read the DB.
 
 ---
 
@@ -1327,16 +1396,17 @@ caches phases in sessionStorage — fresh page loads / my-bookings / emails read
 installments (2 phases → 16 EUR per wire, mandatory); all fees whole-euro (no cents).
 
 **How it works:** the fee infrastructure already existed (settings `CARD_PAYMENT_SURCHARGE`
-+ `BANK_TRANSFER_FIXED_FEE`, public endpoints, FE display) — card surcharge was already
-applied to the Stripe charge but the setting was unset (0), and the bank fee was
-display-only cosmetics. This deploy: `V9_24` seeds 5/32 (admin-editable later); Stripe
-surcharge now rounded HALF_UP to whole EUR; NEW `BankTransferFeeShare` splits 32 whole-euro
-across phases (earlier phases absorb remainder: 3 phases → 11/11/10); the wire "Transfer
-amount" in fewMoreDetails / optionExpiryReminder / reservationPaymentPending emails now
-carries the phase's share + a localized mandatory-fee notice (all 10 email locales).
-**Payment phase rows keep the base charter price** — the fee is a payment-channel
-surcharge applied at charge/communication time, so card payers never pay the wire fee
-and vice versa; no phase mutation, no confirmed-price interaction.
+
+- `BANK_TRANSFER_FIXED_FEE`, public endpoints, FE display) — card surcharge was already
+  applied to the Stripe charge but the setting was unset (0), and the bank fee was
+  display-only cosmetics. This deploy: `V9_24` seeds 5/32 (admin-editable later); Stripe
+  surcharge now rounded HALF_UP to whole EUR; NEW `BankTransferFeeShare` splits 32 whole-euro
+  across phases (earlier phases absorb remainder: 3 phases → 11/11/10); the wire "Transfer
+  amount" in fewMoreDetails / optionExpiryReminder / reservationPaymentPending emails now
+  carries the phase's share + a localized mandatory-fee notice (all 10 email locales).
+  **Payment phase rows keep the base charter price** — the fee is a payment-channel
+  surcharge applied at charge/communication time, so card payers never pay the wire fee
+  and vice versa; no phase mutation, no confirmed-price interaction.
 
 **Frontend (boat4you-web 5e888c2, deployed cusma1 BUILD_ID GJ1QezPFzD74fW8uoKH22):**
 UnifiedPaymentStep + PayNowModal mirror the backend math exactly (Math.round card fee;
@@ -1351,15 +1421,16 @@ Rollbacks: `webservice.jar.bak.78b8027` (both), `.next.bak-202607012138` (cusma1
 
 ## 2026-06-30 — NauSys createOption INSUFFICIENT_DATA fix for strict agencies (commit 797f9bd)
 
-**Symptom:** customers could not place an option on yachts of *strict* NauSys agencies
+**Symptom:** customers could not place an option on yachts of _strict_ NauSys agencies
 (Navigare = our agency 286 / NauSys companyId 122957; Dream Yacht Charter). The boat-detail
 "enter-your-details" step failed; createInfo returned OK (with a price) but `createOption`
 returned `INSUFFICIENT_DATA (201)`. Reported via Nedo (yacht 4548 / NauSys 37302180).
 
 **Root cause (proven live, not guessed):** for strict agencies NauSys `createOption` requires the
 client to carry a **COMPLETE postal address**. With only name+surname the option is rejected.
-Surprisingly, supplying a client **email** *also* triggers `INSUFFICIENT_DATA` (NauSys then tries a
+Surprisingly, supplying a client **email** _also_ triggers `INSUFFICIENT_DATA` (NauSys then tries a
 registered-client lookup that needs more fields). Live isolation matrix on 2026-06-30:
+
 - name+surname only → createOption INSUFFICIENT (Navigare); OK for lenient agencies.
 - name+surname + **address** (no email) → createOption **OK** for Navigare AND all 4 lenient agencies tested.
 - address + **email** → INSUFFICIENT again. So: address required, email must be omitted.
@@ -1389,22 +1460,27 @@ reservations to the partner's complete response by NATURAL KEY (yacht + dates + 
 legacy rows) or duplicate-mapped to another yacht (the Vi La Ut case). Ships behind a SHADOW flag.
 
 ### Deploy order (standard backend deploy)
+
 1. **cusma2 FIRST** — applies Flyway `V9_23` (FLYWAY_TARGET_VERSION=latest live). Restart `boat4you`.
 2. **cusma3 SECOND** — scheduler (Flyway-pinned 1.43 → does NOT apply V9_23). Restart scheduler.
 
 ### PRE-DEPLOY dry-run (29.6.2026 ~18:30 UTC, prod)
+
 `V9_23` deletes self-contradictory future hard-blocks (RESERVATION/SERVICE, option_expiration NULL,
 date_to>today, overlapping one of OUR FREE offers on the same yacht):
+
 - **438 reservations across 334 yachts** will be deleted.
 - **Includes Vi La Ut res 283386 (yacht 4736, 08/08→15/08)** → that boat reappears as bookable.
-**VERIFY post-migration:** Flyway-deleted count ≈ 438 (`SELECT count(*)` with the same criteria → 0 after).
+  **VERIFY post-migration:** Flyway-deleted count ≈ 438 (`SELECT count(*)` with the same criteria → 0 after).
 
 ### POST-DEPLOY (cusma2)
+
 - The search hard-block reads `external_reservations` LIVE (correlated NOT EXISTS), so the fix is
   effective the instant the migration commits — **no manual matview refresh required.** (The
   `yacht_search_view` 5-min refresh updates the FREE/price display in due course.)
 
 ### SHADOW → LIVE (the catastrophe firewall — do NOT skip)
+
 - Ships `RECONCILE_SHADOW=true` (default in code: `reconcile.shadow-mode:true`). While ON,
   `reconcileAbsent` LOGS what it WOULD delete (`[SHADOW] reconcile WOULD delete ...`) and deletes
   NOTHING. The migration above still runs (it is independent), so the 888/438 customer-facing damage
@@ -1419,15 +1495,19 @@ date_to>today, overlapping one of OUR FREE offers on the same yacht):
   duplicate backlog over normal cycles, within the per-agency 30% breaker. Verified first live run.
 
 ### cusma3 systemd state (server-only ops config — NOT in git; recorded here for reproducibility)
+
 Current live `ExecStart` in `/etc/systemd/system/boat4youscheduler.service`:
+
 ```
 ExecStart=java -Xmx2048m -Dreconcile.shadow-mode=false -jar /home/cusma3/boat4you/webservice.jar
 ```
+
 - `-Xmx2048m` — heap cap (from the 29.6 sync-freq deploy; was 6144m). Backup: `~/boat4youscheduler.service.bak.6144`.
 - `-Dreconcile.shadow-mode=false` — reconcile in LIVE delete mode. Backup: `~/boat4youscheduler.service.bak.shadow`.
 - REVERT reconcile to shadow (deletes nothing): drop the `-D` flag → `daemon-reload` → restart.
 
 ### Verify (post-deploy)
+
 - Vi La Ut (yacht 4736) week 08–15.08.2026 shows bookable on the site; DB has no res for that week.
 - `AvailabilityIntegrityDetectorJob` (06:40 daily) logs: contradictions → trending to ~0, mapping-less
   → trending down, duplicate partner-ids → 0. WARN if contradictions > 25.
