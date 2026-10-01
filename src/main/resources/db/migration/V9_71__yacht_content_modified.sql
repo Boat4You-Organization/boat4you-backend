@@ -25,10 +25,13 @@
 -- renders (YachtMapper.toDto / toDetailsDto, Yacht.isInquireOnly).
 --
 -- No foreign key (as V9_70): a deleted yacht leaves a harmless row, yacht ids are never reused.
--- CREATE TRIGGER takes SHARE ROW EXCLUSIVE on yacht. Readers never wait for it (the API keeps serving), but a sync
--- transaction still writing yacht holds it off, and a lock timeout here would fail the API start. So each attempt waits
--- at most 3 s (writers queue behind it meanwhile, readers do not) and it tries 10 times, 3 s apart, before giving up
--- (about a minute). Deploy outside the sync windows anyway (DEPLOY_NOTES).
+-- CREATE TRIGGER takes SHARE ROW EXCLUSIVE on yacht. Plain reads do not conflict with it, but a sync transaction still
+-- writing yacht holds it off - and Flyway runs before the API serves anything, so on cusma2 (the only API node) every
+-- second waited here is API downtime, and giving up means the API does not start. Each attempt waits at most 3 s
+-- (writers queue behind it meanwhile) and it tries 10 times, 3 s apart (about a minute), before giving up.
+-- To keep that wait out of the restart, the file is idempotent: apply it by hand as boat4you_owner in a quiet moment
+-- before the deploy (DEPLOY_NOTES); Flyway then finds both triggers and takes no lock on yacht at all.
+-- Deploy outside the sync windows anyway.
 
 CREATE TABLE IF NOT EXISTS public.yacht_content_modified (
     yacht_id    BIGINT      PRIMARY KEY,
@@ -50,12 +53,18 @@ DO $$
 DECLARE
     attempt INT := 0;
 BEGIN
+    -- Both in place (applied by hand before the restart): nothing to do and no lock on yacht.
+    IF (SELECT count(*) FROM pg_trigger
+         WHERE tgrelid = 'public.yacht'::regclass
+           AND tgname IN ('yacht_content_modified_insert', 'yacht_content_modified_update')) = 2 THEN
+        RETURN;
+    END IF;
     LOOP
         BEGIN
             PERFORM set_config('lock_timeout', '3s', true);
-            EXECUTE 'CREATE TRIGGER yacht_content_modified_insert AFTER INSERT ON public.yacht '
+            EXECUTE 'CREATE OR REPLACE TRIGGER yacht_content_modified_insert AFTER INSERT ON public.yacht '
                         'FOR EACH ROW EXECUTE FUNCTION public.yacht_content_modified_touch()';
-            EXECUTE 'CREATE TRIGGER yacht_content_modified_update AFTER UPDATE ON public.yacht FOR EACH ROW WHEN ('
+            EXECUTE 'CREATE OR REPLACE TRIGGER yacht_content_modified_update AFTER UPDATE ON public.yacht FOR EACH ROW WHEN ('
                         '(OLD.name, OLD.model_id, OLD.location_id, OLD.build_year, OLD.length, OLD.beam, OLD.cabins, '
                         'OLD.wc, OLD.berths, OLD.max_persons, OLD.engine_power, OLD.fuel_tank, OLD.water_tank, '
                         'OLD.mainsail_type, OLD.deposit, OLD.insured_deposit, OLD.deposit_currency, OLD.crew_number, '

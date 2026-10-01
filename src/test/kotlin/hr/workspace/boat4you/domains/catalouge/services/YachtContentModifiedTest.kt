@@ -25,8 +25,9 @@ import java.util.concurrent.TimeUnit
  * Codex audit N7 (1.10.2026): the sitemaps' `<lastmod>` comes from yacht_content_modified, written by the V9_71 trigger
  * on yacht. Only a change of a field the public boat page renders moves it - never a sync re-saving unchanged values,
  * never a private field - and it never moves backwards. CREATE TRIGGER must wait for a sync still writing yacht instead
- * of failing the API start, and must never block readers meanwhile. Real V9_71 on PostgreSQL 18 (prod major), yacht
- * with the production column list.
+ * of failing the API start, and must never block readers meanwhile. The file is idempotent: applied by hand before the
+ * deploy, the Flyway run at the API start takes no lock on yacht (review 1.10.2026: Flyway runs before the API serves,
+ * so a lock wait there is downtime). Real V9_71 on PostgreSQL 18 (prod major), yacht with the production column list.
  */
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -221,5 +222,40 @@ class YachtContentModifiedTest {
         jdbc.queryForObject("SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'yacht_content_modified_%'", Long::class.java) shouldBe 2L
         jdbc.update("UPDATE yacht SET cabins = 6 WHERE id = 1")
         (stamp(1)!! > LONG_AGO) shouldBe true
+    }
+
+    @Test
+    fun `applied by hand before the deploy, the Flyway run takes no lock on yacht while a sync writes it`() {
+        // the triggers exist (setUp applied V9_71, as the manual step before the restart does)
+        dataSource.connection.use { sync ->
+            // a sync transaction is writing yacht (ROW EXCLUSIVE on yacht and on yacht_content_modified)
+            sync.autoCommit = false
+            sync.createStatement().use { it.executeUpdate("UPDATE yacht SET cabins = 7 WHERE id = 1") }
+            val started = System.nanoTime()
+            dataSource.connection.use { flyway ->
+                // any lock wait on yacht would fail the run instead of passing slowly
+                flyway.createStatement().use { it.execute("SET lock_timeout = '1s'") }
+                try {
+                    migrateLikeFlyway(flyway)
+                } finally {
+                    flyway.createStatement().use { it.execute("RESET lock_timeout") }
+                }
+            }
+            (System.nanoTime() - started < TimeUnit.SECONDS.toNanos(1)) shouldBe true
+            sync.rollback()
+            sync.autoCommit = true
+        }
+        jdbc.queryForObject("SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'yacht_content_modified_%'", Long::class.java) shouldBe 2L
+    }
+
+    @Test
+    fun `a half-applied state is completed - the missing trigger is created, the existing one replaced`() {
+        jdbc.execute("DROP TRIGGER yacht_content_modified_update ON yacht")
+        dataSource.connection.use { migrateLikeFlyway(it) }
+        jdbc.queryForObject("SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'yacht_content_modified_%'", Long::class.java) shouldBe 2L
+        jdbc.update("UPDATE yacht SET cabins = 6 WHERE id = 1")
+        (stamp(1)!! > LONG_AGO) shouldBe true
+        jdbc.update(BOAT, 3)
+        stamp(3) shouldNotBe null
     }
 }
