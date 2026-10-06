@@ -9,8 +9,11 @@
 -- ADD COLUMN (nullable, no default) is metadata-only but needs ACCESS EXCLUSIVE on yacht, and Postgres takes that lock
 -- even for ADD COLUMN IF NOT EXISTS when every column already exists (critique B-3). So:
 --   1. if all 14 columns exist (hand-applied before the restart) -> RETURN: no lock at all on the Flyway run;
---   2. otherwise each attempt waits at most 3 s for the lock (writers queue behind it meanwhile), 10 attempts 3 s apart,
---      then gives up (API does not start - deploy outside the sync windows, see DEPLOY_NOTES).
+--   2. otherwise each attempt waits at most 1 s for the lock - and while it waits EVERY query on yacht, reads included
+--      (boat pages, the search page lookup), queues behind it - then 1 s with no lock; 30 attempts (~1 min), then it
+--      gives up (API does not start). Anything holding any lock on yacht blocks it: a sync writing yacht, the 10-minute
+--      matview REFRESH (180-423 s, holds ACCESS SHARE on yacht throughout), a pg_dump backup. Hand-apply right after a
+--      matview refresh ends, outside the sync and backup slots (DEPLOY_NOTES).
 -- The COMMENTs run inside the same guarded attempt (same lock, same subtransaction).
 -- Hand-apply as boat4you_owner in a quiet moment before the cusma2 restart (same procedure as V9_71). V__ migrations
 -- run only on cusma2 (FLYWAY_OUT_OF_ORDER=true, target latest); cusma3 is pinned and must get the new jar only AFTER
@@ -33,7 +36,7 @@ BEGIN
     END IF;
     LOOP
         BEGIN
-            PERFORM set_config('lock_timeout', '3s', true);
+            PERFORM set_config('lock_timeout', '1s', true);
             ALTER TABLE public.yacht
                 ADD COLUMN IF NOT EXISTS cabins_note         TEXT,
                 ADD COLUMN IF NOT EXISTS berths_note         TEXT,
@@ -82,11 +85,11 @@ BEGIN
         EXCEPTION
             WHEN lock_not_available THEN
                 attempt := attempt + 1;
-                IF attempt >= 10 THEN
+                IF attempt >= 30 THEN
                     RAISE;
                 END IF;
-                RAISE NOTICE 'V9_72: yacht is locked (attempt % of 10), retrying in 3 s', attempt;
-                PERFORM pg_sleep(3);
+                RAISE NOTICE 'V9_72: yacht is locked (attempt % of 30), retrying in 1 s', attempt;
+                PERFORM pg_sleep(1);
         END;
     END LOOP;
 END $$;

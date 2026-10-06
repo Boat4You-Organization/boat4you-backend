@@ -18,8 +18,9 @@ import java.util.concurrent.TimeUnit
 /**
  * V9_72 (capacity contract v1, 6.10.2026) adds 14 nullable partner columns to yacht. ADD COLUMN needs ACCESS EXCLUSIVE
  * on yacht even when the columns exist (critique B-3), so the file first checks information_schema and returns without
- * any lock when all 14 are there (applied by hand before the restart), otherwise retries the ALTER with a 3 s lock
- * timeout while a sync writes yacht. Real V9_72 on PostgreSQL 18 (prod major), yacht with the production column list.
+ * any lock when all 14 are there (applied by hand before the restart), otherwise retries the ALTER with a 1 s lock
+ * timeout while a sync writes yacht - while an attempt waits, reads of yacht queue behind it too, so each wait is short.
+ * Real V9_72 on PostgreSQL 18 (prod major), yacht with the production column list.
  */
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -172,7 +173,7 @@ class YachtPartnerCapacityMigrationTest {
     fun `a half-applied state waits for a sync still writing yacht, then completes`() {
         jdbc.execute("ALTER TABLE yacht DROP COLUMN internal_remark, DROP COLUMN engine_power_each")
         dataSource.connection.use { sync ->
-            // a sync transaction holds yacht (ROW EXCLUSIVE) for 4.5 s - longer than one 3 s attempt
+            // a sync transaction holds yacht (ROW EXCLUSIVE) for 4.5 s - longer than two 1 s attempts
             sync.autoCommit = false
             sync.createStatement().use { it.executeUpdate("UPDATE yacht SET cabins = 6 WHERE id = 1") }
             val started = System.nanoTime()
@@ -183,6 +184,33 @@ class YachtPartnerCapacityMigrationTest {
             sync.autoCommit = true
             deploy.get(30, TimeUnit.SECONDS)
             (System.nanoTime() - started > TimeUnit.SECONDS.toNanos(3)) shouldBe true
+        }
+        newColumns() shouldBe NEW_COLUMNS
+    }
+
+    @Test
+    fun `while it waits for a sync, a read of yacht waits at most one 1 s attempt`() {
+        jdbc.execute("ALTER TABLE yacht DROP COLUMN internal_remark")
+        dataSource.connection.use { sync ->
+            // a sync transaction holds yacht (ROW EXCLUSIVE) while the migration retries
+            sync.autoCommit = false
+            sync.createStatement().use { it.executeUpdate("UPDATE yacht SET cabins = 6 WHERE id = 1") }
+            val deploy = CompletableFuture.runAsync { dataSource.connection.use { migrateLikeFlyway(it) } }
+            Thread.sleep(300)
+            // a boat page reading yacht queues behind the waiting ALTER, but only until that attempt's lock_timeout
+            val reads =
+                (1..4).map {
+                    val started = System.nanoTime()
+                    jdbc.queryForObject("SELECT name FROM yacht WHERE id = 1", String::class.java) shouldBe "Dione II"
+                    Thread.sleep(250)
+                    System.nanoTime() - started - TimeUnit.MILLISECONDS.toNanos(250)
+                }
+            (reads.max() > TimeUnit.MILLISECONDS.toNanos(200)) shouldBe true // the first read did queue behind the ALTER
+            (reads.max() < TimeUnit.MILLISECONDS.toNanos(1_600)) shouldBe true // ...for one 1 s attempt at most (3 s before)
+            deploy.isDone shouldBe false
+            sync.commit()
+            sync.autoCommit = true
+            deploy.get(30, TimeUnit.SECONDS)
         }
         newColumns() shouldBe NEW_COLUMNS
     }
