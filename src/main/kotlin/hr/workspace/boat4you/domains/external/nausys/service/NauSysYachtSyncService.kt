@@ -1,13 +1,13 @@
 package hr.workspace.boat4you.domains.external.nausys.service
 
 import hr.workspace.boat4you.common.services.FileSystemService
+import hr.workspace.boat4you.domains.catalouge.capacity.PartnerCapacitySync
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalEquipmentType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
-import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.TranslationType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
@@ -242,26 +242,18 @@ class NauSysYachtSyncService(
         yacht.depositCurrency = nausysYacht.depositCurrency
         yacht.buildYear = nausysYacht.buildYear?.toShort()
         yacht.launchYear = nausysYacht.launchedYear?.toShort()
-        yacht.enginePower = calcEnginePower(nausysYacht.enginePower?.toShort(), nausysYacht.engines?.toShort())
-        yacht.draught = nausysYacht.draft
+        // Capacity and rig (cabins, berths + breakdown, WC, showers, persons, crew, draught, sails, engines): one
+        // mapping, capacity contract v1.
+        PartnerCapacitySync.applyNausys(yacht, nausysYacht)
         // RestYacht carries no beam — Nausys stores it on RestYachtModel, copied
         // into Model.beam by the catalogue sync. Take it from there so Nausys
         // yachts surface the same beam shown on Nausys's own dashboard.
         yacht.beam = model.beam
         yacht.waterTank = nausysYacht.waterTank
         yacht.fuelTank = nausysYacht.fuelTank
-        yacht.cabins = nausysYacht.cabins?.toShort()
-        yacht.crewCabins = nausysYacht.cabinsCrew?.toShort()
-        yacht.wc = nausysYacht.wc?.toShort()
-        yacht.crewWc = nausysYacht.wc?.toShort()
-        yacht.berths = nausysYacht.berthsTotal?.toShort()
-        yacht.crewBerths = nausysYacht.berthsCrew?.toShort()
-        yacht.maxPersons = nausysYacht.maxPersons?.toShort()
         yacht.defaultCheckin = nausysYacht.checkInTime
         yacht.defaultCheckout = nausysYacht.checkOutTime
-        yacht.mainsailType = SailTypeEnum.fromNausysValue(nausysYacht.sailTypeId)
         yacht.mainsailArea = null // MMK only
-        yacht.genoaType = SailTypeEnum.fromNausysValue(nausysYacht.genoaTypeId)
         yacht.genoaArea = null // MMK only
         yacht.registrationNumber = nausysYacht.registrationNumber
         yacht.optionApproval = nausysYacht.needsOptionApproval
@@ -273,7 +265,6 @@ class NauSysYachtSyncService(
         yacht.agencyDiscountType = nausysYacht.agencyDiscountType
         // Same reason as beam — length lives on RestYachtModel (loa), not RestYacht.
         yacht.length = model.length
-        yacht.crewNumber = nausysYacht.crewCount?.toShort()
 
         yacht.entryType = EntryType.EXTERNAL
         yacht.extCharterType = nausysYacht.charterType
@@ -775,15 +766,5 @@ class NauSysYachtSyncService(
             newYacht.yachtTranslations.add(yachtTranslation)
             yachtTranslationRepository.save(yachtTranslation)
         }
-    }
-
-    private fun calcEnginePower(
-        enginePower: Short?,
-        engineNumber: Short?,
-    ): Short? {
-        val enginePower = enginePower ?: 0
-        val engineNumber = engineNumber ?: 1
-        val calculatedPower = (enginePower * engineNumber)
-        return if (calculatedPower != 0) calculatedPower.toShort() else null
     }
 }

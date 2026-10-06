@@ -1984,6 +1984,16 @@ components:
         cabinsNote:
           type: string
           example: "Note about cabins"
+        comment:
+          type: string
+          example: "CREWED | Gen, A/C, Watermaker"
+          description: >-
+            Not in the published 2.1.5 spec; sent on the wire (checked 6.10.2026). The partner's own remark about the
+            boat - stored as yacht.internal_remark, ADMIN ONLY (never public, never in customer e-mail or the AI chat).
+        yearNote:
+          type: string
+          example: "Refit 2023"
+          description: Not in the published 2.1.5 spec; sent on the wire (checked 6.10.2026). Not stored yet.
         transitLog:
           type: number
           format: float

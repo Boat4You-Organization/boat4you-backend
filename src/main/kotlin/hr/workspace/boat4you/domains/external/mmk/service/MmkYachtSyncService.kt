@@ -1,13 +1,12 @@
 package hr.workspace.boat4you.domains.external.mmk.service
 
 import hr.workspace.boat4you.common.services.FileSystemService
-import hr.workspace.boat4you.common.services.extractAndMultiplyNumbers
+import hr.workspace.boat4you.domains.catalouge.capacity.PartnerCapacitySync
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
-import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.TranslationType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
@@ -265,24 +264,15 @@ class MmkYachtSyncService(
         yacht.depositCurrency = mmkYacht.currency
         yacht.buildYear = mmkYacht.year?.toShort()
         yacht.launchYear = null
-        yacht.enginePower =
-            if (!mmkYacht.engine.isNullOrEmpty()) extractAndMultiplyNumbers(mmkYacht.engine!!)?.toShort() else null
-        yacht.draught = mmkYacht.draught?.toBigDecimal()
+        // Capacity and rig (cabins, berths, WC + their notes, max people, crew, draught, sails, engine): one mapping,
+        // capacity contract v1. Only this no-language fleet call writes them - never the translation sync.
+        PartnerCapacitySync.applyMmk(yacht, mmkYacht)
         yacht.beam = mmkYacht.beam?.toBigDecimal()
         yacht.waterTank = mmkYacht.waterCapacity?.toInt()
         yacht.fuelTank = mmkYacht.fuelCapacity?.toInt()
-        yacht.cabins = mmkYacht.cabins?.toShort()
-        yacht.crewCabins = null
-        yacht.wc = mmkYacht.wc?.toShort()
-        yacht.crewWc = null
-        yacht.berths = mmkYacht.berths?.toShort()
-        yacht.crewBerths = null
-        yacht.maxPersons = mmkYacht.maxPeopleOnBoard?.toShort()
         yacht.defaultCheckin = mmkYacht.defaultCheckInTime
         yacht.defaultCheckout = mmkYacht.defaultCheckOutTime
-        yacht.mainsailType = SailTypeEnum.fromMmkValue(mmkYacht.mainsailType)
         yacht.mainsailArea = mmkYacht.mainsailArea?.toBigDecimal()
-        yacht.genoaType = SailTypeEnum.fromMmkValue(mmkYacht.genoaType)
         yacht.genoaArea = mmkYacht.genoaArea?.toBigDecimal()
         yacht.registrationNumber = mmkYacht.certificate
         yacht.optionApproval = false
@@ -293,9 +283,6 @@ class MmkYachtSyncService(
         yacht.maxDiscountFromCommision = null
         yacht.agencyDiscountType = null
         yacht.length = mmkYacht.length?.toBigDecimal()
-        if (mmkYacht.crew?.isNotEmpty() == true) {
-            yacht.crewNumber = mmkYacht.crew!!.size!!.toShort()
-        }
 
         yacht.entryType = EntryType.EXTERNAL
         yacht.extCharterType = filteredProducts.joinToString(",") { it.name!! }
