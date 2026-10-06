@@ -1,20 +1,9 @@
 package hr.workspace.boat4you.common
 
-import hr.workspace.boat4you.common.services.extractAndMultiplyNumbers
 import hr.workspace.boat4you.common.services.parseYachtSearchViewLocationName
-import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class UtilsTests {
-    @Test
-    fun `test extraction of horsepower`() {
-        assertEquals(880, extractAndMultiplyNumbers("2x440 Hp Volvo"))
-        assertEquals(880, extractAndMultiplyNumbers("2x 440 Hp Volvo"))
-        assertEquals(880, extractAndMultiplyNumbers("2x Volvo 440 hp"))
-        assertEquals(880, extractAndMultiplyNumbers("880 Hp Volvo"))
-        assertEquals(400, extractAndMultiplyNumbers("4 x 100 Hp"))
-    }
-
     @Test
     fun `test location name parsing`() {
         val locationParts = parseYachtSearchViewLocationName("32-Sukosan, D-Marin Dalmacija Marina-HR")

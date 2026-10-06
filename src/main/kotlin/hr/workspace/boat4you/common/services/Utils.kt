@@ -89,22 +89,6 @@ class TwoDecimalSerializer : JsonSerializer<BigDecimal>() {
     }
 }
 
-fun extractAndMultiplyNumbers(input: String): Int? {
-    // Find all numbers in the string using regex
-    val numbers =
-        Regex("""\d+""")
-            .findAll(input)
-            .map { it.value.toInt() }
-            .toList()
-
-    return when (numbers.size) {
-        0 -> null // No numbers found
-        1 -> numbers[0] // Single number found
-        2 -> numbers[0] * numbers[1] // Two numbers found, multiply them
-        else -> null // More than 2 numbers found
-    }
-}
-
 fun parseYachtSearchViewLocationName(locationName: String?): LocationDto {
     if (locationName == null) {
         return LocationDto(
