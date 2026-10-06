@@ -3,6 +3,9 @@ package hr.workspace.boat4you.domains.catalouge.services
 import com.zaxxer.hikari.HikariDataSource
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
+import hr.workspace.boat4you.domains.catalouge.capacity.CapacityFixtures
+import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
+import hr.workspace.boat4you.domains.catalouge.dto.BrokerNotesDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtSearchParamObject
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
@@ -19,11 +22,13 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtSearchSelectResult
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslationRepository
 import hr.workspace.boat4you.domains.catalouge.mapper.OfferMapper
+import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtMapper
 import jakarta.persistence.EntityManager
 import jakarta.persistence.EntityManagerFactory
 import org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -38,13 +43,19 @@ import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean
 import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter
+import org.springframework.security.authentication.AnonymousAuthenticationToken
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.core.context.SecurityContextHolder
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.Instant
 import java.time.LocalDate
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * Capacity contract v1 on the listing (2.2, 2.4, 9), real Hibernate + Postgres on the real R__1_03 matview and V9_72:
@@ -125,6 +136,9 @@ class YachtSearchCapacityTest {
     private lateinit var distribution: YachtDistributionService
     private lateinit var yachts: YachtRepository
 
+    /** The same search with the REAL YachtMapper (real capacity mapper + sanitizer) and the real yacht repository. */
+    private lateinit var realService: YachtQueryingService
+
     @BeforeAll
     fun setUp() {
         dataSource =
@@ -174,6 +188,32 @@ class YachtSearchCapacityTest {
                 PassThroughHeavyQueries,
             )
         distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager())
+        val exchangeRates = mock(ExchangeRateCalculationService::class.java)
+        realService =
+            YachtQueryingService(
+                entityManager,
+                yachts,
+                locations,
+                mock(ExternalReservationRepository::class.java),
+                YachtMapper(exchangeRates, YachtExtrasMapper(exchangeRates), YachtCapacityMapper(CapacityFixtures.sanitizer())),
+                mock(OfferRepository::class.java),
+                mock(CustomYachtViewRepository::class.java),
+                mock(CustomYachtDetailRepository::class.java),
+                mock(YachtTranslationRepository::class.java),
+                mock(OfferMapper::class.java),
+                mock(FileSystemService::class.java),
+                exchangeRates,
+                mock(YachtExtraRepository::class.java),
+                mock(ExternalBaseRepository::class.java),
+                regions,
+                countries,
+                PassThroughHeavyQueries,
+            )
+    }
+
+    @AfterEach
+    fun clearSecurityContext() {
+        SecurityContextHolder.clearContext()
     }
 
     @AfterAll
@@ -348,5 +388,42 @@ class YachtSearchCapacityTest {
         assertEquals(2.toShort(), two.salonBerths)
         assertEquals(7.toShort(), two.recommendedPersons)
         assertNull(two.maxPersons)
+    }
+
+    private fun signIn(vararg authorities: String?) {
+        SecurityContextHolder.getContext().authentication =
+            when {
+                authorities.isEmpty() -> null
+                authorities.single() == null -> AnonymousAuthenticationToken("key", "anonymousUser", listOf(SimpleGrantedAuthority("ROLE_ANONYMOUS")))
+                else -> UsernamePasswordAuthenticationToken("someone", null, authorities.map { SimpleGrantedAuthority(it) })
+            }
+    }
+
+    private fun replacementRows() = realService.getYachtsForReplacement(params(), LanguageEnum.EN, 0, 50).content.associateBy { it.id }
+
+    @Test
+    fun `raw notes and the internal remark reach SYSTEM_ADMIN only - listing, replacement search and the JSON`() {
+        // no authentication, the anonymous token, a signed-in customer: never brokerNotes, never the remark text -
+        // even when the query did select the remark (isAdmin = true reaches the SQL, the mapper still gates)
+        for (who in listOf(emptyArray(), arrayOf<String?>(null), arrayOf<String?>("USER"), arrayOf<String?>("MANAGER"))) {
+            signIn(*who)
+            for (adminQuery in listOf(false, true)) {
+                val cards = realService.getYachts(params(), "id", LanguageEnum.EN, 0, 50, adminQuery).content
+                assertEquals(4, cards.size)
+                assertTrue(cards.all { it.brokerNotes == null }, "listing brokerNotes for ${who.toList()}")
+                val json = CapacityFixtures.mapper.writeValueAsString(cards)
+                assertFalse(json.contains("CREWED | private"), "remark in the listing JSON for ${who.toList()}")
+                assertTrue(json.contains("\"note\":\"4 +2\""), "the short public note stays")
+            }
+            val replacement = replacementRows()
+            assertTrue(replacement.values.all { it.brokerNotes == null }, "replacement brokerNotes for ${who.toList()}")
+            assertFalse(CapacityFixtures.mapper.writeValueAsString(replacement.values).contains("CREWED | private"))
+        }
+
+        signIn("SYSTEM_ADMIN")
+        val admin = realService.getYachts(params(), "id", LanguageEnum.EN, 0, 50, true).content.associateBy { it.id }
+        assertEquals(BrokerNotesDto(cabinsNote = "4 +2", berthsNote = "(8+2)", headsNote = null, remark = "CREWED | private"), admin.getValue(1).brokerNotes)
+        assertEquals(BrokerNotesDto(cabinsNote = null, berthsNote = null, headsNote = null, remark = null), admin.getValue(2).brokerNotes)
+        assertEquals("CREWED | private", replacementRows().getValue(1).brokerNotes?.remark)
     }
 }
