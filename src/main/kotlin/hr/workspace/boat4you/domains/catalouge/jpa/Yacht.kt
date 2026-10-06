@@ -282,6 +282,69 @@ open class Yacht {
     @Column(name = "crew_number")
     open var crewNumber: Short? = null
 
+    // Partner capacity / rig data AS SENT (V9_72, capacity contract v1 6.10.2026). The public capacity / rig blocks are
+    // derived from these at read time (YachtCapacityMapper); every note and label reaching a public surface passes
+    // PartnerTextSanitizer.capacityNote first.
+
+    /** MMK cabinsNote, normalized (NauSys: null). */
+    @Column(name = "cabins_note")
+    open var cabinsNote: String? = null
+
+    /** MMK berthsNote, normalized (NauSys: null). */
+    @Column(name = "berths_note")
+    open var berthsNote: String? = null
+
+    /** MMK wcNote, normalized (NauSys: null). */
+    @Column(name = "wc_note")
+    open var wcNote: String? = null
+
+    /** NauSys berthsCabin (MMK: null). */
+    @Column(name = "cabin_berths")
+    open var cabinBerths: Short? = null
+
+    /** NauSys berthsSalon (MMK: null). */
+    @Column(name = "salon_berths")
+    open var salonBerths: Short? = null
+
+    /** NauSys showers as sent, 0 kept (MMK: null). */
+    @Column(name = "showers")
+    open var showers: Short? = null
+
+    /** NauSys showersCrew as sent (MMK: null). */
+    @Column(name = "crew_showers")
+    open var crewShowers: Short? = null
+
+    /** NauSys recommendedPersons as sent; never a substitute for maxPersons (MMK: null). */
+    @Column(name = "recommended_persons")
+    open var recommendedPersons: Short? = null
+
+    /** Partner mainsail label: MMK mainsailType (fleet call WITHOUT language) / NauSys catalogue EN name. */
+    @Column(name = "mainsail_label")
+    open var mainsailLabel: String? = null
+
+    /** Partner headsail label: MMK genoaType (fleet call WITHOUT language) / NauSys catalogue EN name. */
+    @Column(name = "genoa_label")
+    open var genoaLabel: String? = null
+
+    /** MMK engine string as sent ("2x60HP"); NauSys: null. */
+    @Column(name = "engine_label")
+    open var engineLabel: String? = null
+
+    /** NauSys engines (MMK: null). */
+    @Column(name = "engine_count")
+    open var engineCount: Short? = null
+
+    /** NauSys enginePower per engine, not truncated (MMK: null). */
+    @Column(name = "engine_power_each", precision = 7, scale = 2)
+    open var enginePowerEach: BigDecimal? = null
+
+    /**
+     * ADMIN ONLY: NauSys noteIntText.textEN (else note) / MMK comment, normalized. Never in a public DTO, the customer
+     * e-mail or the AI chat.
+     */
+    @Column(name = "internal_remark")
+    open var internalRemark: String? = null
+
     // Inquiry-only when the yacht itself requires it (CUSTOM / option-approval)
     // OR its agency is flagged inquiry-only (Mario 6.7.2026). The agency is
     // eagerly available wherever this is called (search mapper + booking guard).
