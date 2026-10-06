@@ -1,9 +1,12 @@
 package hr.workspace.boat4you.domains.catalouge.capacity
 
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
+import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Component
+import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * THE gate for partner free text on the capacity surfaces (capacity contract v1, section 6; critique B-1 / B-2): every
@@ -11,10 +14,12 @@ import org.springframework.stereotype.Component
  * DTO, so b4y, the six sisters, the admin offer e-mail and the AI chat all get the same, already-checked text. The
  * frontends must not run these notes through their safePartnerText (it drops "+2" and rewrites "+1 skipper").
  *
- * Names: operators.txt (shipped as `partner/operators.txt`, a copy of infra/deploy-scripts/operators.txt - keep the two
- * in sync) without its '!' allow-list, plus every agency name, re-read every hour because the MMK agency mirror
- * creates new agencies on its own (critique B-2). The partner's internal remark (yacht.internal_remark) never goes
- * through here: it is admin-only and never reaches a public DTO.
+ * Names: operators.txt (shipped as `partner/operators.txt`, a copy of infra/deploy-scripts/operators.txt - a test keeps
+ * the two equal) without its '!' allow-list, plus every agency name, re-read every hour because the MMK agency mirror
+ * creates new agencies on its own (critique B-2). The agency names are read at startup and then on a background thread,
+ * never on the request thread: there the read would join the caller's transaction, and a failing query would abort it
+ * and mark it rollback-only - a failed lookup must never fail the page. The partner's internal remark
+ * (yacht.internal_remark) never goes through here: it is admin-only and never reaches a public DTO.
  */
 @Component
 class PartnerTextSanitizer(
@@ -32,32 +37,54 @@ class PartnerTextSanitizer(
         val expiresAtMillis: Long,
     )
 
+    /** operators.txt alone until the agency names are read; already expired, so the first use asks for them. */
     @Volatile
-    private var snapshot: Snapshot? = null
+    private var snapshot = Snapshot(PartnerNameMatcher.of(operators.first, operators.second, emptyList()), 0L)
+
+    private val refreshing = AtomicBoolean(false)
 
     /** Time source, replaceable in tests. */
     internal var nowMillis: () -> Long = System::currentTimeMillis
 
+    /** Where an expired agency-name list is re-read: a short-lived daemon thread (once an hour), replaceable in tests. */
+    internal var refreshExecutor: Executor = Executor { task -> Thread(task, "capacity-note-agency-names").apply { isDaemon = true }.start() }
+
     /** The note / label as a public surface may show it (normalized, never rewritten), or null to hide it. */
     fun capacityNote(text: String?): String? = CapacityNoteRules.capacityNote(text) { matcher().matches(it) }
 
+    /** Startup (bean init, before the API serves): the first agency-name read, outside any request transaction. */
+    @PostConstruct
+    fun loadAgencyNames() = refreshAgencyNames()
+
+    /** The current list; an expired one stays in use while a single background read replaces it. */
     private fun matcher(): PartnerNameMatcher {
-        val now = nowMillis()
-        snapshot?.takeIf { now < it.expiresAtMillis }?.let { return it.matcher }
-        synchronized(this) {
-            snapshot?.takeIf { now < it.expiresAtMillis }?.let { return it.matcher }
-            val fresh =
-                try {
-                    Snapshot(PartnerNameMatcher.of(operators.first, operators.second, agencyRepository.findAllNames()), now + AGENCY_TTL_MILLIS)
-                } catch (e: Exception) {
-                    // Keep the last good list (or operators.txt alone) and try again soon: hiding by operators.txt still
-                    // works, and a failed lookup must never fail the page.
-                    log.warn("Capacity-note sanitizer: agency names unavailable (${e.message}); retrying in a minute")
-                    Snapshot(snapshot?.matcher ?: PartnerNameMatcher.of(operators.first, operators.second, emptyList()), now + RETRY_MILLIS)
+        if (nowMillis() >= snapshot.expiresAtMillis && refreshing.compareAndSet(false, true)) {
+            try {
+                refreshExecutor.execute {
+                    try {
+                        refreshAgencyNames()
+                    } finally {
+                        refreshing.set(false)
+                    }
                 }
-            snapshot = fresh
-            return fresh.matcher
+            } catch (e: Exception) {
+                refreshing.set(false)
+                log.warn("Capacity-note sanitizer: agency-name refresh not started (${e.message})")
+            }
         }
+        return snapshot.matcher
+    }
+
+    /** Reads every agency name; on failure keeps the last list (or operators.txt alone) and tries again in a minute. */
+    internal fun refreshAgencyNames() {
+        val now = nowMillis()
+        snapshot =
+            try {
+                Snapshot(PartnerNameMatcher.of(operators.first, operators.second, agencyRepository.findAllNames()), now + AGENCY_TTL_MILLIS)
+            } catch (e: Exception) {
+                log.warn("Capacity-note sanitizer: agency names unavailable (${e.message}); retrying in a minute")
+                Snapshot(snapshot.matcher, now + RETRY_MILLIS)
+            }
     }
 
     companion object {

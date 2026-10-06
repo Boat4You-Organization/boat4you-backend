@@ -1,11 +1,15 @@
 package hr.workspace.boat4you.domains.catalouge.capacity
 
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.springframework.core.io.ClassPathResource
+import java.io.File
+import java.util.concurrent.Executor
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -91,29 +95,96 @@ class PartnerTextSanitizerTest {
     }
 
     @Test
-    fun `agency names come from the agency table, re-read after an hour, and a failed read keeps the last list`() {
+    fun `brand alone, short and non-Latin agency names, compatibility characters - hidden`() {
+        val s = CapacityFixtures.sanitizer(CapacityFixtures.agencySeedNames + listOf("TYC", "NCC", "Γιώτινγκ Ελλάς", "Яхтинг Адриатика"))
+        val hide =
+            listOf(
+                // operators.txt "Navigare Yachting" / "Pitter Yachtcharter": the brand alone
+                "(4+1) Navigare",
+                "(4+1) Pitter",
+                // agency names of 3 letters
+                "4+1 TYC skipper",
+                "(4+1) NCC",
+                // Greek / Cyrillic names (they folded to nothing before)
+                "(4+1) Γιώτινγκ Ελλάς",
+                "4+2 яхтинг адриатика",
+                // fullwidth / compatibility forms of a domain, a phone word and a name
+                "example．com",
+                "call ０９１ １２３ ４５６７",
+                "(4+1) Ｎａｖｉｇａｒｅ",
+            )
+        assertEquals(emptyList(), hide.filter { s.capacityNote(it) != null }, "should be hidden")
+        // capacity words never become a name: "Seven Charter", "Master Yachting", "Starboard Charter" are operators
+        val keep = listOf("seven berths", "(4+1 master cabin)", "+1 starboard bow cabin", "4 + 2 bunks forward", "2x Yanmar 40 hp")
+        // ...but an operator's brand stays hidden even where it is also a word: "MainSail Yachting", "Genoa Sailing"
+        assertNull(s.capacityNote("4+1 MainSail"))
+        assertNull(s.capacityNote("(4+2) Genoa"))
+        keep.forEach { assertEquals(it, s.capacityNote(it)) }
+        // an allow-listed name gives no short form either ("Signature Sailing" is allow-listed in operators.txt)
+        assertEquals("(4+2) Signature", s.capacityNote("(4+2) Signature"))
+    }
+
+    @Test
+    fun `agency names are read at startup, then re-read in the background after an hour - never on the caller's thread`() {
         val agencies = mock(AgencyRepository::class.java)
         `when`(agencies.findAllNames()).thenReturn(listOf("Adriatic Blue Waters d.o.o."))
         val s = PartnerTextSanitizer(agencies)
         var now = 1_000_000L
         s.nowMillis = { now }
+        val queued = mutableListOf<Runnable>()
+        s.refreshExecutor = Executor { queued += it }
+        s.loadAgencyNames()
 
         assertNull(s.capacityNote("4+1 Adriatic Blue Waters"), "the agency's short form (legal form dropped) is matched")
-        assertEquals("4+1 Ionian Pearl", s.capacityNote("4+1 Ionian Pearl"))
+        assertEquals("4+1 Kestrel Bay", s.capacityNote("4+1 Kestrel Bay"))
+        verify(agencies, times(1)).findAllNames()
 
-        // MMK auto-creates an agency: hidden once the hour is over
-        `when`(agencies.findAllNames()).thenReturn(listOf("Adriatic Blue Waters d.o.o.", "Ionian Pearl Ltd"))
+        // MMK auto-creates an agency: still the cached list within the hour
+        `when`(agencies.findAllNames()).thenReturn(listOf("Adriatic Blue Waters d.o.o.", "Kestrel Bay Ltd"))
         now += 59 * 60 * 1000L
-        assertEquals("4+1 Ionian Pearl", s.capacityNote("4+1 Ionian Pearl"), "still the cached list")
-        now += 2 * 60 * 1000L
-        assertNull(s.capacityNote("4+1 Ionian Pearl"))
-        verify(agencies, times(2)).findAllNames()
+        assertEquals("4+1 Kestrel Bay", s.capacityNote("4+1 Kestrel Bay"))
+        assertTrue(queued.isEmpty())
 
-        // the agency table cannot be read: the last list stays, the page does not fail
+        // after the hour: the caller keeps the old list and schedules ONE background read, the caller's thread reads nothing
+        now += 2 * 60 * 1000L
+        assertEquals("4+1 Kestrel Bay", s.capacityNote("4+1 Kestrel Bay"))
+        assertEquals("4+1 Kestrel Bay", s.capacityNote("4+1 Kestrel Bay"))
+        assertEquals(1, queued.size, "a single refresh in flight")
+        verify(agencies, times(1)).findAllNames()
+        queued.removeAt(0).run()
+        verify(agencies, times(2)).findAllNames()
+        assertNull(s.capacityNote("4+1 Kestrel Bay"))
+
+        // the agency table cannot be read: the last list stays, nothing fails, the read is retried after a minute
         `when`(agencies.findAllNames()).thenThrow(IllegalStateException("db down"))
         now += 61 * 60 * 1000L
-        assertNull(s.capacityNote("4+1 Ionian Pearl"))
+        assertNull(s.capacityNote("4+1 Kestrel Bay"))
+        queued.removeAt(0).run()
+        assertNull(s.capacityNote("4+1 Kestrel Bay"), "last good list kept")
         assertNull(s.capacityNote("(4+1) Sunsail"), "operators.txt still applies")
         assertEquals("(4+1)", s.capacityNote("(4+1)"))
+        assertTrue(queued.isEmpty(), "no retry within the minute")
+        now += 61 * 1000L
+        s.capacityNote("(4+1)")
+        assertEquals(1, queued.size, "retried after a minute")
+    }
+
+    @Test
+    fun `a failing agency table at startup leaves operators txt in force`() {
+        val agencies = mock(AgencyRepository::class.java)
+        `when`(agencies.findAllNames()).thenThrow(IllegalStateException("db down"))
+        val s = PartnerTextSanitizer(agencies)
+        s.refreshExecutor = Executor { }
+        s.loadAgencyNames()
+        assertNull(s.capacityNote("(4+1) Sunsail"))
+        assertEquals("4+1 Kestrel Bay", s.capacityNote("4+1 Kestrel Bay"))
+    }
+
+    @Test
+    fun `the shipped operators txt is the infra copy`() {
+        val infra = File("../../infra/deploy-scripts/operators.txt")
+        assumeTrue(infra.isFile, "infra/deploy-scripts not checked out next to the backend")
+        val shipped = ClassPathResource(PartnerTextSanitizer.OPERATORS_RESOURCE).inputStream.bufferedReader().use { it.readText() }
+        assertEquals(infra.readText(), shipped, "copy infra/deploy-scripts/operators.txt to src/main/resources/partner/operators.txt")
     }
 }

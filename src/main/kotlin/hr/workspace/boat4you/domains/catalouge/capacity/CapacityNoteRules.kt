@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.capacity
 
+import java.text.Normalizer
+
 /**
  * The rules of [PartnerTextSanitizer.capacityNote] without the name lists (capacity contract v1, section 6), so they can
  * be tested on their own. They HIDE and never rewrite: the result is the normalized note or null, the number still
@@ -89,19 +91,24 @@ object CapacityNoteRules {
             digits >= 9 || (digits >= 8 && PHONE_TRUNK.containsMatchIn(run))
         }
 
-    /** The note as a public surface may show it, or null. [isName] = operator / agency name matcher. */
+    /**
+     * The note as a public surface may show it, or null. [isName] = operator / agency name matcher. The checks run on
+     * the NFKC form, so fullwidth or other compatibility characters cannot slip past them ("example．com", "ＴＥＬ"); the
+     * text returned is the normalized note itself, never that form.
+     */
     fun capacityNote(
         raw: String?,
         isName: (String) -> Boolean,
     ): String? {
         val text = CapacityText.normalizeNote(raw) ?: return null
+        val probe = Normalizer.normalize(text, Normalizer.Form.NFKC)
         return when {
-            text.length > CapacityText.NOTE_MAX -> null
-            MARKUP.containsMatchIn(text) -> null
-            BLOCKED.containsMatchIn(text) || SHOUTING.containsMatchIn(text) -> null
-            EMAIL.containsMatchIn(text) || WEB.containsMatchIn(text) || CONTACT_WORD.containsMatchIn(text) -> null
-            hasPhone(text) || LONG_NUMBER.containsMatchIn(text) -> null
-            isName(text) -> null
+            text.length > CapacityText.NOTE_MAX || probe.length > CapacityText.NOTE_MAX -> null
+            MARKUP.containsMatchIn(probe) -> null
+            BLOCKED.containsMatchIn(probe) || SHOUTING.containsMatchIn(probe) -> null
+            EMAIL.containsMatchIn(probe) || WEB.containsMatchIn(probe) || CONTACT_WORD.containsMatchIn(probe) -> null
+            hasPhone(probe) || LONG_NUMBER.containsMatchIn(probe) -> null
+            isName(probe) -> null
             else -> text
         }
     }

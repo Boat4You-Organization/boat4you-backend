@@ -30,11 +30,11 @@ object CapacityFixtures {
 
     val nameMatcher: PartnerNameMatcher by lazy { PartnerNameMatcher.of(operators.first, operators.second, agencySeedNames) }
 
-    /** The production sanitizer over operators.txt + the seed agency names. */
+    /** The production sanitizer over operators.txt + the seed agency names, loaded as at startup. */
     fun sanitizer(agencyNames: List<String> = agencySeedNames): PartnerTextSanitizer {
         val agencies = mock(AgencyRepository::class.java)
         `when`(agencies.findAllNames()).thenReturn(agencyNames)
-        return PartnerTextSanitizer(agencies)
+        return PartnerTextSanitizer(agencies).also { it.loadAgencyNames() }
     }
 
     /** Name column of a `COPY ... FROM STDIN` seed block (the contract test's copyRows). */
