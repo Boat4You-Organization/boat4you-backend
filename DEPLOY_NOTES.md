@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-06 — Kapacitet i oprema broda točno kako ih šalju MMK / NauSys (capacity contract v1: V9_72, sync, blokovi `capacity` / `rig`, filter osoba, jedra, AI chat) + review popravci — ⏳ NIJE DEPLOYANO (commiti `c374579` `dd7c977` `ac4a874` `ccc5c3e` `a96efe8` + review `422841d` `29abb20` `5b9803e` `e056aba` `2bd81a9` `c8da846`)
+## 2026-10-06 — Kapacitet i oprema broda točno kako ih šalju MMK / NauSys (capacity contract v1: V9_72, sync, blokovi `capacity` / `rig`, filter osoba, jedra, AI chat) + review popravci — ✅ DEPLOYANO 6.10.2026 (V9_72 ručno 17:52 UTC na cusma4; cusma2 17:52 + cusma3 17:53 UTC, jar md5 c7b49e92…; frontendi tek nakon gate SQL-a 7.10.) (commiti `c374579` `dd7c977` `ac4a874` `ccc5c3e` `a96efe8` + review `422841d` `29abb20` `5b9803e` `e056aba` `2bd81a9` `c8da846`)
 
 Mario 6.10.: broj kabina, ležajeva i WC-a te raspored moraju biti 100 % kao kod partnera na svim površinama (b4y, 6 sistera, admin Offers + e-mail ponude, PDF), da klijent nikad ne mora pitati. Odluke: (1) partnerske napomene prevodi web kroz pregledanu tablicu; (2) filter osoba `COALESCE(max_persons, berths)`, samo filter / brojevi / AI pretraga, nikad cijena; (3) `SailTypeEnum` ispravljen u istom releaseu; (4) interne partnerske napomene samo u adminu.
 
