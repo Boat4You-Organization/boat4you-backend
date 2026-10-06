@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.mapper
 
+import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
+import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
 import hr.workspace.boat4you.domains.catalouge.dto.MeasurementUnitDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
@@ -31,6 +33,7 @@ class ReservationMappers(
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
     private val reservationDocumentService: hr.workspace.boat4you.domains.reservation.service.ReservationDocumentService,
     private val voucherRepository: VoucherRepository,
+    private val capacityMapper: YachtCapacityMapper,
 ) {
     fun toReservationDto(reservation: Reservation): ReservationDto {
         val voucher = reservation.reservationFlow?.id?.let { voucherRepository.findByUsedOnReservationFlowId(it) }
@@ -123,6 +126,8 @@ class ReservationMappers(
                 .filter { it.language?.locale == language.locale && it.type == TranslationType.HIGHLIGHTS }
                 .map { it.value }
                 .firstOrNull()
+
+        val capacityColumns = CapacityColumns.of(yacht)
 
         return MyReservationDetailsDto(
             reservationId = reservationView.reservationId!!,
@@ -243,6 +248,9 @@ class ReservationMappers(
             // NOTE: adminNotes intentionally NOT exposed here — this is the
             // customer-facing MyReservationDetailsDto. Only the admin DTO
             // (toDetailsDto below) carries it.
+            // Capacity / rig as on the boat page (sanitized notes; never the partner's internal remark).
+            capacity = capacityMapper.capacity(capacityColumns, YachtCapacityMapper.Mode.FULL),
+            rig = capacityMapper.rig(capacityColumns),
         )
     }
 

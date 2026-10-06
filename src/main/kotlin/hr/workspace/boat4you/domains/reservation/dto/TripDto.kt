@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.dto
 
+import hr.workspace.boat4you.domains.catalouge.dto.CapacityDto
 import java.time.LocalDateTime
 
 /**
@@ -46,6 +47,11 @@ data class TripYachtDto(
     val mainImageId: Long?,
     /** Up to 8 gallery image ids, main image first (served via /public/image/{id}). */
     val imageIds: List<Long>,
+    /** Partner "max people on board" (never derived) and crew count (capacity contract v1, 2.5). */
+    val maxPersons: Int? = null,
+    val crewNumber: Int? = null,
+    /** Capacity as on the boat page; the hub is English-only, so notes print verbatim. */
+    val capacity: CapacityDto? = null,
 )
 
 data class TripMarinaDto(

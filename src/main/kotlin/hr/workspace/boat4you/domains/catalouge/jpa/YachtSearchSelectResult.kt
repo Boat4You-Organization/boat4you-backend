@@ -13,6 +13,9 @@ data class YachtSearchSelectResult(
     val buildYear: Short?,
     val maxPersons: Short?,
     val cabins: Short?,
+    /** Positional, right after cabins in YachtQueryingService.searchYachts' multiselect (capacity contract v1). */
+    val berths: Short?,
+    val wc: Short?,
     val length: BigDecimal?,
     val modelName: String?,
     val manufacturerName: String?,

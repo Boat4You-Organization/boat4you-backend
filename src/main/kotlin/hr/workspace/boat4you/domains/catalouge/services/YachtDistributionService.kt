@@ -476,8 +476,9 @@ class YachtDistributionService(
         }
         if (ctx.minBuildYear != null) parts.add(" AND build_year >= :minBuildYear")
         if (ctx.maxBuildYear != null) parts.add(" AND build_year <= :maxBuildYear")
-        if (ctx.minPersons != null) parts.add(" AND max_persons >= :minPersons")
-        if (ctx.maxPersons != null) parts.add(" AND max_persons <= :maxPersons")
+        // Same people semantics as the listing (YachtQueryingService): max people on board, else berths.
+        if (ctx.minPersons != null) parts.add(" AND COALESCE(max_persons, berths) >= :minPersons")
+        if (ctx.maxPersons != null) parts.add(" AND COALESCE(max_persons, berths) <= :maxPersons")
         if (ctx.minCabins != null) parts.add(" AND cabins >= :minCabins")
         if (ctx.maxCabins != null) parts.add(" AND cabins <= :maxCabins")
         if (ctx.minBerths != null) parts.add(" AND berths >= :minBerths")

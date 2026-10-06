@@ -58,6 +58,14 @@ data class YachtDetailsDto(
      * stays reachable as an inquiry form without price or calendar. Null only if the check could not run.
      */
     val hasBookableFutureOffer: Boolean? = null,
+    /**
+     * Capacity as this listing's own partner gives it (capacity contract v1, 2.1): every figure with its sanitized
+     * partner note and the parts that add up to it. The flat cabins / berths / wc / maxPersons / crewNumber above stay
+     * for older clients. Never carries the partner's internal remark.
+     */
+    val capacity: CapacityDto? = null,
+    /** Sails, engine and draught as the partner gives them; mainSailType above stays the filter enum. */
+    val rig: RigDto? = null,
 )
 
 data class CustomYachtDetailsDto(

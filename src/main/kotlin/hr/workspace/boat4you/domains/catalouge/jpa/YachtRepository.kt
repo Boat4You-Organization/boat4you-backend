@@ -148,6 +148,19 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
               y.berths                               AS berths,
               y.length                               AS length,
               y.wc                                   AS wc,
+              y.crew_cabins                          AS crew_cabins,
+              y.crew_berths                          AS crew_berths,
+              y.crew_wc                              AS crew_wc,
+              y.cabin_berths                         AS cabin_berths,
+              y.salon_berths                         AS salon_berths,
+              y.showers                              AS showers,
+              y.crew_showers                         AS crew_showers,
+              y.recommended_persons                  AS recommended_persons,
+              y.crew_number                          AS crew_number,
+              y.cabins_note                          AS cabins_note,
+              y.berths_note                          AS berths_note,
+              y.wc_note                              AS wc_note,
+              y.internal_remark                      AS internal_remark,
               y.engine_power                         AS engine_power,
               y.vessel_type                          AS vessel_type,
               y.mainsail_type                        AS mainsail_type,
@@ -285,6 +298,23 @@ interface ReplacementSearchRow {
     val berths: Short?
     val length: java.math.BigDecimal?
     val wc: Short?
+
+    // capacity contract v1: the card's capacity block (admin-only endpoint, so the raw notes and remark may come too)
+    val crewCabins: Short?
+    val crewBerths: Short?
+    val crewWc: Short?
+    val cabinBerths: Short?
+    val salonBerths: Short?
+    val showers: Short?
+    val crewShowers: Short?
+    val recommendedPersons: Short?
+    val crewNumber: Short?
+    val cabinsNote: String?
+    val berthsNote: String?
+    val wcNote: String?
+
+    /** ADMIN ONLY - the replacement search is SYSTEM_ADMIN only (YachtController). */
+    val internalRemark: String?
     val enginePower: Short?
     val vesselType: String?
     val mainsailType: String?

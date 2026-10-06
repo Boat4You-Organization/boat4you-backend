@@ -187,6 +187,7 @@ class YachtSearchDatedOfferTest {
         jdbcTemplate.execute(MINIMAL_SCHEMA)
         jdbcTemplate.execute(SEED)
         ListingTwinTestSupport.createAndRefresh(jdbcTemplate)
+        YachtCapacityTestSupport.addColumns(jdbcTemplate)
         applyRepeatableLikeFlyway(jdbcTemplate)
 
         entityManagerFactory = buildEntityManagerFactory()

@@ -2,9 +2,11 @@ package hr.workspace.boat4you.domains.reservation.dto
 
 import com.fasterxml.jackson.databind.annotation.JsonSerialize
 import hr.workspace.boat4you.common.services.TwoDecimalSerializer
+import hr.workspace.boat4you.domains.catalouge.dto.CapacityDto
 import hr.workspace.boat4you.domains.catalouge.dto.ExtrasPriceDto
 import hr.workspace.boat4you.domains.catalouge.dto.MeasurementUnitDto
 import hr.workspace.boat4you.domains.catalouge.dto.PriceInfoDto
+import hr.workspace.boat4you.domains.catalouge.dto.RigDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtEquipmentDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtExtrasDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtImageDto
@@ -97,4 +99,7 @@ data class MyReservationDetailsDto(
     // crew list docx, contract scans, anything PDF/DOC/DOCX. Mario rule
     // (3.5.2026): visible to customer in /my-bookings/{id}.
     val documents: List<ReservationDocumentDto> = emptyList(),
+    /** Capacity and rig as on the boat page (capacity contract v1, 2.5); the flat figures above stay. */
+    val capacity: CapacityDto? = null,
+    val rig: RigDto? = null,
 )

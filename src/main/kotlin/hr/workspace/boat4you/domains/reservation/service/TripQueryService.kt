@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.service
 
+import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
+import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import hr.workspace.boat4you.domains.reservation.dto.TripDto
 import hr.workspace.boat4you.domains.reservation.dto.TripMarinaDto
@@ -21,6 +23,7 @@ class TripQueryService(
     private val reservationDocumentService: ReservationDocumentService,
     private val tripPushService: TripPushService,
     private val tripCrewService: TripCrewService,
+    private val capacityMapper: YachtCapacityMapper,
 ) {
     /** Documents the CREW may see. Contracts / untyped uploads stay owner-only. */
     private val travelDocumentTypes = setOf(
@@ -95,6 +98,9 @@ class TripQueryService(
                 lengthMeters = yacht.length?.toDouble(),
                 mainImageId = yacht.mainImageId,
                 imageIds = imageIds,
+                maxPersons = yacht.maxPersons?.toInt()?.takeIf { it > 0 },
+                crewNumber = yacht.crewNumber?.toInt()?.takeIf { it > 0 },
+                capacity = capacityMapper.capacity(CapacityColumns.of(yacht), YachtCapacityMapper.Mode.FULL),
             ),
             marina = marina,
             crewListUrl = reservation.crewListUrl?.takeIf { it.isNotBlank() },

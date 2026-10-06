@@ -1,6 +1,10 @@
 package hr.workspace.boat4you.domains.catalouge.mapper
 
 import hr.workspace.boat4you.common.services.parseYachtSearchViewLocationName
+import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
+import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
+import hr.workspace.boat4you.domains.catalouge.dto.BrokerNotesDto
+import hr.workspace.boat4you.domains.catalouge.dto.CapacityDto
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsDto
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtResponse
@@ -33,6 +37,7 @@ import kotlin.collections.sortedBy
 class YachtMapper(
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
     private val yachtExtrasMapper: YachtExtrasMapper,
+    private val capacityMapper: YachtCapacityMapper,
 ) {
     private fun isAdminUser(): Boolean {
         // Null-safe so an anonymous request (authentication may be absent) returns
@@ -53,6 +58,8 @@ class YachtMapper(
         matchKind: MatchKind? = null,
         sourceSystem: String? = null,
         updatedAt: java.time.Instant? = null,
+        /** The yacht row's capacity columns (per-page primary-key lookup); null = no yacht record. */
+        capacityColumns: CapacityColumns? = null,
     ): YachtSearchResponseDto {
         val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName)
         // One-way charter: surface drop-off as separate DTO only when
@@ -95,6 +102,8 @@ class YachtMapper(
             buildYear = result.buildYear,
             maxPersons = result.maxPersons,
             cabins = result.cabins,
+            berths = result.berths,
+            wc = result.wc,
             length = result.length,
             lengthInfo = MeasurementUnitDto.toDto(result.length, language),
             clientPriceEur = result.clientPrice,
@@ -127,8 +136,17 @@ class YachtMapper(
             optionExpiresAt = optionExpiresAt,
             custom = result.entryType == hr.workspace.boat4you.domains.catalouge.enums.EntryType.CUSTOM,
             updatedAt = updatedAt,
+            capacity = capacityColumns?.let { capacityMapper.capacity(it, YachtCapacityMapper.Mode.BRIEF) },
+            // Raw partner notes + internal remark: admin only, same gate as agencyName.
+            brokerNotes = capacityColumns?.let { brokerNotes(it) },
         )
     }
+
+    /** Brief capacity block for a listing row built outside [toDto] (the admin replacement search). */
+    fun capacityBrief(columns: CapacityColumns): CapacityDto = capacityMapper.capacity(columns, YachtCapacityMapper.Mode.BRIEF)
+
+    /** The partner's raw capacity notes and internal remark - SYSTEM_ADMIN only, null for everyone else. */
+    fun brokerNotes(columns: CapacityColumns): BrokerNotesDto? = if (isAdminUser()) capacityMapper.brokerNotes(columns) else null
 
     fun toDetailsDto(
         result: Yacht,
@@ -177,6 +195,8 @@ class YachtMapper(
             yachtExtras
                 .filter { it.shouldDisplay() }
                 .map { yachtExtrasMapper.toDto(it, currency) }
+
+        val capacityColumns = CapacityColumns.of(result)
 
         return YachtDetailsDto(
             id = result.id!!,
@@ -242,6 +262,8 @@ class YachtMapper(
             charterType = result.yachtCharterTypes.map { it.type!! }.toSet(),
             inquireOnly = result.isInquireOnly(),
             vesselType = result.vesselType ?: VesselType.OTHER,
+            capacity = capacityMapper.capacity(capacityColumns, YachtCapacityMapper.Mode.FULL),
+            rig = capacityMapper.rig(capacityColumns),
         )
     }
 

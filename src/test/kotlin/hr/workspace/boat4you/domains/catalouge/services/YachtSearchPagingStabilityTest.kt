@@ -147,6 +147,7 @@ class YachtSearchPagingStabilityTest {
         jdbcTemplate.execute(ALL_TIE_SEED)
         // Seed first, then build the matview: CREATE MATERIALIZED VIEW … AS SELECT populates it.
         ListingTwinTestSupport.createAndRefresh(jdbcTemplate)
+        YachtCapacityTestSupport.addColumns(jdbcTemplate)
         applyRepeatableLikeFlyway(jdbcTemplate)
 
         entityManagerFactory = buildEntityManagerFactory()

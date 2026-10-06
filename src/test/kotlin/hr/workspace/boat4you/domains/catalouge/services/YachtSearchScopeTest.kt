@@ -204,6 +204,7 @@ class YachtSearchScopeTest {
         jdbc.execute(SEED)
         jdbc.update("INSERT INTO location_same_place (location_id, same_as_location_id) VALUES (8, 9)")
         ListingTwinTestSupport.createAndRefresh(jdbc)
+        YachtCapacityTestSupport.addColumns(jdbc)
         applyRepeatable(jdbc, "R__1_03_yacht_search_view.sql")
 
         entityManagerFactory = buildEntityManagerFactory()

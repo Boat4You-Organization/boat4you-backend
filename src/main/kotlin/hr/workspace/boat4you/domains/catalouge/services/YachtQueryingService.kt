@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.common.services.FileSystemService
+import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtResponse
 import hr.workspace.boat4you.domains.catalouge.dto.LocationDto
@@ -371,6 +372,9 @@ class YachtQueryingService(
             cb.min(root.get<Short>("buildYear")),
             cb.min(root.get<Short>("maxPersons")),
             cb.min(root.get<Short>("cabins")),
+            // berths + wc: matview columns already, positional (YachtSearchSelectResult) - capacity contract v1
+            cb.min(root.get<Short>("berths")),
+            cb.min(root.get<Short>("wc")),
             cb.min(root.get<BigDecimal>("length")),
             cb.least(root.get<String>("modelName")),
             cb.least(root.get<String>("manufacturerName")),
@@ -621,9 +625,10 @@ class YachtQueryingService(
         // skipped entirely for customer searches (isAdmin false).
         val sourceSystemByYachtId = if (isAdmin) fetchYachtSourceSystems(results.map { it.id }) else emptyMap()
 
-        // When each boat's own public record last changed (V9_71 trigger) — the sitemaps' <lastmod> (Codex audit N7).
-        // One primary-key lookup per page on a small table, outside the listing query.
-        val contentModifiedAtByYachtId = fetchContentModifiedAt(results.map { it.id })
+        // One primary-key lookup per page, outside the listing query: each boat's capacity columns (the card's
+        // `capacity` block, capacity contract v1) and when its own public record last changed (V9_71 trigger) — the
+        // sitemaps' <lastmod> (Codex audit N7). The internal remark is read for admins only.
+        val pageFactsByYachtId = fetchPageYachtFacts(results.map { it.id }, isAdmin)
 
         // Bulk-fetch live option rows for the optioned yachts on this page —
         // one extra query regardless of page size. Options come from
@@ -708,7 +713,8 @@ class YachtQueryingService(
                     optionExpiryByYachtId[view.id],
                     matchKind,
                     sourceSystemByYachtId[view.id],
-                    contentModifiedAtByYachtId[view.id],
+                    pageFactsByYachtId[view.id]?.updatedAt,
+                    pageFactsByYachtId[view.id]?.capacity,
                 )
             }
 
@@ -804,26 +810,66 @@ class YachtQueryingService(
         }.toMap()
     }
 
-    /** yacht_content_modified (V9_71) for the yachts on this page, whole seconds; a yacht without a row is absent. */
-    private fun fetchContentModifiedAt(yachtIds: List<Long>): Map<Long, Instant> {
+    private data class PageYachtFacts(
+        val updatedAt: Instant?,
+        val capacity: CapacityColumns,
+    )
+
+    /**
+     * The yachts on this page by primary key: their capacity columns (capacity contract v1, 2.2) and yacht_content_modified
+     * (V9_71) in whole seconds - a yacht without a modified row gets a null updatedAt. One query per page, as the
+     * modified-time lookup alone was before. `internal_remark` (admin-only) is selected only for admin searches.
+     */
+    private fun fetchPageYachtFacts(
+        yachtIds: List<Long>,
+        isAdmin: Boolean,
+    ): Map<Long, PageYachtFacts> {
         if (yachtIds.isEmpty()) return emptyMap()
+        val remark = if (isAdmin) "y.internal_remark" else "CAST(NULL AS text)"
 
         @Suppress("UNCHECKED_CAST")
         val rows =
             entityManager
                 .createNativeQuery(
                     """
-                    SELECT m.yacht_id, CAST(FLOOR(EXTRACT(EPOCH FROM m.modified_at)) AS bigint)
-                    FROM yacht_content_modified m
-                    WHERE m.yacht_id IN (:yachtIds)
+                    SELECT y.id, y.cabins, y.berths, y.wc, y.crew_cabins, y.crew_berths, y.crew_wc, y.cabin_berths,
+                           y.salon_berths, y.showers, y.crew_showers, y.max_persons, y.recommended_persons, y.crew_number,
+                           y.cabins_note, y.berths_note, y.wc_note, CAST(FLOOR(EXTRACT(EPOCH FROM m.modified_at)) AS bigint),
+                           $remark
+                    FROM yacht y
+                    LEFT JOIN yacht_content_modified m ON m.yacht_id = y.id
+                    WHERE y.id IN (:yachtIds)
                     """.trimIndent(),
                 ).setParameter("yachtIds", yachtIds)
                 .resultList as List<Array<Any?>>
 
+        fun short(v: Any?): Short? = (v as? Number)?.toShort()
         return rows.mapNotNull { row ->
             val yachtId = (row[0] as? Number)?.toLong() ?: return@mapNotNull null
-            val epochSecond = (row[1] as? Number)?.toLong() ?: return@mapNotNull null
-            yachtId to Instant.ofEpochSecond(epochSecond)
+            yachtId to
+                PageYachtFacts(
+                    updatedAt = (row[17] as? Number)?.toLong()?.let { Instant.ofEpochSecond(it) },
+                    capacity =
+                        CapacityColumns(
+                            cabins = short(row[1]),
+                            berths = short(row[2]),
+                            wc = short(row[3]),
+                            crewCabins = short(row[4]),
+                            crewBerths = short(row[5]),
+                            crewWc = short(row[6]),
+                            cabinBerths = short(row[7]),
+                            salonBerths = short(row[8]),
+                            showers = short(row[9]),
+                            crewShowers = short(row[10]),
+                            maxPersons = short(row[11]),
+                            recommendedPersons = short(row[12]),
+                            crewNumber = short(row[13]),
+                            cabinsNote = row[14] as String?,
+                            berthsNote = row[15] as String?,
+                            wcNote = row[16] as String?,
+                            internalRemark = row[18] as String?,
+                        ),
+                )
         }.toMap()
     }
 
@@ -1346,6 +1392,26 @@ class YachtQueryingService(
         val offerStatus =
             if (row.onlyExternalReservation) OfferStatus.UNAVAILABLE else OfferStatus.FREE
         val priceInfo = row.avgClientPrice?.let { exchangeRateCalculationService.calculatePriceInfo(it, currency) }
+        val capacityColumns =
+            CapacityColumns(
+                cabins = row.cabins,
+                crewCabins = row.crewCabins,
+                wc = row.wc,
+                crewWc = row.crewWc,
+                berths = row.berths,
+                crewBerths = row.crewBerths,
+                cabinBerths = row.cabinBerths,
+                salonBerths = row.salonBerths,
+                showers = row.showers,
+                crewShowers = row.crewShowers,
+                maxPersons = row.maxPersons,
+                recommendedPersons = row.recommendedPersons,
+                crewNumber = row.crewNumber,
+                cabinsNote = row.cabinsNote,
+                berthsNote = row.berthsNote,
+                wcNote = row.wcNote,
+                internalRemark = row.internalRemark,
+            )
         return YachtSearchResponseDto(
             id = row.id,
             slug =
@@ -1368,6 +1434,8 @@ class YachtQueryingService(
             buildYear = row.buildYear,
             maxPersons = row.maxPersons,
             cabins = row.cabins,
+            berths = row.berths,
+            wc = row.wc,
             length = row.length,
             offerStatus = offerStatus,
             isOption = false,
@@ -1376,6 +1444,8 @@ class YachtQueryingService(
             modelName = row.modelName,
             mainImageId = row.mainImageId,
             agencyName = row.agencyName,
+            capacity = yachtMapper.capacityBrief(capacityColumns),
+            brokerNotes = yachtMapper.brokerNotes(capacityColumns),
         )
     }
 
@@ -1531,12 +1601,16 @@ class YachtQueryingService(
             predicates.add(cb.lessThanOrEqualTo(root.get("buildYear"), searchParams.maxBuildYear))
         }
 
+        // People: the partner's max people on board, else its berths (Mario 6.10.2026, capacity contract v1 section 9):
+        // max_persons is NULL on about half the fleet, which this filter used to drop. Filter / counts / AI search only
+        // - never pricing (maxPersons drives per-person extras) and never shown as "max people".
+        val people: Expression<Short> = cb.coalesce<Short>().value(root.get("maxPersons")).value(root.get("berths"))
         if (searchParams.minPersons != null && searchParams.maxPersons != null) {
-            predicates.add(cb.between(root.get("maxPersons"), searchParams.minPersons, searchParams.maxPersons))
+            predicates.add(cb.between(people, searchParams.minPersons, searchParams.maxPersons))
         } else if (searchParams.minPersons != null) {
-            predicates.add(cb.greaterThanOrEqualTo(root.get("maxPersons"), searchParams.minPersons))
+            predicates.add(cb.greaterThanOrEqualTo(people, searchParams.minPersons))
         } else if (searchParams.maxPersons != null) {
-            predicates.add(cb.lessThanOrEqualTo(root.get("maxPersons"), searchParams.maxPersons))
+            predicates.add(cb.lessThanOrEqualTo(people, searchParams.maxPersons))
         }
 
         if (searchParams.minCabins != null && searchParams.maxCabins != null) {

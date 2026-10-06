@@ -30,6 +30,9 @@ data class YachtSearchResponseDto(
     val buildYear: Short? = null,
     val maxPersons: Short? = null,
     val cabins: Short? = null,
+    /** Partner berths / WC numbers (matview columns; capacity contract v1). */
+    val berths: Short? = null,
+    val wc: Short? = null,
     val length: BigDecimal? = null,
     val lengthInfo: MeasurementUnitDto? = null,
     val totalLocations: Int? = null,
@@ -120,4 +123,16 @@ data class YachtSearchResponseDto(
      * (Codex audit N7).
      */
     val updatedAt: Instant? = null,
+    /**
+     * Capacity as the boat's own partner gives it, brief form (capacity contract v1, 2.2): notes only when short and
+     * language-neutral ("4 +2", "(8+2)"), sanitized in the backend; the split (12 + 1 crew, 8 in cabins + 2 in the
+     * saloon) as on the boat page. Read from the yacht row (one primary-key lookup per page), so it may be up to one
+     * matview refresh ahead of the flat cabins / maxPersons. Null only for a row without a yacht record.
+     */
+    val capacity: CapacityDto? = null,
+    /**
+     * ADMIN ONLY (same SYSTEM_ADMIN gate as agencyName): the partner's raw capacity notes and internal remark, for the
+     * broker's info icon. Never copied into customer text. Null for anonymous and customer callers.
+     */
+    val brokerNotes: BrokerNotesDto? = null,
 )

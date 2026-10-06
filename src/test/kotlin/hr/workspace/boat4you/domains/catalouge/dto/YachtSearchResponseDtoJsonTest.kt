@@ -40,4 +40,41 @@ class YachtSearchResponseDtoJsonTest {
             val json = mapper.writeValueAsString(YachtSearchResponseDto(id = 3528, slug = "beneteau-oceanis-461-ilia-3528", name = "Ilia"))
             mapper.readTree(json).get("updatedAt").isNull shouldBe true
         }
+
+    /**
+     * Capacity contract v1 (2.2 / 2.7): the frontends read `berths`, `wc` and the `capacity` block by these names, and
+     * the sisters' withoutPartnerIds drops any key matching /agency|external|partner|company|source|mmk|nausys|operator/i.
+     */
+    @Test
+    fun `capacity block wire format, broker notes null for the public`() =
+        bootMapper { mapper ->
+            val capacity =
+                CapacityDto(
+                    cabins = CapacityDimDto(value = 4, note = "4 +2", split = null),
+                    berths = CapacityDimDto(value = 13, note = null, split = CapacitySplitDto(guests = 12, inCabins = null, saloon = null, crew = 1, skipper = null)),
+                    heads = null,
+                    crewCabins = null,
+                    crewHeads = null,
+                    showers = null,
+                    crewShowers = null,
+                    maxPersons = 14,
+                    recommendedPersons = null,
+                    crewNumber = 1,
+                )
+            val json =
+                mapper.writeValueAsString(
+                    YachtSearchResponseDto(id = 8351, slug = "aura-51-dione-ii-8351", name = "Dione II", berths = 13, wc = 6, capacity = capacity),
+                )
+            val tree = mapper.readTree(json)
+            tree.get("berths").asInt() shouldBe 13
+            tree.get("wc").asInt() shouldBe 6
+            tree.get("brokerNotes").isNull shouldBe true
+            mapper.writeValueAsString(tree.get("capacity")) shouldBe
+                "{\"cabins\":{\"value\":4,\"note\":\"4 +2\",\"split\":null}," +
+                "\"berths\":{\"value\":13,\"note\":null,\"split\":{\"guests\":12,\"inCabins\":null,\"saloon\":null,\"crew\":1,\"skipper\":null}}," +
+                "\"heads\":null,\"crewCabins\":null,\"crewHeads\":null,\"showers\":null,\"crewShowers\":null,\"maxPersons\":14," +
+                "\"recommendedPersons\":null,\"crewNumber\":1}"
+            val partnerIdKey = Regex("agency|external|partner|company|source|mmk|nausys|operator", RegexOption.IGNORE_CASE)
+            listOf("berths", "wc", "capacity", "brokerNotes").forEach { partnerIdKey.containsMatchIn(it) shouldBe false }
+        }
 }
