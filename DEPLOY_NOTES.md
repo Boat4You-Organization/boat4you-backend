@@ -1,5 +1,180 @@
 # Backend deploy notes
 
+## 2026-10-06 — Kapacitet i oprema broda točno kako ih šalju MMK / NauSys (capacity contract v1: V9_72, sync, blokovi `capacity` / `rig`, filter osoba, jedra, AI chat) + review popravci — ⏳ NIJE DEPLOYANO (commiti `c374579` `dd7c977` `ac4a874` `ccc5c3e` `a96efe8` + review `422841d` `29abb20` `5b9803e` `e056aba` `2bd81a9` `c8da846`)
+
+Mario 6.10.: broj kabina, ležajeva i WC-a te raspored moraju biti 100 % kao kod partnera na svim površinama (b4y, 6 sistera, admin Offers + e-mail ponude, PDF), da klijent nikad ne mora pitati. Odluke: (1) partnerske napomene prevodi web kroz pregledanu tablicu; (2) filter osoba `COALESCE(max_persons, berths)`, samo filter / brojevi / AI pretraga, nikad cijena; (3) `SailTypeEnum` ispravljen u istom releaseu; (4) interne partnerske napomene samo u adminu.
+
+**Commiti:**
+
+- `c374579` **V9_72:** 14 nullable kolona na `yacht`, spremljeno kako partner šalje. To su MMK napomene uz kabine / ležajeve / WC, NauSys ležajevi u kabinama i u salonu, tuševi, preporučeni broj osoba, oznake jedara, MMK oznaka motora, NauSys broj motora i snaga po motoru te `internal_remark` (samo admin). Trigger V9_71 se NE mijenja (to je B8, kasnije).
+- `dd7c977`:
+  - strogi parser napomena (gosti / posada / skipper / salon);
+  - parser snage motora, koji broji samo snagu s jedinicom ("Volvo MD 22 Saildrive 40 h.p." 880 → 40);
+  - oznake jedara;
+  - jedan sanitizer `PartnerTextSanitizer.capacityNote`;
+  - `SailTypeEnum`: letve / classic / flok → `CLASSIC_SAIL`, rolo → `ROLLING_SAIL`, MMK „None" → `UNKNOWN` (dosad je full batten bio `ROLLING_SAIL`).
+- `ac4a874` **sync MMK + NauSys** (samo cusma3, `data-sync`): sve kolone kapaciteta se pišu bezuvjetno iz partnera. Uz to:
+  - ispravljen je **NauSys bug `crew_wc = wc`** (sada `wcCrew`);
+  - `crew_number` se briše kad partner isprazni listu posade;
+  - `engine_power` dolazi iz parsera.
+- `ccc5c3e` **API:**
+  - `capacity` + `rig` na detalju, rezervaciji i tripu;
+  - lista ima `berths`, `wc` i kratki `capacity` (jedan PK lookup po stranici, zajedno s `updatedAt`);
+  - admin dobiva `brokerNotes` (sirove napomene + interna napomena, samo `SYSTEM_ADMIN`);
+  - replacement pretraga ima `berths` / `wc` / `capacity`;
+  - filter osoba je `COALESCE(max_persons, berths)` u listi, brojanju i distributionu. Cijene i extrasi i dalje koriste samo `max_persons`.
+- `a96efe8` **AI chat:** kapacitet iz bloka `capacity`, bez nula (`asInt(0)`), bez „sleeps up to {maxPersons}"; posada samo za crewed ponude.
+- Review popravci 6.10.:
+  1. `422841d` **V9_72** čeka lock najviše **1 s po pokušaju, 30 pokušaja s 1 s razmaka** (oko 1 min; bilo 3 s × 10). Dok ALTER čeka ACCESS EXCLUSIVE, **iza njega čekaju i sva ČITANJA `yacht`**, ne samo pisanja (komentar ispravljen). Blokiraju ga sync, refresh matviewa (ACCESS SHARE 180–423 s) i pg_dump. Novi test: dok sync drži `yacht`, čitanje čeka najviše jedan pokušaj (< 1,6 s; s 3 s test pada).
+  2. `29abb20` `YachtSearchPagingStabilityTest`: tjedan je subota godinu dana od danas. Fiksni 3.–10.10.2026 je prošao i 3 testa su bila crvena na HEAD-u, među njima jedina end-to-end provjera `updatedAt` kroz prepisani lookup.
+  3. `e056aba` **Test admin-gatea:** `brokerNotes` i tekst interne napomene dobiva samo `SYSTEM_ADMIN`.
+     - Pokriveno: lista, replacement pretraga i serijalizirani JSON; prijave bez autentikacije, anonymous token, `USER` i `MANAGER`.
+     - Mapper skriva napomenu i kad SQL već vrati remark (`isAdmin = true`).
+     - Mutacija bez provjere uloge pada.
+  4. `2bd81a9` **AI chat:**
+     - Više ne navodi crew WC. Chat ide live s cusma2, a `crew_wc` je i dalje `= wc` na svakom NauSys brodu dok ga ispravljeni NauSys sync (cusma3, noću) ne prepiše. Stranica broda crew WC prikazuje tek nakon gate SQL-a.
+     - U system prompt idu samo partnerske napomene ≤ 60 znakova. Sve iz uzorka od 896 brodova su kraće.
+  5. `5b9803e` **sanitizer, imena** (reviewerove probe su prije prolazile):
+     - agencije od 3 slova (TYC, NCC, UNA, MDM, GTF);
+     - sam brend bez trgovačkog sufiksa, najmanje 5 znakova („Navigare Yachting" → `navigare`, „Pitter Yachtcharter" → `pitter`). Iznimke: imena s allow-liste u operators.txt i oblici sastavljeni samo od riječi kapaciteta („master", „seven", „starboard"), pa „(4+1 master cabin)" ostaje;
+     - fold zadržava slova svih pisama (grčka / ćirilična imena prije su postala prazan string);
+     - sve provjere rade na NFKC obliku („example．com", fullwidth znamenke).
+     - Svih 71 napomena, 121 oznaka motora s jedinicom i sve oznake jedara iz uzorka i dalje prolaze nepromijenjene.
+     - Svjesno: brend koji je ujedno obična riječ ili mjesto („mainsail", „ionian", „luxury") sakrije i napomenu koja tu riječ samo koristi. Broj ostaje. Bolje sakriti napomenu nego pokazati ime operatera.
+  6. `5b9803e` Imena agencija se više **ne čitaju na request threadu**. Tamo bi neuspio upit abortirao transakciju poziva i stranica bi pala. Sada se čitaju pri startu (`@PostConstruct`, prije posluživanja), zatim jednom na sat u pozadinskoj niti. Dok traje čitanje, vrijedi stari popis. Kod greške ostaje stari popis, a novi pokušaj ide za minutu.
+  7. `5b9803e` Test: `src/main/resources/partner/operators.txt` mora biti jednak `infra/deploy-scripts/operators.txt`. Preskače se ako `infra/` nije checkoutan pored backenda. Novo ime operatera dodati u OBA.
+  8. `c8da846` Uklonjen mrtvi `extractAndMultiplyNumbers` i njegov test. Slučajevi su i dalje pokriveni u `EnginePowerParserTest`.
+- **Odbijeno (lažno pozitivno):** „V9_71 još nije deployan, ručno primijeniti i njega". V9_71 je **LIVE od 1.10. 18:07 UTC** (val 2, `42b85cc`): ručno primijenjen na cusma4, Flyway ga je zapisao. Live `GET /public/yachts?sortBy=id&idFrom=3400&idTo=3500` 6.10. vraća `updatedAt`. Zaglavlja dvaju unosa od 1.10. ispod („NIJE DEPLOYANO") su zastarjela. **Ručno se primjenjuje SAMO V9_72.**
+
+**Verifikacija (6.10.):**
+
+- **Puni suite:** 487 testova, **isti 31 pre-existing failure** kao u ranijim unosima, nijedan u dirnutom kodu: `ReservationPaymentPhasesServiceTest` 26, `ReservationOptionsCombinationProviderTests` 2, `Boat4youWsApplicationTests` 1 (env), `MatchersTests` 1, `NauSysDateTimeWrapperTests` 1. Na HEAD-u prije popravaka bila su još 3 paging testa.
+- **Kapacitet:** parser, motor, referentni brodovi, sanitizer i jedra (22 testa); AI chat 5; `YachtSearchCapacityTest` 5 i migracija 4 (oba na pravom Postgresu, migracija na PG18). Uz to search testovi: paging 3, dated 5, scope 6, weekly 4, `YachtContentModifiedTest` 7, DTO JSON 3.
+- **Mutacije:** svaka od ovih izmjena ruši test:
+  - maknuti admin-gate;
+  - 3 s lock_timeout;
+  - čitanje agencija na threadu poziva;
+  - fold samo `[a-z0-9]`;
+  - bez NFKC;
+  - bez brend oblika.
+- **Hibernate `validate`** tablice `yacht` prema HEAD entitetu, na `b4y-rehearsal` (kopija proda) s primijenjenim V9_72: OK. Čitanje svih 14 atributa kroz JPQL vraća String / Short / BigDecimal, kako treba.
+  - ⚠️ Hibernateov DDL isolator commita otvorenu transakciju, pa je ALTER V9_72 tamo ostao commitan. 14 praznih kolona odmah je maknuto, rehearsal `yacht` je opet 45 kolona.
+  - Lokalni docker run API-ja (contract §11) nije rađen; validate na kopiji proda ga zamjenjuje za mapiranje.
+- **Lookup po stranici** (rehearsal, V9_71 + V9_72 u transakciji pa ROLLBACK): 100 id-eva preko PK indeksa = **0,34 ms**.
+- **Jar** (`bootJar`): nema dupliciranih verzija migracija (68 × V9), V9_72 u jaru == HEAD, `partner/operators.txt` u jaru == infra.
+- **ktlint:** 0 nalaza na izmijenjenim linijama (ostalo je pre-existing).
+
+**Mario / GSC moraju znati (dolazi s backendom, ne s webom):**
+
+- **Filter jedara:** brojke se sele s „Rolling" na „Classic" za većinu brodova (oko 73 % MMK, 84 % NauSys) već na prvom syncu na cusma3. Stranice odmah prikazuju ispravan tip.
+- **Filter snage motora:** vrijednosti se mijenjaju (880 → 40 i slično). U uzorku 75 od 896 MMK brodova dobiva `null` (40 nemaju jedinicu u oznaci motora, ostali su dvosmisleni) i ispada iz rezultata filtera motora.
+- **Filter osoba:** brodovi bez `max_persons` (oko 49 %) sada ulaze preko `berths`.
+- **Sitemap `<lastmod>` za gotovo svaki brod već prvog dana:** trigger V9_71 (live) prati `mainsail_type`, `engine_power` i `crew_number`. Prvi sync na cusma3 zato zapiše `yacht_content_modified` za većinu aktivnih brodova (rehearsal: 11.046 `ROLLING_SAIL`, većina postaje `CLASSIC_SAIL`). Val ponovnog crawla dolazi s backendom; B8 kasnije još jednom zapiše oko 13,6 tisuća brodova.
+- **AI chat** dobiva nove brojke odmah nakon restarta cusma2, bez frontend gatea.
+
+**Deploy (OBAVEZAN REDOSLIJED; ništa u sync slotovima):**
+
+Slotovi (UTC) koje gate mora izbjeći (ABORT):
+
+- MMK availability 08:40 / 12:40 / 16:40 / 20:40 (oko 17 min);
+- MMK near-term 10:50 / 16:50;
+- MMK full 06:00–07:30;
+- NauSys availability 10:20 / 16:20 / 22:20;
+- NauSys near-term 10:40 / 16:40;
+- NauSys retry 06:15 / 10:15 / 15:15;
+- NauSys noćni 23:20 do oko 06:00;
+- NauSys search-retry drain svakih 15 min;
+- refresh matviewa svakih 10 min (180–423 s);
+- pg_dump backup 07:10 / 11:10 / 16:10;
+- RetentionReaper 03:40.
+
+Preporuka: koraci 2–4 jedan za drugim u istom mirnom prozoru, npr. 21:00–22:10 UTC (nakon MMK availability 20:40 + 17 min, prije NauSys 22:20). Tako noćni NauSys (23:20) dolazi uskoro.
+
+1. **Build:** `cd boat4you-backend/boat4you-ws-main && export JAVA_HOME=$(/usr/libexec/java_home -v 21) && ./gradlew bootJar`.
+   - Zapisati `shasum`.
+   - Provjeriti duplikate migracija: `unzip -l build/libs/boat4you-0.0.1-SNAPSHOT.jar | grep -o 'db/migration/V[0-9_]*__' | sort | uniq -d` mora biti prazno.
+   - scp jar na cusma2 i cusma3 kao `webservice_new.jar`.
+2. **Ručna primjena V9_72 na cusma4, PRIJE restarta cusma2**, odmah nakon što završi refresh matviewa i izvan pg_dumpa.
+   - a) Provjera (cusma4, samo čitanje). Pokrenuti 2–3 puta; smije ostati samo kratko čitanje API-ja koje u idućem pokretanju nestane. NE smije biti `REFRESH`, `pg_dump`, `idle in transaction` ni sync `UPDATE` / `INSERT`:
+
+     ```sql
+     SELECT a.pid, a.state, l.mode, now() - a.xact_start AS age, left(a.query, 80)
+       FROM pg_locks l JOIN pg_stat_activity a USING (pid)
+      WHERE l.relation = 'public.yacht'::regclass AND a.pid <> pg_backend_pid();
+     SELECT pid, application_name, now() - query_start AS age, left(query, 60) FROM pg_stat_activity
+      WHERE (query ILIKE 'REFRESH MATERIALIZED VIEW%' OR application_name = 'pg_dump') AND pid <> pg_backend_pid();  -- 0 redaka
+     ```
+
+     Stara provjera (samo `RowExclusiveLock` i jači) **ne vidi** refresh matviewa ni pg_dump, a ALTER bi svejedno čekao.
+
+   - b) scp `src/main/resources/db/migration/V9_72__yacht_partner_capacity.sql` na cusma4 u `/tmp/`, zatim `sudo -u postgres psql -d boat4you_db -v ON_ERROR_STOP=1 -c 'SET ROLE boat4you_owner' -f /tmp/V9_72__yacht_partner_capacity.sql`.
+   - c) `SELECT count(*) FROM information_schema.columns WHERE table_name = 'yacht' AND column_name IN ('cabins_note','berths_note','wc_note','cabin_berths','salon_berths','showers','crew_showers','recommended_persons','mainsail_label','genoa_label','engine_label','engine_count','engine_power_each','internal_remark');` mora vratiti **14**.
+   - Ako ispiše `V9_72: yacht is locked (attempt n of 30)` i padne, ponoviti kasnije. API za to vrijeme radi, samo čitanja povremeno čekaju do 1 s.
+3. **cusma2:** provjera iz 2a još jednom, zatim:
+   - `cp -p webservice.jar webservice.jar.prev && mv webservice_new.jar webservice.jar && sudo systemctl restart boat4you.service`.
+   - Flyway nađe svih 14 kolona, izlazi bez locka i zapisuje 9.72.
+   - Poll `GET https://api.boat4you.com/public/settings/card-surcharge` dok ne bude 200.
+   - Provjere (≤ 1 zahtjev/s, normalan browser UA, NIKAD Googlebot):
+     - `/public/yachts/<slug>` ima `capacity` i `rig`;
+     - `/public/yachts?did=c-54&size=18` ima `berths`, `wc`, `capacity` i `"brokerNotes":null`;
+     - admin Offers (prijavljen admin) vidi `brokerNotes`;
+     - `journalctl -u boat4you.service --since '10 min ago' | grep -c 'agency names unavailable'` daje 0.
+4. **cusma3 odmah nakon toga, kroz tvrdi gate** (cusma3 entitet čita nove kolone, zato tek nakon koraka 2):
+   - U ISTOJ skripti: `n=$(journalctl -u boat4youscheduler.service --since '10 minutes ago' | grep -ci 'nausys\|mmk'); [ "$n" -gt 0 ] && { echo "ABORT: $n sync linija"; exit 1; }`.
+   - Tek onda `cp -p webservice.jar webservice.jar.prev && mv webservice_new.jar webservice.jar && sudo systemctl restart boat4youscheduler.service`.
+   - Flyway je pinned i javlja „Schema up to date".
+   - **Zapisati vrijeme. Od njega se računa čekanje u koraku 5, ne od cusma2.**
+5. **Čekati jedan puni NauSys (23:20 → oko 06:00) i jedan puni MMK (06:10) ciklus na novom jaru.**
+6. **Gate SQL** (cusma4, samo čitanje), PRIJE ijednog frontend deploya:
+
+   ```sql
+   WITH s AS (SELECT y.*, em.external_system_id AS sys
+                FROM yacht y JOIN external_mapping em ON em.system_id = y.id AND em.type = 'Yacht'
+               WHERE y.sys_active)
+   SELECT sys,                                                          -- 1 = MMK, 2 = NauSys
+          count(*)                                                        AS active,
+          count(*) FILTER (WHERE sys = 2 AND salon_berths IS NULL)        AS ns_salon_null,     -- ~0
+          count(*) FILTER (WHERE sys = 2 AND wc > 0 AND crew_wc = wc)     AS ns_crew_wc_eq_wc,  -- bilo ~7,6k, sada malo
+          count(*) FILTER (WHERE sys = 1 AND mainsail_label IS NULL)      AS mmk_mainsail_null, -- ~0
+          count(*) FILTER (WHERE sys = 1 AND berths_note IS NOT NULL)     AS mmk_berths_note,   -- 40-50 %
+          count(*) FILTER (WHERE mainsail_type = 'ROLLING_SAIL')          AS rolling,           -- samo rolo
+          count(*) FILTER (WHERE mainsail_type = 'CLASSIC_SAIL')          AS classic
+     FROM s GROUP BY sys;
+   -- agencije čiji NauSys sync nije prošao na novom jaru
+   SELECT a.name, count(*) FROM yacht y JOIN agency a ON a.id = y.agency_id
+     JOIN external_mapping em ON em.system_id = y.id AND em.type = 'Yacht' AND em.external_system_id = 2
+    WHERE y.sys_active AND y.salon_berths IS NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 20;
+   -- C12: samo EN oznake (bez „Lattée", „Lattengroß")
+   SELECT mainsail_label, count(*) FROM yacht WHERE sys_active GROUP BY 1 ORDER BY 2 DESC;
+   -- PNOE (MMK 6169078420000104347): EN oznake u testnom payloadu nisu s poziva bez jezika - ovdje potvrditi
+   SELECT id, mainsail_label, genoa_label, cabins_note, berths_note FROM yacht WHERE name = 'PNOE';
+   SELECT count(*), max(modified_at) FROM yacht_content_modified WHERE modified_at > '<vrijeme koraka 4>';  -- val lastmod-a
+   ```
+
+   Ako gate ne prođe, frontende NE deployati, nego prvo istražiti.
+
+7. **admin → b4y → 6 sistera**, svaki po svom DEPLOY_NOTES, strogo nakon prolaza gatea.
+8. **Kasnije B8** (`B8_trigger_later.sql`, zasad samo u scratchpadu sesije 87cc80f2, `…/scratchpad/capacity/contract/`; /private/tmp se čisti nakon oko 3 dana, pa ga sačuvati). B8 postaje `V9_<next>` tek kad b4y i svih 6 sistera renderiraju nove blokove.
+   - Proširuje UPDATE trigger V9_71 novim kolonama, BEZ `internal_remark`.
+   - Guard je definicija triggera.
+   - Jednokratno zapisuje `yacht_content_modified` za brodove s novim sadržajem: oko 13.624, opet val crawla.
+   - Primjenjuje se ručno prije restarta, kao V9_72. `CREATE OR REPLACE TRIGGER` uzima SHARE ROW EXCLUSIVE: čitanja ne čekaju, pisanja čekaju.
+
+**Rollback:**
+
+- Ako frontendi već čitaju nove blokove, prvo frontendi, onda backend.
+- **Backend:** `mv webservice.jar.prev webservice.jar` + restart (cusma2; cusma3 kroz isti gate). Može i `git revert c8da846 2bd81a9 e056aba 5b9803e 29abb20 422841d a96efe8 ccc5c3e ac4a874 dd7c977 c374579`, zatim novi jar i isti deploy.
+- Kolone V9_72 smiju ostati: nullable su, a stari jar ih ne čita.
+- Pazi: stari sync ponovno upisuje `crew_wc = wc` i staro mapiranje jedara. Brojke filtera i `<lastmod>` se time opet pomaknu.
+- **Brisanje kolona** samo ako baš treba, u mirnom prozoru odmah nakon refresha matviewa (ACCESS EXCLUSIVE, čitanja čekaju): `SET lock_timeout = '1s'; ALTER TABLE yacht DROP COLUMN cabins_note, DROP COLUMN berths_note, DROP COLUMN wc_note, DROP COLUMN cabin_berths, DROP COLUMN salon_berths, DROP COLUMN showers, DROP COLUMN crew_showers, DROP COLUMN recommended_persons, DROP COLUMN mainsail_label, DROP COLUMN genoa_label, DROP COLUMN engine_label, DROP COLUMN engine_count, DROP COLUMN engine_power_each, DROP COLUMN internal_remark; DELETE FROM flyway_schema_history WHERE version = '9.72';`
+
+**Otvoreno:**
+
+- Frontend `safeCapacityNote` (`yachtCapacity.ts`, byte-identičan u 8 repoa, druga linija obrane) treba isti NFKC korak. Nova pravila za imena (3 slova, sam brend, sva pisma) vrijede tamo samo ako frontend preda vlastiti matcher imena (b4y `operatorNames.ts`, samo na serveru); jedini gate je backend.
+- B8 datoteku sačuvati izvan /private/tmp.
+- Oznake jedara za PNOE potvrditi u gate SQL-u.
+- Admin izvještaj o blizancima koji se ne slažu (contract §12.4) nije dio ovoga.
+
 ## 2026-10-01 — Review vala 2: V9_71 idempotentan (ručna primjena prije restarta), provjera locka prije restarta, test JSON oblika `updatedAt` — ⏳ NIJE DEPLOYANO (commit `54a8665`, nadograđuje `4d3a303`)
 
 **Ispravak tvrdnje iz unosa ispod:** „čitanja NIKAD ne čekaju taj lock" vrijedi samo u bazi. Flyway radi PRIJE nego API počne posluživati, a cusma2 je jedini API čvor. Svaka sekunda koju `CREATE TRIGGER` čeka na sync koji piše `yacht` zato je ispad API-ja (do ~1 min), a nakon 10. pokušaja API se ne digne (restart petlja).
