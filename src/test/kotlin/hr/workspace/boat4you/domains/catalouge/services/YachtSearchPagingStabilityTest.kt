@@ -41,8 +41,10 @@ import org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 import kotlin.test.assertEquals
 
 /**
@@ -74,8 +76,10 @@ class YachtSearchPagingStabilityTest {
 
         private const val YACHTS = 300
         private const val PAGE_SIZE = 30
-        private val WEEK_FROM: LocalDate = LocalDate.of(2026, 10, 3)
-        private val WEEK_TO: LocalDate = LocalDate.of(2026, 10, 10)
+
+        /** A Saturday a year ahead: the search drops past offers, so a fixed date turns the dated cases red once it passes. */
+        private val WEEK_FROM: LocalDate = LocalDate.now().plusYears(1).with(TemporalAdjusters.next(DayOfWeek.SATURDAY))
+        private val WEEK_TO: LocalDate = WEEK_FROM.plusDays(7)
 
         /** Every `sortBy` the controller accepts, plus the empty and unknown values that fall back to Recommended. */
         private val SORT_VARIANTS =
