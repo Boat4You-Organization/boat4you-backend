@@ -38,6 +38,9 @@ class AiChatToolExecutor(
     private companion object {
         /** Charter types whose listing may state a crew count (capacity contract v1, 7.2). */
         val CREWED_CHARTER_TYPES = setOf("CREWED", "ALL_INCLUSIVE", "CRUISE")
+
+        /** Longest partner capacity note put into the system prompt. */
+        const val CHAT_NOTE_MAX = 60
     }
 
     fun searchYachts(input: JsonNode): ToolOutcome {
@@ -253,7 +256,9 @@ class AiChatToolExecutor(
     /**
      * "Cabins: 6 (crew cabins: 2), berths: 13 (12 + 1 crew), WC: 6, max people on board: 14 (recommended 10), crew: 1"
      * from the detail JSON's `capacity` block (capacity contract v1, 2.6), unknown parts left out. Berths are berths,
-     * never "sleeps up to {maxPersons}"; crew only when a crewed charter is offered.
+     * never "sleeps up to {maxPersons}"; crew only when a crewed charter is offered. No crew WC: until the corrected
+     * NauSys sync (cusma3, nightly) has rewritten a boat, its stored crew WC is still its guest WC, and the chat goes
+     * live with cusma2, ahead of that sync - the boat page shows the crew WC once the sync has run.
      */
     internal fun capacityFacts(y: JsonNode): String? {
         val c = y.path("capacity")
@@ -263,10 +268,7 @@ class AiChatToolExecutor(
             parts += "Cabins: $cabins" + (crewCabins?.let { " (crew cabins: $it)" } ?: "")
         }
         dimText(c.path("berths"), y.path("berths"))?.let { parts += "berths: $it" }
-        dimText(c.path("heads"), y.path("wc"))?.let { wc ->
-            val crewWc = positive(c.path("crewHeads"))
-            parts += "WC: $wc" + (crewWc?.let { " (crew WC: $it)" } ?: "")
-        }
+        dimText(c.path("heads"), y.path("wc"))?.let { parts += "WC: $it" }
         positive(c.path("showers"))?.let { parts += "showers: $it" }
         // flat fields only for a payload without the block (an older API answer)
         val max = positive(c.path("maxPersons")) ?: if (!c.isObject) positive(y.path("maxPersons")) else null
@@ -281,12 +283,16 @@ class AiChatToolExecutor(
         return parts.takeIf { it.isNotEmpty() }?.joinToString(", ")
     }
 
-    /** The partner's own capacity notes, already sanitized by the API (never the internal remark), in English. */
+    /**
+     * The partner's own capacity notes, already sanitized by the API (never the internal remark), in English. Partner
+     * text inside the system prompt: only notes of at most [CHAT_NOTE_MAX] characters (every note of the 896-yacht
+     * sample is shorter), which keeps the room for text aimed at the model small.
+     */
     internal fun capacityNotes(y: JsonNode): String? {
         val c = y.path("capacity")
         val notes =
             listOf("cabins" to "cabins", "berths" to "berths", "heads" to "WC").mapNotNull { (key, label) ->
-                c.path(key).path("note").asText("").takeIf { it.isNotBlank() }?.let { "$label \"$it\"" }
+                c.path(key).path("note").asText("").takeIf { it.isNotBlank() && it.length <= CHAT_NOTE_MAX }?.let { "$label \"$it\"" }
             }
         return notes.takeIf { it.isNotEmpty() }?.let { "Partner capacity notes (verbatim): ${it.joinToString("; ")}" }
     }
