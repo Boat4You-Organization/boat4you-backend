@@ -35,6 +35,11 @@ class AiChatToolExecutor(
 
     data class ToolOutcome(val resultForModel: String, val cards: ArrayNode? = null)
 
+    private companion object {
+        /** Charter types whose listing may state a crew count (capacity contract v1, 7.2). */
+        val CREWED_CHARTER_TYPES = setOf("CREWED", "ALL_INCLUSIVE", "CRUISE")
+    }
+
     fun searchYachts(input: JsonNode): ToolOutcome {
         val countryCode = input.path("countryCode").asText("").uppercase().take(2)
         val startDate = input.path("startDate").asText("")
@@ -112,8 +117,11 @@ class AiChatToolExecutor(
                 objectMapper.createObjectNode().apply {
                     put("yacht", label)
                     put("totalPriceEur", total)
-                    put("cabins", y.path("cabins").asInt(0))
-                    put("maxPersons", y.path("maxPersons").asInt(0))
+                    // Partner figures only when known (> 0) - an absent key, never a 0 the model would repeat.
+                    putPositive("cabins", y.path("cabins"))
+                    putPositive("berths", y.path("berths"))
+                    putPositive("wc", y.path("wc"))
+                    putPositive("maxPeopleOnBoard", y.path("maxPersons"))
                     put("year", y.path("buildYear").asInt(0))
                     put("base", y.path("location").path("name").asText(""))
                     val amenities = y.path("amenityKeys").mapNotNull { it.asText(null) }
@@ -128,8 +136,10 @@ class AiChatToolExecutor(
                     put("imageId", y.path("mainImageId").asLong(0))
                     put("totalPriceEur", total)
                     put("days", days)
-                    put("cabins", y.path("cabins").asInt(0))
-                    put("maxPersons", y.path("maxPersons").asInt(0))
+                    putPositive("cabins", y.path("cabins"))
+                    putPositive("berths", y.path("berths"))
+                    putPositive("wc", y.path("wc"))
+                    putPositive("maxPersons", y.path("maxPersons"))
                     put("year", y.path("buildYear").asInt(0))
                     put("location", y.path("location").path("name").asText(""))
                     put("startDate", startDate)
@@ -229,14 +239,84 @@ class AiChatToolExecutor(
             append("- Yacht: $label")
             y.path("buildYear").asInt(0).takeIf { it > 0 }?.let { append(", year $it") }
             y.path("length").asDouble(0.0).takeIf { it > 0 }?.let { append(", length ${it}m") }
-            append("\n- Cabins: ${y.path("cabins").asInt(0)}, berths: ${y.path("berths").asInt(0)}, ")
-            append("sleeps up to ${y.path("maxPersons").asInt(0)}, WC: ${y.path("wc").asInt(0)}\n")
+            append("\n")
+            capacityFacts(y)?.let { append("- $it\n") }
+            capacityNotes(y)?.let { append("- $it\n") }
             y.path("location").path("name").asText("").takeIf { it.isNotBlank() }
                 ?.let { append("- Base: $it\n") }
             if (amenities.isNotEmpty()) append("- Equipment: ${amenities.joinToString(", ")}\n")
             if (dates != null) append("- Dates selected on the page: ${dates.groupValues[1]} to ${dates.groupValues[2]}\n")
             append("- Page URL: https://www.boat4you.com/boat/$slug")
         }
+    }
+
+    /**
+     * "Cabins: 6 (crew cabins: 2), berths: 13 (12 + 1 crew), WC: 6, max people on board: 14 (recommended 10), crew: 1"
+     * from the detail JSON's `capacity` block (capacity contract v1, 2.6), unknown parts left out. Berths are berths,
+     * never "sleeps up to {maxPersons}"; crew only when a crewed charter is offered.
+     */
+    internal fun capacityFacts(y: JsonNode): String? {
+        val c = y.path("capacity")
+        val parts = mutableListOf<String>()
+        dimText(c.path("cabins"), y.path("cabins"))?.let { cabins ->
+            val crewCabins = positive(c.path("crewCabins"))
+            parts += "Cabins: $cabins" + (crewCabins?.let { " (crew cabins: $it)" } ?: "")
+        }
+        dimText(c.path("berths"), y.path("berths"))?.let { parts += "berths: $it" }
+        dimText(c.path("heads"), y.path("wc"))?.let { wc ->
+            val crewWc = positive(c.path("crewHeads"))
+            parts += "WC: $wc" + (crewWc?.let { " (crew WC: $it)" } ?: "")
+        }
+        positive(c.path("showers"))?.let { parts += "showers: $it" }
+        // flat fields only for a payload without the block (an older API answer)
+        val max = positive(c.path("maxPersons")) ?: if (!c.isObject) positive(y.path("maxPersons")) else null
+        val recommended = positive(c.path("recommendedPersons"))
+        when {
+            max != null -> parts += "max people on board: $max" + (recommended?.takeIf { it != max }?.let { " (recommended $it)" } ?: "")
+            recommended != null -> parts += "recommended people: $recommended"
+        }
+        val crewed = y.path("charterType").any { it.asText() in CREWED_CHARTER_TYPES }
+        val crew = positive(c.path("crewNumber")) ?: if (!c.isObject) positive(y.path("crewNumber")) else null
+        if (crewed && crew != null) parts += "crew: $crew"
+        return parts.takeIf { it.isNotEmpty() }?.joinToString(", ")
+    }
+
+    /** The partner's own capacity notes, already sanitized by the API (never the internal remark), in English. */
+    internal fun capacityNotes(y: JsonNode): String? {
+        val c = y.path("capacity")
+        val notes =
+            listOf("cabins" to "cabins", "berths" to "berths", "heads" to "WC").mapNotNull { (key, label) ->
+                c.path(key).path("note").asText("").takeIf { it.isNotBlank() }?.let { "$label \"$it\"" }
+            }
+        return notes.takeIf { it.isNotEmpty() }?.let { "Partner capacity notes (verbatim): ${it.joinToString("; ")}" }
+    }
+
+    /** "13 (12 + 1 crew)" / "12 (10 in cabins + 2 crew)" / "6", or null when the figure is unknown. */
+    private fun dimText(
+        dim: JsonNode,
+        flat: JsonNode,
+    ): String? {
+        val value = positive(dim.path("value")) ?: if (dim.isMissingNode) positive(flat) else null
+        value ?: return null
+        val split = dim.path("split")
+        val parts =
+            listOfNotNull(
+                positive(split.path("guests"))?.toString(),
+                positive(split.path("inCabins"))?.let { "$it in cabins" },
+                positive(split.path("saloon"))?.let { "$it in the saloon" },
+                positive(split.path("crew"))?.let { "$it crew" },
+                positive(split.path("skipper"))?.let { "$it skipper" },
+            )
+        return if (parts.size >= 2) "$value (${parts.joinToString(" + ")})" else value.toString()
+    }
+
+    private fun positive(node: JsonNode): Int? = node.takeIf { it.isNumber }?.asInt()?.takeIf { it > 0 }
+
+    private fun ObjectNode.putPositive(
+        key: String,
+        value: JsonNode,
+    ) {
+        positive(value)?.let { put(key, it) }
     }
 
     private fun amenityId(labelCode: String): Long? {
@@ -291,7 +371,14 @@ class AiChatToolExecutor(
                 )
                 .putObject("items").put("type", "string")
             it.putObject("minCabins").put("type", "integer").put("description", "Optional minimum cabins")
-            it.putObject("minPersons").put("type", "integer").put("description", "Optional: group size — boat must sleep at least this many")
+            it
+                .putObject("minPersons")
+                .put("type", "integer")
+                .put(
+                    "description",
+                    "Optional: group size - the boat must take at least this many people (its max. people on board; " +
+                        "when the partner gives no maximum, its berths)",
+                )
             it.putObject("maxTotalPriceEur").put("type", "integer").put("description", "Optional budget cap, total EUR for the period")
             it.putObject("minTotalPriceEur").put("type", "integer").put("description", "Optional lower price bound, total EUR — e.g. when the visitor wants pricier options than already shown")
             it.putObject("sortByPrice").put("type", "string")
