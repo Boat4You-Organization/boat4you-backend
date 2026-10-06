@@ -1,0 +1,1260 @@
+# Charter-company (operator) names — owner rule: customers never see which company owns or operates a boat.
+# Used by seo_regression.py: T6 (visible text, title, meta), SM8 (sitemap slugs, lowercase-hyphenated variant),
+# F5 (charter-facts topModels) and Stage A A-OPERATOR (messages/*.json, public/seo-content).
+#
+# Format: one name per line, matched exactly and case-sensitively on word boundaries.
+#         '!Name' = allow-list: the name is also a place, a phrase or a boat model and is never matched.
+#         '#' starts a comment.
+# Sources: synthesis 26.9.2026 section 6.3 (OPERATOR) + audit triage (content/rules.py, sisters p6_scan.py),
+#          backend seed migrations V1_08__insert_nausys_agencies.sql and V1_09__insert_mmk_agencies.sql
+#          (agency names; purely generic ones such as "Adriatic Charter" or "Croatia Sailing" are left out because
+#          they collide with ordinary copy). The prod agency table is NOT read at run time (read-only rule):
+#          add a new partner here when it is onboarded.
+
+# ---- core list (audit)
+Sunsail
+The Moorings
+Dream Yacht Charter
+# "Dream Yacht" alone is the same operator (partner terms text: "... and Dream Yacht crew."; CB copy "MarineMax,
+# Dream Yacht and Sunsail"). The sister hero "Your Dream Yacht Escape" is allowed by context in
+# seo_regression_catalogue.ALLOW['OPERATOR'] (text before the hit ends in "your "), not by an allow-list entry here.
+Dream Yacht
+MarineMax Vacations
+MarineMax
+Horizon Yacht Charters
+BVI Yacht Charters
+# BVI crewed-catamaran operators named in CB messages and the boat4you BVI corpus ("CYOA, BVI Yacht Charters, Festiva")
+CYOA
+Festiva
+# French Caribbean operator named in the CB Martinique blog post (26.9 review run)
+Catlante
+Conch Charters
+Voyage Charters
+Sea Independent
+Ionian Catamarans
+Active Cruises
+Odisej Ltd
+Kiriacoulis
+Navigare Yachting
+Pitter Yachtcharter
+Pitter Yachting
+Ultra Sailing
+Istion
+Istion Yachting
+Sailing Europe
+NCP & Mare
+Nautika Centar Nava
+Angelina Yachting
+Euromarine
+Neilson
+Vernicos
+Kavas Yachting
+Sail Ionian
+Nautilus Yachting
+Asta Yachting
+Cosmo Yachting
+NSS Charter
+Yacht Pool
+Albatros Yachting
+Mediteran Charter
+Lemon Yachting
+Orvas
+Porto Montenegro Yachting
+Punto Blu
+Mandalina Yachting
+Aeolos Yachting
+Mastercharter
+Alpha Yachting
+Atramar
+Fusion Charter
+Delphin Charter
+Gamma Charter
+
+# ---- allow-list: agency names that are also places / phrases in our copy (26.9 corpus scan)
+!Marina Hramina
+!Vliho Yacht Club
+!Palmarola
+!Ventana
+!Calipso
+!Mavi Yolculuk
+!Pure Sailing
+!Bordada
+!Cyclades Sailing
+!Trata
+!Dolin
+!Signature Sailing
+!Ocean Sailing
+!Le Grand Bleu
+!More Sailing
+!Torete
+!Porto Pollo Charter
+!Aegean Wind
+!Ionian Yachts
+!My Sailing
+!Controvento
+!Pure Sail
+!Ionian Charter
+!Waypoint
+!Sailing Spirit
+!Sail the Cyclades
+!Marmaris Catamaran
+!Dynamic Sailing
+!Preveza Sailing
+!Virada
+!Amalfi Charter
+# boat names, model names and base names that equal a (single-boat) agency name (26.9 crawl texts)
+!Kufner
+!Crouesty Location
+!Classic Adria
+!My Bubu
+!Ionian Spirit
+!Libertad VII
+!Aventura Catamarans
+!Trapani Vela Club
+!Cool Change
+!Skiathos Yachts
+!Sail More
+!Yates Mallorca
+!Blue Wave
+!Adriatic Sense
+!All Blue
+!Athena Blu
+# (BVI Yacht Charters is NOT allowed: it is a Tortola operator and is named as one in our copy - "Crewed catamaran
+#  operators (CYOA, BVI Yacht Charters, Festiva)". Generic headings must say "BVI yacht charters" in lower case.)
+!Top Light
+!Hispania Mare
+!Villa Jahta
+# 26.9 review run: boat4you slug aventura-catamarans-aventura-37-pronto-sail-5072 (the boat is called "Pronto Sail")
+!Pronto Sail
+
+# ---- backend agency seeds (V1_08 NauSYS, V1_09 MMK): multi-word names only. Single-word agency names
+#      (Omnia, Zenith, Boomerang, ...) are also boat names on hundreds of pages, so they are left out; generic
+#      names (Adriatic Charter, Croatia Sailing, ...) collide with ordinary copy and are left out too.
++39 Charter
+3Lacs Yacht Charter
+4 Season Sailing
+4S Sailing
+4U Yachting
+6 Nodi
+7 Waves Yachting
+7seas Maritime
+A Toda Vela Charter
+A&C Yacht Charter
+A&H byGRACE
+A1Boat Charters
+AA Yachts
+AAB Yachting - Alter AB
+Aba Vela
+ABB Charter
+Aberton Yachts
+Abovento Nautika
+Abruzzo Skipper
+Absolut Charter
+ACD Yachting
+ACE Yachting
+ACM Catamaran
+Acrux Vela
+Ada Yacht Sailing
+Adara Yachts
+Add Wind
+Adda Yachting
+Adonis Sailyachts
+Adria Pol Yachting
+Adria Turn Yachtcharter
+Adriatic Sailing Academy
+Adriatic Sailing Team
+Adriatic Sailing TO
+Adriatic Sense
+Adriatic Wave Charter
+Adriatica Transfer
+Aegean Blue Sailing
+Aegean Cruises
+Aegean Maritime
+Aegean Sails
+Aegean Wind
+Aegean Yachts
+Aegeas Yachting
+Aegeo Sailing
+Aelia Yachting
+Aeolian Yachts
+Aeolus Yachting
+AF Yacht Charter
+AF Yachting
+Ahoj Czarter
+Aiolis Experience
+Aiolos Sailing Volos
+Aiolos Zante
+Ajaccio Croisieres
+Akhir Cruise
+AL Yacht Charter
+Aladar sail
+Alamar Charter
+Albatros Yachting (Turkey)
+Albatross Yachting
+Albatross Yachting & Vacanze
+Albatross Yachting (Greece)
+Alboran Charter
+Aldebaran Charter Company
+Alida Yachts
+ALION Charter
+Alisa Adriatic Cruise
+All Blue
+Alma Libre RIB
+Almarea Charter
+Almira Yachting
+Aloha Sailing
+Altair International
+AM Charter
+Amalfi Charter
+Ambar Charter
+Ambassador Yachting
+Amfitriti Discovery
+Ammos Yachting
+Amon Ra Yacht Charter
+AMS Yachting
+Anares Turizm
+Anasa Experiences
+Anassa Sailing
+Ancyra Sailing
+Anemos Yachting
+Angelina Yachtcharter
+Anka Yachting
+Ankereva Yacht Charters
+Antonio Cruising
+Antoniou Yachting
+Ao Po Grand Marina Charters
+Apeiron Yachting
+Apollo Yachts
+Apolon Plovila
+Apoplous Yachting
+Aqua Charters
+Aqua Libra
+Aqua Marina and Yachting
+Aqua Panda Sail
+Aquamarine Sailing Yacht
+Aquarius Yachts
+Aquatoria Yachting
+Aquila Shipping
+ARC Sailing
+Arca Sailing
+Arcadie Plaisance
+ARCHON Yachting
+Arctic Cruise In Norway As
+Arctic Ice Sailing
+Ares Sailing
+Argentum Charters
+Armano Nautika
+Armenistis Sails
+Artemida Charter
+Artemisia Sailing
+Arundel yachting
+ASC Yachting Gomar
+Asia Marine
+Asmira Marine
+Asmira Marine Yacht Charter
+Assos Sailing
+Asterion Sailing
+Astir Yachts Cruising
+Astraea Yacht
+Athena Blu
+Athenian Yachts
+Athens Diamond Cruises
+Atoll Comfort Sailing
+Aurelia Yachting
+Aurora Yacht Charters
+Aurora Yachting
+Ava Yachting
+Avdiros Sailing
+Aventura Catamarans
+Axion Yachts
+Aziab Seafaris
+Azimuth Charter
+Azimuth Charter vela
+Azorean Dream Yacht Charter
+Azul sailing
+BabaSails Yachting
+Balearic Yacht Club
+Bali Catamarans Charter
+Balu Sailing
+BaMa Yachts
+Ban Tours
+Baotic Yachting
+Baotić Yachting
+Barbaros Yachting
+Barcando Charter
+Barefoot Yacht Charters
+Barko Yachting
+Batana Navtik
+Bax Yachting
+Bayan Boat Management & Charters
+Bayr Yachting
+BB Jezera
+BBS Yachting
+BDA Sailing Experience
+Beauvoir Yacht Charter
+BeBlue Sailing
+Bella Yachting
+Bellatrix Yachting
+Bemex Boot
+Best Waves Yachtcharter
+Beta Charter
+Beyond Yachting
+Bijoux d.o.o.
+Black Duck Nautica
+Black Pearl Charter
+Bloem Yachts / GuletHoliday.com
+Blue Aegean Sailing
+Blue Coast Charter
+Blue Emotion
+Blue Eternal
+Blue in White: Sailing & Eudaimonia
+Blue Memories
+Blue Oceans Yacht Charter
+Blue Trend
+Blue Wave
+BlueLife Ltd
+Boat Charter Trieste
+Boat Rentals Dubai
+Boat Sharing Puglia
+Boatsters Black
+BomiShip Yachting
+Bonbon Sailing
+Boomyelken Murat Yasar Yatcilik
+Boreal Yachting
+Bosfor Charter
+Boutique Ocean Travel - Vito Nautika
+Brasil Yacht Charter
+Brava Charter
+Braves sailors
+Braves Sailors Estonia
+BROD Yachting
+Bruneko Yacht Charter
+Bura Charter
+Butch Sailing
+Butterfly Water Sports Croatia
+Buyers Club
+BVA Charter
+Cagliari Sailing Charter
+Calabria Adventure
+Caldera Yachting
+Caledonia Sailing
+Callisto Yachting
+Calypso rent a boat
+Campania Overland
+Canal Boats Telemark
+Canal Yachting
+Canarian Fun
+Canarias Sailing
+Candia Yachting
+Candor Charter
+Captain Bigfoot
+Caraibes Catamarans Grenadines
+Carloforte Sail Charter
+Carpe Diem XI Yachting
+Cata Sailing
+Cata Tribe
+Catamaran Falco
+Catamaranes Menorca
+Cavo Yachting
+Cavtat Boat Trips
+Cayo Tardo Charter
+CBS Yachts
+CD Yachting Mykonos
+Centro Italia Vela
+CG-VIllas & Yachting
+CG-VILLAS & YACHTING
+Chalkidiki Yachts
+Charter Costa Nord
+Charter Eolie
+Charter International
+Charter Miri
+Charter Novak
+Charter Patricia Makarska
+Charter Service Punat
+Charter Team
+Chatzigiannis G & EE
+Chatzigiannis Yacht
+Chill Out Sailing
+Chilla Sailing
+Chillax Yachting
+Chingene Sailing
+Christianna Yachting
+CI Charter
+Classic Adria
+CM Charter / Sailme Mallorca
+Codezero Sailing
+Codezero sailing Easy Luxury Charter Team
+Colibri Charters
+Color Charter
+Come on Board
+Commodo Navis
+Commodore Yachting Croatia
+Cool Change
+Coral Motor Yachts
+Coral Nautica
+Cordelia Yachting
+Corfu Sailor
+Corse Voile Location
+Corsica Multicoques
+Croatia Charter Fleet
+Croatia Sailing Academy
+Crouesty Location
+Cruesa Mallorca Yachtcharter
+Cruise Seychelles
+Cruising Services Giuseppe Castellano
+Crystal Sea Yachting
+CS Charter
+CST Charters
+CV Yachts
+Cyclades Charters
+Cyclades Sailing
+d'Este Yacht Charter
+Daddario Yacht
+DaDi Rent
+Daidalos Yachts
+Dalula Marine
+Danielis Yachting
+Daphne Sail
+Daphne Sail Charter
+Darling Sailing
+Darv Yacht M.C.P.Y.
+Dea dei Mari
+DEDA Sailing - Sailing Holidays Hub
+Deepsea Yacht Charter
+Derin Deniz Yachting
+Derya Yachting
+Desde El Mar Charter
+DeToni charter
+Dilios Yachting MCPY
+Dimonika Marine
+Discover Sailing Asia
+Discovery Yachting
+Dk Yachting Greece
+DMS Sailing
+DN Nautica
+Dock & Roll
+Dolcevita Sailing
+Dolphin Yachts OE
+Dragonfly Trimaran Charter
+Dragut Sailing
+Dream Cat Lab
+Dubrovnik Boat Gabriel
+Duende Yachts
+Dufi Sail Charter
+Dynamic Sailing
+E.G.G. Yachting
+ECC Yacht Charter
+Ece Yachting
+Ediba Sailing
+EGO Charter
+Ekvator Yachting
+Electron Libre
+Elle Advisor
+Embark Croatia
+Emerald Yachting
+eMMe Charter
+Emme Sail
+Emocean Yachting
+Endless Blue Yacht Charters
+Enjoy Sailing
+Enjoyacht - Nord Sardinia
+Eol Nostrum
+Eol Yachting
+Eolia Yachting
+Eolian Gulet Boats
+Eolian Sailing
+EOLO Charter
+Eos Yacht Charter
+Epidaurum & Dubrovnik Boat Adventure
+Epifany Yachting
+Euphoria Sailing
+Euphoria Yachting
+Europe Sail Yachting Charter
+Eva Sails Tenerife
+Everblue Yachting
+Eversails Yachting
+Exadas Yachts
+Exclusive Vip Catamarans
+Expedition Charter
+Exploring Sailing
+Fair Wind
+Falasarna Sailing
+Faliro Sailing
+Family Luxury Yachting
+Fancy Lobster
+Fancy Sailing
+Fantasia Sailing
+Fazana Boats
+Feel Yachting
+FeelDouro Yacht Charter
+Festiva Sailing Vacations
+Filipi Marine
+Finest Yachting
+First Class Sailing Spain
+First-Class-Sailing d.o.o.
+Five Seasons Yachting
+Five Star International
+Five Star Sea
+Flaka Sailing
+Flo Sail
+Float Boat Adventure
+Foresail d.o.o.
+Fornes Catamaran
+Fortek Nautica
+Fournaros Yachts
+Franjkovic Charter
+Free Charter Srl
+Free your Mind Experience
+Friends Yachting
+Funny Boats d.o.o.
+FY - Fortunal Yachting
+Fyly Yachting and Travel
+GA Holidays
+GAIS s.r.o
+Gala Yachting & Travel
+Galazio Sailing
+Gamma Sailing
+Gariful Yacht Charter
+GBT Yachting
+Gecko Charter
+GeFra Charter
+Genesi Charter
+Genoa Sailing
+Genoa Yachting
+Gentedimare of Zara Nicoletta & c.
+George Kotsiris
+George Vlamis Yachts and Yacht Management
+Georgina Yachting
+Ghimar Beau Bato
+GiuGioMa Charter
+Glafki Cruises
+Global Sailing
+Global Yachting
+Globalia Yachting LTD
+Globus Yachting
+GOA Catamaran
+Good Sails
+Gota Kanal Charter
+GR Sailing
+GR Yachting
+Grecosail Yachting
+Greek Isles Yachting
+Green Wave Yacht Charter
+Gregale Yachts
+Greko Million
+Grimaldi Yachting
+Group Island Spirit Charters
+Guldeniz Sailing Cruises
+Gulet Alba
+Gulet Broker Yachting
+Gulet Nation
+H.C. Sea Service
+Hang Loose Catamarans
+Happy Captain
+Has Yachts
+Have Fun Sailing
+HDM Sailing
+Heads Yachting
+Helena's Sailing
+Helios Sails
+Helios Stratos
+Hellenic Sails
+Hellenic Vessel Management
+Hellenic Yachting
+Herevai Charter
+Hermes Yachting
+Heyblue Yachting
+Higanas Boats
+High Five Sailing
+Hinvest Haram
+Hispania Mare
+HKA Neta Yachting
+Hobbs of Henley
+Honey Sailing
+HYLOKA Charter
+Iason Sailing
+Ibiza Blue Line Charters
+Ibiza Formentera Charter
+Icelandic Yacht Charter
+Ida Sailing
+Ikarian Cruises
+Imbat Yacht
+In2theBlue Charter
+Independent YachtOwners Team
+Indian Ocean Cruises
+Infinity Yacht.S
+Inter Yachting
+Inti SRL
+Invictus Sicily
+Ionian Challenge
+Ionian Charter
+Ionian Island World
+Ionian Serenity Sailing
+Ionian Spirit
+Ionian Yachting
+Ionian Yachts
+Ionische Yacht Charter
+IRIS Yachtcharter
+Irmak Yachting
+Isalos Yachting
+Island Castaways
+Istion Luxury Yachts
+Istra Charter Trget
+Istra Yacht Gastro
+Ivamare Boats
+Ja Nedam
+Jachtwerf Oost
+Jackalope Catamaran
+Jacky Charter
+Jadranka Yachting
+Jako More
+JeDo Sailing
+Jedra Turopolja
+Jet Boat Cruises
+JF Yachts
+Jolly Roger Sailing
+Jonio Yachting
+Joy Yachting
+Joy Yachting (Turkey)
+Julio Verne Nautica
+Just Sail
+Just Sail Charter
+K Yachting
+K2 Yachting
+Kaboky Yachting
+Kaikko Tropea
+Kalis Mare
+Kamar Yachting
+Kappabeta Yachting
+KappaBeta Yachting
+Karaban Yachting
+Katarina Charter
+KATGECKO Katamaran Charter
+Katopodis Yachting
+KatSails Yachting
+Kavala Sailing Holidays
+Kavala Yachting
+Kefalonia Day Trips
+Kek Yachting
+KeK Yachting
+Kekeris Yachts
+KlaPa Nautica
+Klobuk Travel
+Kornati Yachting
+Kralj Centar
+Križni Vijak Nautika
+Kroki Nautika
+KWS Adria
+Kydonas Yachting
+L'O Yachting
+L.A. Yachting
+La Bella Verde
+La Luna Sailing
+La Mouette
+Lady K of Monaco
+Lady Lota
+Lagoon Charter
+Lagoon Life
+Lagoon NEPA
+Laguna Yachting
+Lampedusa Charter
+Langkawi Cruise
+Latitud CERO
+Latitudine 38
+Latitudine 38 SRL
+Lato Cruiser
+Latria Charter
+Latvian Cruise Yachts Association
+Lava Charter
+Le Bateau Blanc
+Le Grand Bleu
+Le Rotte di Portolano
+Lebić Yachts
+Leut Vagabundo Charter
+Levante Yacht
+LG Yachting
+Libertad VII
+Lighthouse Charter
+Live Panama Sailing
+Llauts i Velers
+LM Yachting
+Loc Voile Armor
+Locaboat Holidays
+LR Drugi impuls
+Luna Charter
+Luna Trips
+Luxe Yachting
+LuxMediterranean Experience
+Lycian Sail
+M & S obrt za turizam
+M Blue Yachts
+MadMax Franchising Nautico
+Magia Charter SRL
+Magic Sails Charter
+MainSail Yachting
+Majestic Charter
+Makani Safari
+Mako Adriatic
+Mala Luna
+Maldives Charters
+Malta Charters
+Mango Sailing
+Manos Yachting
+Maravegias Yachting
+Marea Yachting
+MAREL rent a boat
+Mareta boats
+Mareval Charter
+Mareventi Charter
+MarGeo Yachts
+Marina Hramina
+Marina Kras
+Marine Infinite
+Marine Project
+Mariny Charter
+MARIS CHARTER
+Marmaris Catamaran
+Masnàutic Yacht Charter
+Master Charter
+MASTER SAILING SRLS
+Master Yachting
+Mate Charter
+Matern Yachting
+Matrix Sailing
+Matrix Sailing Turizm
+Matrix Yachting
+Mavi Yolculuk
+Max Yacht
+Maya Yacht Rental
+Mayer d.o.o.
+MBS-Charter, Mallorca-Balear-Sailing & Charter
+MCL Charter
+MDM Charter
+Media Ship International
+mediamare yachtcharter
+Mediteran Yacht
+Mediterra Yachts
+Mediterranea Yachting
+Mentis Yachting
+Messinia Yachts
+Metallas Yachting
+METS Yachting
+Mets Yachting
+MG Yachts
+MGV Yachts Cruises
+Mia Catamaran
+Miber Sailing
+Miceli Vela
+MidAdria Yachting
+Midas Cruises
+Midi Nautisme
+Miknatis Yachting
+Milu Sail
+Minas Yachting
+Mint Marine
+Mirakul Yachting
+Mistral Sailing
+Mita Nepa
+Mita Yachting
+Mitis Sailing
+MJ charter
+MJ Charter
+MK Yacht Explorer
+Moire Charter
+Mola Sailing
+Mondovela Charter
+Montemarin Montenegro
+Montenegro Submarine
+Montona Vision 69
+More Sailing
+More Yacht Club
+More Yachting
+Morgana Sailing
+Morii Yachting
+Morska lastavica
+Most Sailing
+MS Novi Dan
+MT NEPA
+Mucci Boat
+Mullinahone Yachts
+Multihull Yacht Sales
+Multihull Yachting Greece
+MV yachts
+My Bubu
+My Sailing
+My Sailing Week
+My Sailing Yachting
+MY SeaTime Yachtcharter
+MY Superior
+My Yachtweek
+Mystique Yachting
+Mythos Sailing Experience
+MyWay Yachtcharter
+NAS Sailing Center
+NAS YACHTS
+Nathan Yachting
+Nautica Corcho
+Nautica Deluxe
+Nautical Booking
+Nautika Dalmata
+Nautika Koren
+Nautika Kufner
+Nautilia Yachting
+Nave  Yachting
+Nave Yachting
+Navegando Sin Rumbo
+Navegar en Catamaran
+Navigare Solutions
+Navigare Worldwide
+Navigator charter
+Navigo Yacht Charter
+Navis Marine
+Navy Blue
+Navy Jane
+ND Sails
+Nel Blu Charter
+Nemo Yachting Charter
+Neo Sailing
+Neta Cruises
+New Port (Nowy Sztynort)
+New Yacht Sailing
+Newera Charter
+NexGen Yachting
+Nibo Nautika
+Nika Cruise
+Nimbus Center Croatia
+Nimbus Charter
+Noa Yachting - Nautic Alliance
+Noe's Sailing
+Nomicos Yachts
+Nonno Blue
+Nord Sail
+NORTH AEGEAN SAILING MIKE
+Nostalgia Sailing
+Nostos Mykonos Yachts
+Notos Yachting
+Nova Eurospectra
+Novelty Tours
+Now Charter
+Oasis Sailing
+Ocean Freedom
+Ocean Sailing
+Ocean Sailing House
+Ocean Yacht Charter
+Oceanis Yachting
+OceanMed Sailing
+Oceantrail Odyssey
+Octana Yacht Services
+Octopus sailing
+Octopus Sailing
+Octopus Yachting
+Odisej Yachting
+Odyssea Yachting
+Odysseus Yachting Holidays
+Odyssey Sailing
+Offshore Boote p.m.
+Offshore Marbella
+Olympic Yachting
+Omnia Yachts
+One Day Charter
+One Step Yachting
+Open Sail
+Opensea Yachting
+Optimum Bau sp z o.o.
+Orion Blue Cruise
+Orion Charter
+Ortsa Sailing
+Ortsa Sailing - DML
+Orvas Yachting
+Ostria Sailing
+Otium Yachts
+Otter Easy Houseboats
+Outsail Srl
+Paf Sailing
+Palm Yachting
+Palmyra Yachting
+Paluko Yachting
+Panda Sailing
+Pandora Sailing
+Pangea Yachting
+Panouseris Yacht Charters
+Paper Boat Sailing
+Papoulakis Yachting
+Paradise Yacht Clearing
+Parallelo 38 Charter
+Paralos Yachts
+Passion Yachting
+Patronis Sailing
+Perfect Sailing - Sailing Holidays Hub
+Perfect Yachts
+Perigiali Yachting MCPY
+Perla Catamaran
+Perla Yacht
+Phantom Charter
+Phillip Yachtsun Charte
+Phocea Yachting
+Pianeta Mare Charter
+Pika Sailing
+Piri Tour Yachting
+Plan your journey
+Platten Sailing Cuba
+Pleamar 24 Nudos SL
+Ploce Sailing ltd
+Poe Charter Tahiti
+Poole Yacht Charter
+Porto Colom Yachting
+Porto Pollo Charter
+Portofino Yacht Charter
+Portway Yachting Worldwide
+POSEIDON SAILS Y.KANTZIS L.P.
+Posidonia Boats
+Premium Properties Pag
+Preveza Sailing
+Priceless Yachting
+Prima Yachting
+Prime Yachting
+Private Yacht Charter N.V.
+Profilo Race ´n´ Fun
+Pronto Sail
+Proversa Charter
+Providenca Charter & Travel
+Pura Vida Yacht Charter
+Pure Bliss Charter Menorca
+Pure Sail
+Pure Sailing
+Puresailing Yachting
+PUUR Yachtcharter
+Pyxis Nautica
+Quicksail Charter
+Quixotic Charters
+Race & Cruise S.a.s
+Race&Cruise di Giorgio Zennaro
+Rada Sea Ventures
+Ragusa Nautica
+Ray Yachting
+Recuperaciones y desguaces La Pina
+Reful Yachting
+Reisedienst Ehret
+Relax Sailing
+Rent a Boat Phoenix
+Restless Spirit
+Rib Cruises
+Rib Solution
+Rigel Vela Charter
+Riginos Sails
+Rinia Yachting
+RM Croisieres
+Romeo Juliett and the Sea
+Romygka Sailing
+Rosa dei Venti Yacht Charter
+Roses Sailing
+Rudder and Moor
+Rumbo Norte Ibiza
+SA Yachting
+Sail & Surf Rügen
+Sail A Way
+Sail Aegean Europe
+Sail Along
+Sail Azur
+Sail Band
+Sail Charter In Croatia
+Sail Emerald
+Sail Fast Experience
+Sail Fast Roses
+Sail Friesland
+Sail in Greece
+Sail in Greece adventures
+Sail in Greek waters
+Sail in Ionio
+Sail in Kas
+Sail Lanka Charter
+Sail More
+Sail on Wave
+Sail On Yachting
+Sail Tahiti
+Sail the Cyclades
+Sail The Ionian Sea
+Sail Your Myth
+Sail Your Soul
+Sailamor Turizm
+Sailazores Yacht Charter
+Sailera Yacht Charter
+Sailfleet Yat Isletmeciligi Lt.
+Sailing Affairs
+Sailing Appa
+Sailing Balearic
+Sailing Club Vranjic
+Sailing Court
+Sailing Delight Spain
+Sailing Europe Charter
+Sailing Forever
+Sailing Geo
+Sailing Guji
+Sailing in Blue
+Sailing in Italy Charter
+Sailing Ionian Sea
+Sailing Kavala
+Sailing Libar
+Sailing Life Academy
+Sailing Nafplio
+Sailing Planet
+Sailing Rhapsody
+Sailing Sicily Travelling
+Sailing Spirit
+Sailing Sweden
+Sailing Turtles
+Sailing with Smile
+Sailing Zorba
+Sailink Charter
+Sailman Yachting
+Sailmax Sailing
+SailMax Sailing
+Sailme Charter
+Sailor Expert
+Sailor's Moon
+Saline Breeze Yachting
+Salty Boat Trips
+Salty Breeze
+Salty Dog Charter
+SAM Sailing
+San Blas Sailing
+Sardinia Dream Service srl
+Sardinia Week
+Saronikos Sailing
+Saudade Sailing Club
+Say Charter
+Schupfer Yachtcharter
+Scirocco Sailing
+Scorpion Yacht Charter
+Scubaspa Maldives
+Sea Alliance Group
+Sea and More Yachting
+Sea Drive
+Sea Folk by Private Travel
+Sea Horses
+Sea Infinity MCPY
+Sea Joy
+Sea Land Yacht Charter
+Sea Marinero
+Sea Novels
+Sea Smiles
+Sea Soul Yachting
+Sea Spirit Mauritius
+Sea Walker
+Seafarer Cruising & Sailing Holidays
+Seafarer Sailing
+Seafree International Charters
+Seagma Yachting
+SeaStar Sailing
+Seastars Yachting
+Seasun Sailing Charter
+Seatime Yachting
+Seatravel Croatia
+Seaways Yachting
+Sebleke Sailing
+Sense Sailing
+SERAPHILUS marine charter
+Sestante Charter
+Setemana Charter
+Setsail World
+Seven Charter
+Seyscapes Yacht Charter
+Shamandura Charter
+Shark Sails
+Sightsea Yachting
+Signature Sailing
+Silver Wave Yacht Charters
+SIMO Yachting
+Simpson Yacht Charter
+Sinata Yachts
+Sirocco Yachting
+Skiathos Boats
+Skiathos Yachts
+SkyFall Yacht Charter
+Smile Boats
+Smolčić Yachting
+SoFun Yachts & Charter
+Solar Yachting
+Sole MiO M.C.P.Y.
+Solis Charter Group
+Solrise Cruises
+South Sea Sail
+South Star
+Southwest Boats
+SP Sailing
+SP Travel
+Special Charter
+Speedmarine Charter
+Spicy Sailing
+Spiridakos Sailing Cruises
+Splendid Yachting
+Sport Sails
+Sport Sub Ciclope
+STA Marine
+Stadium Marine
+Star Voyage Antilles
+Starboard Charter
+Starfish Chartering
+Starsails Yachtcharter
+Starz Sailing
+Stavento Sailing Greece
+Storm Charters
+Sun ByTheSea
+Sunlife Charter
+SunLife Charter
+Sunny Boat Trogir
+Sunrise Charter
+Sunrise Sorrento
+Sunrise Wawel Development
+Sunset Yacht Space 2022 SL
+Sunsicily Yacht Charter
+Sunturist Charter
+Sunward Sailing
+Surcando Mares
+Swede Charter Travel AB
+T.O. Mate
+Tailwind Yachting
+Tamaris Charter
+Tehnomont - Marina Veruda Charter
+Tempo Sailing
+Tendance Voile
+Thalassa Sailing Travels
+Thassos Private cruises
+The Anchor Mediterranean Yachting
+The Dreamer
+The Leading Yachts
+The Luxe Guide
+The Ocean Week
+The Sailor's Ride
+Thea Sailing
+Thestion Yachting
+Theta Yachts
+Thetis Yachts
+Thrace Yachting
+TI-LU yachts
+Time Charter Náutica
+Timeless Yacht Charter
+Tipejyas Yachting
+TMV Travel & Sailing
+Top Light
+Toscanacharter di Maurizio Villani
+Touch Adriatic
+Touch Yachting
+Trade Shop
+Trapani Vela Club
+Trend Travel Yachting
+triM Nautica Charter
+Tsakos Yachting
+Tsirigotis Yacht Charter
+Turistica Il Gabbiano
+Turistico yachting
+TYC Serenity
+Tzennet Yachting
+TZENNET Yachting
+Ukiyo Yacht Management
+Under The Heavens
+Under the Heavens Sailing
+Uniko Charter
+Uniko Yacht Club
+UPWIND CATAMARAN
+Vagovia Yacht Charter
+Val Yachting
+Vala Charter - Studio Tim
+Valentino Yachts
+Van Dyk Investments
+VASKON MARINE & YACHTING
+Vastardis Yachting
+VELANOMADA YACHT CHARTER
+Veleasegno Charter
+Velvet Yachting
+Vento Di Grecale s.r.l.s
+Venus Yachting
+Veritas Yachting Europe GmbH
+Vernicos Crewed
+Vernicos Yachts
+Viaggiare Rent
+Vicko Sails
+Villa Jahta
+Virgin Islands Boats
+Vishe Radugi Yachting
+Vito Nautika
+Viva Yacht Charter
+Vive La Vie
+Viya Sailing
+Vliho Yacht Club
+VM Yachting
+VMG Yacht Charters
+VOG FLEET
+Vogue Yachting
+Vourazelis Yachting
+Voyager Sailing MCPY
+VPM Bestsail - EIS Finance SARL
+Vrakotas Big Blue Charters
+VTC Charter
+WakaWaka Charter
+Waterfront Jachtcharter
+Wave Charter
+Way Point Rovinj - Pula/Marine Media
+Waypoints Yacht Charters
+We Sail Greece
+Westsails Yacht Charter
+What a Wonderful Tour
+White Blue Seas
+White Pearl Sailing
+Wimmer Yachting
+Wind Charter Brasil
+Wind Fearless
+Wind Rose & Sailing
+Wind Seychelles
+Wind Tribe
+WindTime Sailing
+Windward Islands Yachting & Travel
+World Wide Charter
+WPS YACHTING
+Wrungel 505
+WTT Sailing
+X-Yachting Sailing Center
+Yacht Getaways
+Yacht IN
+Yacht Lagaro
+Yacht Maldives
+Yacht Sense
+Yacht-Match Charter & Management
+Yachtcharter De Drait
+Yachtcharter Huibers
+Yachtcharter Sweden
+Yachting in Sardinia
+Yachting Slano
+Yachting Stories
+Yachting Together
+Yachts Society
+YAKO Sailing
+Yaloou Services P.C.
+Yates Mallorca
+Ydrea Yachts
+Yelkenli Yachting
+Yildiz Yachting
+YM Charter & Management
+Zante Adventure Yachts
+Zantium Travel
+Zanzibar Catamaran Charter
+Zanzibar Yachtfun
+Zen Yacht Charter
+Zen Yachting
+Zenith Cruise
+Zest Yacht Charter
+Zingaro Sail
+Zoom Boats
+Zouras Yachting
+Zsolt Yachting
+# 29.9.2026: agencies delivered as "manufacturer" by partner systems (found on boat4you landings / API manufacturer list)
+Brodarstvo Marasovic Ltd
+Coastal Leisure Ltd
+Mariner Don 17 Ltd
+Kanula d.o.o.
+Manikela d.o.o.
+Dunkić d.o.o.
+Intermare d.o.o.
+Kolotura
+Houseboat Holidays Italia S.R.L.
+Riverboating Holidays

@@ -1,0 +1,652 @@
+{
+ "": {
+  "yachts": 35,
+  "hp": null,
+  "shownLabel": false
+ },
+ "100 hp Yanmar": {
+  "yachts": 3,
+  "hp": 100,
+  "shownLabel": true
+ },
+ "110 hp": {
+  "yachts": 3,
+  "hp": 110,
+  "shownLabel": true
+ },
+ "110 Hp": {
+  "yachts": 1,
+  "hp": 110,
+  "shownLabel": true
+ },
+ "110 HP": {
+  "yachts": 2,
+  "hp": 110,
+  "shownLabel": true
+ },
+ "110HP": {
+  "yachts": 2,
+  "hp": 110,
+  "shownLabel": true
+ },
+ "150HP": {
+  "yachts": 1,
+  "hp": 150,
+  "shownLabel": true
+ },
+ "2 x 27 h.p. Yanmar": {
+  "yachts": 1,
+  "hp": 54,
+  "shownLabel": true
+ },
+ "2 x 30 HP": {
+  "yachts": 3,
+  "hp": 60,
+  "shownLabel": true
+ },
+ "2 X 34 kW": {
+  "yachts": 1,
+  "hp": 92,
+  "shownLabel": true
+ },
+ "2 X 40 HP": {
+  "yachts": 1,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "2 x 45 HP ": {
+  "yachts": 1,
+  "hp": 90,
+  "shownLabel": true
+ },
+ "2 x 47 HP": {
+  "yachts": 1,
+  "hp": 94,
+  "shownLabel": true
+ },
+ "2 x 50 HP ": {
+  "yachts": 2,
+  "hp": 100,
+  "shownLabel": true
+ },
+ "2 x 55 HP": {
+  "yachts": 1,
+  "hp": 110,
+  "shownLabel": true
+ },
+ "2 x 57 HP": {
+  "yachts": 48,
+  "hp": 114,
+  "shownLabel": true
+ },
+ "2 X 57 HP": {
+  "yachts": 1,
+  "hp": 114,
+  "shownLabel": true
+ },
+ "2 x Yanmar 27 h.p.": {
+  "yachts": 4,
+  "hp": 54,
+  "shownLabel": true
+ },
+ "2*57": {
+  "yachts": 1,
+  "hp": null,
+  "shownLabel": false
+ },
+ "21 Hp": {
+  "yachts": 1,
+  "hp": 21,
+  "shownLabel": true
+ },
+ "21 HP": {
+  "yachts": 1,
+  "hp": 21,
+  "shownLabel": true
+ },
+ "23 hp": {
+  "yachts": 1,
+  "hp": 23,
+  "shownLabel": true
+ },
+ "240 Hp": {
+  "yachts": 4,
+  "hp": 240,
+  "shownLabel": true
+ },
+ "27 Hp": {
+  "yachts": 1,
+  "hp": 27,
+  "shownLabel": true
+ },
+ "27.3": {
+  "yachts": 5,
+  "hp": null,
+  "shownLabel": false
+ },
+ "28.40 BHp": {
+  "yachts": 1,
+  "hp": 28,
+  "shownLabel": true
+ },
+ "29 hp": {
+  "yachts": 16,
+  "hp": 29,
+  "shownLabel": true
+ },
+ "29 HP": {
+  "yachts": 6,
+  "hp": 29,
+  "shownLabel": true
+ },
+ "29BHP": {
+  "yachts": 1,
+  "hp": 29,
+  "shownLabel": true
+ },
+ "29HP": {
+  "yachts": 11,
+  "hp": 29,
+  "shownLabel": true
+ },
+ "2x 29 hp": {
+  "yachts": 1,
+  "hp": 58,
+  "shownLabel": true
+ },
+ "2x 45": {
+  "yachts": 16,
+  "hp": null,
+  "shownLabel": false
+ },
+ "2x 45 hp": {
+  "yachts": 43,
+  "hp": 90,
+  "shownLabel": true
+ },
+ "2x 45 HP": {
+  "yachts": 34,
+  "hp": 90,
+  "shownLabel": true
+ },
+ "2x 55 hp": {
+  "yachts": 1,
+  "hp": 110,
+  "shownLabel": true
+ },
+ "2x100 hp": {
+  "yachts": 2,
+  "hp": 200,
+  "shownLabel": true
+ },
+ "2x115 hp": {
+  "yachts": 1,
+  "hp": 230,
+  "shownLabel": true
+ },
+ "2x250 HP": {
+  "yachts": 33,
+  "hp": 500,
+  "shownLabel": true
+ },
+ "2x260 hp": {
+  "yachts": 2,
+  "hp": 520,
+  "shownLabel": true
+ },
+ "2x29 hp": {
+  "yachts": 7,
+  "hp": 58,
+  "shownLabel": true
+ },
+ "2x29 HP": {
+  "yachts": 1,
+  "hp": 58,
+  "shownLabel": true
+ },
+ "2x29HP": {
+  "yachts": 6,
+  "hp": 58,
+  "shownLabel": true
+ },
+ "2x30 CV": {
+  "yachts": 1,
+  "hp": 60,
+  "shownLabel": true
+ },
+ "2x30 hp": {
+  "yachts": 2,
+  "hp": 60,
+  "shownLabel": true
+ },
+ "2x30 HP": {
+  "yachts": 1,
+  "hp": 60,
+  "shownLabel": true
+ },
+ "2x30hp": {
+  "yachts": 1,
+  "hp": 60,
+  "shownLabel": true
+ },
+ "2x350 hp": {
+  "yachts": 4,
+  "hp": 700,
+  "shownLabel": true
+ },
+ "2x39 Hp ": {
+  "yachts": 1,
+  "hp": 78,
+  "shownLabel": true
+ },
+ "2x40 hp": {
+  "yachts": 2,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "2x45 hp": {
+  "yachts": 75,
+  "hp": 90,
+  "shownLabel": true
+ },
+ "2x45 HP": {
+  "yachts": 48,
+  "hp": 90,
+  "shownLabel": true
+ },
+ "2x45hp": {
+  "yachts": 2,
+  "hp": 90,
+  "shownLabel": true
+ },
+ "2x45HP": {
+  "yachts": 12,
+  "hp": 90,
+  "shownLabel": true
+ },
+ "2x50 hp": {
+  "yachts": 1,
+  "hp": 100,
+  "shownLabel": true
+ },
+ "2x57": {
+  "yachts": 1,
+  "hp": null,
+  "shownLabel": false
+ },
+ "2x57 hp": {
+  "yachts": 4,
+  "hp": 114,
+  "shownLabel": true
+ },
+ "2x57 HP": {
+  "yachts": 17,
+  "hp": 114,
+  "shownLabel": true
+ },
+ "2x57 Yanmar HP": {
+  "yachts": 1,
+  "hp": 114,
+  "shownLabel": true
+ },
+ "2x57HP": {
+  "yachts": 2,
+  "hp": 114,
+  "shownLabel": true
+ },
+ "2x60HP": {
+  "yachts": 2,
+  "hp": 120,
+  "shownLabel": true
+ },
+ "2x75hp": {
+  "yachts": 1,
+  "hp": 150,
+  "shownLabel": true
+ },
+ "2xYanmar 320 HP": {
+  "yachts": 50,
+  "hp": 640,
+  "shownLabel": true
+ },
+ "30 hp": {
+  "yachts": 5,
+  "hp": 30,
+  "shownLabel": true
+ },
+ "30 HP": {
+  "yachts": 1,
+  "hp": 30,
+  "shownLabel": true
+ },
+ "33.12Kw": {
+  "yachts": 5,
+  "hp": 45,
+  "shownLabel": true
+ },
+ "36Kw": {
+  "yachts": 1,
+  "hp": 49,
+  "shownLabel": true
+ },
+ "38 HP": {
+  "yachts": 1,
+  "hp": 38,
+  "shownLabel": true
+ },
+ "38 KW": {
+  "yachts": 1,
+  "hp": 52,
+  "shownLabel": true
+ },
+ "40 CV": {
+  "yachts": 3,
+  "hp": 40,
+  "shownLabel": true
+ },
+ "40 hp": {
+  "yachts": 14,
+  "hp": 40,
+  "shownLabel": true
+ },
+ "40 HP": {
+  "yachts": 4,
+  "hp": 40,
+  "shownLabel": true
+ },
+ "40HP": {
+  "yachts": 2,
+  "hp": 40,
+  "shownLabel": true
+ },
+ "41.9Kw": {
+  "yachts": 2,
+  "hp": 57,
+  "shownLabel": true
+ },
+ "41Kw": {
+  "yachts": 1,
+  "hp": 56,
+  "shownLabel": true
+ },
+ "45 hp": {
+  "yachts": 14,
+  "hp": 45,
+  "shownLabel": true
+ },
+ "45 HP": {
+  "yachts": 55,
+  "hp": 45,
+  "shownLabel": true
+ },
+ "45hp": {
+  "yachts": 1,
+  "hp": 45,
+  "shownLabel": true
+ },
+ "53 PS": {
+  "yachts": 1,
+  "hp": 53,
+  "shownLabel": true
+ },
+ "54 CV": {
+  "yachts": 2,
+  "hp": 54,
+  "shownLabel": true
+ },
+ "54 hp": {
+  "yachts": 8,
+  "hp": 54,
+  "shownLabel": true
+ },
+ "54 HP": {
+  "yachts": 7,
+  "hp": 54,
+  "shownLabel": true
+ },
+ "55 hp": {
+  "yachts": 1,
+  "hp": 55,
+  "shownLabel": true
+ },
+ "55 Hp": {
+  "yachts": 3,
+  "hp": 55,
+  "shownLabel": true
+ },
+ "55 HP": {
+  "yachts": 1,
+  "hp": 55,
+  "shownLabel": true
+ },
+ "55 hp Volvo": {
+  "yachts": 6,
+  "hp": 55,
+  "shownLabel": true
+ },
+ "57 hp": {
+  "yachts": 9,
+  "hp": 57,
+  "shownLabel": true
+ },
+ "57 HP": {
+  "yachts": 35,
+  "hp": 57,
+  "shownLabel": true
+ },
+ "57BHp": {
+  "yachts": 4,
+  "hp": 57,
+  "shownLabel": true
+ },
+ "57HP": {
+  "yachts": 5,
+  "hp": 57,
+  "shownLabel": true
+ },
+ "58.8Kw": {
+  "yachts": 1,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "60 HP": {
+  "yachts": 2,
+  "hp": 60,
+  "shownLabel": true
+ },
+ "75 hp": {
+  "yachts": 13,
+  "hp": 75,
+  "shownLabel": true
+ },
+ "75 HP": {
+  "yachts": 1,
+  "hp": 75,
+  "shownLabel": true
+ },
+ "75 hp Volvo Penta": {
+  "yachts": 6,
+  "hp": 75,
+  "shownLabel": true
+ },
+ "75hp": {
+  "yachts": 1,
+  "hp": 75,
+  "shownLabel": true
+ },
+ "75HP": {
+  "yachts": 1,
+  "hp": 75,
+  "shownLabel": true
+ },
+ "80 CV": {
+  "yachts": 1,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "80 hp": {
+  "yachts": 3,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "80 HP": {
+  "yachts": 13,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "80hp": {
+  "yachts": 1,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "80HP": {
+  "yachts": 2,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "Janmar 80hp": {
+  "yachts": 1,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "NANNI": {
+  "yachts": 1,
+  "hp": null,
+  "shownLabel": false
+ },
+ "VOLVO 110hp": {
+  "yachts": 2,
+  "hp": 110,
+  "shownLabel": true
+ },
+ "Volvo 19 h.p.": {
+  "yachts": 1,
+  "hp": 19,
+  "shownLabel": true
+ },
+ "Volvo 40 hp": {
+  "yachts": 1,
+  "hp": 40,
+  "shownLabel": true
+ },
+ "VOLVO 40hp": {
+  "yachts": 1,
+  "hp": 40,
+  "shownLabel": true
+ },
+ "Volvo 50 hp": {
+  "yachts": 2,
+  "hp": 50,
+  "shownLabel": true
+ },
+ "Volvo 55": {
+  "yachts": 1,
+  "hp": null,
+  "shownLabel": false
+ },
+ "Volvo 75 HP": {
+  "yachts": 1,
+  "hp": 75,
+  "shownLabel": true
+ },
+ "Volvo 75 ΗΡ": {
+  "yachts": 3,
+  "hp": 75,
+  "shownLabel": true
+ },
+ "Volvo 75hp": {
+  "yachts": 1,
+  "hp": 75,
+  "shownLabel": true
+ },
+ "Volvo D2-40, 2x40 HP": {
+  "yachts": 1,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "Volvo MD 22 Saildrive 40 h.p.": {
+  "yachts": 27,
+  "hp": 40,
+  "shownLabel": true
+ },
+ "Volvo Penta D2-75": {
+  "yachts": 6,
+  "hp": null,
+  "shownLabel": false
+ },
+ "Yanmar": {
+  "yachts": 9,
+  "hp": null,
+  "shownLabel": false
+ },
+ "Yanmar 110 HP": {
+  "yachts": 2,
+  "hp": 110,
+  "shownLabel": true
+ },
+ "Yanmar 110hp": {
+  "yachts": 4,
+  "hp": 110,
+  "shownLabel": true
+ },
+ "Yanmar 2 X 40 HP": {
+  "yachts": 2,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "Yanmar 21 Hp": {
+  "yachts": 2,
+  "hp": 21,
+  "shownLabel": true
+ },
+ "Yanmar 39HP": {
+  "yachts": 3,
+  "hp": 39,
+  "shownLabel": true
+ },
+ "Yanmar 40 hp": {
+  "yachts": 1,
+  "hp": 40,
+  "shownLabel": true
+ },
+ "Yanmar 45 HP": {
+  "yachts": 5,
+  "hp": 45,
+  "shownLabel": true
+ },
+ "Yanmar 48 hp": {
+  "yachts": 17,
+  "hp": 48,
+  "shownLabel": true
+ },
+ "Yanmar 56 h.p.": {
+  "yachts": 9,
+  "hp": 56,
+  "shownLabel": true
+ },
+ "Yanmar 57 hp": {
+  "yachts": 13,
+  "hp": 57,
+  "shownLabel": true
+ },
+ "Yanmar 57 HP": {
+  "yachts": 3,
+  "hp": 57,
+  "shownLabel": true
+ },
+ "Yanmar 75 h.p.": {
+  "yachts": 1,
+  "hp": 75,
+  "shownLabel": true
+ },
+ "Yanmar 80 HP": {
+  "yachts": 2,
+  "hp": 80,
+  "shownLabel": true
+ },
+ "Yanmar 80HP": {
+  "yachts": 2,
+  "hp": 80,
+  "shownLabel": true
+ }
+}

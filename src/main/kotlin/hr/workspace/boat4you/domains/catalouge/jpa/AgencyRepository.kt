@@ -9,6 +9,9 @@ import org.springframework.data.repository.query.Param
 import org.springframework.transaction.annotation.Transactional
 
 interface AgencyRepository : JpaRepository<Agency, Long> {
+    /** Every agency name (active or not) - the capacity-note sanitizer hides partner text naming one. */
+    @Query("SELECT a.name FROM Agency a WHERE a.name IS NOT NULL")
+    fun findAllNames(): List<String>
 
     // Toggle the "partner stopped serving us" flag without merging the whole
     // agency graph (avoids touching agencySources). Hides/restores the agency's
