@@ -43,7 +43,7 @@ class YachtSuccessorComputeServiceTest {
             CREATE TABLE model (id bigint PRIMARY KEY, name text, manufacturer_id bigint);
             CREATE TABLE yacht (id bigint PRIMARY KEY, name text, agency_id bigint, entry_type text NOT NULL,
                                 sys_active boolean NOT NULL DEFAULT true, location_id bigint, build_year integer,
-                                model_id bigint, vessel_type text, length numeric);
+                                model_id bigint, vessel_type text, length numeric, registration_number varchar(50));
             CREATE TABLE offer (id bigserial PRIMARY KEY, yacht_id bigint NOT NULL, date_from date NOT NULL,
                                 date_to date NOT NULL, status text NOT NULL);
             """.trimIndent()
@@ -53,6 +53,12 @@ class YachtSuccessorComputeServiceTest {
         private const val LAGOON_42_OTHER_SOURCE = 2
         private const val DUFOUR_390_GL = 4
         private const val DUFOUR_390_GRAND_LARGE = 5
+        private const val LAGOON_46 = 3
+        private const val LAGOON_43 = 6
+
+        // partner systems (external_mapping.external_system_id = external_system.id)
+        private const val MMK = 1
+        private const val NAUSYS = 2
 
         // bases
         private const val DMARIN = 1
@@ -102,7 +108,8 @@ class YachtSuccessorComputeServiceTest {
     fun clean() {
         jdbc.execute(
             """
-            TRUNCATE offer, yacht, agency, location, model, manufacturer, yacht_twin_manual_pair, yacht_successor;
+            TRUNCATE offer, yacht, agency, location, model, manufacturer, yacht_twin_manual_pair, yacht_successor,
+                     external_mapping;
             INSERT INTO location (id, name, country_code, inland) VALUES
                 (1, 'D-Marin Dalmacija Marina', 'HR', false), (2, 'Marina Kastela', 'HR', false),
                 (3, 'Marina Kaštela', 'HR', false), (4, 'Alimos Marina', 'GR', false),
@@ -113,7 +120,7 @@ class YachtSuccessorComputeServiceTest {
                 (6, 'Inquiry only', true, false, true);
             INSERT INTO manufacturer (id, name) VALUES (1, 'Lagoon'), (2, 'Dufour');
             INSERT INTO model (id, name, manufacturer_id) VALUES (1, 'Lagoon 42', 1), (2, 'Lagoon 42', 1),
-                (3, 'Lagoon 46', 1), (4, 'Dufour 390 GL', 2), (5, 'Dufour 390 Grand Large', 2);
+                (3, 'Lagoon 46', 1), (4, 'Dufour 390 GL', 2), (5, 'Dufour 390 Grand Large', 2), (6, 'Lagoon 43', 1);
             """.trimIndent(),
         )
     }
@@ -127,18 +134,31 @@ class YachtSuccessorComputeServiceTest {
         year: Int = 2018,
         model: Int = LAGOON_42,
         length: Double? = 12.94,
-    ) = jdbc.update(
-        "INSERT INTO yacht (id, name, agency_id, entry_type, sys_active, location_id, build_year, model_id, vessel_type, length) " +
-            "VALUES (?, ?, ?, 'EXTERNAL', ?, ?, ?, ?, 'CATAMARAN', ?)",
-        id,
-        name,
-        agency,
-        active,
-        location,
-        year,
-        model,
-        length,
-    )
+        registration: String? = null,
+        system: Int? = null,
+    ) {
+        jdbc.update(
+            "INSERT INTO yacht (id, name, agency_id, entry_type, sys_active, location_id, build_year, model_id, vessel_type, length, " +
+                "registration_number) VALUES (?, ?, ?, 'EXTERNAL', ?, ?, ?, ?, 'CATAMARAN', ?, ?)",
+            id,
+            name,
+            agency,
+            active,
+            location,
+            year,
+            model,
+            length,
+            registration,
+        )
+        if (system != null) {
+            jdbc.update(
+                "INSERT INTO external_mapping (external_id, system_id, type, external_system_id) VALUES (?, ?, 'Yacht', ?)",
+                id * 1000,
+                id,
+                system,
+            )
+        }
+    }
 
     /** A week to sell from next week on - what makes a copy the one the listings show (yacht_listing_twin). */
     private fun sellable(vararg yachts: Long) =
@@ -188,7 +208,7 @@ class YachtSuccessorComputeServiceTest {
     }
 
     @Test
-    fun `a model kept under another id matches only on its first word and a length within 0,3 m`() {
+    fun `a model kept under another id matches only on its first word, its number and a length within 0,3 m`() {
         yacht(20, "Mimi", active = false, model = DUFOUR_390_GL, length = 11.93)
         yacht(21, "Mimi", active = true, agency = BROKER, model = DUFOUR_390_GRAND_LARGE, length = 11.93)
         yacht(22, "Moderato", active = false, model = DUFOUR_390_GL, length = 11.93)
@@ -196,8 +216,11 @@ class YachtSuccessorComputeServiceTest {
         yacht(24, "Joy", active = false, model = DUFOUR_390_GL, length = null)
         yacht(25, "Joy", active = true, agency = BROKER, model = DUFOUR_390_GRAND_LARGE, length = 11.94)
         // same first word, another model: never without the length check
-        yacht(26, "Brattia", active = false, model = 3, length = 13.99)
+        yacht(26, "Brattia", active = false, model = LAGOON_46, length = 13.99)
         yacht(27, "Brattia", active = true, agency = BROKER, model = LAGOON_42, length = 12.8)
+        // review 7.10. (rehearsal, GR 2025): Lagoon 46 and Lagoon 43 are 0.14 m apart - another model number, two boats
+        yacht(28, "Aelia", active = false, location = ALIMOS, year = 2025, model = LAGOON_46, length = 13.99)
+        yacht(29, "AELIA", active = true, agency = BROKER, location = ALIMOS, year = 2025, model = LAGOON_43, length = 13.85)
 
         successors() shouldBe mapOf(20L to 21L)
     }
@@ -271,28 +294,31 @@ class YachtSuccessorComputeServiceTest {
     }
 
     @Test
-    fun `retired copies pointing at each other end without a successor`() {
+    fun `retired copies pointing at each other end without a successor - and a chain never adds up the length`() {
         yacht(400, "Stavento", active = false)
         yacht(401, "Stavento", active = false, agency = BROKER)
         yacht(402, "Stavento", active = false, agency = THIRD, length = 12.90)
-        // a chain longer than the hop limit: every copy under its own model id, each 0.25 m longer than the one before,
-        // so a copy matches only its neighbours (410 has no length: only 411, its own model)
+        // every copy under its own model id (one model number), each 0.25 m longer than the one before, each from
+        // another agency than its neighbours: a copy matches only its neighbours (410 has no length: only 411, its model)
         jdbc.execute(
             "INSERT INTO model (id, name, manufacturer_id) VALUES (7, 'Dufour 390', 2), (8, 'Dufour 390 G.L.', 2), " +
                 "(9, 'Dufour 390 Grand-Large', 2), (10, 'Dufour 390 GL Owner', 2), (11, 'Dufour 390 GL 3 cab', 2)",
         )
-        yacht(410, "Pathfinder", active = false, model = 7, length = null)
-        yacht(411, "Pathfinder", active = false, model = 7, length = 12.0)
-        yacht(412, "Pathfinder", active = false, model = 8, length = 12.25)
-        yacht(413, "Pathfinder", active = false, model = 9, length = 12.5)
-        yacht(414, "Pathfinder", active = false, model = 10, length = 12.75)
-        yacht(415, "Pathfinder", active = true, agency = BROKER, model = 11, length = 13.0)
+        yacht(410, "Pathfinder", active = false, agency = OWNER, model = 7, length = null)
+        yacht(411, "Pathfinder", active = false, agency = BROKER, model = 7, length = 12.0)
+        yacht(412, "Pathfinder", active = false, agency = THIRD, model = 8, length = 12.25)
+        yacht(413, "Pathfinder", active = false, agency = OWNER, model = 9, length = 12.5)
+        yacht(414, "Pathfinder", active = false, agency = BROKER, model = 10, length = 12.75)
+        yacht(415, "Pathfinder", active = true, agency = THIRD, model = 11, length = 13.0)
 
         val result = successors()
         result.keys.filter { it in 400..402 } shouldBe emptyList()
-        // 410 -> 411 -> 412 -> 413 -> 414 is four hops, 415 would be the fifth
+        // 410 -> 411 -> 412 -> 413 -> 414 is four hops, 415 would be the fifth (410 has no length: only the hop limit)
         result[410] shouldBe null
-        result[411] shouldBe 415L
+        // review 7.10.: 0.25 m per hop is 1 m over four - the end of a chain must still be within 0.3 m of the old boat
+        result[411] shouldBe null
+        result[412] shouldBe null
+        result[413] shouldBe null
         result[414] shouldBe 415L
     }
 
@@ -361,5 +387,82 @@ class YachtSuccessorComputeServiceTest {
         jdbc.update("UPDATE agency SET active = true WHERE id = ?", BROKER)
         jdbc.update("UPDATE location SET inland = true WHERE id = ?", DMARIN)
         lookup(800) shouldBe null
+    }
+
+    @Test
+    fun `one agency on one partner system - fleet mates, not one boat, unless the registrations agree`() {
+        // review 7.10.: The Moorings retires its "Moorings 4500 Club" at one base - the one left at another base is
+        // another boat of the same class (rehearsal: 170 such pairs, all distinct boats)
+        yacht(1000, "Moorings 4500 Club", active = false, system = MMK)
+        yacht(1001, "Moorings 4500 Club", active = true, location = SPLIT, system = MMK)
+        // the same boat imported again by its agency on the same system: the registration says so
+        yacht(1010, "Ostria", active = false, registration = "EL-PIRAEUS-13270", system = MMK)
+        yacht(1011, "Ostria", active = true, registration = "EL - PIRAEUS - 13270", system = MMK)
+        // one agency's copies on the two partner systems are two channels, as on the listings (V9_69)
+        yacht(1020, "Nautilus", active = false, system = NAUSYS)
+        yacht(1021, "Nautilus", active = true, system = MMK)
+
+        successors() shouldBe mapOf(1010L to 1011L, 1020L to 1021L)
+    }
+
+    @Test
+    fun `a name one agency gives several live boats of one model and year is a fleet label, never a boat`() {
+        // the broker's retired "Sunsail 410 Classic" matches the owner's two live ones; the one at its base is a guess
+        yacht(1100, "Sunsail 410 Classic", active = false, agency = BROKER)
+        yacht(1101, "Sunsail 410 Classic", active = true)
+        yacht(1102, "Sunsail 410 Classic", active = true, location = SPLIT)
+        // a name the owner merely reuses for another model and year stays a boat name
+        yacht(1110, "Luna", active = false, agency = BROKER)
+        yacht(1111, "LUNA", active = true)
+        yacht(1112, "Luna", active = true, location = SPLIT, year = 2021, model = LAGOON_46, length = 13.99)
+
+        successors() shouldBe mapOf(1110L to 1111L)
+    }
+
+    @Test
+    fun `registrations that disagree are two boats - an unknown one does not decide`() {
+        // review 7.10. (rehearsal): "Aria" Lagoon 42 2020, Alimos EL-PIRAEUS-12480 / Volos EL-VOLOS-12495
+        yacht(1200, "Aria", active = false, location = ALIMOS, registration = "EL-PIRAEUS-12480")
+        yacht(1201, "Aria", active = true, agency = BROKER, location = ALIMOS, registration = "EL-VOLOS-12495")
+        // fewer than 4 digits say nothing (EL-VOLOS-828); NauSys copies mostly carry none
+        yacht(1210, "Maistro", active = false, registration = "EL-VOLOS-828")
+        yacht(1211, "Maistro", active = true, agency = BROKER, registration = "EL-VOLOS-833")
+        yacht(1220, "Bonaca", active = false, registration = "HR-261510")
+        yacht(1221, "Bonaca", active = true, agency = BROKER)
+
+        successors() shouldBe mapOf(1210L to 1211L, 1220L to 1221L)
+    }
+
+    @Test
+    fun `the copy shown is never a boat the rule would not pair with the old one - then none`() {
+        // 1300 matches the broker's 1301 only; the listings show 1301 as the owner's 1302 (same marina, another
+        // spelling) - the old boat's own channel, a fleet mate as far as the rule can tell: doubtful, no successor
+        yacht(1300, "Kalypso", active = false)
+        yacht(1301, "Kalypso", active = true, agency = BROKER, location = KASTELA)
+        yacht(1302, "Kalypso", active = true, location = KASTELA_OTHER_SPELLING)
+        sellable(1302)
+
+        successors() shouldBe emptyMap()
+    }
+
+    @Test
+    fun `a run that names fewer than half of the stored successors keeps them`() {
+        yacht(1400, "Dora", active = false)
+        yacht(1401, "Dora", active = true, agency = BROKER)
+        yacht(1410, "Fiona", active = false)
+        yacht(1411, "Fiona", active = true, agency = BROKER)
+        yacht(1420, "Gloria", active = false)
+        yacht(1421, "Gloria", active = true, agency = BROKER)
+        successors() shouldBe mapOf(1400L to 1401L, 1410L to 1411L, 1420L to 1421L)
+
+        // the broker's agency off (an outage, a broken import): one of three left - not stored, the stored rows kept
+        jdbc.update("UPDATE yacht SET agency_id = ? WHERE id IN (1401, 1411)", SWITCHED_OFF)
+        service.recompute().stored shouldBe false
+        stored() shouldBe mapOf(1400L to 1401L, 1410L to 1411L, 1420L to 1421L)
+
+        // two of three is a shrink the run accepts
+        jdbc.update("UPDATE yacht SET agency_id = ? WHERE id = 1411", BROKER)
+        service.recompute().stored shouldBe true
+        stored() shouldBe mapOf(1410L to 1411L, 1420L to 1421L)
     }
 }

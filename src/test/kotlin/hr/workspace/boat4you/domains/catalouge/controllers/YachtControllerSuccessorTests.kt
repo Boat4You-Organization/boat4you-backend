@@ -89,6 +89,22 @@ class YachtControllerSuccessorTests {
     }
 
     @Test
+    fun `a 1502 never names the boat asked for - no redirect to itself`() {
+        // review 7.10.: a retired twin copy (4066) served for the live one (11681) would name 11681 as its successor,
+        // and the site would redirect 11681 to itself forever; the twin pick skips retired copies, this keeps it so
+        `when`(twins.resolve(11681L)).thenReturn(4066L)
+        val body =
+            mvc
+                .get("/public/yachts/lagoon-42-masterpiece-11681")
+                .andExpect {
+                    status { isBadRequest() }
+                    jsonPath("$.code") { value(1502) }
+                }.andReturn()
+                .response.contentAsString
+        ObjectMapper().readTree(body).fieldNames().asSequence().toList() shouldContainExactly listOf("code", "message")
+    }
+
+    @Test
     fun `the public body names no agency, partner or source`() {
         val body = mvc.get("/public/yachts/masterpiece-4066").andReturn().response.contentAsString
         val fields = ObjectMapper().readTree(body).fieldNames().asSequence().toList()

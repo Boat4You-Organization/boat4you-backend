@@ -50,25 +50,11 @@ interface YachtTwinRepository : JpaRepository<Yacht, Long> {
      * the fractional `commision` (e.g. 0.20 for NauSys) — so both are coalesced
      * to a rate. Tie-break: most free future weeks, then lowest id (stable).
      *
-     * Returns null when no yacht in the group has a FREE future offer (caller
-     * then keeps the originally requested id).
+     * Only a copy whose boat page is served (see [SERVED]) can be canonical.
+     * Returns null when no such yacht in the group has a FREE future offer
+     * (caller then keeps the originally requested id).
      */
-    @Query(
-        value = """
-            SELECT o.yacht_id
-            FROM offer o
-            JOIN yacht y ON y.id = o.yacht_id
-            WHERE o.yacht_id IN (:ids)
-              AND o.status = 'FREE'
-              AND o.date_from >= :today
-            GROUP BY o.yacht_id
-            ORDER BY SUM(o.client_price * COALESCE(y.commision_perc / 100.0, y.commision, 0)) DESC,
-                     COUNT(*) DESC,
-                     o.yacht_id ASC
-            LIMIT 1
-        """,
-        nativeQuery = true,
-    )
+    @Query(value = PICK_CANONICAL_BY_MARGIN_SQL, nativeQuery = true)
     fun pickCanonicalYachtId(
         @Param("ids") ids: List<Long>,
         @Param("today") today: LocalDate,
@@ -82,14 +68,49 @@ interface YachtTwinRepository : JpaRepository<Yacht, Long> {
      * the fullest calendar (e.g. Desafinado 481@20% NauSys has fewer weeks than
      * 13163@15% MMK), and the product goal is to show the complete calendar.
      *
-     * Returns null when no yacht in the group has a FREE future offer.
+     * Only a copy whose boat page is served (see [SERVED]) can be canonical.
+     * Returns null when no such yacht in the group has a FREE future offer.
      */
-    @Query(
-        value = """
+    @Query(value = PICK_CANONICAL_BY_COVERAGE_SQL, nativeQuery = true)
+    fun pickCanonicalYachtIdByCoverage(
+        @Param("ids") ids: List<Long>,
+        @Param("today") today: LocalDate,
+    ): Long?
+
+    companion object {
+        /**
+         * The copy's boat page answers 200 (YachtQueryingService.getValidYacht): active, and a partner copy's agency
+         * active and not availability-blocked. A retired copy that still has FREE weeks must never win: the live twin's
+         * page would turn into its 1502, whose successor (yacht_successor, V9_73) is that live twin - a redirect loop.
+         */
+        const val SERVED = """
+            y.sys_active
+            AND (y.entry_type <> 'EXTERNAL' OR (a.active AND NOT a.availability_blocked))
+        """
+
+        const val PICK_CANONICAL_BY_MARGIN_SQL = """
             SELECT o.yacht_id
             FROM offer o
-            JOIN yacht y ON y.id = o.yacht_id
+            JOIN yacht y       ON y.id = o.yacht_id
+            LEFT JOIN agency a ON a.id = y.agency_id
             WHERE o.yacht_id IN (:ids)
+              AND $SERVED
+              AND o.status = 'FREE'
+              AND o.date_from >= :today
+            GROUP BY o.yacht_id
+            ORDER BY SUM(o.client_price * COALESCE(y.commision_perc / 100.0, y.commision, 0)) DESC,
+                     COUNT(*) DESC,
+                     o.yacht_id ASC
+            LIMIT 1
+        """
+
+        const val PICK_CANONICAL_BY_COVERAGE_SQL = """
+            SELECT o.yacht_id
+            FROM offer o
+            JOIN yacht y       ON y.id = o.yacht_id
+            LEFT JOIN agency a ON a.id = y.agency_id
+            WHERE o.yacht_id IN (:ids)
+              AND $SERVED
               AND o.status = 'FREE'
               AND o.date_from >= :today
             GROUP BY o.yacht_id
@@ -97,11 +118,6 @@ interface YachtTwinRepository : JpaRepository<Yacht, Long> {
                      SUM(o.client_price * COALESCE(y.commision_perc / 100.0, y.commision, 0)) DESC,
                      o.yacht_id ASC
             LIMIT 1
-        """,
-        nativeQuery = true,
-    )
-    fun pickCanonicalYachtIdByCoverage(
-        @Param("ids") ids: List<Long>,
-        @Param("today") today: LocalDate,
-    ): Long?
+        """
+    }
 }

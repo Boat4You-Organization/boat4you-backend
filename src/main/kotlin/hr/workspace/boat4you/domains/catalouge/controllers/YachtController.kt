@@ -11,6 +11,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
 import hr.workspace.boat4you.domains.catalouge.services.OfferQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtTwinCanonicalService
@@ -257,7 +258,8 @@ class YachtController(
         // Resolve cross-source duplicates to the canonical copy so the detail
         // page (and the slug it returns → calendar, price-calc, reservation)
         // serves the most complete / highest-margin twin. No-op when disabled.
-        val yachtId = yachtTwinCanonicalService.resolve(SlugUtils.idFromSlug(yachtSlug))
+        val requestedId = SlugUtils.idFromSlug(yachtSlug)
+        val yachtId = yachtTwinCanonicalService.resolve(requestedId)
         if (yachtId == null) {
             return ResponseEntity.notFound().build()
         }
@@ -272,10 +274,18 @@ class YachtController(
             externalSyncService.syncYachtOffers(yachtId, dateFrom, dateTo)
         }
 
+        val details =
+            try {
+                yachtQueryingService.getYacht(yachtId, dateFrom, dateTo, currency, language)
+            } catch (e: YachtNotActiveException) {
+                // A 1502 never names the boat asked for as its successor: the page would redirect to itself, forever
+                // (a retired twin copy served for a live one - the twin pick skips retired copies, this keeps it so).
+                throw if (e.successor?.id == requestedId) YachtNotActiveException() else e
+            }
         return ResponseEntity
             .ok()
             .headers { it.set("Content-Language", language.locale) }
-            .body(yachtQueryingService.getYacht(yachtId, dateFrom, dateTo, currency, language))
+            .body(details)
     }
 
     @Operation(description = "Get yacht availability for a specific month and year")
