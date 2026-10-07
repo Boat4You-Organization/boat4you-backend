@@ -1,5 +1,22 @@
 # Backend deploy notes
 
+## 2026-10-07 — Nasljednik povučenog broda: 1502 nosi `successorSlug` / `successorId` (V9_73 `yacht_successor`, job na cusma3) — ⏳ NIJE DEPLOYANO
+
+Mario 7.10.: stari URL povučenog partnerskog broda (`sys_active = false`) daje 404, a ISTI brod živi pod drugim id-jem (Bing: `/boat/lagoon-bnteau-lagoon-42-4-2-cab-masterpiece-4066` → 404, brod je živ kao 11681). Ugovor s webom (b4y + 6 sistera, radi druga sesija): `GET /public/yachts/{idOrSlug}` za povučeni brod i dalje vraća **400 `{"code":1502,"message":"Yacht is not active"}`** i DODAJE `"successorSlug"` + `"successorId"` kad postoji točno jedan nasljednik; inače polja nema (ni `null`). Nikakvi podaci o agenciji/partneru.
+
+- **Pravilo** (`YachtSuccessorComputeService.PICK_SQL`, jedan set-based SQL): isto normalizirano ime (kao V9_69; ime = samo model ili placeholder se ne uparuje) + ista godina + ista država baze + isti `model_id` (ili, kad partneri drže model pod drugim id-jem, ista prva riječ modela i duljina ±0,3 m). Nasljednik mora biti ono za što detalj vraća 200 (aktivan, agencija aktivna i nije `availability_blocked`, baza nije `inland`). Lanci kroz druge povučene kopije do 4 skoka (UNION + limit = zaštita od ciklusa). Dvije kopije istog broda (MMK + NauSys, `yacht_listing_twin`) → kopija koju liste prikazuju (ista godina/država). Više kandidata → onaj na staroj bazi (isti `location_id` ili isti base key), inače NIŠTA.
+- **Prod 7.10. (read-only, točno SQL iz joba, ~0,2 s):** 7.061 povučenih EXTERNAL → **2.768 dobiva nasljednika** (2.439 jedan kandidat, 210 twin → prikazana kopija, 110 ista baza, 9 kroz lanac), 65 ostaje bez (više različitih kandidata), 2.452 različita cilja. 4066 → 11681 ✔.
+- **Tablica, ne matview:** `yacht_successor(old_id PK, new_id, computed_at)` + indeks na `new_id`, bez FK (lock na `yacht`). Job (`YachtSuccessorJob`, samo `data-sync` = cusma3) svaki dan **07:55 UTC** (nakon NauSys noćnog bloka do ~06:00 i MMK 06:00/06:10, prije charter facts 08:00) + jednom pri startu ako je tablica prazna. Zamjena u JEDNOJ transakciji (temp tablica → DELETE + INSERT; čitači vide stari snapshot, nema TRUNCATE locka); prazan rezultat dok redovi postoje = rollback + ERROR.
+- **API (cusma2):** lookup samo na 1502 putu (aktivni brodovi 0 upita), ponovno provjerava da je nasljednik i dalje posluživ; svaka greška (npr. tablica još ne postoji) = običan 1502. Stari slug i bilo koji slug koji završava starim id-jem rade (id iz zadnjeg segmenta).
+
+**Akcije pred deploy:**
+
+- [ ] Prije deploya opet `git pull` + `ls src/main/resources/db/migration | sort -V | tail -3`: V9_73 mora i dalje biti slobodan (B8 iz `docs/pending-migrations` uzima SLJEDEĆI slobodni broj).
+- [ ] Redoslijed **cusma2 → cusma3** (Flyway na cusma2 kreira tablicu; cusma3 je pinned). V9_73 = nova prazna tablica, bez locka na postojećim tablicama.
+- [ ] Nakon cusma3 restarta u logu: `Yacht successors: N retired boats named a live listing ...` (startup fill); provjera: `SELECT count(*) FROM yacht_successor;` ≈ 2.7k i `SELECT new_id FROM yacht_successor WHERE old_id = 4066;` = 11681.
+- [ ] `curl -s https://api.boat4you.com/public/yachts/lagoon-bnteau-lagoon-42-4-2-cab-masterpiece-4066` → 400 s `"successorSlug":"lagoon-42-masterpiece-11681","successorId":11681`.
+- Rollback: stari jar; tablica može ostati (nitko je ne čita) ili `DROP TABLE yacht_successor;`.
+
 ## 2026-10-06 — Kapacitet i oprema broda točno kako ih šalju MMK / NauSys (capacity contract v1: V9_72, sync, blokovi `capacity` / `rig`, filter osoba, jedra, AI chat) + review popravci — ✅ DEPLOYANO 6.10.2026 (V9_72 ručno 17:52 UTC na cusma4; cusma2 17:52 + cusma3 17:53 UTC, jar md5 c7b49e92…; frontendi tek nakon gate SQL-a 7.10.) (commiti `c374579` `dd7c977` `ac4a874` `ccc5c3e` `a96efe8` + review `422841d` `29abb20` `5b9803e` `e056aba` `2bd81a9` `c8da846`)
 
 Mario 6.10.: broj kabina, ležajeva i WC-a te raspored moraju biti 100 % kao kod partnera na svim površinama (b4y, 6 sistera, admin Offers + e-mail ponude, PDF), da klijent nikad ne mora pitati. Odluke: (1) partnerske napomene prevodi web kroz pregledanu tablicu; (2) filter osoba `COALESCE(max_persons, berths)`, samo filter / brojevi / AI pretraga, nikad cijena; (3) `SailTypeEnum` ispravljen u istom releaseu; (4) interne partnerske napomene samo u adminu.

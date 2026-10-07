@@ -204,16 +204,19 @@ internal class ApiErrorHandler {
         )
     }
 
+    // A retired boat: still 400 / 1502, plus the live listing of the same boat when one is named (yacht_successor).
     @ExceptionHandler(YachtNotActiveException::class)
     fun handleYachtNotActiveException(
         e: YachtNotActiveException,
         request: HttpServletRequest,
-    ): ResponseEntity<ErrorSchema> {
-        logger.info("YachtNotActiveException uri={}", request.requestURI)
+    ): ResponseEntity<YachtNotActiveErrorBody> {
+        logger.info("YachtNotActiveException uri={} successor={}", request.requestURI, e.successor?.id)
         return ResponseEntity(
-            ErrorSchema(
+            YachtNotActiveErrorBody(
                 ApiErrorCodes.YACHT_NOT_ACTIVE.code,
                 ApiErrorCodes.YACHT_NOT_ACTIVE.message,
+                successorSlug = e.successor?.slug,
+                successorId = e.successor?.id,
             ),
             HttpStatus.BAD_REQUEST,
         )

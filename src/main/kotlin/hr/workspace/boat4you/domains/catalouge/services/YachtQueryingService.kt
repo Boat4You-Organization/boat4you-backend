@@ -26,6 +26,8 @@ import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
+import hr.workspace.boat4you.domains.catalouge.successor.YachtSuccessor
+import hr.workspace.boat4you.domains.catalouge.successor.YachtSuccessorLookup
 import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtDetailRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtViewRepository
@@ -2267,6 +2269,22 @@ class YachtQueryingService(
         return fileSystemService.getResourceFromPath(pdfPath)
     }
 
+    /**
+     * The live listing of the same boat as the retired [id] (yacht_successor, V9_73), for the 1502 answer - read only
+     * on that path, so an active boat never pays for it. Fails open: any error (e.g. the table not created yet) means
+     * no successor, never a different answer than the plain 1502.
+     */
+    private fun successorOf(id: Long): YachtSuccessor? =
+        runCatching {
+            entityManager
+                .createNativeQuery(YachtSuccessorLookup.SQL)
+                .setParameter("id", id)
+                .resultList
+                .firstOrNull()
+                ?.let { YachtSuccessorLookup.fromRow(it as Array<*>) }
+        }.onFailure { log.warn("yacht successor lookup failed for retired yacht {}: {}", id, it.message) }
+            .getOrNull()
+
     private fun getValidYacht(yachtId: Long): Yacht {
         val yacht =
             yachtRepository
@@ -2274,7 +2292,7 @@ class YachtQueryingService(
                 .orElseThrow { YachtDoesNotExistException() }
 
         if (!yacht.sysActive!!) {
-            throw YachtNotActiveException()
+            throw YachtNotActiveException(successorOf(yachtId))
         }
 
         val agency = yacht.agency
