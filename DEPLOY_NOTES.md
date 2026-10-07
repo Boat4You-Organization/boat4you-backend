@@ -1,6 +1,72 @@
 # Backend deploy notes
 
-## 2026-10-07 — Nasljednik povučenog broda: 1502 nosi `successorSlug` / `successorId` (V9_73 `yacht_successor`, job na cusma3) — ⏳ NIJE DEPLOYANO
+## 2026-10-07 — Nasljednik povučenog broda + review popravci (flotne oznake, broj modela, kraj lanca, registracije, twin petlja) — ⏳ NIJE DEPLOYANO (commiti `566775a` + `9c58d29`)
+
+Deploya se ZAJEDNO s `566775a` (unos ispod = opis featurea; njegova checklista i prod brojke vrijede za STARO pravilo). Ugovor s webom (b4y + 6 sistera) NEPROMIJENJEN: `GET /public/yachts/{idOrSlug}` za povučeni brod → **400 `{"code":1502,"message":"Yacht is not active"}`** + `"successorSlug"` / `"successorId"` kad je točno jedan nasljednik, inače polja NEMA. Nikakvi podaci o agenciji/partneru.
+
+**Commiti:**
+
+- `566775a` feature (V9_73 `yacht_successor`, `YachtSuccessorComputeService` + `YachtSuccessorJob` na cusma3, lookup samo na 1502 putu).
+- `9c58d29` review popravci:
+  1. **Kanal (HIGH):** ista agencija + isti partnerski sustav (`external_mapping`, kao V9_69) = flotni brodovi, NIKAD nasljednik, osim kad se registracije slažu (≥ 4 znamenke, MMK `certificate`). Moorings „Moorings 4500 Club" Cannigione → Portorosa više ne prolazi.
+  2. **Flotna oznaka:** ime koje jedna agencija na jednom sustavu daje ≥ 2 ŽIVA broda istog modela i godine (u državi) nije ime broda („Sunsail 410 Classic"). Ime koje agencija samo ponovno koristi za drugi model/godinu („Luna") ostaje.
+  3. **Rezervni model:** uz prvu riječ i duljinu ±0,3 m i **isti prvi broj u imenu modela** (Lagoon 46 ≠ Lagoon 43; „390 GL" / „390 Grand Large" ostaje).
+  4. **Lanac:** kraj lanca mora zadovoljiti izravno pravilo prema STAROM brodu (±0,3 m između krajeva, kanal, registracija); premošćuje se samo nepoznata duljina. Test „Pathfinder" ispravljen (411 → više ništa, 414 → 415).
+  5. **Registracije** ≥ 4 znamenke koje se razlikuju = dva broda („Aria" 12480 / 12495).
+  6. **Prikazana kopija** (`yacht_listing_twin`) koju pravilo ne bi uparilo sa starim brodom (njegov kanal / druga registracija) → nasljednik sumnjiv → NEMA ga.
+  7. **Guard:** run koji imenuje < 50 % spremljenih redova (i 0) se ne sprema; job svaki dan javlja ERROR `Yacht successors are STALE` kad su redovi stariji od 48 h. Pravo veliko smanjenje: `DELETE FROM yacht_successor;` → sljedeći run (ili restart cusma3) puni.
+  8. **Twin petlja:** `YachtTwinRepository.pickCanonical*` (pilot 6047/7576/9431, ručni 481/13163) biraju samo POSLUŽIVU kopiju (`sys_active`, agencija aktivna, nije `availability_blocked`). Prije: povučena kopija s FREE tjednima mogla je pobijediti → živa stranica postaje 1502 s nasljednikom = ona sama → beskonačni redirect. Uz to detalj nikad ne vraća nasljednika jednakog traženom id-u.
+  9. V9_73 (nigdje primijenjen; checksum = verzija iz `9c58d29`): zaglavlje → `YachtSuccessorComputeService`, maknut nekorišteni indeks na `new_id`. KDoc joba: refresh u 07:50 (180–423 s) se može preklopiti s 07:55 - bezopasno (CONCURRENTLY ne blokira čitanje).
+- **Odbijeno:**
+  - Dokumentirati polja u `boat4you_ws_common.openapi.yaml` (`ErrorSchema`): yaml je ulaz generatora CRUD modela (`org.openapitools.model.ErrorSchema` za SVE greške), `/public/yachts` je code-first i nijedan endpoint ne dokumentira tijelo greške. Ugovor: KDoc `YachtNotActiveErrorBody` + ovaj unos.
+  - `/boat/lagoon-42` čita se kao brod 42: ugovor traži da i KRIVI slug s važećim id-jem vrati nasljednika; web generira samo slugove s id-jem; čitanje id-a iz zadnjeg segmenta je pre-existing.
+  - Napomena za Marija: brojke u `566775a` mjerene su read-only na produ (cusma4), izvan dogovorenih lokalnih baza (rehearsal nema nijedan povučen brod). Ovaj popravak mjeren SAMO na `b4y-rehearsal`.
+
+**Brojke (`b4y-rehearsal`, kopija proda, 14.120 brodova, NIJEDAN povučen → simulacija: svaki živi partnerski brod uzet kao povučen, bez lanaca; rehearsal je na V9_05, pa su V9_69/V9_70 + 3 kolone stvorene u transakciji i ROLLBACK - provjereno, ništa nije ostalo):**
+
+- Staro pravilo **1.931** nasljednika → novo **1.757** (−9 %).
+- Otpalo 175: **170 ista agencija + sustav** (flotne oznake Moorings / Sunsail / „Premium", Pogo/RM kod iste agencije na dvije baze), **3 različite registracije** (Aria ×2, Aliki), **1 flotna oznaka** (dva „Nanda" Futura 40 iste agencije), **1 Lagoon 46 → 43** (AELIA). Dobiven 1: 8302 → 5017 (Aelia Lagoon 43 Volos; prije dvosmisleno zbog Lagoon 46 u Alimosu).
+- Nakon popravka: **0** parova istog kanala, **0** s različitom registracijom. Simulacija = `PICK_SQL` s `WHERE true` umjesto `WHERE NOT o.sys_active` i bez skokova (`w.depth < 1`), parovi s ciljem = sam brod izbačeni.
+- Prod (2.768 u unosu ispod) vrijedi za staro pravilo; nova brojka dolazi iz loga prvog runa na cusma3. Očekivano nešto ispod 2.768 (review: istokanalnih nasljednika na produ danas ≤ 9). **< 2.000 = stati i istražiti prije javljanja webu.**
+
+**Verifikacija (7.10.):**
+
+- Testovi successora/twina: `YachtSuccessorComputeServiceTest` 17 (pravi Postgres 17, pravi V9_69/V9_70/V9_73, V9_73 2× = idempotentno), `YachtTwinCanonicalPickTest` 2 (pravi SQL repozitorija), `YachtControllerSuccessorTests` 4, `YachtNotActiveSuccessorTest` 4, `YachtSuccessorJobTests` 2 - svi zeleni.
+- **Mutacije:** staro pravilo + stari guard ruši 7 testova (kanal, flota, broj modela, lanac, registracija, sumnjiva prikazana kopija, guard < 50 %); twin SQL bez filtera ruši pick test; kontroler bez provjere self-id ruši test petlje.
+- **Puni suite:** 516 testova, **isti 31 pre-existing failure** kao u unosu od 6.10. (`ReservationPaymentPhasesServiceTest` 26, `ReservationOptionsCombinationProviderTests` 2, `Boat4youWsApplicationTests` 1, `MatchersTests` 1, `NauSysDateTimeWrapperTests` 1), nijedan u dirnutom kodu.
+- ktlint: 0 na promijenjenim linijama (`566775a^..9c58d29`).
+
+**Deploy redoslijed:**
+
+- [ ] `git pull` + `ls src/main/resources/db/migration | sort -V | tail -3`: **V9_73 mora biti slobodan** (B8 iz `docs/pending-migrations` uzima SLJEDEĆI broj). Jar iz commita ≥ `9c58d29` (NIKAD samo `566775a`).
+- [ ] **cusma2** u sigurnom prozoru (ne dok cusma3 piše `yacht`; vidi sync slotove): Flyway V9_73 = nova prazna tablica, `lock_timeout` 5 s, bez locka na postojećim tablicama. Health: `GET /public/settings/card-surcharge` → 200. Odmah: `for id in 6047 7576 9431 481 13163; do curl -s -o /dev/null -w "$id %{http_code}\n" https://api.boat4you.com/public/yachts/$id; done` → živi pilot/ručni brodovi 200 (twin pick sad samo posluživu kopiju).
+- [ ] **cusma3** uz TVRDI sync gate u istoj skripti: `n=$(journalctl --since '10 minutes ago' | grep -ci 'nausys\|mmk'); [ "$n" -gt 0 ] && { echo ABORT; exit 1; }`, tek onda swap + restart.
+- [ ] **Fill:** u logu cusma3 `Yacht successors: N retired boats named a live listing (M through a chain), K left without ...` bez `NOT stored`; SQL (cusma4, read-only): `SELECT count(*), max(computed_at) FROM yacht_successor;` i `SELECT new_id FROM yacht_successor WHERE old_id = 4066;` = **11681**.
+- [ ] Recept dolje prolazi → **tek tada javiti web sesiji da je polje live**, uz pravilo: **web nikad ne preusmjerava na isti id** (`successorId` == id iz vlastitog URL-a → bez redirecta, običan 404).
+
+**Recept (prod):**
+
+- Povučeni s nasljednikom: `curl -s -w '\n%{http_code}\n' https://api.boat4you.com/public/yachts/lagoon-bnteau-lagoon-42-4-2-cab-masterpiece-4066` → **400** + `"code":1502` + `"successorSlug":"lagoon-42-masterpiece-11681","successorId":11681`; isto za `/public/yachts/4066` i krivi slug `/public/yachts/x-4066`.
+- Aktivni brod nepromijenjen: `curl -s -o /dev/null -w '%{http_code}\n' https://api.boat4you.com/public/yachts/lagoon-42-masterpiece-11681` → **200**.
+- Dvosmislen bez polja: id iz upita ispod (povučen, ≥ 2 živa imenjaka istog modela/godine/države, bez reda u tablici) → `curl -s https://api.boat4you.com/public/yachts/<id> | jq -c keys` → **`["code","message"]`**.
+
+```sql
+SELECT o.id, count(DISTINCT c.id) AS live_namesakes
+FROM yacht o
+JOIN location lo ON lo.id = o.location_id
+JOIN yacht c     ON c.sys_active AND c.id <> o.id AND c.build_year = o.build_year AND c.model_id = o.model_id
+                AND regexp_replace(lower(btrim(c.name)), '[^[:alnum:]]', '', 'g')
+                  = regexp_replace(lower(btrim(o.name)), '[^[:alnum:]]', '', 'g')
+JOIN location lc ON lc.id = c.location_id AND lc.country_code = lo.country_code
+WHERE NOT o.sys_active AND o.entry_type = 'EXTERNAL'
+  AND NOT EXISTS (SELECT 1 FROM yacht_successor s WHERE s.old_id = o.id)
+GROUP BY o.id HAVING count(DISTINCT c.id) >= 2
+ORDER BY o.id LIMIT 5;
+```
+
+**Rollback:** `git revert 9c58d29 566775a` + redeploy (cusma2 → cusma3), ALI zadržati deployanu migraciju: `git checkout 9c58d29 -- src/main/resources/db/migration/V9_73__yacht_successor.sql` (checksum u `flyway_schema_history` je te verzije). Tablica `yacht_successor` smije ostati (nitko je ne čita). Samo pravilo: `git revert 9c58d29` vraća staro (labavije) pravilo i twin pick bez filtera - ne preporučuje se. Web bez polja pada na stari 404 → nema štete.
+
+## 2026-10-07 — Nasljednik povučenog broda: 1502 nosi `successorSlug` / `successorId` (V9_73 `yacht_successor`, job na cusma3) — ⏳ NIJE DEPLOYANO · pravilo, brojke i checklista ZAMIJENJENI unosom iznad (review `9c58d29`)
 
 Mario 7.10.: stari URL povučenog partnerskog broda (`sys_active = false`) daje 404, a ISTI brod živi pod drugim id-jem (Bing: `/boat/lagoon-bnteau-lagoon-42-4-2-cab-masterpiece-4066` → 404, brod je živ kao 11681). Ugovor s webom (b4y + 6 sistera, radi druga sesija): `GET /public/yachts/{idOrSlug}` za povučeni brod i dalje vraća **400 `{"code":1502,"message":"Yacht is not active"}`** i DODAJE `"successorSlug"` + `"successorId"` kad postoji točno jedan nasljednik; inače polja nema (ni `null`). Nikakvi podaci o agenciji/partneru.
 
