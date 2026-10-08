@@ -118,11 +118,85 @@ class EquipmentMatcherTest {
     }
 
     @Test
-    fun `a full tie goes to the lower id, whatever order the rows come in`() {
-        val first = row(7, "seven", "token-match:kayak")
-        val second = row(3, "three", "token-match:kayak")
-        assertEquals("three", EquipmentMatcher(listOf(first, second)).best("Kayak")?.labelCode)
-        assertEquals("three", EquipmentMatcher(listOf(second, first)).best("Kayak")?.labelCode)
+    fun `a full tie goes to the lower label_code, whatever the ids or the order of the rows`() {
+        val first = row(3, "seven", "token-match:kayak")
+        val second = row(7, "eight", "token-match:kayak")
+        assertEquals("eight", EquipmentMatcher(listOf(first, second)).best("Kayak")?.labelCode, "ids differ between environments")
+        assertEquals("eight", EquipmentMatcher(listOf(second, first)).best("Kayak")?.labelCode)
+    }
+
+    @Test
+    fun `a one-letter key token counts only inside its run - review 8_10 F1`() {
+        assertEquals("usb-sockets", label("A USB-C port in each cabin"))
+        assertNull(label("Raymarine Axiom with C-Map and a 4G router"))
+        assertEquals("salon-GPS-plotter", label("Plotter with C-Map, a radar overlay"))
+        assertEquals("salon-GPS-plotter", label("Plotter with a C-Map card"), "a C-Map is a run, not:c-map vetoes it")
+        assertNull(label("A set of C-Map charts"), "C-Map charts are electronic: no navigation set, no A/C")
+        assertEquals("air-conditioning", label("A/C"))
+        assertEquals("air-conditioning", label("5 A/C"))
+        assertEquals("air-conditioning", label("Crew cabin with A/C"))
+        assertEquals("air-conditioning", label("A/C in salon with shore power"))
+        assertEquals("air-conditioning", label("AC in every cabin"), "two letters stay free")
+        assertEquals("shore-connection-220v", label("Shore power cable 220 V"))
+        val ac = EquipmentMatcher(listOf(row(1, "ac", "token-match:a/c")))
+        assertNull(ac.best("A set of C charts"))
+        assertEquals("ac", ac.best("Cabins with a/c")?.labelCode)
+    }
+
+    @Test
+    fun `an item the partner marks as not standard never links - review 8_10 F2`() {
+        listOf(
+            "Wi-Fi not available",
+            "Internet: not available",
+            "TV (not included)",
+            "Hi-lo system for TV in salon (TV not included)",
+            "Generator (not working)",
+            "Generator - no",
+            "Generator: none",
+            "Wi-Fi n/a",
+            "Air conditioning (optional, 50 EUR/day)",
+            "Air conditioning 50 €/day",
+            "Gennaker (optional)",
+            "Railing net - on request",
+            "Jet ski on request",
+            "Watermaker upon request",
+            "Seabob - extra charge",
+            "Wi-Fi (paid)",
+            "Kayak for rent",
+        ).forEach { assertNull(label(it), it) }
+        assertEquals("water-maker", label("Watermaker 60 l per hour"), "a capacity is no price")
+        assertEquals("towels", label("Beach towels: 1 per person per week, changed once per weekk"))
+        assertEquals("battery-charger", label("Battery charger"), "charger is no charge")
+        assertEquals("navigation-set", label("Europe charts"), "europe is no euro")
+    }
+
+    @Test
+    fun `single-word keys keep out of other equipment - review 8_10 F4`() {
+        assertNull(label("Fin Stabilizing System"))
+        assertNull(label("Stabilizer fins"))
+        assertNull(label("Fan belt"))
+        assertNull(label("Engine room fan"))
+        assertNull(label("Pilot seat"))
+        assertNull(label("Pilot house"))
+        assertNull(label("Raymarine pilot"))
+        assertNull(label("Anchor alarm"))
+        assertNull(label("Anchor winsch"))
+        assertEquals("heating", label("Diesel burner heating"))
+        assertNull(label("Ventilation grill"))
+        assertNull(label("Satellite dishes"))
+        assertNull(label("Wi-Fi streaming music equipment"))
+        assertNull(label("Sundeck shower"))
+        assertEquals("snorkel-sets", label("Fins"))
+        assertEquals("electric-fans", label("Ceiling fans"))
+        assertEquals("navigation-set", label("Adriatic sea pilot"))
+        assertEquals("navigation-set", label("Greek Waters Pilot"))
+        assertEquals("navigation-set", label("Pilot book"))
+        assertEquals("main-anchor", label("Anchor"))
+        assertEquals("cooker", label("Stove"))
+        assertEquals("BBQ", label("Grill/Barbecue/Plancha"))
+        assertEquals("kitchen-utensils", label("Dishes"))
+        assertEquals("wifi", label("Wi-Fi & Internet"))
+        assertEquals("sun-pads", label("Sundeck cushions"))
     }
 
     @Test

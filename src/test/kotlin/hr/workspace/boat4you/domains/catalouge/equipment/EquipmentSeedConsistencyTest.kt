@@ -7,9 +7,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * R__1_05 is the single writer of equipment name / category / filter_order / match_keys (equipment audit 8.10.2026):
- * the keys were overwritten three times while V-migrations wrote them too. This pins the seed's shape and keeps every
- * later V-migration away from those columns.
+ * R__1_05 is the single writer of equipment name / category / filter_order / match_keys, of the merged codes and of the
+ * explicit partner links (equipment audit 8.10.2026): the keys were overwritten three times while V-migrations wrote
+ * them too. This pins the seed's shape and keeps every later migration away from the catalogue.
  */
 class EquipmentSeedConsistencyTest {
     private val rows = EquipmentCatalogueFixture.seedRows
@@ -47,18 +47,46 @@ class EquipmentSeedConsistencyTest {
     }
 
     @Test
-    fun `no V-migration after the equipment fix writes the catalogue columns`() {
+    fun `no later V-migration and no other repeatable writes the catalogue, the merges or the explicit links`() {
         val version = Regex("""^V(\d+)_(\d+)__.*\.sql$""")
+        val resources = PathMatchingResourcePatternResolver().getResources("classpath:db/migration/*.sql").toList()
         val later =
-            PathMatchingResourcePatternResolver()
-                .getResources("classpath:db/migration/V*.sql")
-                .mapNotNull { resource ->
-                    val name = resource.filename ?: return@mapNotNull null
-                    val (major, minor) = version.find(name)?.destructured ?: return@mapNotNull null
-                    if (major.toInt() > 9 || (major.toInt() == 9 && minor.toInt() > 75)) resource else null
-                }
-        val offenders = later.filter { it.inputStream.bufferedReader().readText().contains("match_keys", ignoreCase = true) }.map { it.filename }
-        assertEquals(emptyList(), offenders, "equipment keys live in R__1_05 only")
+            resources.filter { resource ->
+                val name = resource.filename ?: return@filter false
+                if (name.startsWith("R__")) return@filter name != "R__1_05_equipment_import.sql"
+                val (major, minor) = version.find(name)?.destructured ?: return@filter false
+                major.toInt() > 9 || (major.toInt() == 9 && minor.toInt() > 75)
+            }
+        assertTrue(later.any { it.filename!!.startsWith("R__") }, "the other repeatables are scanned too")
+        val writes =
+            Regex(
+                """(?i)\b(UPDATE|INSERT\s+INTO|DELETE\s+FROM|TRUNCATE|ALTER\s+TABLE|COPY)\s+(TABLE\s+)?(ONLY\s+)?(IF\s+EXISTS\s+)?(public\.)?"?(equipment|partner_equipment_mapping)\b(?!_)|\bmerged_into_id\b""",
+            )
+        val offenders =
+            later.mapNotNull { resource ->
+                writes.find(resource.inputStream.bufferedReader().readText())?.let { "${resource.filename}: ${it.value}" }
+            }
+        assertEquals(emptyList(), offenders, "the equipment catalogue lives in R__1_05 only")
+        assertTrue(writes.containsMatchIn("UPDATE equipment SET filter_order = 1"), "V9_20-style write")
+        assertTrue(writes.containsMatchIn("insert into equipment (name) values ('x')"))
+        assertTrue(writes.containsMatchIn("INSERT INTO partner_equipment_mapping (note) VALUES ('x')"))
+        assertTrue(writes.containsMatchIn("UPDATE public.equipment SET match_keys = ''"))
+        assertTrue(!writes.containsMatchIn("SELECT e.label_code FROM yacht_equipment ye JOIN equipment e ON e.id = ye.equipment_id"))
+        assertTrue(!writes.containsMatchIn("UPDATE yacht_equipment SET equipment_id = NULL"))
+        assertTrue(!writes.containsMatchIn("UPDATE extras SET match_keys = '', filter_order = 1"), "R__1_04 writes extras, not equipment")
+    }
+
+    @Test
+    fun `R__1_05 owns the merges and the 80 explicit links, by label_code`() {
+        val sql = EquipmentCatalogueFixture.sql(EquipmentCatalogueFixture.R105)
+        EquipmentCatalogueFixture.ALIASES.forEach { (alias, canonical) -> assertTrue(sql.contains("('$alias', '$canonical')"), alias) }
+        val mappings = EquipmentCatalogueFixture.seedMappings
+        assertEquals(80, mappings.size)
+        assertEquals(mappings.size, mappings.map { Triple(it.systemId, it.partnerItemId, it.nameNorm) }.toSet().size)
+        val labels = rows.filter { it.labelCode !in EquipmentCatalogueFixture.ALIASES }.map { it.labelCode }.toSet() + "NONE"
+        mappings.forEach { assertTrue(it.targetLabel in labels, "${it.nameNorm}: ${it.targetLabel}") }
+        mappings.forEach { assertTrue((it.partnerItemId > 0) == (it.nameNorm == ""), it.nameNorm) }
+        assertTrue(!EquipmentCatalogueFixture.sql(EquipmentCatalogueFixture.V_SCHEMA).contains("INSERT INTO partner_equipment_mapping"))
     }
 
     @Test

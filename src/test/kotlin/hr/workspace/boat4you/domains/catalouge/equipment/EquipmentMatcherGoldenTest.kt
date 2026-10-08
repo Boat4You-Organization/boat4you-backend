@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 /**
  * All 2,778 distinct partner equipment names of the prod snapshot (8.10.2026; equipment/partner_names_8_10.tsv from
  * sim/Sim.java of the audit, which ran commons-text on the same keys): the Kotlin matcher on the R__1_05 keys gives the
- * simulated code for every one, and the resolver (explicit V9_74 links first) gives the final link that V9_75 writes.
+ * simulated code for every one, and the resolver (explicit R__1_05 links first) gives the final link that V9_75 writes.
  * A key or matcher change changes this fixture on purpose: re-run sim/run.sh, regenerate it and show the diff.
  */
 class EquipmentMatcherGoldenTest {

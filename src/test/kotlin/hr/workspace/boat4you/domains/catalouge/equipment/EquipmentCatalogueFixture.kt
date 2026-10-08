@@ -7,8 +7,8 @@ import org.springframework.core.io.ClassPathResource
 
 /**
  * The equipment catalogue exactly as the migrations ship it: rows and keys from the R__1_05 seed VALUES (ids = seed
- * order = prod ids), the three merges of V9_75 and the explicit links seeded by V9_74. Tests read the SQL itself, so a
- * key change is tested the moment it is written.
+ * order = prod ids), the three merges (V9_75 and R__1_05) and the explicit links seeded by R__1_05. Tests read the SQL
+ * itself, so a key change is tested the moment it is written.
  */
 object EquipmentCatalogueFixture {
     data class SeedRow(
@@ -27,7 +27,7 @@ object EquipmentCatalogueFixture {
         val targetLabel: String,
     )
 
-    /** alias -> canonical (V9_75 S1). */
+    /** alias -> canonical (V9_75 S1, R__1_05). */
     val ALIASES: Map<String, String> = mapOf("bow-thruster-deck" to "bow-thruster", "refrigerator" to "fridge", "sundeck-cushions" to "sun-pads")
 
     const val R105 = "db/migration/R__1_05_equipment_import.sql"
@@ -48,7 +48,7 @@ object EquipmentCatalogueFixture {
     }
 
     val seedMappings: List<SeedMapping> by lazy {
-        sql(V_SCHEMA).lines().mapNotNull { line ->
+        sql(R105).lines().mapNotNull { line ->
             MAPPING_ROW.find(line)?.destructured?.let { (system, item, norm, label) ->
                 SeedMapping(system.toInt(), item.toLong(), norm.replace("''", "'"), label)
             }

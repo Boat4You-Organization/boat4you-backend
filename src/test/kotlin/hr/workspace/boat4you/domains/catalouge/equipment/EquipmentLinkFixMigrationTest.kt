@@ -19,8 +19,8 @@ import kotlin.test.assertTrue
  * V9_74 + V9_75 + R__1_05 v2 (equipment audit 8.10.2026) through the real Flyway on PostgreSQL 18 (prod major), on the
  * two id layouts that exist: prod / b4y-rehearsal (59 = sundeck-cushions, no cockpit-cushions) and the local :5434 copy
  * (59 = cockpit-cushions, 60-107 = prod 59-106), plus a fresh database. Everything is checked by label_code: the same
- * rows end on the same codes in both layouts, the backup holds each changed row once with its original link, and a
- * second run changes nothing.
+ * rows end on the same codes in both layouts, the backups hold each changed row once with its original link and the
+ * catalogue as it was, a second run changes nothing, and the DEPLOY_NOTES rollback restores links and catalogue.
  */
 @Testcontainers
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -84,6 +84,19 @@ class EquipmentLinkFixMigrationTest {
                 Row(115, 2, 100664, "Life jackets", "life-jackets", "life-jackets", null),
                 Row(116, 3, null, "Fridge", "fridge", "fridge", null),
             )
+
+        /** The data part of the DEPLOY_NOTES rollback (after the old JAR's R__1_05 has run on the API node). */
+        private val ROLLBACK_SQL =
+            """
+            BEGIN;
+            UPDATE yacht_equipment ye SET equipment_id = b.equipment_id_before
+              FROM _equipment_link_fix_backup_20261008 b WHERE b.ye_id = ye.id AND ye.equipment_id IS DISTINCT FROM b.equipment_id_before;
+            UPDATE equipment e SET name = b.name, category = b.category, match_keys = b.match_keys, filter_order = b.filter_order
+              FROM _equipment_backup_20261008 b WHERE b.id = e.id;
+            UPDATE equipment SET merged_into_id = NULL WHERE merged_into_id IS NOT NULL;
+            DROP INDEX IF EXISTS equipment_label_code_uq;
+            COMMIT;
+            """.trimIndent()
 
         private fun label(code: String?) = code?.let { "(SELECT id FROM equipment WHERE label_code = '$it')" } ?: "NULL"
 
@@ -180,6 +193,7 @@ class EquipmentLinkFixMigrationTest {
 
     private fun snapshot(jdbc: JdbcTemplate): List<Map<String, Any?>> =
         jdbc.queryForList("SELECT * FROM equipment ORDER BY id") +
+            jdbc.queryForList("SELECT * FROM _equipment_backup_20261008 ORDER BY id") +
             jdbc.queryForList("SELECT id, equipment_id FROM yacht_equipment ORDER BY id") +
             jdbc.queryForList("SELECT ye_id, equipment_id_before, section FROM _equipment_link_fix_backup_20261008 ORDER BY ye_id") +
             jdbc.queryForList("SELECT external_system_id, partner_item_id, partner_name_norm, equipment_id FROM partner_equipment_mapping ORDER BY id")
@@ -193,6 +207,7 @@ class EquipmentLinkFixMigrationTest {
         val jdbc = database(name)
         seedCatalogue(jdbc, shifted)
         jdbc.execute(SEED_ROWS)
+        val catalogueBefore = jdbc.queryForList("SELECT id, name, label_code, category, match_keys, filter_order FROM equipment ORDER BY id")
 
         assertEquals(3, migrate(jdbc).migrationsExecuted)
         assertEquals(
@@ -220,6 +235,12 @@ class EquipmentLinkFixMigrationTest {
             jdbc.queryForObject("SELECT count(*) FROM equipment WHERE merged_into_id IS NOT NULL", Long::class.java),
         )
         assertEquals(1, jdbc.queryForList("SELECT 1 FROM pg_indexes WHERE indexname = 'equipment_label_code_uq'").size)
+
+        // the catalogue as it was, kept once by V9_74 for the rollback
+        assertEquals(
+            catalogueBefore,
+            jdbc.queryForList("SELECT id, name, label_code, category, match_keys, filter_order FROM _equipment_backup_20261008 ORDER BY id"),
+        )
 
         // explicit links: the 80 seed rows, resolved by label
         assertEquals(
@@ -266,11 +287,19 @@ class EquipmentLinkFixMigrationTest {
         runAgain(jdbc)
         assertEquals(before, snapshot(jdbc), "$name: second run")
 
-        // rollback recipe of V9_75 restores every original link
-        jdbc.update(
-            "UPDATE yacht_equipment ye SET equipment_id = b.equipment_id_before FROM _equipment_link_fix_backup_20261008 b WHERE b.ye_id = ye.id",
-        )
+        // the DEPLOY_NOTES rollback restores every original link and the catalogue (the new rows stay, unused)
+        jdbc.execute(ROLLBACK_SQL)
         assertEquals(ROWS.associate { it.id to it.before }, links(jdbc), "$name: rollback")
+        assertEquals(
+            catalogueBefore,
+            jdbc.queryForList(
+                "SELECT id, name, label_code, category, match_keys, filter_order FROM equipment " +
+                    "WHERE id IN (SELECT id FROM _equipment_backup_20261008) ORDER BY id",
+            ),
+            "$name: catalogue rollback",
+        )
+        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM equipment WHERE merged_into_id IS NOT NULL", Long::class.java))
+        assertEquals(0, jdbc.queryForList("SELECT 1 FROM pg_indexes WHERE indexname = 'equipment_label_code_uq'").size)
     }
 
     @Test
@@ -284,15 +313,33 @@ class EquipmentLinkFixMigrationTest {
     }
 
     @Test
-    fun `fresh database - the fixes skip, R__1_05 creates the whole catalogue in seed order`() {
+    fun `fresh database - the fixes skip, R__1_05 creates the whole catalogue, the merges and the explicit links`() {
         val jdbc = database("fresh")
         assertEquals(3, migrate(jdbc).migrationsExecuted)
         assertEquals(
             EquipmentCatalogueFixture.seedRows.map { it.seedOrder.toLong() to it.labelCode },
             jdbc.queryForList("SELECT id, label_code FROM equipment ORDER BY id").map { (it["id"] as Number).toLong() to it["label_code"] },
         )
-        assertEquals(0L, jdbc.queryForObject("SELECT count(*) FROM partner_equipment_mapping", Long::class.java))
         val aliasKeys = jdbc.queryForList("SELECT match_keys FROM equipment WHERE label_code IN ('refrigerator', 'bow-thruster-deck', 'sundeck-cushions')")
         assertTrue(aliasKeys.size == 3 && aliasKeys.all { it["match_keys"] == "" })
+        EquipmentCatalogueFixture.ALIASES.forEach { (alias, canonical) ->
+            assertEquals(idOf(jdbc, canonical), jdbc.queryForObject("SELECT merged_into_id FROM equipment WHERE label_code = ?", Long::class.java, alias), alias)
+        }
+        assertEquals(80L, jdbc.queryForObject("SELECT count(*) FROM partner_equipment_mapping", Long::class.java))
+        assertEquals(
+            idOf(jdbc, "outside-speakers"),
+            jdbc.queryForObject("SELECT equipment_id FROM partner_equipment_mapping WHERE partner_name_norm = 'interior and cockpit speakers'", Long::class.java),
+        )
+        val before = snapshot(jdbc)
+        runAgain(jdbc)
+        assertEquals(before, snapshot(jdbc), "fresh: second run")
+    }
+
+    @Test
+    fun `R__1_05 before V9_74 fails loudly instead of recording a run without the links`() {
+        val jdbc = database("sync_node_first")
+        seedCatalogue(jdbc, shifted = false)
+        val error = runCatching { jdbc.execute("BEGIN; ${EquipmentCatalogueFixture.sql(EquipmentCatalogueFixture.R105)}; COMMIT;") }.exceptionOrNull()
+        assertTrue(error != null && error.message!!.contains("merged_into_id"), error?.message)
     }
 }

@@ -10,8 +10,8 @@ import jakarta.persistence.Table
 /**
  * Explicit link of one partner equipment item to our catalogue, ahead of the name matcher (V9_74, equipment audit
  * 8.10.2026). A catalogue item is (system, partner item id, ''); an MMK free-text item (parentId -1) is
- * (1, -1, EquipmentNames.normalize(name)). [equipmentId] null = deliberately no link. Rows are written by Flyway data
- * migrations only; read through partnerEquipmentMappingCache.
+ * (1, -1, EquipmentNames.normalize(name)). [equipmentId] null = deliberately no link. Rows are written by R__1_05 only
+ * (single writer, upsert; table from V9_74); read through partnerEquipmentMappingCache.
  */
 @Entity
 @Table(name = "partner_equipment_mapping")

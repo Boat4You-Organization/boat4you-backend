@@ -187,7 +187,7 @@ class CacheConfig {
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
                     .build()
 
-            // Explicit partner equipment links (partner_equipment_mapping, V9_74): same lifetime as equipmentCache,
+            // Explicit partner equipment links (partner_equipment_mapping, seeded by R__1_05): same lifetime as equipmentCache,
             // read once per sync pass by EquipmentLinkResolver. A changed row works after a restart or the 10 h TTL.
             val partnerEquipmentMappingCache =
                 CacheConfigurationBuilder

@@ -1201,7 +1201,7 @@ system	partner_item_id	name	matcher	final
 1	-1	Electric anchor	electric-anchor-windlass	electric-anchor-windlass
 1	-1	Sounder	depth-sounder	depth-sounder
 1	-1	Bluetooth audio	audio-system	audio-system
-1	-1	Gennaker (optional)	gennaker	gennaker
+1	-1	Gennaker (optional)	NONE	NONE
 1	-1	Fins	snorkel-sets	snorkel-sets
 1	-1	Mooring ropes	mooring-ropes	mooring-ropes
 1	-1	12 sockets	NONE	NONE
@@ -1520,7 +1520,7 @@ system	partner_item_id	name	matcher	final
 2	478528	Board PC	NONE	NONE
 2	29520803	Snorkeling Vests	snorkel-sets	snorkel-sets
 2	33569985	Additional energy storage	NONE	NONE
-2	1167612	Wi-Fi streaming music equipment	wifi	wifi
+2	1167612	Wi-Fi streaming music equipment	NONE	NONE
 1	-1	Sun Awning	NONE	NONE
 1	-1	Bed Sheets	NONE	pillows-and-blankets
 1	-1	USB plugs	usb-sockets	usb-sockets
@@ -1605,7 +1605,7 @@ system	partner_item_id	name	matcher	final
 2	4745195	Swinging keel	NONE	NONE
 2	134687	Lifting keel	NONE	NONE
 2	1075198	No bathing platform	NONE	NONE
-2	52071847	Fin Stabilizing System	snorkel-sets	snorkel-sets
+2	52071847	Fin Stabilizing System	NONE	NONE
 2	22660818	Dinghy ladder	NONE	NONE
 2	107375	Hull colour: GREY	NONE	NONE
 2	837779	Tablet with mobile Internet	wifi	wifi
@@ -2035,7 +2035,7 @@ system	partner_item_id	name	matcher	final
 1	-1	Life raft and life jackets	life-jackets	liferaft
 1	-1	A/C	air-conditioning	air-conditioning
 1	-1	Hifi in the lounge & bath with Bluetooth	audio-system	audio-system
-1	-1	Anchor winsch	main-anchor	main-anchor
+1	-1	Anchor winsch	NONE	NONE
 1	-1	80 m galvanized anchor chain	anchor-line	anchor-line
 1	-1	Cabin for 2 Person	NONE	NONE
 1	-1	Generator Kohler 11KW	generator	generator
@@ -2382,7 +2382,7 @@ system	partner_item_id	name	matcher	final
 1	-1	1 double canoe	kayak	kayak
 1	-1	Dacron Square Top Mainsail	NONE	NONE
 1	-1	invertor 220V-2500Watt	inverter	inverter
-1	-1	Hi-lo system for TV in salon (TV not included)	flat-screen-TV	flat-screen-TV
+1	-1	Hi-lo system for TV in salon (TV not included)	NONE	NONE
 1	-1	Hydraulic lifting swimming platform	bathing-platform	bathing-platform
 1	-1	Powerful Tender 3.60m with 30HP	dinghy	dinghy
 1	-1	Compass at helm position	compass	compass
@@ -2677,7 +2677,7 @@ system	partner_item_id	name	matcher	final
 2	558168	Racing Carbon Genoa - 3 100%	NONE	NONE
 2	23356693	Radinn Electric JetBoard	NONE	NONE
 2	490423	Radio Sonichub, Iphone, Ipad	NONE	NONE
-2	103521	Railing net - on request	safety-net	safety-net
+2	103521	Railing net - on request	NONE	NONE
 2	1214032	Rash Guards	NONE	NONE
 2	134691	Removable salon and cockpit backrests	NONE	NONE
 2	2192492	Required yacht master licence	NONE	NONE

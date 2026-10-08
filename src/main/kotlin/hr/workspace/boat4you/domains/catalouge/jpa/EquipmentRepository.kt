@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.Query
 interface EquipmentRepository : JpaRepository<Equipment, Long> {
     /**
      * The whole catalogue in id order, alias rows included (callers skip `mergedIntoId != null` where needed). In memory
-     * 10 h on each node; a restart refreshes it. The sync matcher relies on the id order (ties go to the lower id).
+     * 10 h on each node; a restart refreshes it. The sync matcher breaks ties by label_code, not by this order.
      */
     @Cacheable("equipmentCache")
     fun findAllByOrderByIdAsc(): List<Equipment>

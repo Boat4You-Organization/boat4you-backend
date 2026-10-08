@@ -12,6 +12,8 @@
 --   S4  partner catalogue items by (system, item, exact name): newly linked (WiFi, plotters, ...), relinked, unlinked
 -- Everything by label_code, never by numeric equipment id. Rows outside these keys (synced after the snapshot) stay as
 -- they are and the next sync recomputes them. Idempotent: a second run changes nothing.
+-- Flyway only, or psql --single-transaction -f: SET LOCAL and the ON COMMIT DROP temp tables need ONE transaction
+-- (plain psql -f autocommits every statement, drops each temp table at once and fails at the next statement).
 -- Runs while the sync node (cusma3) is stopped, so nothing else writes yacht_equipment; the API only reads (MVCC).
 -- One transaction (~133k rows on the snapshot, seconds on PG18); a held row lock fails it atomically after 10 s.
 -- Backup: every changed row once, before its first change, in _equipment_link_fix_backup_20261008.
@@ -445,7 +447,6 @@ VALUES
     ('Gas hob', 'cooker'),
     ('Gas oven', 'oven'),
     ('Gennaker', 'gennaker'),
-    ('Gennaker (optional)', 'gennaker'),
     ('Hand bearing compass', 'compass'),
     ('Holding Tank', 'waste-tank'),
     ('Inside/outside fridge', 'fridge'),
@@ -496,7 +497,6 @@ VALUES
     ('Anchor main chain & rope', 'anchor-line'),
     ('Anchor swivel', 'anchor-swivel'),
     ('Anchor winch - electric', 'electric-anchor-windlass'),
-    ('Anchor winsch', 'main-anchor'),
     ('Audio pack', 'audio-system'),
     ('Audio system with Bluetooth', 'audio-system'),
     ('Automatic gangway', 'gangway'),
@@ -874,7 +874,6 @@ VALUES
     ('HI-FI  FM- Bluetooth', 'audio-system'),
     ('Hi Fi Bluetooth + cockpit speakers', 'audio-system'),
     ('Hi-Fi system', 'audio-system'),
-    ('Hi-lo system for TV in salon (TV not included)', 'flat-screen-TV'),
     ('Hifi in the lounge & bath with Bluetooth', 'audio-system'),
     ('High capacity (72,000 BTU) air conditioning with 11 Kw generator', 'air-conditioning'),
     ('High-Performance Sound system', 'audio-system'),
@@ -1468,7 +1467,7 @@ VALUES
     (2, 102858, 'CD changer', NULL),
     (2, 102859, 'Compass', 'compass'),
     (2, 103122, 'GPS on Fly', NULL),
-    (2, 103521, 'Railing net - on request', 'safety-net'),
+    (2, 103521, 'Railing net - on request', NULL),
     (2, 103557, 'LED Navigation lights', NULL),
     (2, 105547, 'Gasoline for outboard engine 5L', 'outboard-engine'),
     (2, 105558, 'Safety equipment', NULL),
@@ -1896,7 +1895,7 @@ VALUES
     (2, 1166919, 'SEA-DOO underwater scooter (for kids)', 'water-toys'),
     (2, 1166923, 'SEA-DOO underwater scooter', 'water-toys'),
     (2, 1167186, 'Sos Dan Buoy', NULL),
-    (2, 1167612, 'Wi-Fi streaming music equipment', 'wifi'),
+    (2, 1167612, 'Wi-Fi streaming music equipment', NULL),
     (2, 1170670, 'Fusion MS205 Fm Radio', 'audio-system'),
     (2, 1170748, 'Night package', NULL),
     (2, 1170758, 'Day package', NULL),
@@ -2339,7 +2338,7 @@ VALUES
     (2, 50976571, 'Beach canopy', NULL),
     (2, 51094794, 'Water filter', NULL),
     (2, 51702221, 'FenderStep', 'fenders'),
-    (2, 52071847, 'Fin Stabilizing System', 'snorkel-sets'),
+    (2, 52071847, 'Fin Stabilizing System', NULL),
     (2, 52438756, 'Straw hat', NULL),
     (2, 52451552, 'Seabike', NULL),
     (2, 52455801, 'Reading lights in the cabin', NULL),

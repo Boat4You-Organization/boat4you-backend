@@ -12,6 +12,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.LocationDto
 import hr.workspace.boat4you.domains.catalouge.dto.MeasurementUnitDto
 import hr.workspace.boat4you.domains.catalouge.dto.OfferDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtDetailsDto
+import hr.workspace.boat4you.domains.catalouge.dto.YachtEquipmentDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtSearchResponseDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
@@ -27,6 +28,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtSearchSelectResult
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
+import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import org.springframework.security.core.context.SecurityContextHolder
@@ -150,10 +152,12 @@ class YachtMapper(
     fun brokerNotes(columns: CapacityColumns): BrokerNotesDto? = if (isAdminUser()) capacityMapper.brokerNotes(columns) else null
 
     /** Equipment rows a yacht page may show: linked rows only for the public, every row for an admin. */
-    fun amenityRows(rows: Collection<YachtEquipment>): List<YachtEquipment> {
-        val admin = isAdminUser()
-        return rows.filter { admin || it.equipmentId != null }.distinctBy { it.equipmentId ?: ("name:" + (it.name ?: "")) }
-    }
+    fun amenities(rows: Collection<YachtEquipment>): List<YachtEquipmentDto> =
+        if (isAdminUser()) {
+            rows.distinctBy { it.equipmentId ?: ("name:" + (it.name ?: "")) }.map { it.toDto() }
+        } else {
+            publicAmenities(rows)
+        }
 
     fun toDetailsDto(
         result: Yacht,
@@ -239,10 +243,11 @@ class YachtMapper(
                     it.mainImage
                     it.position
                 },
-            // Public: only rows linked to our catalogue (Mario 8.10.2026, equipment audit). An unlinked partner row is
-            // free text the web would print raw (agency notes, "4 double cabins", a charter company's wording); it stays
-            // in the DB and reaches admins only. One row per code; unlinked admin rows collapse by name.
-            amenities = amenityRows(result.yachtEquipments).map { it.toDto() },
+            // Public: only rows linked to our catalogue (Mario 8.10.2026, equipment audit) and present, with our
+            // catalogue name; an unlinked partner row is free text the web would print raw (agency notes, "4 double
+            // cabins", a charter company's wording) and stays in the DB, for admins only. One row per code; unlinked
+            // admin rows collapse by name.
+            amenities = amenities(result.yachtEquipments),
             services = extras,
             description = description,
             highlights = highlights,

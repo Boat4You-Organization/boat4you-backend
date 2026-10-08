@@ -10,6 +10,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
+import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
@@ -206,7 +207,7 @@ class ReservationMappers(
             vesselType = yacht.vesselType,
             manufacturerName = reservationView.manufacturerName,
             // Customer's my-bookings: linked rows only, one per code (equipment audit 8.10.2026), as on the boat page.
-            amenities = yacht.yachtEquipments.filter { it.equipmentId != null }.distinctBy { it.equipmentId }.map { it.toDto() },
+            amenities = publicAmenities(yacht.yachtEquipments),
             specialRequest = reservationView.reservationFlowRequest,
             // Yacht-catalogue extras (same source as boat-detail page ExtrasTab)
             // so my-bookings can render obligatory extras + virtual security

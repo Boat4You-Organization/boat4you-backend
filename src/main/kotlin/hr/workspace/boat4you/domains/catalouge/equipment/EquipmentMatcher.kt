@@ -12,11 +12,15 @@ import org.apache.commons.text.similarity.LevenshteinDistance
  * over all rows wins, deterministically:
  * - tokens are equal, a plural (s / es, stem >= 3 chars) or, for positive keys only, a typo: both >= 6 chars, same first
  *   letter, Levenshtein distance 1. Any other prefix is no match;
+ * - a one-letter key token (a/c, 220 v) counts only inside the key's run of consecutive name tokens: "a" is an
+ *   article and single letters fill model codes, "A USB-C port in each cabin" is no A/C (review 8.10.2026);
  * - per row the best key counts, rows compare by (exact name, key tokens, first matched position in the name, weakest
- *   token similarity, key length); a full tie goes to the lower id. "Fridge on flybridge" -> fridge,
- *   "Chart plotter in cockpit" -> outside-GPS-plotter;
- * - alias rows (merged_into_id) are never candidates; names that are empty, longer than 70 chars or start with
- *   no / without / not never link.
+ *   token similarity, key length); a full tie goes to the lower label_code, the same in every environment (ids are
+ *   not). "Fridge on flybridge" -> fridge, "Chart plotter in cockpit" -> outside-GPS-plotter;
+ * - alias rows (merged_into_id) are never candidates; names that are empty, longer than 70 chars, start with
+ *   no / without / not, end in no / none / n/a or say the item is not standard equipment (optional, on request,
+ *   not available / included / working, extra charge, for rent, paid, a price) never link: public pages show linked
+ *   rows only, and "Air conditioning (optional, 50 EUR/day)" is no standard air conditioning.
  * Keys are parsed once per catalogue load (the matcher is rebuilt only when equipmentCache hands out a new list).
  * Faithful to sim/Sim.java of the audit; EquipmentMatcherGoldenTest pins all 2,778 partner names of the prod snapshot.
  */
@@ -26,7 +30,7 @@ class EquipmentMatcher(
     private val candidates: List<Candidate> =
         equipment
             .filter { it.id != null && it.mergedIntoId == null }
-            .sortedBy { it.id }
+            .sortedBy { it.labelCode }
             .map { Candidate(it, parseKeys(it.matchKeys)) }
 
     /** The best catalogue row for [name], or null when nothing matches (or a key vetoes every hit). */
@@ -86,9 +90,19 @@ class EquipmentMatcher(
             fun of(name: String?): PartnerName? {
                 if (name.isNullOrBlank() || name.length > MAX_NAME_LENGTH) return null
                 val tokens = EquipmentNames.tokens(name)
-                if (tokens.firstOrNull() in NEGATIONS) return null
+                if (tokens.firstOrNull() in NEGATIONS || notStandard(name, tokens)) return null
                 return PartnerName(name, EquipmentNames.normalize(name), tokens)
             }
+
+            /** "Generator - no", "Wi-Fi n/a", "Jet ski on request", "Seabob - extra charge", "Gennaker (optional)", "50 €/day". */
+            private fun notStandard(
+                raw: String,
+                tokens: List<String>,
+            ): Boolean =
+                PRICE_SIGNS.any { raw.contains(it) } ||
+                    (tokens.size > 1 && tokens.last() in TRAILING_NEGATIONS) ||
+                    (tokens.size > 2 && tokens.takeLast(2) == NOT_APPLICABLE) ||
+                    NOT_STANDARD.any { consecutive(it, tokens) }
         }
     }
 
@@ -126,8 +140,12 @@ class EquipmentMatcher(
             private val normalized = EquipmentNames.normalize(raw)
             private val tokens = EquipmentNames.tokens(raw)
 
+            /** A one-letter token in the phrase: the whole phrase must stand as one run, in order. */
+            private val run = tokens.any { it.length < MIN_FREE_TOKEN_LENGTH }
+
             override fun score(name: PartnerName): Score? {
                 if (tokens.isEmpty()) return null
+                if (run) return runScore(name)
                 var weakest = 1.0
                 var firstPosition = Int.MAX_VALUE
                 tokens.forEach { keyToken ->
@@ -145,6 +163,21 @@ class EquipmentMatcher(
                     firstPosition = minOf(firstPosition, bestPosition)
                 }
                 return Score(if (normalized == name.normalized) 1 else 0, tokens.size, firstPosition, weakest, normalized.length)
+            }
+
+            /** The first position where every token of the phrase follows the previous one. */
+            private fun runScore(name: PartnerName): Score? {
+                for (start in 0..name.tokens.size - tokens.size) {
+                    var weakest = 1.0
+                    val whole =
+                        tokens.indices.all { i ->
+                            val similarity = tokenSimilarity(tokens[i], name.tokens[start + i], typos = true)
+                            weakest = minOf(weakest, similarity)
+                            similarity > 0.0
+                        }
+                    if (whole) return Score(if (normalized == name.normalized) 1 else 0, tokens.size, start, weakest, normalized.length)
+                }
+                return null
             }
         }
 
@@ -180,6 +213,38 @@ class EquipmentMatcher(
     companion object {
         const val MAX_NAME_LENGTH = 70
         private val NEGATIONS = setOf("no", "without", "not")
+        private val TRAILING_NEGATIONS = setOf("no", "none")
+        private val NOT_APPLICABLE = listOf("n", "a")
+        private val PRICE_SIGNS = listOf("€", "\$", "£")
+
+        /** Phrases (consecutive tokens, plural allowed, no typos) of an item that is not standard equipment. */
+        private val NOT_STANDARD: List<List<String>> =
+            listOf(
+                "optional",
+                "on request",
+                "upon request",
+                "on demand",
+                "upon demand",
+                "not available",
+                "not included",
+                "not working",
+                "not installed",
+                "out of order",
+                "unavailable",
+                "extra charge",
+                "extra cost",
+                "surcharge",
+                "for rent",
+                "for hire",
+                "paid",
+                "eur",
+                "euro",
+                "usd",
+                "gbp",
+            ).map { EquipmentNames.tokens(it) }
+
+        /** A key token shorter than this (one letter) only counts inside the key's run of consecutive tokens. */
+        private const val MIN_FREE_TOKEN_LENGTH = 2
         private val NOT_LETTER_OR_DIGIT = Regex("[^\\p{L}\\p{N}]+")
         private val LEVENSHTEIN_1 = LevenshteinDistance(1)
         private const val PLURAL = 0.99
