@@ -1,5 +1,63 @@
 # Backend deploy notes
 
+## 2026-10-08 — Veze opreme partnera → naš katalog (audit 8.10., odluke a–d) — ⏳ NIJE DEPLOYANO (commit `973a2cb`)
+
+Ugovor: `infra/equipment-mapping-audit-8-10/FIX_CONTRACT.md` (+ `VERIFY.md`). Backend ide PRVI, web (b4y + 6 sistera) isti dan POSLIJE backenda (web filter „samo povezano" prije backenda bi sakrio danas nepovezano: WiFi, plotteri…).
+
+**Što mijenja:**
+
+- **Sync (MMK + NauSys):** veza se ponovno računa SVAKI prolaz i piše kad se razlikuje (i u NULL). MMK `-1` stavke (slobodan tekst agencije) više se ne stapaju u JEDAN redak po jahti (prije: ime prve stavke + veza druge = „Stereo → USB sockets"): svaka dobiva svoj redak po normaliziranom imenu, napomena samo na vlastiti redak; kataloška stavka usvaja samo stari redak bez `external_id`; ista stavka 2× u payloadu = prvo pojavljivanje.
+- **`EquipmentLinkResolver`:** `partner_equipment_mapping` (NULL = namjerno bez veze) → novi `EquipmentMatcher` (najbolji pogodak, deterministički po id-u; množina/tipfeler, NIKAD prefiks složenice: lifebuoy≠life, watermaker≠water, anchorage≠anchor) → alias se slijedi do kanonskog. `Matchers.extrasNameMatch` (extras) nepromijenjen.
+- **`R__1_05` v2 = JEDINI pisac** `name/category/filter_order/match_keys` za svih 108 redaka (ključ `label_code` + `equipment_label_code_uq`); novi kodovi `cockpit-cushions` (COMFORT) i `depth-sounder` (NAVIGATION), oba bez filtera. `EquipmentSeedConsistencyTest` ruši build ako ijedna V-migracija > V9_75 spomene `match_keys`.
+- **V9_74** (shema, brza, `lock_timeout` 5 s): `equipment.merged_into_id`, tablica `partner_equipment_mapping` + seed 80 redaka (po `label_code`; svježa baza bez kataloga → seed preskočen).
+- **V9_75** (podaci, JEDNA transakcija, `lock_timeout` 10 s, `statement_timeout` 10 min): S0 novi redovi (prod: `cockpit-cushions` = 107, `depth-sounder` = 108), S1 spajanja (`bow-thruster-deck`→`bow-thruster`, `refrigerator`→`fridge`, `sundeck-cushions`→`sun-pads`), S2 A′ (67 stavki, uvjet = trenutni krivi kod), S3 MMK `-1` po VLASTITOM točnom imenu (ime nije na listi → NULL), S4 katalog po (sustav, stavka, točno ime). Sve po `label_code`, nijedan brojčani id. Backup `_equipment_link_fix_backup_20261008` (svaki promijenjeni redak jednom, izvorna veza, sekcija). Idempotentno.
+- **Javno:** detalji broda i my-bookings šalju SAMO povezane retke (admin sve; admin rezervacija više ne stapa nepovezane u jedan). Filter opreme broji DISTINCT kod (prije 2 retka istog koda = jahta ispadala, 2.039 parova na produ). Alias id u `amenities=` / custom jahti → kanonski (i cache ključ). `all-amenities` i admin katalog bez alias redaka.
+- **Cache:** `equipmentCache` (sad `findAllByOrderByIdAsc`) + novi `partnerEquipmentMappingCache`, oba 10 h po čvoru; restart ih briše.
+- **Verzije:** V9_74 + V9_75 zauzete; `docs/pending-migrations/B8_*` uzima **≥ V9_76**.
+
+**Proba na lokalnim bazama (BEGIN … ROLLBACK, ništa nije ostalo — provjereno):**
+
+- `b4y-rehearsal` (:15432, raspored kao prod, 119.309 redaka, 0 MMK `-1`): S1 1.434 / S2 5.387 / S3 0 / S4 13.119 → backup 19.940; ~0,7 s; `cockpit-cushions` 107, `depth-sounder` 108; drugi prolaz V9_75 + R__1_05 = 0 promjena.
+- `boat4you_postgres_new` (:5434, pomaknut raspored, V1_89 → u istoj transakciji prvo V1_90 dio za `equipment.category`): 357.674 redaka (6.865 `-1`): S1 10.409 / S2 8.038 / S3 2.630 / S4 72.826 → backup 93.897; ~2,4 s; `cockpit-cushions` ostaje 59, `depth-sounder` 108; drugi prolaz = 0.
+- Prod očekivanje (snimka 8.10., FIX_CONTRACT §9): S1 17.555 / S2 13.798 / S3 6.171 / S4 95.355 ≈ 132.822 retka u backupu.
+
+**Verifikacija:**
+
+- Novi testovi (svi zeleni): `EquipmentMatcherTest` 10, `EquipmentMatcherGoldenTest` 3 (svih 2.778 imena snimke: matcher == `sim/Sim.java`, resolver == konačna veza iz `resolver_targets_8_10.csv`), `EquipmentSeedConsistencyTest` 4, `EquipmentLinkFixMigrationTest` 3 (pravi Flyway 11 na PG18: prod raspored, :5434 raspored, svježa baza; drugi prolaz = isto; rollback recept vraća sve), `MmkYachtSyncEquipmentTests` 7, `NauSysYachtSyncEquipmentTests` 4, `YachtSearchAmenityFilterTest` 3 (pravi R__1_03 matview + JPA upiti), `YachtControllerAmenityAliasTests` 1, `YachtMapperAmenitiesTest` 2.
+- **Puni suite:** 552 testa, **isti 31 pre-existing failure** kao prije (`ReservationPaymentPhasesServiceTest` 26, `ReservationOptionsCombinationProviderTests` 2, `Boat4youWsApplicationTests` 1, `MatchersTests` 1, `NauSysDateTimeWrapperTests` 1), nijedan u dirnutom kodu.
+- ktlint: 0 na promijenjenim linijama. Fixture i migracije bez imena operatera (`operatorNames.ts`, 713 imena).
+- **Jar** (`bootJar` iz čistog `973a2cb`): bez dupliciranih verzija (71 × V9), V9_74/V9_75/R__1_05 u jaru == commit; sha256 `4dd5e1669db461ed29f05f72cd0c43e4423a716ec24214dc03244743b5c23071`.
+
+**Deploy redoslijed (stari sync NIKAD ne vidi resetirane retke):**
+
+- [ ] `git pull` + `ls src/main/resources/db/migration | sort -V | tail -3`: V9_74 i V9_75 su ovi; ništa novije s istim brojem.
+- [ ] Prozor: izbjegavati MMK availability (08:40/12:40/16:40/20:40), near-term (10:50/16:50), MMK 06:00–07:30, NauSys availability (10:20/16:20/22:20), NauSys 23:00–06:00, drain (06:15/10:15/15:15). Prijedlog 13:05–14:30 UTC.
+- [ ] **cusma3 STOP** (ne restart) uz TVRDI gate: `n=$(journalctl --since '10 minutes ago' | grep -ci 'nausys\|mmk'); [ "$n" -gt 0 ] && { echo ABORT; exit 1; }; systemctl stop boat4youscheduler`.
+- [ ] **cusma2:** novi JAR + restart → Flyway V9_74, V9_75, R__1_05 v2 (~30 s). Provjera `flyway_schema_history` + health `GET /public/settings/card-surcharge` → 200 + SQL ispod.
+- [ ] **cusma3:** novi JAR (provjeriti sha), `start` (FLYWAY_TARGET 1.43 → V__ ne, R__ već primijenjen).
+- [ ] Prvi MMK sync (06:10) i NauSys (23:20) razdvajaju `-1` stavke i preračunaju veze. Opcionalno odmah `POST /admin/mmk/yachts` u mirnom prozoru = Mariova odluka (opterećuje partnera).
+- [ ] Web (b4y + 6 sistera) ISTI DAN nakon backenda; ISR stranica brodova na D+1 (nakon oba synca) ili TTL.
+
+**SQL nakon migracije (cusma4, read-only):**
+
+```sql
+SELECT label_code, id, merged_into_id, filter_order FROM equipment
+ WHERE label_code IN ('fridge','refrigerator','bow-thruster','bow-thruster-deck','sun-pads','sundeck-cushions','cockpit-cushions','depth-sounder');
+SELECT count(*) FROM yacht_equipment WHERE equipment_id IN (SELECT id FROM equipment WHERE merged_into_id IS NOT NULL);  -- 0
+SELECT section, count(*) FROM _equipment_link_fix_backup_20261008 GROUP BY 1;   -- ≈ S1–S4 gore
+SELECT count(*) FROM partner_equipment_mapping;                                  -- 80
+SELECT e.label_code, count(DISTINCT ye.yacht_id) FROM yacht_equipment ye JOIN equipment e ON e.id = ye.equipment_id
+  JOIN yacht y ON y.id = ye.yacht_id AND y.sys_active
+ WHERE e.label_code IN ('wifi','fridge','outside-GPS-plotter','audio-system','outside-speakers','depth-sounder') GROUP BY 1;
+-- očekivano ≈ wifi 2.222, fridge 9.523, outside-GPS-plotter 4.131, audio 8.090, outside-speakers 6.016, depth-sounder 2.209
+```
+
+**D+1 (nakon MMK synca 06:10):** novi MMK `-1` retci (`id > max_id_pri_deployu`) grupirani po `(label_code, name)` i broju jahti; krive veze → NONE redci u `partner_equipment_mapping` kroz Flyway (V9_76+, po `label_code`).
+
+**Rollback:** stop cusma3 → `.prev` JAR na cusma2 pa cusma3; podaci: `UPDATE yacht_equipment ye SET equipment_id = b.equipment_id_before FROM _equipment_link_fix_backup_20261008 b WHERE b.ye_id = ye.id;` (test potvrdio); nova kolona i tablica bezopasne za stari kod; stari R__1_05 vraća ključeve za 1–58 (redovi 59–108 zadržavaju v2 ključeve, stari matcher ih podnosi).
+
+**Otvoreno za Marija (FIX_CONTRACT §15):** generički „Chart plotter" → `salon-GPS-plotter` (a ne `outside`, filter 101); „Coffee pot" → coffee-machine ostaje; gennaker/spinnaker oprema na kodu jedra; `shore-connection-220v` kao „220 V utičnice"; nepovezani ostaju Swimming ladder, Windex, Bilge pump, Set of tools, Emergency tiller, Coolbox, Sun awning; čisti reset S3 umjesto relinka; endpoint za pražnjenje cachea opreme.
+
 ## 2026-10-07 — Nasljednik povučenog broda + review popravci (flotne oznake, broj modela, kraj lanca, registracije, twin petlja) — ✅ DEPLOYANO 8.10.2026 (cusma2 07:50:46, cusma3 08:06:27 UTC; fill 2.757 / 63 bez) (commiti `566775a` + `9c58d29`)
 
 Deploya se ZAJEDNO s `566775a` (unos ispod = opis featurea; njegova checklista i prod brojke vrijede za STARO pravilo). Ugovor s webom (b4y + 6 sistera) NEPROMIJENJEN: `GET /public/yachts/{idOrSlug}` za povučeni brod → **400 `{"code":1502,"message":"Yacht is not active"}`** + `"successorSlug"` / `"successorId"` kad je točno jedan nasljednik, inače polja NEMA. Nikakvi podaci o agenciji/partneru.
