@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-07 — Nasljednik povučenog broda + review popravci (flotne oznake, broj modela, kraj lanca, registracije, twin petlja) — ⏳ NIJE DEPLOYANO (commiti `566775a` + `9c58d29`)
+## 2026-10-07 — Nasljednik povučenog broda + review popravci (flotne oznake, broj modela, kraj lanca, registracije, twin petlja) — ✅ DEPLOYANO 8.10.2026 (cusma2 07:50:46, cusma3 08:06:27 UTC; fill 2.757 / 63 bez) (commiti `566775a` + `9c58d29`)
 
 Deploya se ZAJEDNO s `566775a` (unos ispod = opis featurea; njegova checklista i prod brojke vrijede za STARO pravilo). Ugovor s webom (b4y + 6 sistera) NEPROMIJENJEN: `GET /public/yachts/{idOrSlug}` za povučeni brod → **400 `{"code":1502,"message":"Yacht is not active"}`** + `"successorSlug"` / `"successorId"` kad je točno jedan nasljednik, inače polja NEMA. Nikakvi podaci o agenciji/partneru.
 
@@ -66,7 +66,7 @@ ORDER BY o.id LIMIT 5;
 
 **Rollback:** `git revert 9c58d29 566775a` + redeploy (cusma2 → cusma3), ALI zadržati deployanu migraciju: `git checkout 9c58d29 -- src/main/resources/db/migration/V9_73__yacht_successor.sql` (checksum u `flyway_schema_history` je te verzije). Tablica `yacht_successor` smije ostati (nitko je ne čita). Samo pravilo: `git revert 9c58d29` vraća staro (labavije) pravilo i twin pick bez filtera - ne preporučuje se. Web bez polja pada na stari 404 → nema štete.
 
-## 2026-10-07 — Nasljednik povučenog broda: 1502 nosi `successorSlug` / `successorId` (V9_73 `yacht_successor`, job na cusma3) — ⏳ NIJE DEPLOYANO · pravilo, brojke i checklista ZAMIJENJENI unosom iznad (review `9c58d29`)
+## 2026-10-07 — Nasljednik povučenog broda: 1502 nosi `successorSlug` / `successorId` (V9_73 `yacht_successor`, job na cusma3) — ✅ DEPLOYANO 8.10.2026 (cusma2 07:50:46, cusma3 08:06:27 UTC; fill 2.757 / 63 bez) · pravilo, brojke i checklista ZAMIJENJENI unosom iznad (review `9c58d29`)
 
 Mario 7.10.: stari URL povučenog partnerskog broda (`sys_active = false`) daje 404, a ISTI brod živi pod drugim id-jem (Bing: `/boat/lagoon-bnteau-lagoon-42-4-2-cab-masterpiece-4066` → 404, brod je živ kao 11681). Ugovor s webom (b4y + 6 sistera, radi druga sesija): `GET /public/yachts/{idOrSlug}` za povučeni brod i dalje vraća **400 `{"code":1502,"message":"Yacht is not active"}`** i DODAJE `"successorSlug"` + `"successorId"` kad postoji točno jedan nasljednik; inače polja nema (ni `null`). Nikakvi podaci o agenciji/partneru.
 
