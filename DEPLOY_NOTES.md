@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-08 — Veze opreme: review popravci + JEDINI deploy recept za `973a2cb` + `a98f4d1` — ⏳ NIJE DEPLOYANO
+## 2026-10-08 — Veze opreme: review popravci + JEDINI deploy recept za `973a2cb` + `a98f4d1` — ✅ DEPLOYANO 8.10.2026 (backend 17:35 UTC, web 17:43–18:01 UTC)
 
 Deploya se ZAJEDNO s `973a2cb` (unos ispod = opis featurea; njegov redoslijed, SQL i rollback ZAMIJENJENI su ovim unosom). Jar iz commita ≥ `a98f4d1`, NIKAD samo `973a2cb`. Ugovor: `infra/equipment-mapping-audit-8-10/FIX_CONTRACT.md` §17 (dodatak reviewa); stare verzije podatkovnih datoteka su u `before_review_8_10/`.
 
@@ -109,7 +109,7 @@ COMMIT;
 
 **Otvoreno za Marija:** F5 sidro (anchor-line ili main-anchor za „Anchor + chain"); pin „Electric mainsail windlass" → electric-winches (filter 105) i „Solar charger" → solar-panels; ostalo iz unosa ispod (generički plotter, Coffee pot, gennaker oprema, 220 V oznaka, nepovezane stavke, čisti reset S3, endpoint za cache). Zatečeno: MMK kataloški retci s vrijednošću `false`/`0`/`no` (78 redaka na aktivnim jahtama, snimka 8.10.) i dalje su povezani pa se broje u filterima i na karticama (javni detalji ih ne prikazuju).
 
-## 2026-10-08 — Veze opreme partnera → naš katalog (audit 8.10., odluke a–d) — ⏳ NIJE DEPLOYANO (commit `973a2cb`) · redoslijed, SQL i rollback ZAMIJENJENI unosom iznad (review `a98f4d1`)
+## 2026-10-08 — Veze opreme partnera → naš katalog (audit 8.10., odluke a–d) — ✅ DEPLOYANO 8.10.2026 (backend 17:35 UTC, web 17:43–18:01 UTC) (commit `973a2cb`) · redoslijed, SQL i rollback ZAMIJENJENI unosom iznad (review `a98f4d1`)
 
 Ugovor: `infra/equipment-mapping-audit-8-10/FIX_CONTRACT.md` (+ `VERIFY.md`). Backend ide PRVI, web (b4y + 6 sistera) isti dan POSLIJE backenda (web filter „samo povezano" prije backenda bi sakrio danas nepovezano: WiFi, plotteri…).
 
