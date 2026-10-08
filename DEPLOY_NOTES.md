@@ -1,6 +1,115 @@
 # Backend deploy notes
 
-## 2026-10-08 — Veze opreme partnera → naš katalog (audit 8.10., odluke a–d) — ⏳ NIJE DEPLOYANO (commit `973a2cb`)
+## 2026-10-08 — Veze opreme: review popravci + JEDINI deploy recept za `973a2cb` + `a98f4d1` — ⏳ NIJE DEPLOYANO
+
+Deploya se ZAJEDNO s `973a2cb` (unos ispod = opis featurea; njegov redoslijed, SQL i rollback ZAMIJENJENI su ovim unosom). Jar iz commita ≥ `a98f4d1`, NIKAD samo `973a2cb`. Ugovor: `infra/equipment-mapping-audit-8-10/FIX_CONTRACT.md` §17 (dodatak reviewa); stare verzije podatkovnih datoteka su u `before_review_8_10/`.
+
+**Review F1–F11 → `a98f4d1`:**
+
+- **F1 ✅** `EquipmentMatcher`: token ključa od JEDNOG slova (`a/c`, `220 v`) broji se samo unutar uzastopnog niza tokena ključa ("A USB-C port in each cabin" više nije klima). `air-conditioning` i `navigation-set` + `not:c-map, not:cmap` ("a C-Map" je niz; C-Map karte su elektroničke).
+- **F2 ✅** globalni veto: ime završava s `no` / `none` / `n/a` ili sadrži `optional`, `on/upon request`, `on/upon demand`, `not available/included/working/installed`, `out of order`, `unavailable`, `extra charge/cost`, `surcharge`, `for rent/hire`, `paid`, `eur/euro/usd/gbp` ili `€ $ £` → nema veze.
+- **F3 ✅** javni detalji broda i my-bookings: `name` = NAŠ katalog (nikad partnerov tekst), MMK `-1` retci bez `comment`, retci koje partner označi kao odsutne (`false`/`no`/`0`/`none`/`n/a`, količina 0) se ne šalju (web je prisutnost čitao iz tog `comment`). Admin dobiva sve kao prije. Do web deploya `depth-sounder` na webu pada na engleski „Depth sounder", ne na partnerov tekst.
+- **F4 ✅** ključevi: `snorkel-sets` `not:stabiliz`; `electric-fans` `not:belt, not:engine`; `main-anchor` `not:alarm, not:winsch`; `cooker` `not:heating, not:heater`; `BBQ` `not:ventilation`; `kitchen-utensils` `not:satellite`; `wifi` `not:streaming, not:music`; `sun-pads` `not:shower`; `navigation-set` bez golog `pilot` (+ `sea pilot`, `water pilot`, `cruising pilot`, `pilot guide`).
+- **F7 ✅** seed `partner_equipment_mapping` (80 redaka, upsert) i tri spajanja (`merged_into_id`) sada su u **R__1_05** → svježa baza ih dobiva. Izjednačenje → manji `label_code` (ne id, id-jevi se razlikuju po okruženjima).
+- **F8 ✅** V9_74 prvo sprema `_equipment_backup_20261008` (cijela tablica `equipment` prije promjene); rollback dolje vraća SVE retke i redoslijed je zapisan.
+- **F9 ✅** test „jedan pisac" skenira svaku V-migraciju > V9_75 I svaku drugu R__ datoteku: `UPDATE / INSERT INTO / DELETE FROM / TRUNCATE / ALTER TABLE / COPY equipment|partner_equipment_mapping` i `merged_into_id`.
+- **F10 ✅** zaglavlja V9_74 / V9_75 / R__1_05: samo Flyway ili `psql --single-transaction -f` (`SET LOCAL` + `ON COMMIT DROP` temp tablice; običan `psql -f` pada na drugoj naredbi).
+- **Djelomično / odbijeno (razlozi):**
+  - F1 prag „< 3 znaka" → samo 1 slovo: pravilo za 2 slova odvezuje „AC in every cabin" (16 aktivnih) i „AC in the saloon" (6); `wi fi`, `hi fi`, `cd …`, `ac …` na snimci nemaju lažnih pogodaka.
+  - F2 „per day/hour" NIJE veto: „Watermaker 60 l per hour" je kapacitet, „Beach towels … per week" usluga; cijenu hvataju valuta i „extra charge/surcharge/paid".
+  - F5 (sidro) → **Mario**: „Anchor + chain" (10) / „Anchor & chain" / „Anchor 100m chain" → `anchor-line`, „Anchor with chain" (1.241) → `main-anchor`. Oba koda su istinita, nijedan nije filter ni kartica; jedan ključ kad Mario odluči.
+  - F6 prihvaćeno bez pinova (S4 = ishod matchera koji bi sync ionako napisao): „Dinghy with outboard engine" → dinghy (filter 104, ugovor §13); pumpa / garaža / lifting sustav dinghyja, „TV antenna", „Wind generator" → ništa (VERIFY 4.2 ih je označio kao krive); „Flybridge with bimini and Fridge" i „Flybridge camera" → flybridge (VERIFY: flybridge točan); „…eletric winch and Lazy Bag" → electric-winches (istina); „WindSUP" → ništa (ugovor §13); „Electronic sea charts", „Windex", „Teak table", „Kneeboard", „Electric Flatwinder" → ništa (stara veza kriva ili filter preširok). „Electric mainsail windlass" (53 retka, 6 danas povezano) i „Solar charger" (6, 1 povezan) → ništa: većina redaka je i danas bez veze, pin = Mariova odluka (jedan redak u R__1_05 seedu).
+  - F7 BEZ nove R__ datoteke (reviewer predložio `R__1_06`, a ta postoji za view): stari JAR bi pri rollbacku pao na Flyway validaciji („applied migration not resolved locally", default ignore je samo `*:future`). Posljedica: R__1_05 sad PADA ako V9_74 nije primijenjen (cusma3 s novim JAR-om prije cusma2 se ne podiže; ništa se ne zapisuje).
+  - F11 bez promjene: ponovljena MMK kataloška stavka zadržava prvi `comment` (bezopasno); mapiranje koje pokazuje na id kojeg cache kataloga još nema nastaje samo ako se R__1_05 promijeni bez restarta cusma3 (deploy uvijek restarta oba čvora; inače NULL do isteka 10 h).
+
+**Simulacija (`sim/Sim.java`, commons-text, svih 2.778 imena snimke 8.10.):** mijenja se 6 veza, sve namjerno, 6 aktivnih jahti: Gennaker (optional), Wi-Fi streaming music equipment, Fin Stabilizing System, Anchor winsch, Hi-lo system … (TV not included), Railing net - on request → ništa. Reviewerova probna imena (`sim/probes_review_8_10.tsv`) su u `EquipmentMatcherTest`. V9_75 S3/S4 liste i fixture regenerirani; prod očekivanje S1 17.555 / S2 13.798 / S3 ≈ 6.115 / S4 ≈ 95.353 ≈ **132.821** redaka u backupu.
+
+**Proba (BEGIN … ROLLBACK, pa provjereno da nije ostalo ništa: nema tablica, kolone ni indeksa; `equipment_id_seq` vraćen na max(id) jer `setval` nije transakcijski):**
+
+- `b4y-rehearsal` (:15432, prod raspored, 0 MMK `-1`): S1 1.434 / S2 5.387 / S3 0 / S4 13.119 → 19.940; V9_75 ~0,74 s; 80 mapiranja; drugi prolaz V9_74 + V9_75 + R__1_05 = 0 promjena (veze, katalog, mapiranja); rollback recept → 0 veza i 0 redaka kataloga nevraćeno.
+- `boat4you_postgres_new` (:5434, pomaknut raspored, 6.865 `-1`): S1 10.409 / S2 8.038 / S3 2.624 / S4 72.824 → 93.895; ~2,6 s; „Stereo" → `audio-system`; drugi prolaz = 0; rollback → 0 / 0.
+
+**Verifikacija:** testovi opreme 44/44 zeleni (`EquipmentMatcherTest` 13, `EquipmentMatcherGoldenTest` 3, `EquipmentSeedConsistencyTest` 5, `EquipmentLinkFixMigrationTest` 4 — uključuje svježu bazu sa seedom i spajanjima, rollback recept i „R__1_05 prije V9_74 pada", `MmkYachtSyncEquipmentTests` 7, `NauSysYachtSyncEquipmentTests` 4, `YachtSearchAmenityFilterTest` 3, `YachtControllerAmenityAliasTests` 1, `YachtMapperAmenitiesTest` 4). Mutacije (F1 prag, F2 veto, tie po id-u) ruše testove. Puni suite **560**, isti **31 pre-existing failure** (`ReservationPaymentPhasesServiceTest` 26, `ReservationOptionsCombinationProviderTests` 2, `Boat4youWsApplicationTests` 1, `MatchersTests` 1, `NauSysDateTimeWrapperTests` 1). ktlint 0 na promijenjenim linijama. `bootJar` iz čistog `a98f4d1`: 71 × V9 bez duplikata, V9_74 / V9_75 / R__1_05 u jaru == commit (sha256 ovog builda `b63383903f391f23c9fb23b3fcdaf3a95e10f712c7806c6b1b02128ccffb2e9f`; svaki build ima svoj).
+
+**Deploy redoslijed (stari sync NIKAD ne vidi resetirane retke; oba čvora gotova prije sljedećeg sync slota):**
+
+- [ ] `git pull` + `ls src/main/resources/db/migration | sort -V | tail -3`: na origin/main zadnja je **V9_73**, V9_74 i V9_75 su ovi; B8 (`docs/pending-migrations`) uzima **≥ V9_76**.
+- [ ] **Prije** (cusma4, read-only, spremiti izlaz): SQL „prije" dolje + `max(id)` iz `yacht_equipment`.
+- [ ] **Prozor:** 13:05–14:30 UTC. Izbjegavati MMK availability (08:40/12:40/16:40/20:40, ~17 min), near-term (10:50/16:50), MMK 06:00–07:30, NauSys availability (10:20/16:20/22:20), NauSys 23:00–06:00, drain (06:15/10:15/15:15), successor 07:55, charter facts 08:00. Cijeli posao ~5 min; cusma3 MORA opet raditi prije 15:15.
+- [ ] **cusma3 STOP** (ne restart) uz TVRDI gate: `n=$(journalctl --since '10 minutes ago' | grep -ci 'nausys\|mmk'); [ "$n" -gt 0 ] && { echo ABORT; exit 1; }; systemctl stop boat4youscheduler`.
+- [ ] **cusma2:** novi JAR + restart → Flyway u JEDNOM runu: V9_74 (backup kataloga, kolona, tablica) → V9_75 (S0–S4, sekunde) → R__1_05 (ključevi, spajanja, 80 mapiranja). V9_75 NIKAD ručno s `psql -f` (samo Flyway ili `psql --single-transaction -f`). Provjera: `SELECT version, script, success FROM flyway_schema_history ORDER BY installed_rank DESC LIMIT 3;` (9.74, 9.75, R 1.05, sve `t`), health `GET /public/settings/card-surcharge` → 200, SQL „nakon" dolje.
+- [ ] **cusma3:** novi JAR (sha == cusma2), `start` (FLYWAY_TARGET 1.43: V__ ne, R__1_05 već primijenjen s istim checksumom). NIKAD novi JAR na cusma3 prije cusma2: R__1_05 bez V9_74 pada i cusma3 se ne podigne (popravak: cusma2 pa opet start).
+- [ ] **Cache:** restart oba čvora = svježi `equipmentCache`, `partnerEquipmentMappingCache` (inače 10 h po čvoru) i `yachtSearchListCache`.
+- [ ] **API:** `curl -s https://api.boat4you.com/public/yachts/13960 | jq -c '[.amenities[] | {name, code: .equipment.labelCode, comment}]'` → samo povezani retci, `name` = naš katalog, „Stereo" sada `audio-system`, nijedan `-1` redak nema `comment`.
+- [ ] Prvi MMK sync (06:10) i NauSys (23:20) razdvajaju `-1` stavke i preračunaju veze; opcionalni ručni `POST /admin/mmk/yachts` = Mariova odluka (opterećuje partnera).
+- [ ] **Web** (b4y + 6 sistera) ISTI DAN nakon backenda (web ne ide prvi); ISR stranica brodova na D+1 (nakon oba synca) ili TTL.
+
+**SQL (cusma4, read-only):**
+
+```sql
+-- PRIJE deploya i NAKON migracije (usporediti): aktivne jahte po kodu
+SELECT e.label_code, count(DISTINCT ye.yacht_id) AS active_yachts
+FROM yacht_equipment ye JOIN equipment e ON e.id = ye.equipment_id JOIN yacht y ON y.id = ye.yacht_id AND y.sys_active
+WHERE e.label_code IN ('wifi','fridge','refrigerator','outside-GPS-plotter','salon-GPS-plotter','audio-system','outside-speakers',
+                       'bow-thruster','bow-thruster-deck','air-conditioning','generator','main-anchor','depth-sounder','cockpit-cushions')
+GROUP BY 1 ORDER BY 1;
+-- očekivano (simulacija snimke 8.10.) prije → nakon: wifi 12 → 2.221 · fridge 1.560 (+ refrigerator 9.355) → 9.523 ·
+-- outside-GPS-plotter 4 → 4.131 · salon-GPS-plotter 17 → 6.908 · audio-system 17 → 8.090 · outside-speakers 28 → 6.016 ·
+-- bow-thruster 4.596 (+ deck 1.115) → 5.688 · main-anchor 0 → 2.330 · depth-sounder 0 → 2.209 · cockpit-cushions 0 → 6.147 ·
+-- air-conditioning 5.762 → 5.748, generator 4.757 → 4.691 (pad = posuđene -1 veze; vraćaju se nakon razdvajanja na D+1)
+SELECT max(id) AS max_ye_id_at_deploy FROM yacht_equipment;                       -- PRIJE: zapisati za D+1
+SELECT count(*) AS free_text_rows, count(DISTINCT yacht_id) AS yachts FROM yacht_equipment WHERE external_id = -1;  -- prije 10.696 / 10.696
+
+-- „Stereo" (yacht 13960, redak 335543): prije 'Stereo' → usb-sockets; nakon V9_75 → audio-system;
+-- nakon prvog MMK synca više -1 redaka, svaki s vezom po VLASTITOM imenu
+SELECT ye.id, ye.name, e.label_code, ye.comment FROM yacht_equipment ye LEFT JOIN equipment e ON e.id = ye.equipment_id
+ WHERE ye.yacht_id = 13960 AND ye.external_id = -1 ORDER BY ye.id;
+
+-- NAKON migracije
+SELECT label_code, id, merged_into_id, filter_order FROM equipment
+ WHERE label_code IN ('fridge','refrigerator','bow-thruster','bow-thruster-deck','sun-pads','sundeck-cushions','cockpit-cushions','depth-sounder');
+-- cockpit-cushions 107, depth-sounder 108; refrigerator → 14, bow-thruster-deck → 23, sundeck-cushions → 52
+SELECT count(*) FROM yacht_equipment WHERE equipment_id IN (SELECT id FROM equipment WHERE merged_into_id IS NOT NULL);  -- 0
+SELECT section, count(*) FROM _equipment_link_fix_backup_20261008 GROUP BY 1 ORDER BY 1;  -- ≈ S1 17.555 / S2 13.798 / S3 6.115 / S4 95.353
+SELECT count(*) FROM _equipment_backup_20261008;                                          -- 106 (katalog prije)
+SELECT count(*), count(equipment_id) FROM partner_equipment_mapping;                      -- 80 / 80
+
+-- D+1 (nakon MMK synca 06:10): -1 stavke razdvojene i povezane po vlastitom imenu
+SELECT count(*) AS free_text_rows, count(DISTINCT yacht_id) AS yachts, count(equipment_id) AS linked,
+       count(*) FILTER (WHERE id > :max_ye_id_at_deploy) AS new_rows
+  FROM yacht_equipment WHERE external_id = -1;                                            -- rows >> yachts
+SELECT count(*) AS yachts_split FROM (SELECT yacht_id FROM yacht_equipment WHERE external_id = -1 GROUP BY 1 HAVING count(*) > 1) x;  -- > 0
+SELECT e.label_code, ye.name, count(*) AS rows FROM yacht_equipment ye LEFT JOIN equipment e ON e.id = ye.equipment_id
+ WHERE ye.external_id = -1 AND ye.id > :max_ye_id_at_deploy GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 200;
+-- pregled: kriva veza → NONE redak u seedu R__1_05 (commit + deploy); nikad ime agencije/operatera javno (javni name = naš katalog)
+```
+
+**Rollback (redoslijed je bitan):**
+
+1. cusma3: isti TVRDI gate + `systemctl stop boat4youscheduler`.
+2. cusma2: `.prev` JAR + restart → Flyway: V9_74 / V9_75 = „future" (ignorirane), stari R__1_05 (drugi checksum) se ponovno izvrši (id 1–58).
+3. cusma4, JEDNA transakcija (isto kao `EquipmentLinkFixMigrationTest.ROLLBACK_SQL`):
+
+```sql
+BEGIN;
+UPDATE yacht_equipment ye SET equipment_id = b.equipment_id_before
+  FROM _equipment_link_fix_backup_20261008 b WHERE b.ye_id = ye.id AND ye.equipment_id IS DISTINCT FROM b.equipment_id_before;
+UPDATE equipment e SET name = b.name, category = b.category, match_keys = b.match_keys, filter_order = b.filter_order
+  FROM _equipment_backup_20261008 b WHERE b.id = e.id;
+UPDATE equipment SET merged_into_id = NULL WHERE merged_into_id IS NOT NULL;
+DROP INDEX IF EXISTS equipment_label_code_uq;
+COMMIT;
+```
+
+4. cusma3: `.prev` JAR + `start`.
+5. git: `git revert a98f4d1 973a2cb`, ALI zadržati deployane migracije: `git checkout a98f4d1 -- src/main/resources/db/migration/V9_74__equipment_alias_and_partner_mapping.sql src/main/resources/db/migration/V9_75__fix_equipment_links.sql` (checksumi u `flyway_schema_history`; bez njih buduća V9_76 ruši validaciju). R__1_05 se vraća na staru verziju (repeatable, novi checksum = OK).
+
+- Nova kolona, tablice i redovi 107/108 ostaju (stari kod ih ne čita; stari matcher podnosi njihove `token-match:` ključeve).
+- Rollback PRIJE prvog synca vraća sve. Nakon synca: veze koje je novi sync napisao nisu u backupu; stari sync ih zadržava (piše samo u NULL) i razdvojene `-1` retke opet stapa (višak briše).
+
+**Otvoreno za Marija:** F5 sidro (anchor-line ili main-anchor za „Anchor + chain"); pin „Electric mainsail windlass" → electric-winches (filter 105) i „Solar charger" → solar-panels; ostalo iz unosa ispod (generički plotter, Coffee pot, gennaker oprema, 220 V oznaka, nepovezane stavke, čisti reset S3, endpoint za cache). Zatečeno: MMK kataloški retci s vrijednošću `false`/`0`/`no` (78 redaka na aktivnim jahtama, snimka 8.10.) i dalje su povezani pa se broje u filterima i na karticama (javni detalji ih ne prikazuju).
+
+## 2026-10-08 — Veze opreme partnera → naš katalog (audit 8.10., odluke a–d) — ⏳ NIJE DEPLOYANO (commit `973a2cb`) · redoslijed, SQL i rollback ZAMIJENJENI unosom iznad (review `a98f4d1`)
 
 Ugovor: `infra/equipment-mapping-audit-8-10/FIX_CONTRACT.md` (+ `VERIFY.md`). Backend ide PRVI, web (b4y + 6 sistera) isti dan POSLIJE backenda (web filter „samo povezano" prije backenda bi sakrio danas nepovezano: WiFi, plotteri…).
 
