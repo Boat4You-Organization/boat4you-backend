@@ -118,7 +118,7 @@ class NauSysYachtSyncInlandSkipTests {
             yachtImageRepository = any(),
             reservationOptionRepository = any(),
             yachtEquipmentRepository = any(),
-            equipmentRepository = any(),
+            equipmentLinkResolver = any(),
             locationQueryingService = locations,
             externalEquipmentRepository = any(),
             yachtExtraRepository = any(),

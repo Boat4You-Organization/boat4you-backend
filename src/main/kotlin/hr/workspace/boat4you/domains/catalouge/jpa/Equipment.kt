@@ -45,6 +45,14 @@ open class Equipment {
     @Column(name = "filter_order")
     open var filterOrder: Short? = null
 
+    /**
+     * Alias row (V9_74/V9_75): the canonical equipment that replaced this code (refrigerator -> fridge,
+     * bow-thruster-deck -> bow-thruster, sundeck-cushions -> sun-pads). Kept so an old id still resolves; the matcher
+     * and the catalogue lists skip it.
+     */
+    @Column(name = "merged_into_id")
+    open var mergedIntoId: Long? = null
+
     fun getMatchKeysList(): Set<String> {
         return matchKeys?.split(",")?.map { it.trim() }?.toSet() ?: emptySet()
     }

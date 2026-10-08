@@ -1778,8 +1778,10 @@ class YachtQueryingService(
             val countSubquery = cq.subquery(Long::class.java)
             val yachtEquipmentRoot = countSubquery.from(YachtEquipment::class.java)
 
+            // Distinct CODES, not rows: a yacht with two rows of one code (two partner items both linking to it, e.g.
+            // "Refrigerator" + "Fridge on flybridge") used to count 2 and drop out of a one-amenity filter.
             countSubquery
-                .select(cb.countDistinct(yachtEquipmentRoot.get<Long>("id")))
+                .select(cb.countDistinct(yachtEquipmentRoot.get<Long>("equipmentId")))
                 .where(
                     cb.and(
                         cb.equal(yachtEquipmentRoot.get<Long>("yachtId"), root.get<Long>("id")),

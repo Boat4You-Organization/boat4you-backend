@@ -127,6 +127,7 @@ class CatalogueController(
     @Operation(description = "Get all amenities")
     @GetMapping("/all-amenities")
     fun getAllEquipment(): List<EquipmentDto> {
-        return equipmentRepository.findAll().map { it.toDto() }
+        // Alias rows (merged codes) left out: nothing links to them and the AI chat resolves labelCode -> id here.
+        return equipmentRepository.findAllByOrderByIdAsc().filter { it.mergedIntoId == null }.map { it.toDto() }
     }
 }

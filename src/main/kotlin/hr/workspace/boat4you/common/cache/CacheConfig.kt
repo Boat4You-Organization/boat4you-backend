@@ -187,6 +187,17 @@ class CacheConfig {
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
                     .build()
 
+            // Explicit partner equipment links (partner_equipment_mapping, V9_74): same lifetime as equipmentCache,
+            // read once per sync pass by EquipmentLinkResolver. A changed row works after a restart or the 10 h TTL.
+            val partnerEquipmentMappingCache =
+                CacheConfigurationBuilder
+                    .newCacheConfigurationBuilder(
+                        SimpleKey::class.java,
+                        List::class.java,
+                        singleEntryResourcePool,
+                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofHours(10)))
+                    .build()
+
             // F2-025: key type is `String` because the @Cacheable SpEL key
             // on OfferRepository.findAllAvailableByYacht is
             // `"#yacht.id + ':' + #statuses.hashCode()"`. Previously
@@ -449,6 +460,10 @@ class CacheConfig {
                 Eh107Configuration.fromEhcacheCacheConfiguration(manufacturersCache),
             )
             cacheManager.createCache("equipmentCache", Eh107Configuration.fromEhcacheCacheConfiguration(equipmentCache))
+            cacheManager.createCache(
+                "partnerEquipmentMappingCache",
+                Eh107Configuration.fromEhcacheCacheConfiguration(partnerEquipmentMappingCache),
+            )
             cacheManager.createCache(
                 "offersByYachtAndStatusCache",
                 Eh107Configuration.fromEhcacheCacheConfiguration(offersByYachtAndStatusCache),

@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.controllers
 
+import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentAliases
 import hr.workspace.boat4you.domains.catalouge.services.OfferQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtTwinCanonicalService
@@ -42,6 +43,7 @@ class YachtControllerWarmPolicyTests {
             externalSyncService,
             mock(UserRepository::class.java),
             mock(YachtTwinCanonicalService::class.java),
+            mock(EquipmentAliases::class.java),
         )
 
     private val saturday = LocalDate.of(2027, 6, 5)

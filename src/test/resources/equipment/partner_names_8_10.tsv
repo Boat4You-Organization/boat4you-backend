@@ -1,0 +1,2782 @@
+# Every distinct partner equipment name on the prod snapshot of 8.10.2026 (system 1 = MMK, 2 = NauSys; item -1 =
+# MMK free text) with the code the matcher alone gives (sim/Sim.java on the R__1_05 v2 keys) and the final link
+# (explicit partner_equipment_mapping first). Regenerate with sim/run.sh when keys or the matcher change.
+system	partner_item_id	name	matcher	final
+2	17	Autopilot	autopilot	autopilot
+1	1	Autopilot	autopilot	autopilot
+1	37	Refrigerator	fridge	fridge
+1	4	Dinghy	dinghy	dinghy
+2	100490	Refrigerator	fridge	fridge
+2	15	Bimini top	bimini	bimini
+1	7	Bimini	bimini	bimini
+2	100619	VHF radio	vhf-radio	vhf-radio
+2	6	Electric anchor windlass	electric-anchor-windlass	electric-anchor-windlass
+2	100498	Cockpit/stern, outside shower	outside-shower	outside-shower
+1	5	Chart plotter	salon-GPS-plotter	salon-GPS-plotter
+2	100499	Cockpit table	cockpit-table	cockpit-table
+2	18	Sprayhood	sprayhood	sprayhood
+2	100487	Outdoor speakers	outside-speakers	outside-speakers
+1	16	Sprayhood	sprayhood	sprayhood
+2	5	GPS chart plotter	salon-GPS-plotter	salon-GPS-plotter
+2	105795	Inverter	inverter	inverter
+2	100506	Kitchen utensils (Galley equipment, cutlery)	kitchen-utensils	kitchen-utensils
+2	13	Dinghy	dinghy	dinghy
+2	100495	Cockpit cushions	cockpit-cushions	cockpit-cushions
+2	120913	Solar panels	solar-panels	solar-panels
+2	100602	Oven	oven	oven
+1	14	Radio-CD player	audio-system	audio-system
+1	45	Cockpit cushions	cockpit-cushions	cockpit-cushions
+1	29	Air condition	air-conditioning	air-conditioning
+1	46	Solar Panels	solar-panels	solar-panels
+2	100491	Hot water	hot-water	hot-water
+1	9	Bow thruster	bow-thruster	bow-thruster
+2	2	Bow thruster	bow-thruster	bow-thruster
+2	4	Air Conditioning	air-conditioning	air-conditioning
+2	107381	Electric toilet	electric-toilet	electric-toilet
+2	100621	Wind instrument/Anemometer	logge-speed-wind	logge-speed-wind
+1	2	Cockpit speakers	outside-speakers	outside-speakers
+1	12	Generator	generator	generator
+1	33	Inverter	inverter	inverter
+2	107379	GPS chart plotter - cockpit	outside-GPS-plotter	outside-GPS-plotter
+2	100669	Battery charger	battery-charger	battery-charger
+1	27	Electric toilet	electric-toilet	electric-toilet
+2	100657	First aid kit	first-aid-kit	first-aid-kit
+2	100674	Swimming ladder	NONE	NONE
+2	3	Generator	generator	generator
+2	100660	Fire extinguisher	fire-extinguisher	fire-extinguisher
+2	100626	Bathing platform	bathing-platform	bathing-platform
+2	100664	Life jackets	life-jackets	life-jackets
+2	845150	Stove	cooker	cooker
+2	100613	Fenders	fenders	fenders
+2	20	Heating	heating	heating
+1	44	Water maker	water-maker	water-maker
+1	18	Outboard engine	outboard-engine	outboard-engine
+2	120760	Black Water Tank	waste-tank	waste-tank
+2	100658	Life belts (Safety harness)	life-belts	life-belts
+2	100494	Teak cockpit	teak-deck	teak-deck
+2	105902	Lazy bag	lazy-bag	lazy-bag
+2	100689	Fog horn	fog-horn	fog-horn
+1	17	Chart plotter in cockpit	outside-GPS-plotter	outside-GPS-plotter
+2	100676	Gangway	gangway	gangway
+2	101704	Electric winch	electric-winches	electric-winches
+2	116653	Liferaft	liferaft	liferaft
+2	102859	Compass	compass	compass
+2	100683	Binoculars	binoculars	binoculars
+2	22	Freezer	freezer	freezer
+2	100820	Shore connection 220 V	shore-connection-220v	shore-connection-220v
+1	6	Electric winches	electric-winches	electric-winches
+1	40	Snorkeling equipment	snorkel-sets	snorkel-sets
+1	47	Teak Cockpit	teak-deck	teak-deck
+2	16	Watermaker - desalinator	water-maker	water-maker
+2	105903	Lazy jacks	lazy-jacks	lazy-jacks
+2	100474	Gas bottles	gas-bottles	gas-bottles
+2	100667	Mooring ropes	mooring-ropes	mooring-ropes
+2	100699	Bilge pump - Electric	NONE	NONE
+2	100696	Boat hook	boat-hook	boat-hook
+2	105826	Electric fans in cabins	electric-fans	electric-fans
+2	100665	Set of tools	NONE	NONE
+1	35	Lazy bag	lazy-bag	lazy-bag
+2	11	Bed linen	pillows-and-blankets	pillows-and-blankets
+1	25	Coffee maker	coffee-machine	coffee-machine
+1	42	TV	flat-screen-TV	flat-screen-TV
+2	100656	Navigation (Nautical) charts and nautical guide	navigation-set	navigation-set
+1	11	Heating	heating	heating
+2	100659	Spare anchor (Reserve, Auxiliary anchor)	spare-anchor	spare-anchor
+2	14	Outboard engine	outboard-engine	outboard-engine
+2	100695	Anchor with chain	main-anchor	main-anchor
+1	21	Wi-Fi & Internet	wifi	wifi
+2	100692	Radar reflector	NONE	NONE
+2	2219668	USB sockets	usb-sockets	usb-sockets
+2	100680	Distress flare box	distress-signals	distress-signals
+2	100653	Emergency tiller	NONE	NONE
+2	113406	220V socket	shore-connection-220v	shore-connection-220v
+2	100603	Gas cookers	cooker	cooker
+1	13	Lazy jack	lazy-jacks	lazy-jacks
+2	100661	Hand bearing compass	compass	compass
+2	100500	Grill/Barbecue/Plancha	BBQ	BBQ
+2	100672	Bilge pump - Mechanic	NONE	NONE
+2	100625	Speedometer (Speed log)	logge-speed-wind	logge-speed-wind
+2	100604	Pillows	pillows-and-blankets	pillows-and-blankets
+2	934253	AIS	ais	ais
+2	100678	Horseshoe lifebuoy	life-buoy	life-buoy
+2	100618	Echosounder/Depthsounder	depth-sounder	depth-sounder
+2	1370553	Depthsounder	depth-sounder	depth-sounder
+2	100808	Bosun's chair (Safe seat) (boatswain's chair)	bosun-chair	bosun-chair
+2	567283	Service batteries	NONE	NONE
+2	10295341	Convertible table in salon	lowerable-salon-table	lowerable-salon-table
+2	100492	Dinghy with outboard engine	dinghy	dinghy
+2	482596	Flashlight	flashlight	flashlight
+2	121259	Nautical charts	navigation-set	navigation-set
+1	50	Swimming platform	bathing-platform	bathing-platform
+2	100710	Pilot book	navigation-set	navigation-set
+2	100684	Water hose	water-hose	water-hose
+2	477829	Wi-Fi Internet	wifi	wifi
+2	485753	Indoor speakers	inside-speakers	inside-speakers
+2	1069646	Radio	audio-system	audio-system
+2	8	TV	flat-screen-TV	flat-screen-TV
+2	100810	Navigation set	navigation-set	navigation-set
+2	12	Towels	towels	towels
+2	100681	Barometer	barometer	barometer
+2	3423557	Fusion radio	audio-system	audio-system
+2	100694	Winch handles	NONE	NONE
+2	101452	Windex	NONE	NONE
+2	485759	Sink	sink	sink
+1	23	Stand up paddle	stand-up-paddle	stand-up-paddle
+2	100475	Radio CD player	audio-system	audio-system
+2	479893	Tridata	logge-speed-wind	logge-speed-wind
+2	100502	Microwave	microwave	microwave
+2	841320	Cockpit fridge	fridge	fridge
+2	101604	Blankets	pillows-and-blankets	pillows-and-blankets
+1	10	Radar	radar	radar
+2	487202	Torch	flashlight	flashlight
+2	579710	Wind/speed/depth instruments	logge-speed-wind	logge-speed-wind
+2	100682	Clock	clock	clock
+2	100697	Deck brush	NONE	NONE
+2	100700	Shore power cable	shore-connection-220v	shore-connection-220v
+2	116656	Davit	davit	davit
+2	100685	Plastic bucket	NONE	NONE
+2	100497	Coffee machine	coffee-machine	coffee-machine
+1	30	Holding tank	waste-tank	waste-tank
+2	101455	12V Socket	NONE	NONE
+2	100803	Batteries	NONE	NONE
+1	34	Ice maker	ice-maker	ice-maker
+1	19	Teak deck	teak-deck	teak-deck
+2	100486	Snorkeling equipment	snorkel-sets	snorkel-sets
+2	101453	Divider, nautic chart	navigation-set	navigation-set
+2	125373	Main anchor	main-anchor	main-anchor
+2	105558	Safety equipment	NONE	NONE
+2	567289	Winch	NONE	NONE
+2	101454	Wire (shroud) cutter	NONE	NONE
+1	15	Furling genoa	NONE	NONE
+2	567281	Distress signals	distress-signals	distress-signals
+2	552124	Underwater lights	NONE	NONE
+2	11106219	Electric fans	electric-fans	electric-fans
+2	487631	Life buoy + Flashing light	life-buoy	life-buoy
+2	1163460	Flybridge	flybridge	flybridge
+2	101605	Repair kit	NONE	NONE
+2	101456	Harbour guides	navigation-set	navigation-set
+2	100813	Plug 220V, 12 V	shore-connection-220v	shore-connection-220v
+2	3498605	FUSION sound system	audio-system	audio-system
+2	1076279	Sundeck cushions	sun-pads	sun-pads
+2	116652	Round/globular fender	fenders	fenders
+2	578293	Log/speed instrument	logge-speed-wind	logge-speed-wind
+2	1	Radar	radar	radar
+2	100702	Oars (Paddles)	NONE	NONE
+2	100698	Jerry cans for diesel	NONE	NONE
+2	24	GPS	NONE	NONE
+2	100501	Ice maker	ice-maker	ice-maker
+2	8596234	Anchor	main-anchor	main-anchor
+2	478511	EPIRB-Distress radio beacons	epirb	epirb
+2	101720	Radio CD mp3 player	audio-system	audio-system
+2	100493	Teak deck	teak-deck	teak-deck
+1	8	Flybridge	flybridge	flybridge
+2	482063	Black ball	NONE	NONE
+2	101601	Navigation/position Lights	NONE	NONE
+2	478510	Mosquito nets	NONE	NONE
+1	48	Barbecue grill in cockpit	BBQ	BBQ
+2	1200357	Automatic Inflatable Life Jacket	life-jackets	life-jackets
+2	100671	Signal rockets and torches	distress-signals	distress-signals
+2	100620	Log, Speed, Depth- echo sounder	logge-speed-wind	logge-speed-wind
+2	7760311	Electrical kettle	NONE	NONE
+2	580717	Water heater	hot-water	hot-water
+2	101718	Self tailing (manual)  winch	NONE	NONE
+2	114063	Pump	NONE	NONE
+2	100617	Log	logge-speed-wind	logge-speed-wind
+2	23541756	Shore power connection	shore-connection-220v	shore-connection-220v
+2	604498	NESPRESSO coffee machine	coffee-machine	coffee-machine
+2	121260	Start battery	NONE	NONE
+2	119261	Dishwasher	dishwasher	dishwasher
+2	100818	Fuel funnel	NONE	NONE
+2	1515872	Helm station	NONE	NONE
+2	100709	Water pump	NONE	NONE
+2	478239	Convertible table	lowerable-salon-table	lowerable-salon-table
+2	4363441	Cockpit grill	BBQ	BBQ
+1	31	Hydraulic gangway	gangway	gangway
+2	100701	Dinghy (byboat) pump	NONE	NONE
+2	580702	Pressurized water system	NONE	NONE
+2	2242083	Flag	NONE	NONE
+2	113405	Floating light	NONE	NONE
+2	953778	Upholstery	NONE	NONE
+2	1033031	Lowerable salon table	lowerable-salon-table	lowerable-salon-table
+2	100807	Life jacket (children)	life-jackets	life-jackets
+2	115584	Converter 220V/12V	shore-connection-220v	shore-connection-220v
+2	4899880	Tender	dinghy	dinghy
+2	604494	Bedlinen and towels	towels	towels
+2	10568933	Sound System	audio-system	audio-system
+2	100622	Hard Top Bimini	bimini	bimini
+1	57	Convertible table	lowerable-salon-table	lowerable-salon-table
+2	9049501	110V socket	NONE	NONE
+2	528466	Sheets	NONE	NONE
+2	100668	Main Deck Compass	compass	compass
+2	1073708	Bluetooth player	NONE	NONE
+2	577993	Parallel ruler	navigation-set	navigation-set
+2	7760349	Moka pot	NONE	NONE
+2	105559	Complete navigation equipment	NONE	NONE
+2	116654	Repair box for dinghy	NONE	NONE
+2	100481	Hydraulic gangway	gangway	gangway
+2	101602	Cockpit light	NONE	NONE
+2	7	CD player	audio-system	audio-system
+2	100707	Yacht documents	NONE	NONE
+2	100755	Clothes hangers	NONE	NONE
+2	474681	Electronic sea charts	NONE	NONE
+2	830319	Lifelines	NONE	NONE
+2	474003	Anchor Delta	main-anchor	main-anchor
+2	101603	Jerry cans for fuel	NONE	NONE
+2	4263031	Electric main sail winch	electric-winches	electric-winches
+2	474680	Buoyant smoke signal	distress-signals	distress-signals
+2	479891	Spring cleats	NONE	NONE
+1	-1	Compass	compass	compass
+2	1069055	Teak seats in cockpit	NONE	NONE
+2	479890	DSC station	NONE	NONE
+2	100817	Canister for water	NONE	NONE
+2	100483	Hydraulic lifting swimming platform	bathing-platform	bathing-platform
+2	113404	List of lights	NONE	NONE
+2	112156	Inside shower	shower	shower
+2	861367	LED lights	NONE	NONE
+2	2219667	Extra water tank	NONE	NONE
+2	922844	Outside cushions	NONE	NONE
+2	578504	Stand up paddle (SUP)	stand-up-paddle	stand-up-paddle
+2	10583579	Curtains	NONE	NONE
+2	100690	Fire axe	NONE	NONE
+2	123008	Safe	NONE	NONE
+2	101600	Triangles	NONE	NONE
+2	119803	USB	usb-sockets	usb-sockets
+1	-1	Stereo	audio-system	audio-system
+2	100802	Bilge pump handle	NONE	NONE
+2	100476	LCD TV	flat-screen-TV	flat-screen-TV
+2	100754	WC pump	NONE	NONE
+2	13059740	Sunshades	NONE	NONE
+2	845773	Deck cushions	sun-pads	sun-pads
+2	1219374	Coolbox	NONE	NONE
+2	1327570	Fins	snorkel-sets	snorkel-sets
+2	485758	LED interior lights	NONE	NONE
+2	27327408	Duvet cover	pillows-and-blankets	pillows-and-blankets
+2	100675	Sun mattresses	sun-pads	sun-pads
+1	52	Dishwasher	dishwasher	dishwasher
+2	105951	Remote control for anchor winch with chain counter at helm	NONE	NONE
+2	103557	LED Navigation lights	NONE	NONE
+2	1157760	Fire blanket	NONE	NONE
+1	-1	Furling Genoa	NONE	NONE
+2	101703	Inflatable life raft	liferaft	liferaft
+2	930705	Radio mp3 player	audio-system	audio-system
+1	-1	Battery charger	battery-charger	battery-charger
+2	100753	Toilet brush	NONE	NONE
+2	4284027	Radio, USB, Bluetooth	audio-system	audio-system
+2	577997	Impeller, V-belt, oilfilter	NONE	NONE
+2	100819	Reserve motor oil	NONE	NONE
+2	134690	Salon table	NONE	NONE
+2	100496	Toaster	NONE	NONE
+2	971663	Guard rail	NONE	NONE
+2	580703	TV + DVD	flat-screen-TV	flat-screen-TV
+2	100619	VHF radio 	vhf-radio	vhf-radio
+2	101607	Search light	NONE	NONE
+2	100757	Impeller	NONE	NONE
+2	113469	Electric halyard winch	electric-winches	electric-winches
+1	15	Furling Genoa	NONE	NONE
+2	101945	Ice box	NONE	NONE
+1	-1	Full batten Main Sail	NONE	NONE
+2	100663	Engine spare parts	NONE	NONE
+2	1229314	Indirect lighting in cabins and salon	NONE	NONE
+2	100814	Spotlight / Headlights	NONE	NONE
+2	482062	Black conus	NONE	NONE
+2	940606	Dishes	kitchen-utensils	kitchen-utensils
+2	125372	Spring line	spring-line	spring-line
+2	579146	Sun deck	sun-pads	sun-pads
+2	10236876	Coffee pot	coffee-machine	coffee-machine
+2	1015644	Radio with USB	audio-system	audio-system
+2	113468	Composite steering wheels	NONE	NONE
+2	579463	Logge/Lot/Speed/Wind	logge-speed-wind	logge-speed-wind
+2	1327571	Mask and snorkel	snorkel-sets	snorkel-sets
+1	3	DVD player	DVD-player	DVD-player
+2	101804	Anchor chain counter	NONE	NONE
+2	579105	Mooring Cleats	NONE	NONE
+2	100669	Battery charger 	battery-charger	battery-charger
+2	100478	Hi-Fi system	audio-system	audio-system
+2	113410	3 blade folding propeller	NONE	NONE
+2	1509927	Forward cockpit	NONE	NONE
+2	114062	Self tacking jib	NONE	NONE
+2	100811	Sponge	NONE	NONE
+1	-1	VHF	vhf-radio	vhf-radio
+2	100601	Fishing equipment	fishing-set	fishing-set
+2	7760310	Electrical filter coffee maker	coffee-machine	coffee-machine
+2	485763	Deck lights	NONE	NONE
+2	100515	Beach towel	towels	towels
+2	474679	GMDSS - Global Maritime Distress and Safety System	NONE	NONE
+2	948753	Ambiental lighting	NONE	NONE
+2	107451	Radio CD mp3 player + USB	audio-system	audio-system
+2	6871064	Stand up paddle (SUP) - FREE	stand-up-paddle	stand-up-paddle
+2	5094319	Blender	NONE	NONE
+2	558158	Halyard winches	NONE	NONE
+1	-1	Log	logge-speed-wind	logge-speed-wind
+2	125371	Anchor line	anchor-line	anchor-line
+2	10	DVD player	DVD-player	DVD-player
+2	2164992	Fly sunbathing area	NONE	NONE
+2	100655	Spare parts	NONE	NONE
+2	485762	Audio pack	audio-system	audio-system
+2	579103	Anchor light	NONE	NONE
+2	1402232	Floating rope	NONE	NONE
+2	1083103	Chain counter on helm station	NONE	NONE
+2	100608	Water skis	water-skis	water-skis
+1	-1	GPS	NONE	NONE
+2	482064	Anchor swivel	anchor-swivel	anchor-swivel
+2	473999	Radio CD player, USB, AUX input	audio-system	audio-system
+2	482240	Flags QNC	NONE	NONE
+2	100605	Stern thruster	NONE	NONE
+2	119021	Folding propeller	NONE	NONE
+2	134688	Bowsprit	NONE	NONE
+1	41	Gennaker	gennaker	gennaker
+2	1355773	Dacron square top main sail	NONE	NONE
+2	487198	Ropes	NONE	NONE
+2	100704	Signal flags	NONE	NONE
+2	583020	Wine cellar	NONE	NONE
+2	2219670	Extra fuel tank	NONE	NONE
+2	463793	W-LAN GRATIS	NONE	NONE
+2	577996	Logge/Lot/Speed	logge-speed-wind	logge-speed-wind
+2	1532083	Foldable table	NONE	NONE
+2	105828	Toilet paper	NONE	NONE
+2	46611402	Water Purifier	NONE	NONE
+2	12847775	230 volt socket	NONE	NONE
+2	1003005	Hair dryer	NONE	NONE
+2	1176682	Anchor winch remote control	NONE	NONE
+1	-1	Autopilot	autopilot	autopilot
+1	-1	Electric Halyard Winch	electric-winches	electric-winches
+1	-1	Hot water	hot-water	hot-water
+2	555999	Self inflating life vest	life-jackets	life-jackets
+2	1509132	Cockpit seat cushions with backrest	cockpit-cushions	cockpit-cushions
+2	35013973	Additional fridge	fridge	fridge
+1	-1	Life Raft	liferaft	liferaft
+2	100804	Sea/Storm drogue anchor	NONE	NONE
+2	479892	Rail openings both sides	NONE	NONE
+2	112721	Shower towels	towels	towels
+1	-1	Cockpit table	cockpit-table	cockpit-table
+2	116655	Cockpit table with light	cockpit-table	cockpit-table
+2	100706	Yacht keys	NONE	NONE
+2	583917	Wakeboard	wakeboard	wakeboard
+2	100751	Broom and dustpan	NONE	NONE
+1	-1	Depth Gauge	depth-sounder	depth-sounder
+2	100705	Thermometer	NONE	NONE
+1	-1	Freezer	freezer	freezer
+2	1222250	Sun loungers	NONE	NONE
+2	3508922	Galley in cockpit	NONE	NONE
+2	1157741	Smoke detector	NONE	NONE
+2	567286	Diving mask	NONE	NONE
+2	831136	Seabob	water-toys	water-toys
+2	101901	Table	NONE	NONE
+2	28168969	Signaling mirror	NONE	NONE
+1	-1	Obligatory standard safety equipment	NONE	NONE
+1	54	Underwater lights	NONE	NONE
+2	125370	Hawser	hawser	hawser
+1	26	Diving equipment	NONE	NONE
+2	474048	Radio CD/mp3 player, USB, AUX input	audio-system	audio-system
+2	1002766	Windscoops	NONE	NONE
+2	100607	Washing machine 	washing-machine	washing-machine
+2	1049168	Wine cooler	fridge	fridge
+2	482594	Oil filter	NONE	NONE
+2	8975489	LED TV	flat-screen-TV	flat-screen-TV
+2	23573140	Pulpit seat	NONE	NONE
+1	-1	Electric windlass	electric-anchor-windlass	electric-anchor-windlass
+2	100677	Sun tent/cover	NONE	NONE
+2	1091458	Bose Sound System	audio-system	audio-system
+1	28	Full batten mail sail	NONE	NONE
+2	477212	Gennaker-device	gennaker	gennaker
+2	476459	Radio CD mp3 player + USB, Bluetooth	audio-system	audio-system
+2	2164968	Wet bar	NONE	NONE
+2	1171062	Diesel filter	NONE	NONE
+2	474002	Radio CD/MP3 player, AUX input	audio-system	audio-system
+2	485754	LED outdoor ambiance lights	NONE	NONE
+1	-1	2 Horse shoe buoys	life-buoy	life-buoy
+2	476990	Kayak	kayak	kayak
+2	13059742	Bar	NONE	NONE
+2	100816	Light and rope for horseshoe life buoy	life-buoy	life-buoy
+2	113733	Anchor Jambo	main-anchor	main-anchor
+2	554780	Paddle board	stand-up-paddle	stand-up-paddle
+1	-1	Gangway	gangway	gangway
+2	2876104	Rescue sling (Life sling)	NONE	NONE
+2	1082103	AUX Input	NONE	NONE
+2	567287	Cruising guides	NONE	NONE
+2	966110	USB charger for mobile phone and laptop	usb-sockets	usb-sockets
+2	3508886	Sun awning (aft and forward)	NONE	NONE
+2	116919	Bin bag	NONE	NONE
+2	922983	Ice box in cockpit	NONE	NONE
+2	20978739	mp3 player	NONE	NONE
+2	1160636	Trim tabs	NONE	NONE
+2	930453	Sails	NONE	NONE
+2	558159	Genoa sheet winches	NONE	NONE
+2	1157781	Sundeck beds	sun-pads	sun-pads
+2	21923976	Salon cushions	NONE	NONE
+2	577595	Spyglass with bearing compass	compass	compass
+1	15	Roller Genoa	NONE	NONE
+1	-1	Shoal draft	NONE	NONE
+2	31336743	Dinghy hydraulic lifting system	NONE	NONE
+2	4616949	Sonar	NONE	NONE
+2	37438254	Forward cockpit cushions	cockpit-cushions	cockpit-cushions
+1	-1	Deck shower	outside-shower	outside-shower
+2	577016	Bunk bed	NONE	NONE
+2	479908	Rodkick	NONE	NONE
+2	13059743	Dining table	NONE	NONE
+2	480067	Electric mainsail windlass	NONE	NONE
+2	1402226	Heater / Blower	heating	heating
+2	1355553	Kitchen towel	kitchen-utensils	kitchen-utensils
+2	497428	Freshwater treatment plant	NONE	NONE
+2	4473983	Radio CD player, USB, Bluetooth	audio-system	audio-system
+2	567280	Sailor's knife	NONE	NONE
+2	52	CD MP3 player	audio-system	audio-system
+1	-1	Oven	oven	oven
+2	22488281	Wine glasses	NONE	NONE
+1	-1	Log/Speed instrument	logge-speed-wind	logge-speed-wind
+1	-1	GPS Chartplotter	salon-GPS-plotter	salon-GPS-plotter
+1	15	Roll genoa	NONE	NONE
+2	8095776	Tablet	NONE	NONE
+1	53	Washer/Dryer	washing-machine	washing-machine
+2	580719	Cockpit full tent	NONE	NONE
+1	49	Outside Steering Position	NONE	NONE
+2	561472	Isotherm boiler	hot-water	hot-water
+2	13460000	Sun awning (forward cockpit)	NONE	NONE
+2	33993401	Starlink	NONE	NONE
+2	100812	Padlock	NONE	NONE
+1	15	Roll Genoa	NONE	NONE
+2	12662057	Converter 230V/12V	NONE	NONE
+1	-1	VHF Radio	vhf-radio	vhf-radio
+2	116918	Dishwashing liquid	NONE	NONE
+2	1081584	Electric primary winch	electric-winches	electric-winches
+2	1157761	Chairs	NONE	NONE
+2	1073824	Shallow keel	NONE	NONE
+1	15	Roll genova	NONE	NONE
+1	28	Main sail - Full batten	NONE	NONE
+2	13648252	Gas detector	NONE	NONE
+2	1176574	MP3 Jack-Ipod	NONE	NONE
+2	1027820	Donut	water-toys	water-toys
+2	485619	Electric genoa winch	electric-winches	electric-winches
+2	5269001	Fridge on flybridge	fridge	fridge
+2	117797	Folding cockpit table	cockpit-table	cockpit-table
+2	2164991	Bow sunbathing area	NONE	NONE
+1	32	Spinnaker	spinnaker	spinnaker
+1	-1	Wind instruments	logge-speed-wind	logge-speed-wind
+2	8651152	Teak table	NONE	NONE
+2	1167186	Sos Dan Buoy	NONE	NONE
+1	28	Battened Mainsail	NONE	NONE
+2	578318	LCD TV + DVD	flat-screen-TV	flat-screen-TV
+1	-1	Manual winches	NONE	NONE
+2	4765952	Foredeck sunbathing area	NONE	NONE
+2	2206212	Inox Boarding Ladder	NONE	NONE
+2	579125	Anchor with rope	main-anchor	main-anchor
+2	933728	Spyglass	NONE	NONE
+2	1333090	LED submarine lights	NONE	NONE
+1	-1	Fridge	fridge	fridge
+1	-1	Bath Towels	towels	towels
+1	-1	Outdoor shower	outside-shower	outside-shower
+2	7097267	Wireless Internet Router	wifi	wifi
+2	841507	Mattresses	NONE	NONE
+2	579101	CRO flag	NONE	NONE
+2	101702	Bilge alarm	NONE	NONE
+1	-1	Deck Shower	outside-shower	outside-shower
+1	-1	Binoculars	binoculars	binoculars
+1	-1	Electronic navigation equipment	NONE	NONE
+2	12897629	Board games	NONE	NONE
+2	989973	Inflatable lifejacket	life-jackets	life-jackets
+2	479887	Radio CD player + USB	audio-system	audio-system
+1	28	Full battened mainsail	NONE	NONE
+2	116653	Liferaft 	liferaft	liferaft
+2	524784	Canoe	kayak	kayak
+2	35749704	Alternator	NONE	NONE
+1	-1	220 V cable	shore-connection-220v	shore-connection-220v
+2	1033029	Ultra Anchor	main-anchor	main-anchor
+2	121261	Salon	NONE	NONE
+2	564790	Indirect lighting in cabins and cockpit	NONE	NONE
+2	1349788	Fishing cane/rod	NONE	NONE
+2	579455	Bretonplotter	NONE	NONE
+2	100656	Navigation (Nautical) charts and nautical guide 	navigation-set	navigation-set
+2	100660	Fire extinguisher 	fire-extinguisher	fire-extinguisher
+2	113743	Mobile phone	NONE	NONE
+2	100623	Fish finder	NONE	NONE
+2	100667	Mooring ropes 	mooring-ropes	mooring-ropes
+2	23	Gennaker	gennaker	gennaker
+2	105827	Mask	NONE	NONE
+2	37111872	Washer/dryer	washing-machine	washing-machine
+1	-1	AIS	ais	ais
+2	40810203	Roller blinds	NONE	NONE
+1	-1	Cockpit shower	outside-shower	outside-shower
+1	-1	Water canister	NONE	NONE
+2	1061270	Water skis for children	water-skis	water-skis
+1	28	Full batten mainsail	NONE	NONE
+2	100485	Railing net (Safety net)	safety-net	safety-net
+2	100606	Dryer	NONE	NONE
+1	15	Genoa roll	NONE	NONE
+2	37438255	Helmsman seat cushions	NONE	NONE
+2	487201	Adapter	NONE	NONE
+2	100821	Set for steerman (helmsman's chair)	NONE	NONE
+2	100823	Motor hours counter	NONE	NONE
+2	10269601	Electric hob for cooking	cooker	cooker
+2	37438262	Seats for aft bench	NONE	NONE
+2	477830	Water toys	water-toys	water-toys
+2	100657	First aid kit 	first-aid-kit	first-aid-kit
+2	40120789	Sink in cockpit	sink	sink
+2	107377	Removable cockpit  table	cockpit-table	cockpit-table
+2	39131023	Lithium battery	NONE	NONE
+1	-1	Life jackets	life-jackets	life-jackets
+2	1160635	Trim indicator	NONE	NONE
+2	831132	Jacuzzi	jacuzzi	jacuzzi
+1	-1	Electric anchor windlass	electric-anchor-windlass	electric-anchor-windlass
+2	10418978	Cockpit control panel	NONE	NONE
+2	1307688	Plug 220V, 24 V	shore-connection-220v	shore-connection-220v
+1	-1	Transit log	NONE	NONE
+2	4842111	Joystick maneuver control	NONE	NONE
+2	1402474	Flexofold propeller	NONE	NONE
+1	-1	Anemometer	logge-speed-wind	logge-speed-wind
+2	37438263	Helmstation seat cushions	NONE	NONE
+1	28	Battened mainsail	NONE	NONE
+1	-1	Bimini Top	bimini	bimini
+1	-1	Kitchen equipment	kitchen-utensils	kitchen-utensils
+1	-1	Yanmar	NONE	NONE
+2	7367529	Screen	NONE	NONE
+2	485617	Dinghy garage	NONE	NONE
+2	100665	Set of tools 	NONE	NONE
+2	30818624	TV antenna	NONE	NONE
+2	934216	Docking camera	NONE	NONE
+2	478078	Raymarine navsystem (Tridata, Echo, Wind)	logge-speed-wind	logge-speed-wind
+1	-1	Cooker	cooker	cooker
+2	5168369	Extra 12V battery	NONE	NONE
+1	-1	Bimini	bimini	bimini
+2	100607	Washing machine	washing-machine	washing-machine
+2	924692	Jet Ski	jet-ski	jet-ski
+1	-1	Depth sounder	depth-sounder	depth-sounder
+1	36	Railing net	safety-net	safety-net
+2	134692	Hand water pump	NONE	NONE
+1	-1	220V shore power cable + adapter	shore-connection-220v	shore-connection-220v
+2	13059736	Sofa	NONE	NONE
+1	-1	Gas stove with oven	cooker	cooker
+2	579130	Battery switch	NONE	NONE
+2	13160183	Stabilizers	NONE	NONE
+2	1083101	Camera	NONE	NONE
+1	-1	In-Mast Furling	NONE	NONE
+2	32102900	Mug	NONE	NONE
+1	-1	Bathing platform	bathing-platform	bathing-platform
+2	100651	Navtex	NONE	NONE
+2	10382652	Battery monitor	NONE	NONE
+2	116744	CD/MP3, USB, AUX input	audio-system	audio-system
+1	-1	Wheel Steering	NONE	NONE
+2	5269002	Teak on flybridge	teak-deck	teak-deck
+2	528959	Genoa	NONE	NONE
+2	9	SAT TV	flat-screen-TV	flat-screen-TV
+2	28365582	Sun awning (aft)	NONE	NONE
+2	479889	Vacuum toilet	NONE	NONE
+2	579139	GPS iPad with Navionics	NONE	NONE
+1	28	Full batten main sail	NONE	NONE
+1	-1	MS FUSION Player 2 loudspeakers in salon + 2 outside	audio-system	audio-system
+2	6487016	Performance sails	NONE	NONE
+2	4899878	Stern platform	NONE	NONE
+1	-1	Furling genoa	NONE	NONE
+1	-1	Wind indicator	logge-speed-wind	logge-speed-wind
+1	-1	Furling mainsail	NONE	NONE
+1	-1	Fully equipped kitchen	kitchen-utensils	kitchen-utensils
+1	-1	12 V batteries	NONE	NONE
+2	7260815	Nescaffe Dolce Gusto Coffee Maker	coffee-machine	coffee-machine
+2	100679	Automatic light	NONE	NONE
+2	4486674	Induction hot plate	NONE	NONE
+2	120725	Foldable steering wheel (ruder)	NONE	NONE
+1	-1	Holding tank	waste-tank	waste-tank
+1	-1	Lazy bag	lazy-bag	lazy-bag
+1	-1	Bimini Sun Shade	bimini	bimini
+1	-1	Black water tank	waste-tank	waste-tank
+2	21	Spinnaker boom	spinnaker	spinnaker
+2	1509128	Cockpit portlight	NONE	NONE
+2	115795	Oak interior	NONE	NONE
+2	12854976	Sea Scooter	water-toys	water-toys
+2	1086264	USB, AUX Input	usb-sockets	usb-sockets
+2	119742	iPad	NONE	NONE
+2	1195331	Hot water in cockpit	hot-water	hot-water
+1	-1	Cockpit speakers	outside-speakers	outside-speakers
+1	38	Furling	NONE	NONE
+2	952170	Code Zero	NONE	NONE
+2	932089	Slatted frame	NONE	NONE
+2	105829	Soap	NONE	NONE
+2	113409	AIS class B transponder	ais	ais
+2	971056	Additional gas bottle	gas-bottles	gas-bottles
+2	107380	Leather salon cushions	NONE	NONE
+1	-1	Bimini top	bimini	bimini
+1	-1	Inverter	inverter	inverter
+2	113470	Salt water in kitchen	NONE	NONE
+2	4486868	Side galley	NONE	NONE
+2	10315341	Removable cockpit bench	NONE	NONE
+2	20931331	Anchor claw	main-anchor	main-anchor
+1	-1	Stove	cooker	cooker
+1	-1	AED-Automatic External Defibrillator	NONE	NONE
+1	15	furling genoa	NONE	NONE
+1	-1	12V plug at charttable	NONE	NONE
+1	-1	Pillows & Pillow-cases	pillows-and-blankets	pillows-and-blankets
+2	107378	Bimini Top - Mini	bimini	bimini
+1	-1	Bed linen	pillows-and-blankets	pillows-and-blankets
+2	101606	Thermal suit	NONE	NONE
+2	852539	Radio/iPod/iPhone dock station + USB	audio-system	audio-system
+2	6259630	Sun roof	NONE	NONE
+2	10218548	Electric Flatwinder	NONE	NONE
+1	22	Game console	game-console	game-console
+1	38	Furling mainsail	NONE	NONE
+2	558161	Main sheet winches	NONE	NONE
+2	485755	LED ceiling lights	NONE	NONE
+2	100822	Entrance Plexiglas panel	NONE	NONE
+1	28	Full battened main sail	NONE	NONE
+1	-1	Automatic life jacket	life-jackets	life-jackets
+1	-1	Fire extinguisher	fire-extinguisher	fire-extinguisher
+2	7114367	Fly deck with cushions and mattresses	sun-pads	sun-pads
+2	1092707	Towables	water-toys	water-toys
+2	119415	Extra bedlinen and towels	towels	towels
+2	1059850	Lowerable cockpit table	cockpit-table	cockpit-table
+1	15	Genoa - Furling	NONE	NONE
+1	-1	Hot Water System	hot-water	hot-water
+1	-1	Crockers/cutlery/glasses	kitchen-utensils	kitchen-utensils
+1	-1	Dishwasher	dishwasher	dishwasher
+2	109221	Ceramic hob	cooker	cooker
+2	1156955	Ringo	water-toys	water-toys
+1	55	Tenderlift platform	NONE	NONE
+2	52455801	Reading lights in the cabin	NONE	NONE
+1	43	Racing sails	NONE	NONE
+2	103122	GPS on Fly	NONE	NONE
+1	-1	Anchor	main-anchor	main-anchor
+2	485757	Garmin instrument	NONE	NONE
+2	44120191	Toiletries	NONE	NONE
+2	1504757	Yacht interior refit	NONE	NONE
+2	62861694	Bow pulpit	NONE	NONE
+1	28	Full Batten	NONE	NONE
+1	-1	Barometer	barometer	barometer
+1	-1	Wind instrument	logge-speed-wind	logge-speed-wind
+1	-1	Carbon gangway	gangway	gangway
+2	23498337	Carpet	NONE	NONE
+2	1156957	Floating mats	NONE	NONE
+2	109566	El. plugs 220V in all boats spaces	shore-connection-220v	shore-connection-220v
+2	3498543	Aft lounge area	NONE	NONE
+1	-1	Microwave	microwave	microwave
+1	-1	Pillow Cases	pillows-and-blankets	pillows-and-blankets
+1	-1	Liferaft	liferaft	liferaft
+1	-1	Seabob	water-toys	water-toys
+2	490074	Side door for boarding	NONE	NONE
+1	-1	Anchor with chain	main-anchor	main-anchor
+1	-1	Shower	shower	shower
+1	58	Rudder blades	NONE	NONE
+1	-1	VHF with DSC	vhf-radio	vhf-radio
+1	-1	Set of fins	snorkel-sets	snorkel-sets
+1	-1	AC in every cabin	air-conditioning	air-conditioning
+1	-1	220V Power outlets	shore-connection-220v	shore-connection-220v
+1	-1	Lazy Jack	lazy-jacks	lazy-jacks
+2	26778417	eFoil	NONE	NONE
+2	11734847	Teak cockpit table with folding leaves	cockpit-table	cockpit-table
+2	100670	Life attol	life-buoy	life-buoy
+1	38	Mainsail - In-mast Furling	NONE	NONE
+1	-1	Steering Wheel	NONE	NONE
+2	1055691	Water tube	NONE	NONE
+1	28	Batten Mainsail with lazy-bag	lazy-bag	lazy-bag
+1	-1	Engine	NONE	NONE
+1	-1	VHF-DSC	vhf-radio	vhf-radio
+1	-1	Bucket, Sponge, Scoop	NONE	NONE
+1	-1	Kayak	kayak	kayak
+1	-1	Towels	towels	towels
+2	475446	Spinnaker pole	spinnaker	spinnaker
+2	100627	Flybridge with bimini and Fridge	flybridge	flybridge
+1	38	Furling Mainsail	NONE	NONE
+1	-1	Automatic first and second reef	NONE	NONE
+2	564646	Convertible from 4 into 3 cabins	NONE	NONE
+2	13976290	Ceiling fans	electric-fans	electric-fans
+2	4486616	Carbon steering wheels	NONE	NONE
+2	473990	Radio CD player, AUX input	audio-system	audio-system
+2	933510	Courtesy LED lights all over deck  including stern immersed courtesy LED	NONE	NONE
+1	-1	Full batten mainsail	NONE	NONE
+1	-1	Fishing equipment	fishing-set	fishing-set
+2	46433220	Wireless charger	NONE	NONE
+1	-1	Furling Mainsail	NONE	NONE
+1	-1	Life Jackets	life-jackets	life-jackets
+1	-1	Tacking jib	NONE	NONE
+1	-1	Bosun´s chair	bosun-chair	bosun-chair
+1	-1	Ventilator	electric-fans	electric-fans
+1	-1	Full Batten Mainsail	NONE	NONE
+2	9296395	Extra beach towels	towels	towels
+1	-1	GPS Chartplotter in cockpit	outside-GPS-plotter	outside-GPS-plotter
+2	100609	Banana boat	NONE	NONE
+2	19	Spinnaker	spinnaker	spinnaker
+2	1319591	108% Dacron genoa	NONE	NONE
+2	34428833	Fixed propeller	NONE	NONE
+2	580721	Satellite TV receiver	flat-screen-TV	flat-screen-TV
+2	476457	Made beds	NONE	NONE
+2	476458	Welcome basket with fruits and Ouzo	NONE	NONE
+1	-1	Echo sounder	depth-sounder	depth-sounder
+1	15	Furling genova	NONE	NONE
+2	1402233	Ac 230V cable	NONE	NONE
+1	-1	Dinghy	dinghy	dinghy
+1	-1	Full batten Mainsail	NONE	NONE
+1	-1	Ultra anchor	main-anchor	main-anchor
+1	38	Roll main sail	NONE	NONE
+1	-1	Radar	radar	radar
+2	1030144	Flexible bulkhead system	NONE	NONE
+2	100479	SAT phone	NONE	NONE
+2	485760	Additional reading lights in salon and cabins	NONE	NONE
+2	115794	Teak interior	NONE	NONE
+1	-1	Bilge pump	NONE	NONE
+2	1159343	Trampoline	NONE	NONE
+1	-1	Full batten main sail	NONE	NONE
+2	12833638	Grey Water Tank	waste-tank	waste-tank
+1	-1	Sunbeds	NONE	sun-pads
+1	-1	Electric Windlass	electric-anchor-windlass	electric-anchor-windlass
+1	-1	maps	navigation-set	navigation-set
+2	10163990	Forwardscan sounder	depth-sounder	depth-sounder
+1	-1	EPIRB	epirb	epirb
+2	15581451	Fresh juice maker	NONE	NONE
+1	-1	Fenders	fenders	fenders
+1	-1	Nautical charts	navigation-set	navigation-set
+1	-1	Double berth in salon	NONE	NONE
+1	-1	Rollgenoa	NONE	NONE
+1	-1	Underwater Spotlights	NONE	NONE
+1	-1	Donut	water-toys	water-toys
+1	-1	Electrical bilge pump	NONE	NONE
+1	-1	12V plug on the control panel	NONE	NONE
+1	-1	Compas	compass	compass
+1	-1	Main Deck Compass	compass	compass
+2	13448396	Hatch shades	NONE	NONE
+2	13427398	Remote control for radio in cockpit	NONE	NONE
+2	23503661	4 blade folding propeller	NONE	NONE
+2	27063257	Gym equipment	NONE	NONE
+1	-1	Swimming ladder	NONE	NONE
+2	100611	Towing air tube	NONE	NONE
+2	479365	Spinnaker-device	spinnaker	spinnaker
+2	5433634	Ipod and Iphone connection	NONE	NONE
+2	3498542	Forward lounge area	NONE	NONE
+1	-1	Boiler	hot-water	hot-water
+1	-1	Semi-full batten mainsail	NONE	NONE
+1	-1	Kitchen utensils	kitchen-utensils	kitchen-utensils
+1	-1	Pillows and blankets	pillows-and-blankets	pillows-and-blankets
+2	100624	Hydraulic flaps	NONE	NONE
+2	854948	Diving equipment	NONE	NONE
+2	481819	Dinghy anchor	NONE	NONE
+1	-1	SUP	stand-up-paddle	stand-up-paddle
+1	-1	Electric refrigerator	fridge	fridge
+1	-1	Sink in cockpit	sink	sink
+1	-1	First aid kit	first-aid-kit	first-aid-kit
+1	38	Main sail - Roll	NONE	NONE
+2	1304435	Underwater scooter	water-toys	water-toys
+2	39313776	Electric outboard engine	outboard-engine	outboard-engine
+2	3859729	108% genoa	NONE	NONE
+1	-1	VHF radio	vhf-radio	vhf-radio
+2	1003024	RIB	dinghy	dinghy
+2	1359725	Electricity 230VAC	NONE	NONE
+2	9765382	Vacuum cleaner	NONE	NONE
+1	-1	Electrical windlass	electric-anchor-windlass	electric-anchor-windlass
+2	16837747	Safety lights	NONE	NONE
+2	51	Blister	NONE	NONE
+2	114065	DC plugs 12V	NONE	NONE
+1	-1	Anchor + chain	anchor-line	anchor-line
+1	-1	Saloon double bed	NONE	NONE
+1	-1	Blue underwater lights	NONE	NONE
+1	-1	New 2024 Full batten mainsail with lazy jack and lazy back	lazy-jacks	lazy-jacks
+1	39	Self-tacking Jib	NONE	NONE
+2	5028227	Portable Bluetooth speaker	audio-system	audio-system
+2	826031	Kneeboard	NONE	NONE
+2	13367383	Aluminium canoe boom	NONE	NONE
+2	120914	Side bimini  sunshades	bimini	bimini
+1	-1	Swimming platform	bathing-platform	bathing-platform
+1	-1	Anchor windlass	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Wakeboard	wakeboard	wakeboard
+1	-1	Log/Speedo	logge-speed-wind	logge-speed-wind
+2	13967630	3 blade fixed propeller	NONE	NONE
+2	113746	Groceries - salt, pepper, oil, sponge, detergent	NONE	NONE
+2	555998	Portable cooling fan	electric-fans	electric-fans
+1	-1	Battened main sail	NONE	NONE
+1	-1	Canoe	kayak	kayak
+1	-1	Wake board	wakeboard	wakeboard
+1	-1	Aft bench cushions	NONE	NONE
+1	-1	Sliding curtains	NONE	NONE
+1	-1	Inflatible Life Raft	liferaft	liferaft
+1	-1	Lines	NONE	NONE
+1	15	Genoa furling	NONE	NONE
+1	-1	Stern shower hot and cold	outside-shower	outside-shower
+1	-1	Sumlog-Echolot	logge-speed-wind	logge-speed-wind
+1	-1	Bow cushions	sun-pads	sun-pads
+1	-1	Cutlery	kitchen-utensils	kitchen-utensils
+1	-1	Bed linen and towels	pillows-and-blankets	pillows-and-blankets
+1	-1	Anchor Winch Electric	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Anchor Chain Length	anchor-line	anchor-line
+1	39	Self-tacking jib/roll	NONE	NONE
+2	1156964	Sauna	NONE	NONE
+2	100484	Volvo joystick for maneuvering	NONE	NONE
+2	117766	Welcome pack	NONE	NONE
+2	34193922	Bow shield	NONE	NONE
+2	946043	Hammock	NONE	NONE
+2	1157749	Minibar	NONE	NONE
+2	8516961	Spreader lights	NONE	NONE
+2	45950210	Projector	NONE	NONE
+2	475444	Main sheet system: Standard	NONE	NONE
+2	921811	Winter cover	NONE	NONE
+2	2458316	Compressor	NONE	NONE
+2	50696550	Enclosures with windows for aft cockpit	NONE	NONE
+1	38	Furling main sail	NONE	NONE
+1	-1	Boat hook	boat-hook	boat-hook
+1	-1	Safety equipment	NONE	NONE
+1	-1	Carbon mast	NONE	NONE
+1	-1	Outside speakers	outside-speakers	outside-speakers
+1	-1	Jib furling systems	NONE	NONE
+1	-1	Generator	generator	generator
+1	-1	Bathing Platform	bathing-platform	bathing-platform
+1	-1	Sound system	audio-system	audio-system
+1	-1	Deep freezer	freezer	freezer
+1	-1	Cabin fans	electric-fans	electric-fans
+1	15	Roller furling foresail	NONE	NONE
+1	-1	Convertable saloon table	lowerable-salon-table	lowerable-salon-table
+1	-1	Speedmeter	logge-speed-wind	logge-speed-wind
+1	-1	Tenderlift platform	NONE	NONE
+1	38	Roller/Furling mainsail	NONE	NONE
+2	100671	Signal rockets and torches 	distress-signals	distress-signals
+1	-1	Shore power	shore-connection-220v	shore-connection-220v
+2	14449302	Retractable ducks	NONE	NONE
+2	47754075	Extractor Hood	NONE	NONE
+2	17365851	Kayak tandem	kayak	kayak
+2	1221727	Ceiling lights	NONE	NONE
+2	28389618	Playstation 5	game-console	game-console
+2	579243	Bed in cabin	NONE	NONE
+2	33507929	Docking system	NONE	NONE
+2	1197041	Playstation 4	game-console	game-console
+2	953810	Jet Ski SEA-DOO Spark	jet-ski	jet-ski
+2	114064	DC plugs 12V + cockpit plug	NONE	NONE
+2	13059739	Sundeck chairs	NONE	NONE
+1	-1	Sink	sink	sink
+1	-1	Fully equipped galley	kitchen-utensils	kitchen-utensils
+1	28	Battened Main Sail	NONE	NONE
+1	-1	Speedometer	logge-speed-wind	logge-speed-wind
+2	558606	Standard propeller	NONE	NONE
+2	31312800	Electric secondary winch	electric-winches	electric-winches
+1	-1	Bluetooth	NONE	NONE
+1	-1	new	NONE	NONE
+1	-1	Aft. portholes in aft. cabins with curtains	NONE	NONE
+1	15	Dacron furling genoa	NONE	NONE
+1	-1	Heating	heating	heating
+1	-1	Life raft	liferaft	liferaft
+1	-1	VHF-radio	vhf-radio	vhf-radio
+1	-1	Sea charts	navigation-set	navigation-set
+1	-1	Sea Scooter	water-toys	water-toys
+1	-1	Raymarine camera	NONE	NONE
+1	-1	Dinghy Highfield SP460 + Honda 60hp engine	dinghy	dinghy
+1	-1	Video pack TV/HIFI	flat-screen-TV	flat-screen-TV
+1	-1	Adriatic sea pilot	navigation-set	navigation-set
+1	-1	Automatic safety jackets	life-jackets	life-jackets
+1	-1	Cotton linen hand, face, and body, beach towels, bathrobe and bedding	towels	towels
+2	8833908	Electric scooter	NONE	NONE
+1	-1	Hot Water	hot-water	hot-water
+1	-1	Fan	electric-fans	electric-fans
+2	22486326	2 blade fixed propeller	NONE	NONE
+2	10258205	Converter 220V/24V	shore-connection-220v	shore-connection-220v
+2	583919	Home cinema	NONE	NONE
+2	579246	Marine WC	NONE	NONE
+2	35317977	Floaties	NONE	NONE
+1	-1	Fans	electric-fans	electric-fans
+2	487197	Chain claw	NONE	NONE
+1	-1	Log + Eco	logge-speed-wind	logge-speed-wind
+1	-1	Plugs 12v	NONE	NONE
+2	12884621	Deck tent	NONE	NONE
+2	2240715	Binoculars with integrated compass	binoculars	binoculars
+1	-1	Inflatable life raft	liferaft	liferaft
+2	30835001	Wine rack	NONE	NONE
+2	23502014	Cockpit sides with windows	NONE	NONE
+2	1086052	Outboard engine 5 HP	outboard-engine	outboard-engine
+2	485618	Trim control system	NONE	NONE
+2	575748	Full batten main sail with eletric winch and Lazy Bag	electric-winches	electric-winches
+2	23541925	Solar charger	NONE	NONE
+1	-1	220V Socket	shore-connection-220v	shore-connection-220v
+2	607910	One line reffsystem	NONE	NONE
+2	5028459	Fishing rod holder	NONE	NONE
+2	51094794	Water filter	NONE	NONE
+2	20976682	Walnut interior	NONE	NONE
+1	-1	Furling main sail	NONE	NONE
+2	1074062	Extra pillows	pillows-and-blankets	pillows-and-blankets
+2	67871756	VHF headset	vhf-radio	vhf-radio
+2	15581460	Open-air cinema	NONE	NONE
+1	-1	Digital speed and deep control	NONE	logge-speed-wind
+1	-1	Double steering wheel	NONE	NONE
+1	-1	New Main Sail and Genoa	NONE	NONE
+1	-1	Plastic Bucket	NONE	NONE
+1	15	Furling (Roll) Genoa	NONE	NONE
+1	-1	Dinghy repair kit	NONE	NONE
+1	-1	Tachometer	NONE	NONE
+1	-1	Hot water boiler	hot-water	hot-water
+1	-1	Cooking set	kitchen-utensils	kitchen-utensils
+1	-1	Underwater lights	NONE	NONE
+1	-1	Bathing ladder	NONE	NONE
+1	-1	Board games	NONE	NONE
+1	-1	Music system	audio-system	audio-system
+1	-1	Swimming Platform	bathing-platform	bathing-platform
+1	-1	Fans in all cabins	electric-fans	electric-fans
+1	-1	Battery monitor system	NONE	NONE
+1	-1	USB Sockets	usb-sockets	usb-sockets
+1	39	self tacking jib	NONE	NONE
+1	28	Mainsail battens	NONE	NONE
+1	-1	Echosounder	depth-sounder	depth-sounder
+1	-1	Outside shower	outside-shower	outside-shower
+1	-1	AC in the saloon	air-conditioning	air-conditioning
+1	-1	Navigational set + Charts	navigation-set	navigation-set
+1	-1	DVD	DVD-player	DVD-player
+2	4899823	Karaoke	karaoke	karaoke
+1	-1	Shower in cockpit	outside-shower	outside-shower
+2	26789018	Cigar humidifier and cigars	NONE	NONE
+2	4584759	Water slide	water-toys	water-toys
+2	1071802	CD/MP3/USB player	audio-system	audio-system
+2	2164963	iPod docking system	NONE	NONE
+2	1054675	SEA-DOO	jet-ski	jet-ski
+2	1157716	Gasoline	NONE	NONE
+2	13539282	GRP steering wheels	NONE	NONE
+1	-1	Diving equipment	NONE	NONE
+1	-1	Bedding	pillows-and-blankets	pillows-and-blankets
+1	-1	GPS chart plotter in cockpit	outside-GPS-plotter	outside-GPS-plotter
+1	-1	AIS 700 transceiver	ais	ais
+1	-1	Jacuzzi	jacuzzi	jacuzzi
+2	101578	Hull colour: BLUE	NONE	NONE
+1	-1	Cooker with oven	cooker	cooker
+2	134696	Furling jib	NONE	NONE
+2	4459689	Performance steering system	NONE	NONE
+1	-1	Gas stove	cooker	cooker
+2	558165	Genoa - 3 100%	NONE	NONE
+2	39295230	Smart tender system	NONE	NONE
+2	1093577	Double USB socket in cabins	usb-sockets	usb-sockets
+2	12719338	Rooftop lounge area	NONE	NONE
+2	1073715	Tube ring	NONE	NONE
+2	2164969	Salon portside electrical opening window	NONE	NONE
+2	1090203	Cockpit backrest	NONE	NONE
+2	1157745	Computer	NONE	NONE
+2	10229151	Converter 220V/110V	shore-connection-220v	shore-connection-220v
+2	477831	Bike	NONE	NONE
+1	-1	Electric fridge	fridge	fridge
+2	2876103	Coachroof winches	NONE	NONE
+2	100756	Power tape	NONE	NONE
+2	12861039	Battery Litium System, 230 V	NONE	NONE
+2	34428832	Electric pods	NONE	NONE
+1	-1	Roller genoa	NONE	NONE
+2	565952	Ski Tube	NONE	NONE
+2	922188	USB internet stick	usb-sockets	usb-sockets
+1	-1	WC MANUEL	NONE	NONE
+1	28	Battened main sail	NONE	NONE
+1	-1	Cockpit Compass	compass	compass
+1	-1	Wind instrument/Anemometer	logge-speed-wind	logge-speed-wind
+1	-1	Life jackets automatic	life-jackets	life-jackets
+1	-1	Windex	NONE	NONE
+1	-1	BBQ	BBQ	BBQ
+1	-1	Windlass	NONE	NONE
+1	-1	Aft sundeck	sun-pads	sun-pads
+1	-1	12V 220V shore power	shore-connection-220v	shore-connection-220v
+1	-1	Coocker with oven	cooker	cooker
+1	-1	refrigerator	fridge	fridge
+1	-1	Auxiliary anchor	spare-anchor	spare-anchor
+1	-1	Fans in Saloon and Cabins	electric-fans	electric-fans
+1	-1	Bed linea/ towels set	towels	towels
+1	-1	Plastic bucket	NONE	NONE
+1	-1	Gas cookers	cooker	cooker
+1	-1	Swim ladder	NONE	NONE
+1	-1	Barbecue and sink in the stern	BBQ	BBQ
+1	-1	Spare gas bottle	gas-bottles	gas-bottles
+1	-1	USB Charging Plugs	usb-sockets	usb-sockets
+1	-1	Standard Safety Equipment	NONE	NONE
+1	-1	MP3	NONE	audio-system
+1	-1	2 Wheels Steering	NONE	NONE
+1	-1	Underwater scooter	water-toys	water-toys
+1	-1	USB ports	usb-sockets	usb-sockets
+1	-1	Electric anchor winch	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Winch - manual	NONE	NONE
+1	-1	Living room suite with table on the flybridge	flybridge	flybridge
+1	-1	Seating area with table on the flybridge	flybridge	flybridge
+1	-1	Fans in cabins	electric-fans	electric-fans
+1	20	Wire cutter	NONE	NONE
+1	-1	Sun mattresses	sun-pads	sun-pads
+1	-1	Radio CD mp3 player	audio-system	audio-system
+1	-1	GPS Tracking device	NONE	NONE
+1	-1	Bed linens & towels	pillows-and-blankets	pillows-and-blankets
+2	930706	Wind generator	NONE	NONE
+2	934215	Storm Jib	NONE	NONE
+1	-1	Eco/Log/Speedometer	logge-speed-wind	logge-speed-wind
+1	-1	Double wheel rudder	NONE	NONE
+1	-1	Furling Main Sail	NONE	NONE
+2	100477	Jet tender	dinghy	dinghy
+1	-1	Hair dryer	NONE	NONE
+2	1219374	Coolbox 	NONE	NONE
+2	2927155	Floating Island	NONE	NONE
+2	11154199	109% Genoa	NONE	NONE
+1	-1	Sundeck cushions	sun-pads	sun-pads
+1	-1	Tender	dinghy	dinghy
+2	6021565	Teak coach roof	NONE	NONE
+2	1053615	Square top main sail	NONE	NONE
+1	28	Mainsail - Battened	NONE	NONE
+1	-1	Jet ski	jet-ski	jet-ski
+1	-1	Tube ride	water-toys	water-toys
+1	-1	220V Outlets from Shorepower or Inverter	shore-connection-220v	shore-connection-220v
+2	487200	Transportable Bilge pump	NONE	NONE
+1	-1	Bow thruster	bow-thruster	bow-thruster
+1	15	Furling Mainsail	NONE	NONE
+1	-1	Bosuns chair	bosun-chair	bosun-chair
+2	2164966	Convertible aft sunbathing area	NONE	NONE
+2	120915	Cockpit & deck leather cushions	cockpit-cushions	cockpit-cushions
+2	47268783	Day shapes / signals	NONE	NONE
+2	4473734	Thermal camera	NONE	NONE
+2	930464	Self tailing Genoa winch	NONE	NONE
+2	1170670	Fusion MS205 Fm Radio	audio-system	audio-system
+2	100614	Dishtowel	NONE	NONE
+1	-1	Desalination plant	water-maker	water-maker
+2	485761	Premier pack	NONE	NONE
+2	37510278	Inflatable swimming platform	bathing-platform	bathing-platform
+2	1157728	Safety alarm	NONE	NONE
+1	-1	Air condition	air-conditioning	air-conditioning
+2	478529	Outdoor Lighting Control	NONE	NONE
+2	11364265	Volvo DPS system (easy docking)	NONE	NONE
+2	11364266	Starboard doors to deck	NONE	NONE
+2	1183290	Iron	NONE	NONE
+2	1202853	Mono ski	NONE	NONE
+2	39131022	Fully automated energy management	NONE	NONE
+2	39131025	Fast Charger	NONE	NONE
+2	39131026	Hydrogeneration	NONE	NONE
+2	42117089	Staysail	NONE	NONE
+2	51702221	FenderStep	fenders	fenders
+2	8769744	Outboard engine 2,3 HP	outboard-engine	outboard-engine
+1	-1	Electric toilets	electric-toilet	electric-toilet
+2	837807	Inflatable tube	NONE	NONE
+1	-1	Audio System	audio-system	audio-system
+1	-1	Under Water Lights	NONE	NONE
+1	-1	Equipped Kitchen	kitchen-utensils	kitchen-utensils
+1	-1	Outside shower/ warm water	outside-shower	outside-shower
+1	-1	Fans in the cabins	electric-fans	electric-fans
+1	-1	Speakers	NONE	NONE
+1	-1	Microwave oven	microwave	microwave
+1	15	Rolling genoa	NONE	NONE
+1	-1	WiFi	wifi	wifi
+1	-1	Awning	NONE	NONE
+1	-1	Underwater Lights	NONE	NONE
+1	-1	Gas oven stove	oven	oven
+1	28	Fully battened main sail	NONE	NONE
+1	-1	Anchor windlass electric	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Wine cooler	fridge	fridge
+1	28	Full batten	NONE	NONE
+1	-1	Solar Panels	solar-panels	solar-panels
+1	-1	Radio	audio-system	audio-system
+1	38	Roll-sails	NONE	NONE
+1	-1	220V Sockets	shore-connection-220v	shore-connection-220v
+1	-1	CABS Matrices	NONE	NONE
+1	-1	Audio Iphone/Ipod USB	audio-system	audio-system
+1	-1	Depth Sounder	depth-sounder	depth-sounder
+1	-1	Manuevering Joystick	NONE	NONE
+1	-1	Pulpits with wooden seats	NONE	NONE
+1	-1	Tridata	logge-speed-wind	logge-speed-wind
+1	-1	Flybridge	flybridge	flybridge
+1	-1	Ringo	water-toys	water-toys
+1	-1	Standard draft	NONE	NONE
+1	-1	Coolberth Comfort CS Matrassen	NONE	NONE
+1	-1	Cockpit iro-deck	NONE	NONE
+1	-1	Battened mainsail with lazyjack system	NONE	lazy-jacks
+1	-1	Outside Speaker	outside-speakers	outside-speakers
+1	-1	Double steering weel	NONE	NONE
+1	-1	Steering wheel	NONE	NONE
+1	-1	Box of flares	distress-signals	distress-signals
+1	-1	Extra water tank	NONE	NONE
+1	-1	Fans in saloon and cabins	electric-fans	electric-fans
+1	-1	Washing machine	washing-machine	washing-machine
+1	-1	Cooker/Stove	cooker	cooker
+1	-1	Hot water heater	hot-water	hot-water
+1	28	Full batten Mainsail	NONE	NONE
+1	-1	Led navigation lights	NONE	NONE
+1	-1	Ice box	NONE	NONE
+1	-1	Speedometer & echo sounder	depth-sounder	logge-speed-wind
+1	-1	Large dinette with extra double bed	NONE	lowerable-salon-table
+1	-1	Nespresso	NONE	coffee-machine
+1	-1	Black Water Tank	waste-tank	waste-tank
+1	-1	Outdoor Shower	outside-shower	outside-shower
+1	-1	Plotter	salon-GPS-plotter	salon-GPS-plotter
+1	-1	12V socket	NONE	NONE
+2	12522754	Convertible master cabin	NONE	NONE
+1	-1	Blankets	pillows-and-blankets	pillows-and-blankets
+2	830351	Convertible from 5 into 4 cabins	NONE	NONE
+2	13367384	Flybridge camera	flybridge	flybridge
+2	1176684	Kayak 1	kayak	kayak
+1	-1	Pillows	pillows-and-blankets	pillows-and-blankets
+2	579125	Anchor with rope 	main-anchor	main-anchor
+2	31345834	Stand up paddle - Inflatable (iSUP)	stand-up-paddle	stand-up-paddle
+2	100663	Engine spare parts 	NONE	NONE
+2	923856	Self tailing Genoa	NONE	NONE
+1	-1	Grill	BBQ	BBQ
+2	10369107	Air drone	NONE	NONE
+2	490628	Bow shower	outside-shower	outside-shower
+2	10078117	Donut - FREE	water-toys	water-toys
+2	476450	Tablet PC/iPad	NONE	NONE
+2	3764582	Glass holder	NONE	NONE
+2	558160	Spinnaker sheet winches	spinnaker	spinnaker
+2	10231287	Converter 110V/12V	NONE	NONE
+1	51	Swimming pool	NONE	NONE
+1	-1	Chain 50mt	anchor-line	anchor-line
+1	-1	self tacking jib	NONE	NONE
+1	-1	Radar reflector	NONE	NONE
+1	-1	Dish washer	dishwasher	dishwasher
+1	-1	Gas oven and stove	oven	oven
+1	-1	Holding Tank	waste-tank	waste-tank
+1	-1	External table	NONE	cockpit-table
+1	-1	Outside GPS plotter	outside-GPS-plotter	outside-GPS-plotter
+1	-1	Seascooter	water-toys	water-toys
+1	-1	Linens Set	NONE	pillows-and-blankets
+1	-1	Aft deck	NONE	NONE
+1	-1	Hydraulic Gangway	gangway	gangway
+1	-1	Life jackets 150 N	life-jackets	life-jackets
+1	-1	Skipper cabin	NONE	NONE
+1	-1	Electrical Windlass	electric-anchor-windlass	electric-anchor-windlass
+2	22660817	Noodles	NONE	NONE
+2	31312952	145% reacher on a second forestay	NONE	NONE
+2	1508997	Skipper's CV / sailing resume required upon booking confirmation	NONE	NONE
+2	13539283	SART buoy	NONE	NONE
+2	922745	Additional operation system of the windlass at the helmstand	NONE	NONE
+2	473328	No autopilot	NONE	NONE
+2	4459162	Forward scan	NONE	NONE
+2	10593710	Automated external defibrillator	NONE	NONE
+2	2839781	Forward double cabins convertible into owner’s cabin	NONE	NONE
+2	477579	Fuel	NONE	NONE
+1	-1	Outdoor speakers	outside-speakers	outside-speakers
+2	1157734	Fire alarm	NONE	NONE
+2	100516	Racing sails	NONE	NONE
+2	41844994	Electric tilting door lift	NONE	NONE
+2	15137062	Wellness massage	NONE	NONE
+2	10280671	Hydrogenerator	NONE	NONE
+2	17097368	Jobe Infinity sea scooter	water-toys	water-toys
+2	34974335	Convertible cockpit sides into a relaxing zone	NONE	NONE
+2	25894595	Bow sail locker	NONE	NONE
+2	580720	Full carbon mast	NONE	NONE
+2	4486672	Air mattress	NONE	NONE
+2	13059741	Lounge bar	NONE	NONE
+1	-1	Outside Shower	outside-shower	outside-shower
+1	-1	Pullman berth in aft port cabin	NONE	NONE
+1	-1	Linen	NONE	pillows-and-blankets
+1	-1	Bath towels	towels	towels
+1	-1	Furling Genoa (2019)	NONE	NONE
+1	-1	Spacious solid fore deck suitable for diverse activities, which stays dry during navigation	NONE	NONE
+1	-1	Sun pads	sun-pads	sun-pads
+1	-1	Ipod and Iphone connection	NONE	NONE
+1	-1	Fresh water toilets	NONE	NONE
+1	-1	Full battened main sail	NONE	NONE
+1	-1	Fishing Gear	fishing-set	fishing-set
+1	-1	Bow Thruster	bow-thruster	bow-thruster
+1	-1	Stern thruster	NONE	NONE
+1	-1	Audio system	audio-system	audio-system
+1	-1	Deck brush	NONE	NONE
+1	-1	Full battened mainsail	NONE	NONE
+1	-1	TV	flat-screen-TV	flat-screen-TV
+1	-1	Beach towels	towels	towels
+1	-1	Gas oven	oven	oven
+1	15	Roller-furling genoa	NONE	NONE
+1	-1	Vhf	vhf-radio	vhf-radio
+1	-1	iPod/Device Hookups	NONE	NONE
+1	-1	Cockpit Shower	outside-shower	outside-shower
+1	-1	Anchor electric windlass	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Teak	NONE	NONE
+1	-1	Gas hob	cooker	cooker
+1	-1	Navigation lights	NONE	NONE
+1	-1	Folding table	NONE	NONE
+1	38	Full batten main sail	NONE	NONE
+1	-1	Navigation set	navigation-set	navigation-set
+1	-1	VHF Radio in Cockpit	vhf-radio	vhf-radio
+1	-1	Sterering wheel	NONE	NONE
+1	-1	Cockpit Shower & Table	outside-shower	outside-shower
+1	-1	Fans in Cabins	electric-fans	electric-fans
+1	-1	Bow Sunpad	sun-pads	sun-pads
+1	-1	Mosquito nets	NONE	NONE
+1	-1	Water toys	water-toys	water-toys
+1	-1	USB	usb-sockets	usb-sockets
+1	-1	Spray Hood	sprayhood	sprayhood
+1	-1	Fully Battened Mainsail	NONE	NONE
+1	-1	1000W Electric Windlass	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Sprayhood	sprayhood	sprayhood
+1	-1	Foldable Teak Table	NONE	NONE
+1	-1	12 Volt Sockets	NONE	NONE
+1	-1	Electric back door	NONE	NONE
+1	-1	Sundeck	sun-pads	sun-pads
+1	28	Full Battened Mainsail	NONE	NONE
+1	-1	Air conditioning	air-conditioning	air-conditioning
+1	-1	Electric oven	oven	oven
+1	-1	wake board	wakeboard	wakeboard
+1	-1	Inside/outside fridge	fridge	fridge
+1	-1	Fans in all cabins and salon	electric-fans	electric-fans
+1	-1	Genoa Furlex System	NONE	NONE
+1	-1	Teak cockpit table with storage unit and lamp	cockpit-table	cockpit-table
+1	-1	Water heater	hot-water	hot-water
+1	38	Roller main sail	NONE	NONE
+1	-1	Danforth type anchor with chain/rope	main-anchor	main-anchor
+1	-1	Waterskiis	water-skis	water-skis
+1	-1	Hand bearing compass	compass	compass
+1	38	furling main sail	NONE	NONE
+1	28	3/4 batten main sail	NONE	NONE
+1	39	Self tacking jib	NONE	NONE
+1	-1	Electric anchor	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Sounder	depth-sounder	depth-sounder
+1	-1	Bluetooth audio	audio-system	audio-system
+1	-1	Gennaker (optional)	gennaker	gennaker
+1	-1	Fins	snorkel-sets	snorkel-sets
+1	-1	Mooring ropes	mooring-ropes	mooring-ropes
+1	-1	12 sockets	NONE	NONE
+1	-1	Sun awning	NONE	NONE
+1	-1	Galley	NONE	NONE
+1	-1	Cooking gas	gas-bottles	gas-bottles
+1	39	Furling self-tacking jib	NONE	NONE
+1	-1	Raymarine Axiom Pack	NONE	NONE
+1	-1	Separate fully equipped skipper's cabin	NONE	NONE
+1	-1	Electric Bilge Pump	NONE	NONE
+1	28	Fully battened mainsail	NONE	NONE
+1	-1	Dinghy inflantable	dinghy	dinghy
+1	-1	Folding propeller	NONE	NONE
+1	-1	Audio System / Bluetooth	audio-system	audio-system
+1	-1	Black ball	NONE	NONE
+1	-1	Cool box	NONE	NONE
+1	-1	Stereo System	audio-system	audio-system
+1	-1	Sun deck	sun-pads	sun-pads
+1	-1	Fusion multi zone audio system	audio-system	audio-system
+1	-1	Fusion Music system	audio-system	audio-system
+1	-1	Equipped kitchen	kitchen-utensils	kitchen-utensils
+1	-1	Safety Box	NONE	NONE
+1	-1	220V outlet	shore-connection-220v	shore-connection-220v
+1	-1	Interior and cockpit speakers	inside-speakers	outside-speakers
+1	-1	Waterski	water-skis	water-skis
+2	76770077	Second VHF handset	vhf-radio	vhf-radio
+1	-1	Hairdryer	NONE	NONE
+1	-1	Coast lights guide	NONE	NONE
+1	-1	Hi Fi Fusion	audio-system	audio-system
+1	-1	220V	shore-connection-220v	shore-connection-220v
+1	-1	Paddle surf board	stand-up-paddle	stand-up-paddle
+1	-1	3 blades folding propellers	NONE	NONE
+1	-1	Bedlinen and towels	towels	towels
+1	-1	Bowsprit	NONE	NONE
+1	-1	Diesel Jerrycan 20 lt. Full	NONE	NONE
+2	6909838	Deep fryer	NONE	NONE
+2	1157715	Fitness room	NONE	NONE
+2	476991	Windsurf	windsurf	windsurf
+2	1092706	Carbon fiber sails	NONE	NONE
+2	29395774	Bean Bag Chair	NONE	NONE
+2	583916	Mini bar + own fridge	fridge	fridge
+2	8809012	Jet thruster	bow-thruster	bow-thruster
+2	1058799	Surf board	surf	surf
+2	1157756	Pool	NONE	NONE
+2	56744870	Convection oven	oven	oven
+1	-1	Internal speakers	inside-speakers	inside-speakers
+1	-1	Wooden finish interior	NONE	NONE
+2	3764585	Leather stern chairs	NONE	NONE
+2	579107	Night shade	NONE	NONE
+1	-1	Speed Log	logge-speed-wind	logge-speed-wind
+2	35499723	Kayak single	kayak	kayak
+2	12700811	Flyboard	water-toys	water-toys
+2	12808405	Mainsail slider assist	NONE	NONE
+2	579242	Boat equipment	NONE	NONE
+1	-1	Water Purifier	NONE	NONE
+1	-1	GPS chartplotter	salon-GPS-plotter	salon-GPS-plotter
+1	-1	Cable 220 V+Inverter	shore-connection-220v	shore-connection-220v
+1	-1	Bow solarium	NONE	sun-pads
+1	-1	Stand Up Paddle Board (SUP)	stand-up-paddle	stand-up-paddle
+1	-1	Flares	distress-signals	distress-signals
+1	-1	Dacron jib	NONE	NONE
+1	-1	Gennaker	gennaker	gennaker
+1	-1	Cooker (num.)	cooker	cooker
+1	-1	Cooker With Oven	cooker	cooker
+1	-1	Stereo system	audio-system	audio-system
+1	-1	Water skis	water-skis	water-skis
+1	-1	Canoes	kayak	kayak
+1	-1	Emergency fire	NONE	NONE
+2	565894	Genoa 105%	NONE	NONE
+1	-1	Aft Sundeck	sun-pads	sun-pads
+2	1166923	SEA-DOO underwater scooter	water-toys	water-toys
+1	-1	Electric man. winch	electric-winches	electric-winches
+1	-1	Fishing set	fishing-set	fishing-set
+1	-1	Fire Extinguisher	fire-extinguisher	fire-extinguisher
+1	-1	Full Battened Main Sail	NONE	NONE
+1	-1	220V recharging system	shore-connection-220v	shore-connection-220v
+1	38	Roller Mainsail	NONE	NONE
+1	28	Full battened Mainsail	NONE	NONE
+2	43408964	Electronic Engine Control (EEC)	NONE	NONE
+2	101451	Hull colour: WHITE	NONE	NONE
+2	924882	Diving compressor	NONE	NONE
+2	459852	Outboard lift	NONE	NONE
+2	11428418	Water floating carpet	NONE	NONE
+2	41713818	Outboard engine 8 HP	outboard-engine	outboard-engine
+2	13545076	Registration for international waters	NONE	NONE
+2	36426779	Outboard engine 2,5 HP	outboard-engine	outboard-engine
+2	3826042	Cabin in the hull accessible from inside and outside	NONE	NONE
+2	2840496	Forepeak cabin: access from deck only	NONE	NONE
+2	473671	Fuel for an outboard engine - 5 lit.	outboard-engine	outboard-engine
+2	459851	Laptop	NONE	NONE
+2	487025	Distress radio beacons	epirb	epirb
+1	-1	T-top	NONE	NONE
+1	-1	Shampoo	NONE	NONE
+2	8769743	Outboard engine 4 HP	outboard-engine	outboard-engine
+1	-1	USB sockets	usb-sockets	usb-sockets
+2	558166	Genoa - 135%	NONE	NONE
+2	17366703	Beach Fun Pack	NONE	NONE
+2	1156958	Foam floathing tube (noodle)	NONE	NONE
+1	-1	Cockpit cushions	cockpit-cushions	cockpit-cushions
+2	134694	Curtains over portlights and curtains to separate salon	NONE	NONE
+2	838145	RIB 3m + 15 HP outboard	dinghy	dinghy
+2	841641	Rebuilt alternator & starter	NONE	NONE
+2	12522755	Comfort seats	NONE	NONE
+2	39131024	Upgrade Lithium BatteryPack	NONE	NONE
+2	74601142	Lounge cushions on the flybridge	flybridge	flybridge
+2	37438256	Sun lounging area cushions with lifting backrest on foredeck	NONE	NONE
+2	479494	Graphic	NONE	NONE
+2	100758	Oil absorber	NONE	NONE
+2	116905	Sport water equipment	NONE	NONE
+2	11386586	2 blade folding propeller	NONE	NONE
+2	101806	Bathrobe	NONE	NONE
+2	830352	Convertible from 5+1 into 4+1 cabins	NONE	NONE
+2	100824	Wang	NONE	NONE
+2	2164944	Exterior bar	NONE	NONE
+2	5094320	Bread machine	NONE	NONE
+2	1083580	Touch screen Plotter	salon-GPS-plotter	salon-GPS-plotter
+2	1069054	Blue Ray reader	NONE	NONE
+1	-1	Hardtop with sunroof	NONE	NONE
+2	39191867	Dockmate - Remote Controlled Docking System	NONE	NONE
+1	-1	FOUR A GAZ	NONE	NONE
+1	-1	Fans in salon and cabins	electric-fans	electric-fans
+1	-1	Beach Towels	towels	towels
+1	-1	Self-tailing winches	NONE	NONE
+1	-1	Single steering wheel	NONE	NONE
+1	-1	Complete galley equipment	kitchen-utensils	kitchen-utensils
+1	-1	Chain 75 mt	anchor-line	anchor-line
+1	-1	Paddleboards	stand-up-paddle	stand-up-paddle
+1	-1	Zatera di salvataggio	NONE	liferaft
+1	-1	Digital speedometer	logge-speed-wind	logge-speed-wind
+1	-1	Wind Instrument	logge-speed-wind	logge-speed-wind
+1	-1	Hi-Fi	audio-system	audio-system
+1	-1	Fishing gear	fishing-set	fishing-set
+1	-1	Sea bobs	NONE	water-toys
+1	-1	WiFi 4G	wifi	wifi
+1	-1	Divider	navigation-set	navigation-set
+1	-1	Fusion audio system	audio-system	audio-system
+1	-1	inverter 2000w	inverter	inverter
+1	-1	Furling forestay sail	NONE	NONE
+1	-1	Nautical guides and maps	navigation-set	navigation-set
+1	-1	Mainsail with 3 reefs	NONE	NONE
+1	-1	Echosounder/Depthsounder	depth-sounder	depth-sounder
+1	-1	12V plugs	NONE	NONE
+1	-1	12V/220V sockets	shore-connection-220v	shore-connection-220v
+1	-1	Winch grinders	NONE	NONE
+1	-1	Hydraulic Water Platform	NONE	NONE
+1	-1	Engine Battery (in Ah.)	NONE	NONE
+1	-1	Barbecue	BBQ	BBQ
+1	-1	Yanmar 45HP/33kW shaft drive and three-blade fixed propeller	NONE	NONE
+1	-1	2x29HP saildrive with 3-blade fixed propellers	NONE	NONE
+1	-1	Sinks (num.)	sink	sink
+1	-1	Folding cockpit table	cockpit-table	cockpit-table
+1	-1	External shower	outside-shower	outside-shower
+1	-1	Electronic sea charts	NONE	NONE
+1	-1	Distress flares	distress-signals	distress-signals
+1	-1	Main deck	NONE	NONE
+1	-1	Balcony deck	NONE	NONE
+1	-1	Cockpit in teak	teak-deck	teak-deck
+1	-1	Pillow cases	pillows-and-blankets	pillows-and-blankets
+1	-1	oven and 4 burner stove	oven	oven
+1	-1	Nautical charts for Sardinia & Corsica	navigation-set	navigation-set
+1	-1	Flag halyards on spreaders	NONE	NONE
+1	-1	Radio CD player	audio-system	audio-system
+1	-1	Genoa	NONE	NONE
+1	38	Furling (Roll) main sail	NONE	NONE
+1	-1	Underwater lights for night swimming	NONE	NONE
+1	-1	Deck and bathroom shower	outside-shower	outside-shower
+1	-1	Life ring	life-buoy	life-buoy
+1	-1	Air Conditioning	air-conditioning	air-conditioning
+1	-1	Shade	NONE	NONE
+1	-1	Solar panels	solar-panels	solar-panels
+1	-1	Full safety equipment	NONE	NONE
+1	-1	240V kettle	NONE	NONE
+1	-1	Gas cooker	cooker	cooker
+1	-1	Draft	NONE	NONE
+1	-1	Fishing Equipment	fishing-set	fishing-set
+1	-1	Full navigation set	navigation-set	navigation-set
+1	-1	Mesh cover for cockpit	NONE	NONE
+1	-1	Tubes	NONE	water-toys
+1	-1	Display	NONE	NONE
+1	-1	Water skis for adults and kids	water-skis	water-skis
+1	-1	Recessed sidedecks	NONE	NONE
+1	28	Classic main sail	NONE	NONE
+1	-1	Bed sheets	NONE	pillows-and-blankets
+1	-1	BBQ grill	BBQ	BBQ
+1	-1	Cell batteries	NONE	NONE
+1	-1	Water tank	NONE	NONE
+1	-1	Electric gangway	gangway	gangway
+1	38	Roller Sails	NONE	NONE
+1	28	Batten Sail with Lazy Jacks	lazy-jacks	lazy-jacks
+1	-1	Safety harness	life-belts	life-belts
+1	-1	Dinghy Highfield SP420 + Honda 60hp outboard engine	dinghy	dinghy
+1	-1	Automatic lifevests	life-jackets	life-jackets
+1	-1	Self-tacking jib	NONE	NONE
+1	38	Furling roller main sail	NONE	NONE
+1	-1	cockpit shower	outside-shower	outside-shower
+1	-1	Bathing platform with shower	bathing-platform	outside-shower
+1	-1	Full kitchen equipment	kitchen-utensils	kitchen-utensils
+1	-1	Electric Fans in cabins	electric-fans	electric-fans
+1	-1	Electric flush toilet	electric-toilet	electric-toilet
+1	-1	First aid Kit	first-aid-kit	first-aid-kit
+1	-1	Garmin 3 Smart Cruising : Autpilot,VHF,AIS,2*GPS 712/7410, 2*multi GMI20	NONE	NONE
+1	-1	Electric scooter	NONE	NONE
+1	-1	Winch	NONE	NONE
+1	-1	Canoe/SUP	kayak	kayak
+1	-1	Wireless handset for Raymarine vhf at helm station	vhf-radio	vhf-radio
+1	-1	Preparation for VHF Mast Cable	vhf-radio	vhf-radio
+1	-1	Interior speakers	inside-speakers	inside-speakers
+1	-1	Kitchen crockery	kitchen-utensils	kitchen-utensils
+1	-1	Display at helm station	NONE	NONE
+1	-1	Hydraulic platform with remote	NONE	bathing-platform
+1	-1	Electric bilge pump	NONE	NONE
+1	-1	Gas cooker in cockpit	cooker	cooker
+1	-1	Bluetooth speakers	audio-system	audio-system
+1	-1	Fresh water shower	shower	shower
+1	-1	Cabin linen and towels	towels	towels
+1	-1	Safety belts	life-belts	life-belts
+1	-1	Deck shower (Hot & Cold)	outside-shower	outside-shower
+1	-1	Solar pannels	solar-panels	solar-panels
+1	-1	Rodkick	NONE	NONE
+1	28	Standard mainsail	NONE	NONE
+1	38	Furling (Roll) Mainsail	NONE	NONE
+1	-1	Sailing equipment	NONE	NONE
+1	-1	Roller Genoa	NONE	NONE
+1	-1	Bowthruster	bow-thruster	bow-thruster
+1	39	Genoa self tacking track	NONE	NONE
+1	-1	GPS plotter	salon-GPS-plotter	salon-GPS-plotter
+1	28	Mainsail (half batten)	NONE	NONE
+1	-1	 Electric winches	electric-winches	electric-winches
+1	-1	Lithium batteries	NONE	NONE
+1	-1	Gas stove oven	cooker	cooker
+1	-1	Main deck compass	compass	compass
+1	39	Furling Jib - self tackling	NONE	NONE
+1	-1	Heavy anchor galvanized	main-anchor	main-anchor
+1	-1	Radio on the flybridge	flybridge	audio-system
+1	-1	Complete Persenning	NONE	NONE
+1	-1	Fans, cabins & Saloon	electric-fans	electric-fans
+1	-1	Ropes	NONE	NONE
+1	-1	Horn	NONE	fog-horn
+1	-1	Electric Anchor Windlass	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Electric toilet (1)	electric-toilet	electric-toilet
+1	-1	Teak on Cockpit	teak-deck	teak-deck
+1	-1	Anchor winch - electric	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Folding Wheel	NONE	NONE
+1	-1	Rib 3m with 5hp engine	dinghy	dinghy
+1	28	Full Battened Mailsail	NONE	NONE
+1	-1	Dissalator 2001/H	NONE	water-maker
+1	-1	Bunk beds	NONE	NONE
+1	-1	Electric toilet	electric-toilet	electric-toilet
+1	-1	Convertible saloon into double berth	lowerable-salon-table	lowerable-salon-table
+1	-1	USB Socket	usb-sockets	usb-sockets
+1	28	Full baten main sail	NONE	NONE
+1	-1	Dinette convertible	NONE	lowerable-salon-table
+1	-1	Hand bildge pump	NONE	NONE
+1	-1	Speakers In/Out	NONE	audio-system
+1	-1	Fusion sound	audio-system	audio-system
+1	-1	Dept gauge	NONE	NONE
+1	-1	Audio system with Bluetooth	audio-system	audio-system
+1	-1	Linen & Bedding	pillows-and-blankets	pillows-and-blankets
+2	37519712	Hot plate	NONE	NONE
+2	490071	Solarium	NONE	NONE
+2	75354091	Outboard engine 20 HP	outboard-engine	outboard-engine
+2	41876063	Battery storage system	NONE	NONE
+2	13059737	Interphone	NONE	NONE
+2	10483112	Waterproof clothes	NONE	NONE
+1	-1	Electric fans in cabins	electric-fans	electric-fans
+1	-1	Paddle or Kayak	kayak	kayak
+1	-1	Cartographic GPS	NONE	NONE
+1	-1	Raymarine VHF/AIS Radio	vhf-radio	vhf-radio
+1	-1	Bluetooth speaker	audio-system	audio-system
+1	-1	Folding gangway	gangway	gangway
+1	-1	Holding tanks	waste-tank	waste-tank
+1	-1	Cooler	NONE	NONE
+1	-1	Anchor line	anchor-line	anchor-line
+1	-1	Anchor swivel	anchor-swivel	anchor-swivel
+1	-1	Electric air pump for dinghy	NONE	NONE
+1	-1	Classic mainsail	NONE	NONE
+1	-1	Carbon Steering wheel	NONE	NONE
+1	-1	Audio pack	audio-system	audio-system
+1	-1	Bed sheets are included in the price and can be changed one time per week	NONE	NONE
+1	-1	Bedlinen & towels	towels	towels
+1	-1	Backgammon	NONE	NONE
+1	-1	Sunshades	NONE	NONE
+1	-1	Underwater LED lights	NONE	NONE
+1	-1	Restaurant	NONE	NONE
+1	-1	Complete and up-to-date safety equipment	NONE	NONE
+1	-1	GPS navigation system	NONE	NONE
+1	-1	Card and board games	NONE	NONE
+1	-1	Anchor main chain & rope	anchor-line	anchor-line
+1	-1	Echo Sounder	depth-sounder	depth-sounder
+1	-1	Barometric station	barometer	barometer
+1	-1	Classic Main sail	NONE	NONE
+1	-1	Navigation System	NONE	NONE
+1	-1	Underwater camera (GoPro)	NONE	NONE
+1	-1	Wet bar	NONE	NONE
+1	-1	Safety net	safety-net	safety-net
+1	-1	Paddle surf	stand-up-paddle	stand-up-paddle
+1	-1	USB sockets in all 4 cabins	usb-sockets	usb-sockets
+1	-1	Wind speed	NONE	logge-speed-wind
+1	-1	Internal oval table for 8 people	NONE	NONE
+1	-1	Binoculars, Barometer, Clock	binoculars	binoculars
+1	-1	Furling Self-tacking Jib	NONE	NONE
+1	-1	Air Condition (Saloon-220volt)	air-conditioning	air-conditioning
+2	1221536	Coffee capsules	coffee-machine	coffee-machine
+1	-1	Fully Equipped Galley	kitchen-utensils	kitchen-utensils
+2	1172617	Williams Jet	NONE	NONE
+1	-1	External bow cushions	sun-pads	sun-pads
+2	29395771	Yoga Mats	NONE	NONE
+1	-1	Engine batteries (100 Ah x 2)	NONE	NONE
+2	29520597	Air sofa	NONE	NONE
+2	5028458	Storm sails	NONE	NONE
+2	28647284	Gennaker sock	gennaker	gennaker
+2	17365851	Kayak tandem 	kayak	kayak
+2	3425318	Long mast	NONE	NONE
+1	-1	Anchor Windlass (electric)	electric-anchor-windlass	electric-anchor-windlass
+2	17366703	Beach Fun Pack 	NONE	NONE
+2	478528	Board PC	NONE	NONE
+2	29520803	Snorkeling Vests	snorkel-sets	snorkel-sets
+2	33569985	Additional energy storage	NONE	NONE
+2	1167612	Wi-Fi streaming music equipment	wifi	wifi
+1	-1	Sun Awning	NONE	NONE
+1	-1	Bed Sheets	NONE	pillows-and-blankets
+1	-1	USB plugs	usb-sockets	usb-sockets
+1	-1	Pool with hydrojets	NONE	NONE
+1	-1	Outboard shower	shower	shower
+1	-1	Dinghy 2.70 mt	dinghy	dinghy
+1	-1	Raymarine tridata	logge-speed-wind	logge-speed-wind
+1	-1	Log/Speed	logge-speed-wind	logge-speed-wind
+1	-1	Kayaks	kayak	kayak
+1	-1	Vebasto	NONE	heating
+1	-1	Cockpit Table	cockpit-table	cockpit-table
+1	-1	High-Performance Sound system	audio-system	audio-system
+1	-1	Wifi	wifi	wifi
+1	-1	Cockpit/stern, outside shower	outside-shower	outside-shower
+1	-1	LED lights	NONE	NONE
+1	-1	Standard mainsail	NONE	NONE
+1	-1	Roll genoa	NONE	NONE
+1	-1	Jib	NONE	NONE
+1	-1	Tridata sensor	logge-speed-wind	logge-speed-wind
+1	-1	Winches	NONE	NONE
+1	-1	Net cover	NONE	NONE
+1	-1	Dacron square top mainsail	NONE	NONE
+1	-1	FULLY EQUIPED NAVIGATION INSTRUMENTS	NONE	NONE
+1	-1	Water Skies	water-skis	water-skis
+1	-1	E-foil	NONE	NONE
+1	-1	Electric Paddleboard	stand-up-paddle	stand-up-paddle
+1	38	Selden furling mast	NONE	NONE
+1	-1	Shower on deck	outside-shower	outside-shower
+1	-1	Fishfinder	NONE	NONE
+1	-1	Microwave oven Miele	microwave	microwave
+1	-1	Sun beds	NONE	NONE
+1	-1	Water scooter	NONE	NONE
+1	-1	Bedding/Bed sheets	pillows-and-blankets	pillows-and-blankets
+1	-1	Shore power 220V	shore-connection-220v	shore-connection-220v
+1	-1	TRANSFORMABLE TABLE IN SALON	lowerable-salon-table	lowerable-salon-table
+1	-1	Bow windlass with 50m chain	anchor-line	anchor-line
+1	-1	200W-400W Solar panel	solar-panels	solar-panels
+1	-1	outdoor grill	BBQ	BBQ
+1	-1	Outboard engine bracket on pushpit	outboard-engine	outboard-engine
+1	-1	Bowsprit & gear for gennaker	gennaker	gennaker
+2	825664	SSB radio transceiver	NONE	NONE
+1	-1	2 person Kayak	kayak	kayak
+1	-1	Stand Up Paddle	stand-up-paddle	stand-up-paddle
+1	-1	Annex	NONE	NONE
+1	-1	Depth Sounder/Fish Finder	depth-sounder	depth-sounder
+1	-1	Insurance Coverage	NONE	NONE
+1	-1	Wine fridge	fridge	fridge
+1	-1	At-anchor stabilizers	NONE	NONE
+1	-1	Salon table	NONE	NONE
+1	-1	Air conditioner	air-conditioning	air-conditioning
+1	-1	Cushions in Fly Bridge	flybridge	sun-pads
+1	-1	Automatic fire suppression system	NONE	NONE
+1	-1	Air conditioning with shore line	air-conditioning	air-conditioning
+1	-1	Air Conditioning with shore line	air-conditioning	air-conditioning
+1	-1	Yanmar 75 hp	NONE	NONE
+1	38	Roller main and Genoa	NONE	NONE
+1	-1	Solar panels 3 x 150W	solar-panels	solar-panels
+1	-1	Service Battery (in Ah.)	NONE	NONE
+1	-1	Jeneratör	NONE	generator
+1	-1	Clock	clock	clock
+1	-1	Mini Bar	NONE	fridge
+2	1157778	Speed boat	NONE	NONE
+2	29395773	Boogie Boards	NONE	NONE
+2	5005606	VIP aft cabin	NONE	NONE
+2	45502985	Portable refrigerator	fridge	fridge
+2	1401608	Baby cot	NONE	NONE
+2	4086903	Scooter	NONE	NONE
+1	-1	Fans and 12V in every cabin	electric-fans	electric-fans
+1	-1	Shade/canopy	NONE	NONE
+1	-1	Full batten main sail with zip pack	NONE	NONE
+2	17366702	Extra Bath Towels	towels	towels
+1	-1	Rigging with furling ST jib	NONE	NONE
+1	-1	Engine Yanmar 8LV	NONE	NONE
+1	-1	Icebox	NONE	NONE
+1	-1	Boat Stabilizers	NONE	NONE
+1	-1	Fusion	audio-system	audio-system
+1	-1	Dishwashing machine	NONE	dishwasher
+2	17366701	INMARSAT	NONE	NONE
+2	40302936	Feathering Propeller	NONE	NONE
+1	-1	Electric stove	cooker	cooker
+1	-1	snorkeling equipment	snorkel-sets	snorkel-sets
+2	4745195	Swinging keel	NONE	NONE
+2	134687	Lifting keel	NONE	NONE
+2	1075198	No bathing platform	NONE	NONE
+2	52071847	Fin Stabilizing System	snorkel-sets	snorkel-sets
+2	22660818	Dinghy ladder	NONE	NONE
+2	107375	Hull colour: GREY	NONE	NONE
+2	837779	Tablet with mobile Internet	wifi	wifi
+2	487199	Diving eyeglasses	NONE	NONE
+2	107382	Hydraulic vang	NONE	NONE
+2	23518741	Panoramic roof	NONE	NONE
+2	2922708	Twin beds can be converted into double bed	NONE	NONE
+2	1266055	Fusion RA205	audio-system	audio-system
+1	-1	8 x Batteries Varta C40 Solar	NONE	NONE
+1	-1	Mooring kit + 6 fenders	fenders	fenders
+1	-1	Cockpit with seating area	NONE	NONE
+1	-1	Premium mattresses (memory foam)	NONE	NONE
+1	-1	220V plug	shore-connection-220v	shore-connection-220v
+2	10095833	Skipper's cabins reachable only from the outside	NONE	NONE
+2	840464	Fun pack	NONE	NONE
+2	985770	Seabob 1	water-toys	water-toys
+2	27015266	Printer	NONE	NONE
+2	10241312	Twin keel	NONE	NONE
+2	1263605	Floating walkway	NONE	NONE
+2	934250	Spare generator	generator	generator
+2	100815	Joystick of the anchor winch	NONE	NONE
+2	861383	Wakeskate	NONE	NONE
+2	583918	Playstation 3	game-console	game-console
+2	119263	Radar/GPS/tv sync.	radar	radar
+2	1222349	Super steady zero stabilisers "Quantum"	NONE	NONE
+2	6711881	Sentinel Tracking	NONE	NONE
+2	13059738	Surround system	NONE	NONE
+2	25423844	WindSUP	NONE	NONE
+2	34581910	Highfield Center Console Sport Dinghy	dinghy	dinghy
+1	-1	Complete safety and galley equipment	kitchen-utensils	kitchen-utensils
+1	-1	USB player	usb-sockets	audio-system
+1	-1	CD-MP3 player	audio-system	audio-system
+1	-1	Anchor chain 90 m	anchor-line	anchor-line
+1	-1	12 V Plug	NONE	NONE
+1	-1	iPod speeker	NONE	NONE
+1	-1	Fully equipped kitchen (stove + oven)	kitchen-utensils	kitchen-utensils
+2	1061254	Underwater camera	NONE	NONE
+2	1219373	GoPRO	NONE	NONE
+2	979044	Other	NONE	NONE
+1	-1	USB PLUGS	usb-sockets	usb-sockets
+1	-1	Double berth in the salon	NONE	NONE
+1	-1	Salon curtains	NONE	NONE
+1	-1	Outsie steering position	NONE	NONE
+1	-1	Electrical platform	NONE	NONE
+1	-1	Hot water system	hot-water	hot-water
+1	15	Deck brush	NONE	NONE
+1	-1	Handle for windlass	NONE	NONE
+1	-1	Furling Genoa (2021)	NONE	NONE
+1	-1	Furling Mainsail (2022)	NONE	NONE
+1	-1	GPS plotters with digital charts	salon-GPS-plotter	salon-GPS-plotter
+1	-1	GMDSS	NONE	NONE
+1	-1	Box of Flares	distress-signals	distress-signals
+1	-1	WIFI & Starlink Internet	wifi	wifi
+1	-1	220V / 12V inlets in each cabin	shore-connection-220v	shore-connection-220v
+1	-1	Gas 4 burners	cooker	cooker
+1	-1	Barbecue on the Flybridge	BBQ	BBQ
+1	-1	Mobile chargng station	NONE	NONE
+1	-1	Electronic cartography (Plotter) and paper	salon-GPS-plotter	salon-GPS-plotter
+1	-1	Bose Sound System	audio-system	audio-system
+1	-1	Professional stereo Music system	audio-system	audio-system
+1	-1	Light buoy	NONE	life-buoy
+1	-1	Service Battery 3x 95Ah	NONE	NONE
+1	-1	Trolling Rods/Fishing gear	fishing-set	fishing-set
+1	15	Fulring Genoa	NONE	NONE
+1	-1	Battery charger 230V	battery-charger	battery-charger
+1	-1	Deck/inside hot shower	outside-shower	outside-shower
+1	-1	Deck shower - Hot/cold water	outside-shower	outside-shower
+1	-1	dish washer	dishwasher	dishwasher
+1	-1	75 BHP Main Engine	NONE	NONE
+1	-1	634L American fridge/freezer with ice water and ice maker (225L freezer / 409L refrigerator)	NONE	NONE
+1	-1	Electric Davids	davit	davit
+1	-1	2B&G Triton2 instuments display	NONE	logge-speed-wind
+1	-1	VHF - Handheld	vhf-radio	vhf-radio
+1	-1	Norwegian Cruising Guide	NONE	navigation-set
+1	-1	Kitchen	NONE	NONE
+1	-1	Dinghy with two paddles	dinghy	dinghy
+1	-1	BBQ - Gas barbeque on stern	BBQ	BBQ
+1	-1	Inverter 12V to 220V 350W	inverter	inverter
+1	-1	Sunpads	sun-pads	sun-pads
+1	-1	220 Volt Socket	shore-connection-220v	shore-connection-220v
+1	-1	12 Volt Socket	NONE	NONE
+1	-1	Sunroof	NONE	NONE
+1	-1	sailor/hostess accomodation	NONE	NONE
+1	-1	2 steering wheels	NONE	NONE
+1	-1	Emergency light	NONE	NONE
+1	-1	Davit	davit	davit
+1	-1	Shower in the cockpit	outside-shower	outside-shower
+1	-1	Bow sundeck	sun-pads	sun-pads
+1	-1	Anchor with chain and rope	main-anchor	main-anchor
+1	-1	Navigation Lights	NONE	NONE
+1	-1	Navigation kit	NONE	navigation-set
+1	-1	WC pump	NONE	NONE
+1	-1	VHF antenna	vhf-radio	vhf-radio
+1	-1	1 Pair Waterski	water-skis	water-skis
+1	-1	Inductions hub	NONE	cooker
+1	28	Full batten main sail 2024	NONE	NONE
+1	15	Furling genoa 2024	NONE	NONE
+1	-1	cabin and saloon fans	electric-fans	electric-fans
+1	-1	Wi-fi	wifi	wifi
+1	-1	220V sockets	shore-connection-220v	shore-connection-220v
+1	38	Roller Furling Main Sail	NONE	NONE
+1	-1	self-tacking jib	NONE	NONE
+1	-1	fans (cabins+cockpit)	electric-fans	electric-fans
+1	-1	Geographic maps	navigation-set	navigation-set
+1	-1	Air Conditioned	air-conditioning	air-conditioning
+1	-1	Toaster	NONE	NONE
+1	-1	Hi-Fi system	audio-system	audio-system
+1	-1	Large Teak foldable table	NONE	NONE
+1	-1	Elegance Line	NONE	NONE
+1	-1	Outboard engine 10hp	outboard-engine	outboard-engine
+1	-1	Natural Wood Cockpit	NONE	NONE
+1	-1	Carbon outboard	outboard-engine	outboard-engine
+1	-1	Electric Anchor winch	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Code Zero	NONE	NONE
+1	-1	Stern shower	outside-shower	outside-shower
+1	-1	Hidraulic gearbox	NONE	NONE
+1	-1	Raymarine multifunction display	NONE	NONE
+1	-1	Sound System + 3 JBL speakers	audio-system	audio-system
+1	-1	Safety Line on Deck	NONE	NONE
+1	-1	Full Bimini	bimini	bimini
+1	-1	Inflatable lifejackets	life-jackets	life-jackets
+1	-1	Sunbed	NONE	sun-pads
+1	-1	Rubber dinghy (2,2m)	dinghy	dinghy
+1	-1	Extra outdoor lounge cushions	NONE	NONE
+1	-1	Roof Winches	NONE	NONE
+1	-1	Outboard motor	outboard-engine	outboard-engine
+1	-1	Sun loungers	NONE	sun-pads
+1	-1	Aircondition	air-conditioning	air-conditioning
+1	-1	12 V Socket	NONE	NONE
+1	-1	Dishwasher (12 place settings)	dishwasher	dishwasher
+1	-1	Marine Underwater LED lights	NONE	NONE
+1	-1	Yanmar 40HP/29kW shaft drive and three-blade fixed propeller	NONE	NONE
+1	-1	2x80HP sail drive with 3-blade fixed propellers	NONE	NONE
+1	-1	2x45HP saildrive with 3-blade fixed propellers	NONE	NONE
+1	-1	Yanmar 57HP/42kW shaft drive and three-blade fixed propeller	NONE	NONE
+1	-1	2x gas cylinders (2.75 kg)	gas-bottles	gas-bottles
+1	-1	Yanmar 29 CV/21KW shaft drive and fixed three-blade propeller	NONE	NONE
+1	-1	2x57HP saildrive with 3-blade folding propellers	NONE	NONE
+1	-1	Teck in Cockpit - 2 fridge - 1 SUP - 1 Surf Board	surf	surf
+1	-1	Guides & Maps	navigation-set	navigation-set
+1	-1	Plug 220V	shore-connection-220v	shore-connection-220v
+1	-1	Shore connection 220 V	shore-connection-220v	shore-connection-220v
+1	-1	Additional service batteries	NONE	NONE
+1	-1	Mainsail with cockpit reefing system and lazy jack	lazy-jacks	lazy-jacks
+1	-1	Cooker with grill	cooker	cooker
+1	-1	Arch with dinghy davits	davit	davit
+1	-1	On-board shower	shower	shower
+1	-1	Spritbud	NONE	NONE
+1	-1	Electric toilettes	NONE	NONE
+1	-1	bathing ladder	NONE	NONE
+1	-1	Inside speaskers	inside-speakers	inside-speakers
+1	-1	Salon table - electrically lowerable	lowerable-salon-table	lowerable-salon-table
+1	-1	Radio (VHF/UKF)	vhf-radio	vhf-radio
+1	-1	Jib halyard	NONE	NONE
+1	-1	12 V/220 V	shore-connection-220v	shore-connection-220v
+1	-1	220V socket	shore-connection-220v	shore-connection-220v
+1	-1	Roller blinds	NONE	NONE
+1	-1	Maintainance Tool set	NONE	NONE
+1	-1	High capacity (72,000 BTU) air conditioning with 11 Kw generator	air-conditioning	air-conditioning
+1	-1	Rexroth micro-commander circuit	NONE	NONE
+1	-1	Comfortable swim ladder with large handles and teak steps	NONE	NONE
+1	-1	Toilets with electric pumps	electric-toilet	electric-toilet
+1	-1	Gas stove & oven	cooker	cooker
+1	-1	Raymarine instruments	NONE	NONE
+1	-1	Batten main sail	NONE	NONE
+1	28	Mainsail with lazy jack	lazy-jacks	lazy-jacks
+1	-1	solar lighting in the cockpit	NONE	NONE
+1	-1	Shower outside	outside-shower	outside-shower
+1	-1	Wine cellar	NONE	NONE
+1	-1	sail area 59,5 mq2	NONE	NONE
+1	-1	Bluetooth usb radio	audio-system	audio-system
+1	28	Fully battened mainsail with MDS-system and lazybags	NONE	NONE
+1	-1	Dinghy outboard engine	dinghy	dinghy
+1	-1	GPS Plotter	salon-GPS-plotter	salon-GPS-plotter
+1	28	Batten main sail	NONE	NONE
+1	-1	AIS transceiver class A	ais	ais
+1	-1	Bidet nozzle	NONE	NONE
+1	-1	Halyard winches	NONE	NONE
+1	-1	Power Inventer	inverter	inverter
+1	-1	Wind system	NONE	NONE
+1	-1	Electric WC	electric-toilet	electric-toilet
+1	-1	Radio / mp3 / bluetooth / 4 speakers	audio-system	audio-system
+1	39	Large Furling Genoa 120 % plus Self tacking jib equipment	NONE	NONE
+1	-1	LED outdoor and indoor boat lights	NONE	NONE
+1	-1	MULTI I70S and VHF RAY 63	vhf-radio	vhf-radio
+1	-1	Tea kettle	NONE	NONE
+1	-1	Corkscrew	NONE	kitchen-utensils
+1	-1	Inox gangway	gangway	gangway
+1	-1	Radar RYA Marine	radar	radar
+1	-1	Table cockpit	cockpit-table	cockpit-table
+1	28	Standard main sail	NONE	NONE
+1	-1	CODE 0 RIG AND POLE & FURLER	NONE	NONE
+1	-1	Raymarine VHF Wireless Handset	vhf-radio	vhf-radio
+1	-1	Raymarine P70S Autopilotg	NONE	autopilot
+1	-1	Guard railing (stainless steel)	NONE	NONE
+1	-1	Port Side Skipper Cabin and Toilet	NONE	NONE
+1	-1	Fusion Music System	audio-system	audio-system
+1	-1	Gas cylinder	gas-bottles	gas-bottles
+1	-1	Hair Dryer	NONE	NONE
+1	-1	Navigation charts	navigation-set	navigation-set
+1	-1	Coffee maker	coffee-machine	coffee-machine
+1	-1	Life raft for 12 people	liferaft	liferaft
+1	-1	220 V Shorepower	shore-connection-220v	shore-connection-220v
+1	-1	Fire system	NONE	NONE
+1	-1	220V power outlet	shore-connection-220v	shore-connection-220v
+1	-1	Music system with Bluetoouth connection and Karaoke	audio-system	audio-system
+1	-1	Hairdryers	NONE	NONE
+1	-1	Internal cabin speakers	inside-speakers	inside-speakers
+1	-1	Big Electric fridge and freezer	fridge	fridge
+1	-1	Furling Mainsail NEW 2025	NONE	NONE
+1	-1	Refreshments	NONE	NONE
+1	-1	Gas Stove Oven	cooker	cooker
+1	-1	watermaker	water-maker	water-maker
+1	-1	Aft cabin with 2 single beds 80x200 or huge double bed 200x200	NONE	NONE
+1	-1	Large U-shaped sofa convers into double berth	NONE	NONE
+1	-1	BBQ plancha grill in cockpit	BBQ	BBQ
+1	-1	220V onboard electricity	shore-connection-220v	shore-connection-220v
+1	15	Roller Furling Head Sail	NONE	NONE
+1	-1	Pillows and blankets in cockpit	pillows-and-blankets	pillows-and-blankets
+1	-1	Folding propellers	NONE	NONE
+1	-1	230 VOLT SOCKET	NONE	shore-connection-220v
+1	-1	Radinn Jet Board	NONE	NONE
+1	-1	Air Conditioning Saloon Shore Power	air-conditioning	air-conditioning
+1	-1	4 double cabins	NONE	NONE
+1	-1	Teak in cokpit	teak-deck	teak-deck
+1	-1	Fridge compressor	fridge	fridge
+1	-1	Surronding	NONE	NONE
+1	-1	Webasto heating	heating	heating
+1	-1	Jetski Gti 130	jet-ski	jet-ski
+1	-1	Water ski	water-skis	water-skis
+1	-1	Idraulic tender lift	NONE	NONE
+1	-1	Cooker/stove	cooker	cooker
+1	-1	Custom bathing platform	bathing-platform	bathing-platform
+1	-1	Seabob F5S	water-toys	water-toys
+1	-1	Fitting out port forepeak	NONE	NONE
+1	-1	TBC	NONE	NONE
+1	28	Full batten main sail NEW 2018	NONE	NONE
+1	-1	Teak cockpit table with modular deployment and sunbed conversion option	NONE	NONE
+1	-1	Single skippers cabin (portside)	NONE	NONE
+1	-1	Jet Ski - 2 seater YAMAHA 270 HP	jet-ski	jet-ski
+1	-1	Stern/cockpit shower	outside-shower	outside-shower
+1	-1	Floating mats	NONE	water-toys
+1	-1	Electric Genoa Sheet Winches	electric-winches	electric-winches
+1	-1	Shower Outdoor	outside-shower	outside-shower
+1	-1	Kneeboard	NONE	NONE
+1	-1	Watermaker	water-maker	water-maker
+1	-1	Forward pulpit	NONE	NONE
+1	-1	Club Corner (two armchairs + minibar) in saloon	NONE	NONE
+1	-1	Speakers in salon	NONE	inside-speakers
+1	-1	Depth meter	depth-sounder	depth-sounder
+1	-1	Pilows and pilow cases	pillows-and-blankets	pillows-and-blankets
+1	-1	Greek water pilot	navigation-set	navigation-set
+1	28	Full Batten Main	NONE	NONE
+1	-1	Refrigerator	fridge	fridge
+1	-1	Outboard Engine Mercury 20 hp	outboard-engine	outboard-engine
+1	-1	Boom with Led Lights	NONE	NONE
+1	-1	Watertoys	water-toys	water-toys
+1	-1	Cushions on deck	sun-pads	sun-pads
+1	-1	Aft thruster	NONE	NONE
+1	-1	Bluetooth music	NONE	audio-system
+1	-1	Electric Anchor Winch	electric-anchor-windlass	electric-anchor-windlass
+1	-1	12V sockets	NONE	NONE
+1	-1	Banana	NONE	water-toys
+1	-1	700 liter tank	NONE	NONE
+1	-1	USB socket	usb-sockets	usb-sockets
+1	-1	tender boat	dinghy	dinghy
+1	-1	Ice box in cockpit	NONE	NONE
+1	-1	Electric Outboard	outboard-engine	outboard-engine
+1	-1	Radio player/ usb/ fusion	audio-system	audio-system
+1	-1	Cockpit speaker	outside-speakers	outside-speakers
+1	-1	Anchor winch	NONE	NONE
+1	-1	Warm water	hot-water	hot-water
+1	-1	Wind vane	NONE	NONE
+1	-1	Bed linen - 1 face towel (per person)	pillows-and-blankets	pillows-and-blankets
+1	-1	RGB underwater lights	NONE	NONE
+1	-1	1 double fridge + Freezer freezer	fridge	fridge
+1	-1	Additional portholes	NONE	NONE
+1	28	Batten sail	NONE	NONE
+1	-1	Tools	NONE	NONE
+1	-1	VHF+EPIRB	vhf-radio	epirb
+1	-1	Inox boarding ladder	NONE	NONE
+1	-1	Sea anchor	NONE	NONE
+1	-1	On board computer	NONE	NONE
+1	-1	Outboard engine	outboard-engine	outboard-engine
+1	-1	Jet ski dock	NONE	NONE
+1	-1	Seadoo	NONE	NONE
+1	-1	Yamaha jetski	jet-ski	jet-ski
+1	-1	Jetski	jet-ski	jet-ski
+1	-1	Mooring kit+4 fenders	fenders	fenders
+1	-1	Navigation instruments	NONE	NONE
+1	-1	Jobe addict SUP boat rack	stand-up-paddle	stand-up-paddle
+1	-1	Cockpit kitchen	NONE	NONE
+1	-1	Onboard Jacuzzi	jacuzzi	jacuzzi
+1	-1	Tube	NONE	water-toys
+1	-1	Rubber ring	NONE	NONE
+1	-1	Laundy machine	washing-machine	washing-machine
+1	-1	Outboard engine bracket on pushpit (max 60kg)	outboard-engine	outboard-engine
+1	-1	Inflatables	NONE	NONE
+1	-1	Electric Scooter (skipper's discretion when and if they will be available to guets)	NONE	NONE
+1	-1	Water maker	water-maker	water-maker
+1	15	Furling jib (Self Tacking)	NONE	NONE
+1	-1	Dish Washer	dishwasher	dishwasher
+1	-1	Fusion Music System with 4 Speakers	audio-system	audio-system
+1	-1	Swimming Platform With Shower	bathing-platform	outside-shower
+1	-1	Spinnaker running rigging.	spinnaker	spinnaker
+1	-1	220V power generator	shore-connection-220v	shore-connection-220v
+1	-1	Exterior Loudspeaker	NONE	NONE
+1	-1	Depth-Speed Tridata	logge-speed-wind	logge-speed-wind
+1	-1	2 gas cylinders	gas-bottles	gas-bottles
+1	-1	Anchor with chain & rope	main-anchor	main-anchor
+1	-1	2 helms	NONE	NONE
+1	-1	Navigation equipment	NONE	NONE
+1	-1	El. Windlass	NONE	electric-anchor-windlass
+1	-1	Blade rudder	NONE	NONE
+1	-1	Fans in salon	electric-fans	electric-fans
+1	-1	Fans in salon and cabin	electric-fans	electric-fans
+1	-1	Galley equipment	kitchen-utensils	kitchen-utensils
+1	-1	Induction hot plate	NONE	cooker
+1	-1	Cocpit cushions	cockpit-cushions	cockpit-cushions
+1	-1	Wine Cellar	NONE	NONE
+1	-1	Washer/Dryer	washing-machine	washing-machine
+1	-1	Doublebowl sink	sink	sink
+1	-1	Front skipper cabins accessible from outside	NONE	NONE
+1	-1	Navigation	NONE	NONE
+1	-1	Dishes	kitchen-utensils	kitchen-utensils
+1	-1	Upholstery PVC snow white	NONE	NONE
+1	-1	Air fryer	NONE	NONE
+1	-1	Logge/Lot/Speed/Wind - B&G T41	logge-speed-wind	logge-speed-wind
+1	-1	Sunlounging area cushions	NONE	sun-pads
+1	15	Genoa furler	NONE	NONE
+1	-1	Binoculars, compasses, clocks and barometers	binoculars	binoculars
+1	-1	Ceramic glass 2-hob range	cooker	cooker
+1	-1	Stereo sound system	audio-system	audio-system
+1	-1	digital multifunctional display for engine datas and systems	NONE	NONE
+1	-1	BBQ and fridge on flybridge	BBQ	BBQ
+1	-1	Raymarine plotters in saloon and flybridge	salon-GPS-plotter	outside-GPS-plotter
+1	-1	Water Ski & Fun Tube	water-skis	water-skis
+1	-1	Electric searchlight	NONE	NONE
+1	-1	Triradial hydranet 2024 genoa	NONE	NONE
+1	38	Roller furling mainsail	NONE	NONE
+1	-1	Sails 2025	NONE	NONE
+1	-1	Espresso machine	NONE	coffee-machine
+1	-1	Water Boiler	hot-water	hot-water
+1	-1	Fixed bowspirit	NONE	NONE
+1	-1	Cook stove	cooker	cooker
+1	-1	USB sockets in cabins	usb-sockets	usb-sockets
+1	-1	Moka - Coffee machine	coffee-machine	coffee-machine
+1	-1	iPod connection	NONE	NONE
+1	-1	Air Condition on Shore power	air-conditioning	air-conditioning
+1	-1	BBQ/Grill	BBQ	BBQ
+1	15	Roller genoa	NONE	NONE
+1	-1	Dinghy pump/oars	NONE	NONE
+1	-1	Swimming Ladder	NONE	NONE
+1	-1	ELECTRICAL TOILETS JABSCO QUIT FLASH to flash with FRESH WATER 2025	electric-toilet	electric-toilet
+1	-1	Water Tank 800 lt	NONE	NONE
+1	-1	AIS receiver	ais	ais
+1	-1	Swim platform	bathing-platform	bathing-platform
+1	-1	Stabilisers	NONE	NONE
+1	-1	Electric 220V sockets	shore-connection-220v	shore-connection-220v
+1	-1	4 crew members	NONE	NONE
+1	-1	LCD	NONE	NONE
+1	-1	kayak	kayak	kayak
+1	-1	220V shore supply connection	shore-connection-220v	shore-connection-220v
+1	-1	Captain's dinner	NONE	NONE
+1	-1	Seperate galley (made of high quality materials)	NONE	NONE
+1	-1	fuel for main engines up to 4 hours cruising per day	NONE	NONE
+1	-1	2 king size outdoor puffs	NONE	NONE
+1	-1	Adjustable Backstay	NONE	NONE
+1	-1	Latest tech hard top	NONE	NONE
+1	-1	Composite bimini on the flybridge with windshield	bimini	bimini
+1	-1	Raymarine Navigation Package	NONE	NONE
+1	-1	Pedestals in front of the wheels	NONE	NONE
+1	-1	Waterproof wireless charger	NONE	NONE
+1	-1	HI-FI  FM- Bluetooth	audio-system	audio-system
+1	-1	Bose sound system	audio-system	audio-system
+1	-1	Fusion sound systems	audio-system	audio-system
+1	28	Classic Mainsail	NONE	NONE
+1	-1	Owner's Version	NONE	NONE
+1	-1	Lateral Access Door	NONE	NONE
+1	-1	220 volt socket	shore-connection-220v	shore-connection-220v
+1	-1	Toolbox	NONE	NONE
+1	-1	Boat awnings	NONE	NONE
+1	-1	Jet Ski SEA-DOO Spark 2UP	jet-ski	jet-ski
+1	-1	Double Racor filter for main engines	NONE	NONE
+1	-1	Dinghy on flybridge	dinghy	dinghy
+1	-1	Kitchen utilities	kitchen-utensils	kitchen-utensils
+1	-1	Bow anchor	main-anchor	main-anchor
+1	-1	Full set of charts	navigation-set	navigation-set
+1	-1	Chain counter	NONE	NONE
+1	28	hydranet fullbattened mainsail	NONE	NONE
+1	15	hydranet rollgenoa	NONE	NONE
+1	-1	Sea Doo Spark Trixx 2up	jet-ski	jet-ski
+1	-1	Kitchen with cooking facilities	NONE	cooker
+1	-1	Depthsounder	depth-sounder	depth-sounder
+1	-1	Safety Equipment	NONE	NONE
+1	-1	Hydraulic steering	NONE	NONE
+1	-1	Depth & speed & wind repeaters	NONE	logge-speed-wind
+1	-1	VHF/GMDSS Raymarine Ray 53	vhf-radio	vhf-radio
+1	-1	Outer shaded lounge area (in extension to dining area)	NONE	NONE
+1	-1	LED navigation lights	NONE	NONE
+1	-1	Exterior shower	outside-shower	outside-shower
+1	-1	220V cable adapters	shore-connection-220v	shore-connection-220v
+1	-1	Front sunbed	NONE	NONE
+1	-1	Complete safety with automatic life vests & galley equipment	life-jackets	life-jackets
+1	-1	Sea Charts & Greek Water Pilot Book	navigation-set	navigation-set
+1	-1	Instrument console	NONE	NONE
+1	-1	Wireless handset for raymarine ray90 vhf at helm station	vhf-radio	vhf-radio
+1	-1	Cockpit table - stable	cockpit-table	cockpit-table
+1	-1	Hot & cold exterior shower in cockpit	outside-shower	outside-shower
+1	-1	Tridata instrument	logge-speed-wind	logge-speed-wind
+1	-1	Hydraulic bathing platform	bathing-platform	bathing-platform
+1	-1	2 x Yanmar 110 hv	NONE	NONE
+1	-1	El. mooring winches in cockpit	NONE	electric-winches
+1	-1	Tender davits	davit	davit
+1	-1	Raymarine GPS Plotter AXIOM 7	salon-GPS-plotter	salon-GPS-plotter
+1	-1	Windvane, Anemometer B&G	logge-speed-wind	logge-speed-wind
+1	-1	Shore Power 220V	shore-connection-220v	shore-connection-220v
+1	-1	Showers	shower	shower
+1	-1	Sponge	NONE	NONE
+1	-1	2nd gas bottle for free	gas-bottles	gas-bottles
+1	-1	Baden in Plato	NONE	NONE
+1	-1	PACK ELECTRONIC 2020 CRUISING	NONE	NONE
+1	-1	2 x roof winches - T45	NONE	NONE
+1	-1	2020 COASTAL PACK - B&G	NONE	NONE
+1	-1	life jackets	life-jackets	life-jackets
+1	28	battened main sail	NONE	NONE
+1	-1	Life raft and life jackets	life-jackets	liferaft
+1	-1	A/C	air-conditioning	air-conditioning
+1	-1	Hifi in the lounge & bath with Bluetooth	audio-system	audio-system
+1	-1	Anchor winsch	main-anchor	main-anchor
+1	-1	80 m galvanized anchor chain	anchor-line	anchor-line
+1	-1	Cabin for 2 Person	NONE	NONE
+1	-1	Generator Kohler 11KW	generator	generator
+1	-1	signal rockets	distress-signals	distress-signals
+1	-1	3 blade folding propeller	NONE	NONE
+1	-1	Radio/USB	audio-system	audio-system
+1	-1	Additional Berth in Saloon	NONE	NONE
+1	-1	Adjustable steering wheel	NONE	NONE
+1	-1	Double-wide command seat	NONE	NONE
+1	-1	Electric and manual bilge pump	NONE	NONE
+1	-1	Cockpit foldtable	NONE	cockpit-table
+1	-1	Cockpit/stern outside shower with hot and cold water	outside-shower	outside-shower
+1	-1	AC	air-conditioning	air-conditioning
+1	-1	Air conditioning 110V/220Vreversible&dehumidifier	air-conditioning	air-conditioning
+1	-1	Logbook	NONE	NONE
+1	-1	Repair kit	NONE	NONE
+1	-1	A/C in salon with shore power	air-conditioning	air-conditioning
+1	-1	teak on cockpit & roof	teak-deck	teak-deck
+1	-1	12V connection	NONE	NONE
+1	-1	Rib with 20HP engine	dinghy	dinghy
+1	-1	Hydraulic swim platform with remote control	bathing-platform	bathing-platform
+1	-1	Lifejackets	life-jackets	life-jackets
+1	-1	USB ports in cabin	usb-sockets	usb-sockets
+1	-1	TV/DVD	flat-screen-TV	flat-screen-TV
+1	-1	01. One Master double cabin with Queen size bed & Walk in closet (en-suite facilities)	NONE	NONE
+1	-1	Electrically operated side terraces	NONE	NONE
+1	-1	Indoor and outdoor speakers	inside-speakers	inside-speakers
+1	-1	Wind and depth instruments	logge-speed-wind	logge-speed-wind
+1	-1	Skipper Cabin	NONE	NONE
+1	-1	Crockery&Cutlery	kitchen-utensils	kitchen-utensils
+1	-1	Batteries	NONE	NONE
+1	-1	Lofrans 1200w anchorwinch	electric-anchor-windlass	electric-anchor-windlass
+1	-1	BBQ-Grill	BBQ	BBQ
+1	28	Standard mani sail	NONE	NONE
+1	-1	Winch 40.2STA for mainsail sheet, reef 1, reef 2, port side mainsail traveler line, starboard mainsail traveler line and genoa furler	NONE	NONE
+1	-1	5 A/C	air-conditioning	air-conditioning
+1	-1	Symetric Spinnaker	spinnaker	spinnaker
+1	-1	Bridge deck	NONE	NONE
+1	-1	Teak Cockpit	teak-deck	teak-deck
+1	-1	Type II PFD lifejackets	life-jackets	life-jackets
+1	-1	Plastimo 12 person liferaft	liferaft	liferaft
+1	-1	Central Heating	heating	heating
+1	-1	Black steering in VTR	NONE	NONE
+1	-1	Asymmetrical spinnaker circuit	spinnaker	spinnaker
+1	15	Furlig Genoa	NONE	NONE
+1	-1	Manual Toilets	NONE	NONE
+1	-1	Rear cockpit extension	NONE	NONE
+1	-1	Climbing ladder	NONE	NONE
+1	-1	Bluetooth speakers Fusion	audio-system	audio-system
+1	-1	Hydraulic Swimming platform	bathing-platform	bathing-platform
+1	-1	Navtex	NONE	NONE
+1	-1	Electric instrument depth, speed, log	logge-speed-wind	logge-speed-wind
+1	-1	Carbon sails	NONE	NONE
+1	-1	Navigation maps	navigation-set	navigation-set
+1	-1	Joystick	NONE	NONE
+1	-1	Indoor speakers	inside-speakers	inside-speakers
+1	-1	VHF (Raymarine Ray53)	vhf-radio	vhf-radio
+2	52451552	Seabike	NONE	NONE
+2	6438660	Underwater drone	NONE	NONE
+2	30365854	Compressor cooler	fridge	fridge
+2	72375492	Pullman bed aft port cabin	NONE	NONE
+2	74997576	Piano	NONE	NONE
+1	-1	Bath platform	bathing-platform	bathing-platform
+1	-1	Wind station, log, eco	logge-speed-wind	logge-speed-wind
+1	-1	Wooden gangway	gangway	gangway
+1	-1	Bluetooth sound box	NONE	audio-system
+1	-1	Fusion player ra210n + 4 loudspeakers in salon & cockpi	audio-system	audio-system
+1	-1	Tender Platform	NONE	NONE
+1	-1	Interior salon + deck salon	NONE	NONE
+1	-1	toillet	NONE	NONE
+1	-1	Fully navigation equipments	NONE	NONE
+2	59871432	JetBoard	NONE	NONE
+2	12664807	Astronomical telescope	NONE	NONE
+2	1066630	Nintendo Wii console	NONE	NONE
+2	40201898	Floating chair	NONE	NONE
+2	32406698	PFD (Personal floatation device) life jackets	life-jackets	life-jackets
+2	16605993	Beach chair	NONE	NONE
+1	-1	desalination plant	water-maker	water-maker
+1	-1	DSC	NONE	NONE
+1	-1	Hardtop with a large opening soft top	NONE	NONE
+1	-1	Barbeque	BBQ	BBQ
+1	-1	GPS chart plotter	salon-GPS-plotter	salon-GPS-plotter
+1	-1	SUP board Stand Up Paddle	stand-up-paddle	stand-up-paddle
+1	-1	Sea kayaks	kayak	kayak
+1	-1	VHF Eb VHF Radio ICOM Model IC-M412	vhf-radio	vhf-radio
+1	-1	ACR model SR 203 bidirectional radios	NONE	NONE
+1	-1	Waterproof storage compartments	NONE	NONE
+1	-1	Full LED lighting	NONE	NONE
+1	-1	230V sockets	NONE	NONE
+1	-1	Upgraded sound system	audio-system	audio-system
+1	-1	Big kitchen fork	NONE	kitchen-utensils
+1	-1	2 anchors	main-anchor	main-anchor
+1	-1	BBQ on deck	BBQ	BBQ
+1	-1	Complete fire extinguishing system	NONE	NONE
+1	-1	Electric Winches	electric-winches	electric-winches
+1	-1	Saloon GPS plotter	salon-GPS-plotter	salon-GPS-plotter
+1	-1	220V outlets	shore-connection-220v	shore-connection-220v
+1	56	Tender garage	NONE	NONE
+1	-1	3-burner gas hob	cooker	cooker
+1	-1	12V internal sockets	NONE	NONE
+1	-1	Double throat station	NONE	NONE
+1	-1	220V connection	shore-connection-220v	shore-connection-220v
+1	-1	Rudder wheel	NONE	NONE
+1	-1	Anchor type	main-anchor	main-anchor
+1	-1	Gangway carbon	gangway	gangway
+1	-1	Battened Mainsail	NONE	NONE
+1	-1	Speed indicator	logge-speed-wind	logge-speed-wind
+1	-1	Kettle	NONE	NONE
+1	-1	220V electrical outlets	shore-connection-220v	shore-connection-220v
+1	-1	Bluetooth connection	NONE	NONE
+1	-1	Kitchen utensils (Galley equipment, cutlery)	kitchen-utensils	kitchen-utensils
+1	-1	Windscoops	NONE	NONE
+1	-1	Bread maker	NONE	NONE
+1	-1	Medical Equipment	NONE	first-aid-kit
+1	-1	Fire Protection Systems	NONE	NONE
+1	-1	Winter tent	NONE	NONE
+1	-1	5 person crew	NONE	NONE
+1	-1	Inside speakers	inside-speakers	inside-speakers
+1	-1	Electrical circuit 220v	shore-connection-220v	shore-connection-220v
+1	-1	Beach towels: 1 per person per week, changed once per weekk	towels	towels
+1	-1	24V/220 electricity	NONE	NONE
+1	-1	2 freezers	freezer	freezer
+1	-1	On-board stereo system	audio-system	audio-system
+1	-1	Skytop roof	NONE	NONE
+1	-1	12V sockets/ USB + 220W Socket	usb-sockets	usb-sockets
+1	-1	Tender 3.15 Mt with Mercury 15CV	dinghy	dinghy
+1	-1	Beach towel	towels	towels
+1	-1	Sun hood	NONE	NONE
+1	-1	Gas stove and oven	cooker	cooker
+1	-1	B&G GPS Plotter with updated C-Map charts	salon-GPS-plotter	salon-GPS-plotter
+1	-1	Aft shower	shower	outside-shower
+1	-1	Cockpit wash stand	NONE	NONE
+1	-1	200W photovolataic panels	solar-panels	solar-panels
+1	-1	BOSE surround hi-fi system	audio-system	audio-system
+1	-1	One-person kayak	kayak	kayak
+1	-1	Deck Jacuzzi	jacuzzi	jacuzzi
+1	-1	Shore charger	NONE	battery-charger
+1	-1	Aft camera	NONE	NONE
+1	-1	Music Player	NONE	audio-system
+1	-1	Main anchor	main-anchor	main-anchor
+1	-1	Two forward cabins can be joined to create owner's suite	NONE	NONE
+1	-1	Extra foldable pulman bed aft port cabin	NONE	NONE
+1	-1	Shore Power Connection	shore-connection-220v	shore-connection-220v
+1	-1	Fully equipped galley (kitchen)	kitchen-utensils	kitchen-utensils
+1	-1	Seekeper stabilizer	NONE	NONE
+1	-1	Navigation charts & pilots	navigation-set	navigation-set
+1	-1	Fully-equipped kitchen	kitchen-utensils	kitchen-utensils
+1	-1	Carbon steering wheels	NONE	NONE
+1	-1	Mp3 player	NONE	NONE
+1	-1	Handbooks	NONE	NONE
+1	-1	Sunbathing areas	NONE	NONE
+1	-1	Lounge area on the aft	NONE	NONE
+1	-1	Ceramic hob	cooker	cooker
+1	-1	Mizzen	NONE	NONE
+1	-1	Carbon pole shade system	NONE	NONE
+1	-1	Triple	NONE	NONE
+1	-1	Cinema screen	NONE	NONE
+1	-1	Blue hull	NONE	NONE
+1	-1	Steel Anchor	main-anchor	main-anchor
+1	-1	2-burner gas stove + gas oven	cooker	cooker
+1	-1	Blankets/Linen & Bedding/Sheets	pillows-and-blankets	pillows-and-blankets
+1	-1	Shade/Canopy	NONE	NONE
+1	-1	Code Zero Sail	NONE	NONE
+1	-1	Bluetooth Radio	audio-system	audio-system
+1	-1	12V Fans in all Cabins	electric-fans	electric-fans
+1	-1	Gas barbecue	BBQ	BBQ
+1	-1	Grill/Barbecue/Plancha	BBQ	BBQ
+1	-1	Standard SOLAS navigation lights	NONE	NONE
+1	-1	Salon / Restaurant & bar	NONE	NONE
+1	-1	Asiwo Sea Scooter	water-toys	water-toys
+1	-1	Zodiac 60 hp yamaha 4.20mt	dinghy	dinghy
+1	-1	2 helm rudders	NONE	NONE
+1	-1	Chain Counter	NONE	NONE
+1	-1	Cooling fans	electric-fans	electric-fans
+1	-1	Special deck ladder	NONE	NONE
+1	-1	Anchor 100m chain	anchor-line	anchor-line
+1	-1	Complete Safety & Galley Equipment	kitchen-utensils	kitchen-utensils
+1	-1	Hydraulic gangway	gangway	gangway
+1	-1	Gym & yoga equipment	NONE	NONE
+1	-1	Seascooter Sublue	water-toys	water-toys
+1	-1	Anchor with 80 m Chain	main-anchor	main-anchor
+1	-1	Hot and cold water shower in cockpit	hot-water	hot-water
+1	-1	Wine chamber	NONE	NONE
+1	-1	FUSION audio system with bluetooth	audio-system	audio-system
+1	-1	Bed linen and blankets	pillows-and-blankets	pillows-and-blankets
+1	-1	Nautical maps	navigation-set	navigation-set
+1	38	Furling mainsail vertical batten	NONE	NONE
+1	15	Furling self tacking jib	NONE	NONE
+1	-1	Air compressor	NONE	NONE
+1	-1	Wind and depth sounders	depth-sounder	logge-speed-wind
+1	-1	Bed linens/Bed cushions/Blankets (per person)	pillows-and-blankets	pillows-and-blankets
+1	-1	Bath ladder	NONE	NONE
+1	38	Roller mainsail	NONE	NONE
+1	-1	Gas Oven and Stove	oven	oven
+1	-1	Sound system & portable underwater lighting	audio-system	audio-system
+1	-1	Nesspresso Coffee machine	coffee-machine	coffee-machine
+1	-1	Deck Tent	NONE	NONE
+1	-1	Gas Stove	cooker	cooker
+1	-1	Electric 4-burner stove	cooker	cooker
+1	-1	Helm Station	NONE	NONE
+1	-1	Cockpit Table with ice box	cockpit-table	cockpit-table
+1	-1	IPS steering	NONE	NONE
+1	-1	Jacuzzi for 6 guests on the forward main deck area	jacuzzi	jacuzzi
+1	-1	2 Gas bottles	gas-bottles	gas-bottles
+1	-1	Greek Waters Pilot	navigation-set	navigation-set
+1	-1	Audio System + speakers	audio-system	audio-system
+1	-1	Roof mattresses and side shadow system	NONE	NONE
+1	-1	Jacuzzi (8 pax)	jacuzzi	jacuzzi
+1	-1	Equipped galley	kitchen-utensils	kitchen-utensils
+1	-1	Spare anchor with chain and rope	spare-anchor	spare-anchor
+2	986201	Main sail traveler	NONE	NONE
+1	-1	Electrical circuit with 40 amp battery charger	battery-charger	battery-charger
+2	76770076	Iro deck cockpit floor	NONE	NONE
+1	-1	Inflatable slide	NONE	water-toys
+1	-1	Large teak aft cockpit table	cockpit-table	cockpit-table
+1	-1	Self Tacking Genoa	NONE	NONE
+1	-1	Battened mainsail	NONE	NONE
+2	1222247	JBL Sound System	audio-system	audio-system
+1	-1	Radio / CD Player	audio-system	audio-system
+1	-1	Aluminium Gangway	gangway	gangway
+1	-1	Bathing platform lowerable (manual)	bathing-platform	bathing-platform
+1	-1	Converter	NONE	NONE
+2	23494172	Hydraulic unit for mast	NONE	NONE
+1	-1	Board-battery charger	battery-charger	battery-charger
+1	-1	Bosun's Chair	bosun-chair	bosun-chair
+1	-1	Deep cast iron keel	NONE	NONE
+1	-1	Bar module with ice maker, refrigerator and sink in cockpit	ice-maker	ice-maker
+1	-1	All cabins with USB port	usb-sockets	usb-sockets
+2	73094184	e-SUP - FREE	stand-up-paddle	stand-up-paddle
+1	-1	Automatic gangway	gangway	gangway
+1	-1	Hydraulic swimming platform in teak	bathing-platform	bathing-platform
+1	-1	Bow sunbathing area	NONE	NONE
+1	-1	Sunbathing mattresses	sun-pads	sun-pads
+2	114065	DC plugs 12V 	NONE	NONE
+2	477579	Fuel 	NONE	NONE
+2	1216193	AIS system visible on GPS	ais	ais
+1	-1	External lights	NONE	NONE
+2	4779004	Golden Line	NONE	NONE
+1	-1	Fog horn	fog-horn	fog-horn
+1	-1	12V car type socket	NONE	NONE
+2	113407	Simrad Sonic Hub for I-pod and USB Stick	usb-sockets	usb-sockets
+1	-1	Shallow keel 1.75m	NONE	NONE
+1	-1	Cockpit Tables	cockpit-table	cockpit-table
+1	-1	Electric windlass with remote control	electric-anchor-windlass	electric-anchor-windlass
+2	2456213	Tender with 60HP outboard	dinghy	dinghy
+1	-1	Electric windlass with remote control in Cockpit	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Bosun's chair	bosun-chair	bosun-chair
+1	-1	Water hose	water-hose	water-hose
+1	-1	Logge/Lot/Speed/Wind	logge-speed-wind	logge-speed-wind
+1	-1	220V battery charger	battery-charger	battery-charger
+1	-1	12-volt power supply	NONE	NONE
+2	12570792	Structure scan	NONE	NONE
+1	-1	Bluetooth player	NONE	audio-system
+1	-1	Fans in cabins /saloon	electric-fans	electric-fans
+1	-1	Convertible table in saloon	lowerable-salon-table	lowerable-salon-table
+2	1081522	Fishing trolling package	NONE	NONE
+2	1400538	Side courtesy outside curtain	NONE	NONE
+2	10105008	Airstream Towable	water-toys	water-toys
+2	34313438	Infinity Comfort Chair	NONE	NONE
+1	-1	Deck cushions	sun-pads	sun-pads
+1	-1	B&G T41 Graphic displays(Log, Speed,Sounder)	logge-speed-wind	logge-speed-wind
+1	28	Battens mainsail	NONE	NONE
+1	-1	B&G Multi Zeus T7 (GPS, Chart Ploter, Chart reader)	salon-GPS-plotter	salon-GPS-plotter
+2	32641485	Sailing dinghy	dinghy	dinghy
+1	-1	Speakers, 2 interior & 2 exterior	inside-speakers	outside-speakers
+1	-1	B&G Wind Sensor(Windvane, Anenometer)	logge-speed-wind	logge-speed-wind
+1	-1	Electric fans	electric-fans	electric-fans
+1	-1	Convertible table	lowerable-salon-table	lowerable-salon-table
+1	-1	Air-condition on shore power	air-conditioning	air-conditioning
+1	-1	Tacking Jib	NONE	NONE
+2	830354	Convertible from 4 into 5 cabins	NONE	NONE
+1	-1	Plancha Grill	BBQ	BBQ
+1	-1	Convertible Saloon Table	lowerable-salon-table	lowerable-salon-table
+1	-1	Inside Charter plotter	salon-GPS-plotter	salon-GPS-plotter
+2	932087	Electr. Reel Winch	NONE	NONE
+2	2290593	Platform for towing	NONE	NONE
+2	852538	Elvstrøm Dacron sails	NONE	NONE
+1	15	Roller-furling jib	NONE	NONE
+1	-1	In-mast sail	NONE	NONE
+1	-1	Aft cockpit	NONE	NONE
+1	-1	Table in cockpit	cockpit-table	cockpit-table
+1	-1	Oven / Grill	oven	oven
+1	-1	Distress Flare Box	distress-signals	distress-signals
+1	-1	Spinnaker	spinnaker	spinnaker
+1	-1	Chain	anchor-line	anchor-line
+1	-1	230 V installation	NONE	NONE
+1	-1	Wi-Fi	wifi	wifi
+1	-1	Full Teak	NONE	teak-deck
+1	-1	Satellite phone	NONE	NONE
+1	-1	Hydraulically lifting table converting to a dinette or sunbathing deck with cushions	NONE	NONE
+1	-1	Charts 1805 / 1807	navigation-set	navigation-set
+1	-1	Boat manual	NONE	NONE
+1	-1	Electric winch	electric-winches	electric-winches
+1	-1	Electric Windlass 1700W	electric-anchor-windlass	electric-anchor-windlass
+1	-1	Teak cockpit	teak-deck	teak-deck
+1	-1	Hydraulic tenderlift platform	NONE	NONE
+1	39	Selftacking furling genoa with UV protective band	NONE	NONE
+1	-1	Gps	NONE	NONE
+1	-1	Sunbathing area	NONE	NONE
+1	-1	Outside table	NONE	cockpit-table
+1	-1	Convertible dinette	NONE	lowerable-salon-table
+1	-1	Bed fitted sheets (ready-made beds) pillow case , one blanket/ per person	NONE	NONE
+1	-1	Air-condition	air-conditioning	air-conditioning
+1	-1	Air-conditioning	air-conditioning	air-conditioning
+1	-1	Wind Turbine	NONE	NONE
+1	-1	Anchor release hook	NONE	NONE
+1	-1	Cockpit Speakers	outside-speakers	outside-speakers
+1	-1	Shore Power	shore-connection-220v	shore-connection-220v
+1	-1	Saloon/Galley starboard aft bar unit inlay to be extended	NONE	NONE
+1	-1	iPod Hookups	NONE	NONE
+1	-1	Glasses	NONE	NONE
+1	-1	Pots & Pans	NONE	kitchen-utensils
+1	-1	Banana for 3 pax	NONE	water-toys
+1	-1	Life jacket	life-jackets	life-jackets
+1	-1	Repairing kit	NONE	NONE
+1	-1	Battery charger 220V	battery-charger	battery-charger
+1	-1	hot water system	hot-water	hot-water
+1	-1	Ambient Lights Exterior	NONE	NONE
+1	-1	Sea Wing	NONE	NONE
+1	-1	Baby Life Jackets	life-jackets	life-jackets
+1	-1	Sea scooter	water-toys	water-toys
+1	-1	Fusion APOLLO MS-RA 670 + 6 loudspeakers in salon	audio-system	audio-system
+1	-1	Yanmar 4JH80 80HP	NONE	NONE
+1	15	Furling jib	NONE	NONE
+1	-1	Outside table in the cockpit	cockpit-table	cockpit-table
+1	38	Roller furling main sail	NONE	NONE
+1	-1	Windmeter	logge-speed-wind	logge-speed-wind
+1	-1	Additional 12V car type socket in cabin	NONE	NONE
+1	-1	Trolling equipment	fishing-set	fishing-set
+1	-1	Mooring  lines	mooring-ropes	mooring-ropes
+1	-1	Detla anchor &  chain	anchor-line	anchor-line
+1	-1	Gangway - foldable	gangway	gangway
+1	-1	Flare	distress-signals	distress-signals
+1	-1	Code D	NONE	NONE
+1	-1	Cones	NONE	NONE
+1	-1	Genoa winder	NONE	NONE
+1	-1	6HP Outboard Engine	outboard-engine	outboard-engine
+1	-1	Inverter 2000W	inverter	inverter
+1	-1	15HP Outboard Engine	outboard-engine	outboard-engine
+1	-1	List of lights	NONE	NONE
+1	-1	Log, Speed, Depth- echo sounder	logge-speed-wind	logge-speed-wind
+1	-1	Bluetooth radio	audio-system	audio-system
+1	-1	Dinghy 3.20m - Outboard engine 6HP	dinghy	dinghy
+1	-1	1 double canoe	kayak	kayak
+1	-1	Dacron Square Top Mainsail	NONE	NONE
+1	-1	invertor 220V-2500Watt	inverter	inverter
+1	-1	Hi-lo system for TV in salon (TV not included)	flat-screen-TV	flat-screen-TV
+1	-1	Hydraulic lifting swimming platform	bathing-platform	bathing-platform
+1	-1	Powerful Tender 3.60m with 30HP	dinghy	dinghy
+1	-1	Compass at helm position	compass	compass
+1	-1	Inverter 300W	inverter	inverter
+1	-1	Helmsman seat cushion	NONE	NONE
+1	-1	Sail locker	NONE	NONE
+1	-1	Obligatory standard saftey equipment	NONE	NONE
+1	-1	A/C skipper cabin	air-conditioning	air-conditioning
+1	-1	Depthmeter	NONE	NONE
+1	-1	Highfield 460 + Yamaha 70hp	dinghy	dinghy
+1	-1	Cockpit compass	compass	compass
+1	-1	On-board defibrillator and ECG monitoring system	NONE	NONE
+1	-1	Navigation circle	NONE	NONE
+1	-1	Ceramic hub	NONE	NONE
+1	-1	DISHWASHER	dishwasher	dishwasher
+1	-1	AIS transceiver	ais	ais
+1	-1	Saloon lowering table	NONE	lowerable-salon-table
+1	-1	Burner stove, oven and grill	cooker	cooker
+1	-1	Radio CD Player	audio-system	audio-system
+1	-1	BOSE music system	audio-system	audio-system
+1	38	Roller Mainsail/furling	NONE	NONE
+1	-1	microwave	microwave	microwave
+1	-1	Fans in saloon & cabins	electric-fans	electric-fans
+1	-1	Sliding Roof Top	NONE	NONE
+1	-1	Cockpit control panel	NONE	NONE
+1	-1	212Ltr 12v refrigeration	fridge	fridge
+1	-1	Hot water Showers	hot-water	hot-water
+1	-1	Double rudder with wheels	NONE	NONE
+1	-1	Coastal safety equipment (< 6 NM from shelter)	NONE	NONE
+2	16605970	Fishing Pack	NONE	NONE
+1	-1	Hob	cooker	cooker
+1	-1	3 x B&G ZEUS 7" (in cockpit)	NONE	NONE
+2	1058815	Subwing	NONE	NONE
+2	831134	Wave Runner	NONE	NONE
+2	921810	Live bait box	NONE	NONE
+2	61721817	Shisha	NONE	NONE
+1	-1	Log, speedometer, depth sounder	depth-sounder	logge-speed-wind
+1	-1	VHF-DSC radio station	vhf-radio	vhf-radio
+1	-1	Twin bed cabin (with pullman)	NONE	NONE
+1	-1	IPOD connection	NONE	NONE
+1	-1	Laptop	NONE	NONE
+1	-1	VHF - DSC radio station	vhf-radio	vhf-radio
+1	-1	Solar panels 2x135 W	solar-panels	solar-panels
+1	-1	USB, BT, AUX connection	usb-sockets	usb-sockets
+1	-1	Double bed cabin	NONE	NONE
+1	-1	Cabins	NONE	NONE
+1	-1	CD player	audio-system	audio-system
+1	-1	Bilge pump - Electric	NONE	NONE
+1	-1	Rev counter	NONE	NONE
+1	-1	Position lights	NONE	NONE
+1	-1	Stern truster	NONE	NONE
+1	-1	Sun awning over flybridge	flybridge	flybridge
+1	-1	220V shore power connection	shore-connection-220v	shore-connection-220v
+1	-1	Knives	NONE	kitchen-utensils
+1	-1	Anchor chain	anchor-line	anchor-line
+1	-1	Roller blinds for deck hatches	NONE	NONE
+1	-1	Complete bedding (blankets, pillows, bed sheets and linens)	pillows-and-blankets	pillows-and-blankets
+1	-1	Benches and tables	NONE	NONE
+1	-1	Entertainment system	NONE	NONE
+1	-1	Convertible saloon table	lowerable-salon-table	lowerable-salon-table
+1	-1	Cockpit fridge 150L	fridge	fridge
+1	-1	Deck courtesy lights in cockpit, transoms and flybridge	NONE	NONE
+1	-1	Square top main sail	NONE	NONE
+1	15	Roll Genua	NONE	NONE
+1	-1	Flag	NONE	NONE
+1	-1	Blender	NONE	NONE
+1	-1	Teak in cockpit	teak-deck	teak-deck
+1	-1	Davits for dinghy	davit	davit
+1	-1	Cabin Fans	electric-fans	electric-fans
+1	-1	Hydraulic Swimming Platform	bathing-platform	bathing-platform
+1	-1	Air Condition only in cabins	air-conditioning	air-conditioning
+1	-1	Anchor winch remote control	NONE	electric-anchor-windlass
+1	-1	Fender	fenders	fenders
+1	-1	Hi Fi Bluetooth + cockpit speakers	audio-system	audio-system
+1	-1	2 x Oars (Paddles)	NONE	NONE
+1	-1	water maker	water-maker	water-maker
+1	-1	12 V sockets	NONE	NONE
+1	-1	220V Shore Power	shore-connection-220v	shore-connection-220v
+1	-1	Indoor/Outdoor steering	NONE	NONE
+1	-1	Indoor steering	NONE	NONE
+1	-1	Pressurised hot and cold water	hot-water	hot-water
+1	-1	Outside terrace	NONE	NONE
+1	-1	Sun roof	NONE	NONE
+1	-1	Outdoor steering	NONE	NONE
+1	-1	220-volt shore power supply	shore-connection-220v	shore-connection-220v
+1	15	Furling/roll genoa	NONE	NONE
+1	38	Furling/roll main sail	NONE	NONE
+1	-1	Bed Linen	pillows-and-blankets	pillows-and-blankets
+1	-1	Linen full set	NONE	pillows-and-blankets
+1	-1	USB charger	usb-sockets	usb-sockets
+1	-1	Genoa 2019	NONE	NONE
+1	-1	El. winch for all monoeuvres	NONE	electric-winches
+1	-1	Genoa 2025	NONE	NONE
+1	-1	Genoa 2018	NONE	NONE
+1	-1	El. winch for main	NONE	electric-winches
+1	-1	Main 2016	NONE	NONE
+1	-1	Main 2020	NONE	NONE
+1	-1	Main 2022	NONE	NONE
+1	-1	Log Echo	logge-speed-wind	logge-speed-wind
+1	-1	SELF-TACKING JIB	NONE	NONE
+1	28	BATTENED MAIN SAIL	NONE	NONE
+1	-1	LAZY BAG	lazy-bag	lazy-bag
+1	15	FURLING GENOA	NONE	NONE
+1	-1	BILGE PUMP	NONE	NONE
+1	-1	FULL BATTEN MAIN SAIL	NONE	NONE
+1	-1	FURLING MAIN SAIL	NONE	NONE
+1	-1	USB CONNECTION CHART TABLE	usb-sockets	usb-sockets
+1	-1	SALOON FANS	electric-fans	electric-fans
+1	-1	FREEZER	freezer	freezer
+1	-1	Dinghy 3.30m with 20HP outboar engine	dinghy	dinghy
+1	-1	AUX FOR IPOD/IPHONE/BLUETOOTH/USB	usb-sockets	audio-system
+1	-1	Sinks	sink	sink
+1	-1	Log,speed, depth-echo sounder	logge-speed-wind	logge-speed-wind
+1	-1	2 x Genoa sheet winches	NONE	NONE
+1	-1	Navigation(Nautical) charts and nautical guide	navigation-set	navigation-set
+1	-1	Chart plotter in the cockpit	outside-GPS-plotter	outside-GPS-plotter
+1	-1	VHF Radio telephone	vhf-radio	vhf-radio
+1	-1	Log-speedometer	logge-speed-wind	logge-speed-wind
+1	-1	Ice maker	ice-maker	ice-maker
+1	28	Main sail Battens	NONE	NONE
+1	-1	Aft Bench Cushions	NONE	NONE
+1	-1	Fuel funnel	NONE	NONE
+1	-1	Outside cushions	NONE	NONE
+1	-1	Navigation (Nautical) charts and nautical guide	navigation-set	navigation-set
+1	-1	Towels - hotel size 2 pcs	towels	towels
+1	-1	Pilot book	navigation-set	navigation-set
+1	-1	Salon cushions	NONE	NONE
+1	-1	Shaded seating	NONE	NONE
+2	23161563	2 Trawling hand lines	NONE	NONE
+2	922685	2 cabins in the hull - reachable inside and outside	NONE	NONE
+2	32425501	20oz Mug	NONE	NONE
+2	32425350	30oz Mug	NONE	NONE
+2	12935112	3D Tender 500 LUX	dinghy	dinghy
+2	565910	3DL North Sails	NONE	NONE
+2	33088385	APEX 445	NONE	NONE
+2	2839787	Aft double cabins convertible into owner’s cabin	NONE	NONE
+2	42105796	Air Purifier	NONE	NONE
+2	8975490	Alpine Sound System	audio-system	audio-system
+2	35041803	Aquabar	NONE	NONE
+2	22660816	Aquapad	NONE	NONE
+2	4616951	Baby chair	NONE	NONE
+2	1334484	Bali 4.5 skipper`s requirement: Yachtmaster up to 100 GT	NONE	NONE
+2	20940346	Balloon sail	NONE	NONE
+2	46268231	Base charge : Kitchen ancillary package	NONE	NONE
+2	50976571	Beach canopy	NONE	NONE
+2	16605891	Beach umbrella	NONE	NONE
+2	61437800	Bed rail	NONE	NONE
+2	45502591	Beer packer	NONE	NONE
+2	11551748	Bigger Dinghy + 30 PS Motor	dinghy	dinghy
+2	515785	Bigger Dinghy +15 PS motor	dinghy	dinghy
+2	27511248	Bike surf	surf	surf
+2	10422603	Blister/Spinnaker	spinnaker	spinnaker
+2	947157	Breakfast and lunch	NONE	NONE
+2	3764584	Built in remote control for radio	NONE	NONE
+2	1033030	Bügel Anchor	main-anchor	main-anchor
+2	102858	CD changer	NONE	NONE
+2	1273602	CD/mp4	NONE	NONE
+2	1160300	Cabrio coachroof	NONE	NONE
+2	1335503	Canoe 1	kayak	kayak
+2	39457876	Caps	NONE	NONE
+2	10453658	Caps, Polo T-shirts, Short Pants and Jackets with Luxury Sailing Boat logo and patern	NONE	NONE
+2	3397282	Cashbox	NONE	NONE
+2	100688	Cassete player	NONE	NONE
+2	134693	Chemical Toilet	NONE	NONE
+2	115796	Cherry interior	NONE	NONE
+2	27047919	Code D	NONE	NONE
+2	20946150	Compact air conditioner	air-conditioning	air-conditioning
+2	579104	Container for food	NONE	NONE
+2	1156897	Converted in 3 cabins	NONE	NONE
+2	842343	Convertible from 3 into 2 cabins	NONE	NONE
+2	831248	Convertible from 3 into 4 cabins	NONE	NONE
+2	1156898	Convertible from 4 into 3 or 2 cabins	NONE	NONE
+2	1030148	Convertible from 4+1 into 3+1 cabins	NONE	NONE
+2	1291373	Convertible from 5 into 5+1 cabins	NONE	NONE
+2	1084944	Convertible from 5+1 into 4+1 cabins*	NONE	NONE
+2	861368	Cooling bag	NONE	NONE
+2	8030861	Cruising Almanac	NONE	NONE
+2	556890	Cruising chute	NONE	NONE
+2	134697	Cunningham sails and rigging	NONE	NONE
+2	1170758	Day package	NONE	NONE
+2	862938	Deep sea fishing set	fishing-set	fishing-set
+2	32683070	Dehumidifier	NONE	NONE
+2	1020700	Departure to Greece allowed	NONE	NONE
+2	1157721	Diesel	NONE	NONE
+2	13544509	Dinghy Bahia RIB Grand	dinghy	dinghy
+2	101912	Dinghy jet	dinghy	dinghy
+2	557493	Diving pressure reducer	NONE	NONE
+2	1069154	Dock and go	NONE	NONE
+2	8939711	Draft beer	NONE	NONE
+2	32751896	Drifter	NONE	NONE
+2	1161648	Duo water tube	NONE	NONE
+2	7485576	Duradeck	NONE	NONE
+2	45502393	E-bike	NONE	NONE
+2	577176	EEBD -  emergency escape breathing device	NONE	NONE
+2	1284957	EPEX Fock	NONE	NONE
+2	1272350	EPEX-Fock	NONE	NONE
+2	9765554	El. deck chairs on bow	NONE	NONE
+2	19508501	Electric baker	NONE	NONE
+2	485610	Entrance in skippers cabins only from bow cabins	NONE	NONE
+2	100513	Extra bedlinen	NONE	NONE
+2	1355562	Extra blankets	pillows-and-blankets	pillows-and-blankets
+2	1179356	Extra snorkeling equipment	snorkel-sets	snorkel-sets
+2	1214033	Extra towel - large	towels	towels
+2	109920	Extra towels	towels	towels
+2	1157701	Fax	NONE	NONE
+2	825666	Fireplace	NONE	NONE
+2	22660813	Fishing Gaff	NONE	NONE
+2	40201890	Fishing Lures	NONE	NONE
+2	22660812	Fishing casting package	NONE	NONE
+2	4745435	Fishing equipment underwater	fishing-set	fishing-set
+2	986661	Flock - self tacking genoa	NONE	NONE
+2	2220034	Forward peak cabin convertible to double cabin	NONE	NONE
+2	40201891	Free Wing	NONE	NONE
+2	2839788	Front double cabin and double bunk cabin convertible into owner’s cabin with sitting area	NONE	NONE
+2	499262	Fuel 2	NONE	NONE
+2	8584732	Fuel cell	NONE	NONE
+2	112723	Fun hoops	NONE	NONE
+2	1402144	Furling code Zero	NONE	NONE
+2	4102549	Furling gennaker	gennaker	gennaker
+2	105547	Gasoline for outboard engine 5L	outboard-engine	outboard-engine
+2	100801	Gedore	NONE	NONE
+2	10422604	Gennaker/Spinnaker	gennaker	gennaker
+2	558167	Genoa - 1 140%	NONE	NONE
+2	120990	Genoa-1/140% (2006)	NONE	NONE
+2	120989	Genoa-1/140% (2014)	NONE	NONE
+2	120988	Genoa-3CARBON-100%	NONE	NONE
+2	590885	Genoa-3CARBON-106%	NONE	NONE
+2	71282825	Glass bottom dinghy	dinghy	dinghy
+2	1241207	Guitar	NONE	NONE
+2	933512	HYUNDAI SEASALL 270 S  HP  V6 Diesel (New Generation )	NONE	NONE
+2	12260148	Handpresso 12V	NONE	NONE
+2	134689	Hanging canvas bags	NONE	NONE
+2	481817	High tech sailset	NONE	NONE
+2	29520598	Hiking poles	NONE	NONE
+2	44024919	Hoverboard	NONE	NONE
+2	1157759	Hydro-massage pool	NONE	NONE
+2	1075361	Ibiza sound speaker	NONE	NONE
+2	119259	Increased mast	NONE	NONE
+2	963099	Inflatable jacuzzi	jacuzzi	jacuzzi
+2	45503236	JBL Party BOX 310 speaker	NONE	NONE
+2	72361692	JBL Party BOX 320 speaker	NONE	NONE
+2	45503298	JBL extreme 3 speaker	NONE	NONE
+2	13537987	Jet Tender Pirelli J33	dinghy	dinghy
+2	1509641	Jib on tracks with pin stop	NONE	NONE
+2	16799386	Karaoke & disco ball set	karaoke	karaoke
+2	36345057	Kayak triple	kayak	kayak
+2	7623528	Kevlar Jib	NONE	NONE
+2	10454418	Kevlar Sails	NONE	NONE
+2	29395951	Kite Gear	NONE	NONE
+2	31345835	Kite Gear - Board	NONE	NONE
+2	31345843	Kite Gear - Harness	NONE	NONE
+2	29395952	Kite foil board	NONE	NONE
+2	485756	LED safety lights underneath companion way	NONE	NONE
+2	851669	Lagoon 450 skipper`s requirement: Yachtmaster up to 100 GT	NONE	NONE
+2	22660814	Lazybunz	NONE	NONE
+2	126641	Licence to sail out of Croatia	NONE	NONE
+2	564791	Lifeline with 3 carabiners	NONE	NONE
+2	475445	Main sheet system: Admirals Cup	NONE	NONE
+2	1509925	Marine clothing	NONE	NONE
+2	1222351	Massage armchair	NONE	NONE
+2	852540	Mercruiser Volkswagen 300 hp diesel + Bravo 3 dual prop	NONE	NONE
+2	22660815	Modular Stack Matt	NONE	NONE
+2	65853662	MultiBoard surfboard	surf	surf
+2	478180	Net for children	NONE	NONE
+2	1170748	Night package	NONE	NONE
+2	112157	No inside shower	NONE	NONE
+2	113428	North ACL Sails	NONE	NONE
+2	100809	Note book	NONE	NONE
+2	1355554	Notebook + SIM Wifi device	wifi	wifi
+2	1515181	O'pen BIC	NONE	NONE
+2	14040522	Onean Board	NONE	NONE
+2	118110	Outboard engine 1	outboard-engine	outboard-engine
+2	26661693	Outboard engine 15 HP	outboard-engine	outboard-engine
+2	2854469	Outboard engine 2	outboard-engine	outboard-engine
+2	41713819	Outboard engine 6 HP	outboard-engine	outboard-engine
+2	41822218	Outboard engine 8 & 9,8 HP	outboard-engine	outboard-engine
+2	23502167	Outboard engine 9 HP	outboard-engine	outboard-engine
+2	1213831	Outboard engine upgrade	outboard-engine	outboard-engine
+2	116917	Paper tissues	NONE	NONE
+2	8595583	Parasail Spinnaker	spinnaker	spinnaker
+2	100489	Permit	NONE	NONE
+2	577181	Playstation 2	game-console	game-console
+2	46277635	Portable air conditioning	air-conditioning	air-conditioning
+2	44347823	Propane Tank	NONE	NONE
+2	1081583	RGB connection	NONE	NONE
+2	5454501	RIB 2,9 m and outboard engine 10 hp	outboard-engine	outboard-engine
+2	12750937	RIB 2,9 m and outboard engine 15 HP	outboard-engine	outboard-engine
+2	57691487	RIB 3,6 with console + 25 HP	dinghy	dinghy
+2	530352	RIB 3,8m with console + 20 HP outboard	dinghy	dinghy
+2	9765289	RIB 4,6m with console + 60 HP outboard	dinghy	dinghy
+2	7486664	RIB 4M + console and Honda 50 HP	dinghy	dinghy
+2	558168	Racing Carbon Genoa - 3 100%	NONE	NONE
+2	23356693	Radinn Electric JetBoard	NONE	NONE
+2	490423	Radio Sonichub, Iphone, Ipad	NONE	NONE
+2	103521	Railing net - on request	safety-net	safety-net
+2	1214032	Rash Guards	NONE	NONE
+2	134691	Removable salon and cockpit backrests	NONE	NONE
+2	2192492	Required yacht master licence	NONE	NONE
+2	105906	Roll Genoa 110%: YB 2011	NONE	NONE
+2	7889697	Roller reefing for genoa	NONE	NONE
+2	1222392	Room service phones	NONE	NONE
+2	5094330	Panini maker	NONE	NONE
+2	34581912	SACS 680 Ghost	NONE	NONE
+2	1166919	SEA-DOO underwater scooter (for kids)	water-toys	water-toys
+2	119652	STRIPPER propeller protector	NONE	NONE
+2	6957806	SUBLUE underwater scooter	water-toys	water-toys
+2	1179159	SUBglider	NONE	NONE
+2	53790225	SUP motor	stand-up-paddle	stand-up-paddle
+2	8833989	SUPjet	NONE	NONE
+2	11677151	Sailing dinghy: Tiwal 2	dinghy	dinghy
+2	11677152	Sailing dinghy: Tiwal 3	dinghy	dinghy
+2	10364895	Sailing suit	NONE	NONE
+2	100806	Sailingbelt	NONE	NONE
+2	100805	Sailingbelt (children)	NONE	NONE
+2	481818	Sandwich laminate	NONE	NONE
+2	41990076	Satellite tracker	NONE	NONE
+2	10294445	Sea Scooter for kids	water-toys	water-toys
+2	26136784	Seacock	NONE	NONE
+2	5451659	Sealine F43 skipper`s requirement: Yachtmaster up to 100 GT	NONE	NONE
+2	7367625	Second dinghy	dinghy	dinghy
+2	825669	Second salon table	NONE	NONE
+2	7051152	Segway	NONE	NONE
+2	558164	Self-tacking jib 105%	NONE	NONE
+2	66963955	Skimboard	NONE	NONE
+2	2179825	Skipper licence ABOVE 30 BT	NONE	NONE
+2	1410466	Skipper licence till 30 BT	NONE	NONE
+2	7644621	Sleeping bag	NONE	NONE
+2	32590347	Smoothie maker	NONE	NONE
+2	567285	Snubbing rope	NONE	NONE
+2	10453655	Special water toys	water-toys	water-toys
+2	554779	Spinlock life jackets	life-jackets	life-jackets
+2	7747770	Spinnaker I	spinnaker	spinnaker
+2	7623511	Spinnaker light	spinnaker	spinnaker
+2	485616	Sport steering wheel	NONE	NONE
+2	1266271	Sport top	NONE	NONE
+2	126713	Start Kit Basic	NONE	NONE
+2	126784	Start Kit Kitchen	NONE	NONE
+2	126785	Start Kit Total	NONE	NONE
+2	580701	Storm roll genoa	NONE	NONE
+2	52438756	Straw hat	NONE	NONE
+2	4584760	Stronger outboard	outboard-engine	outboard-engine
+2	29520596	Sunchill floats	NONE	NONE
+2	4616957	SwimWays Spring Floats	NONE	NONE
+2	1213825	T-shirts	NONE	NONE
+2	100615	Tablecloth	NONE	NONE
+2	1160351	Tender for Ski	dinghy	dinghy
+2	487203	Thin line	NONE	NONE
+2	967601	Touch-PC with DVD-player	DVD-player	DVD-player
+2	134695	Transport and loading foil protection	NONE	NONE
+2	31345844	Ukulele	NONE	NONE
+2	100610	Towing surf board	surf	surf
+2	113744	Used fuel - 50% - marina Kastela	NONE	NONE
+2	9765558	VR goggles	NONE	NONE
+2	459171	Voltage transformer	NONE	NONE
+2	1156956	Wake up	NONE	NONE
+2	861381	Wakesurf	NONE	NONE
+2	577175	Walkie Talkie GNDSS type	NONE	NONE
+2	3161967	Water cooler	NONE	NONE
+2	1222354	Water cooling with cold steem on the deck	NONE	NONE
+2	46966651	Water gun	NONE	NONE
+2	7665018	Water toys for children	water-toys	water-toys
+2	10483113	Waterproof footwear	NONE	NONE
+2	17400956	Waveski	NONE	NONE
+2	10324699	Wet gear	NONE	NONE
+2	31345845	Windsurf 1	windsurf	windsurf
+2	559873	Wingaker-Parasail	NONE	NONE
+2	54701502	Wingfoil	NONE	NONE
+2	54701503	Wingfoil Kids	NONE	NONE
+2	947112	Wiskey bar	NONE	NONE
+2	1203173	X-BOX	NONE	NONE
+2	29395770	Yoga Board	NONE	NONE
+2	34491799	e-SUP	stand-up-paddle	stand-up-paddle
+2	1066631	iPhone console	NONE	NONE
+2	73584965	Floating Water Hammock	NONE	NONE
+2	57691488	RIB 3,8 with console + 20 HP	dinghy	dinghy
+2	73905595	Dinghy Alusmart 310 Kart + 20HP outboard	dinghy	dinghy
+2	73905593	RIB Alusmart 280 + 6 HP outboard	dinghy	dinghy
+2	73905594	RIB Alusmart 280 Kart + 10 HP outboard	dinghy	dinghy
+2	73905596	RIB Alusmart 310 Kart + 20 HP outboard	dinghy	dinghy
+2	73904225	X-JET Xtreme	NONE	NONE
+2	73900002	Yacht controller	NONE	NONE
+2	73905565	iAQUA Sea scooter	water-toys	water-toys
+2	73905577	iAqua SeaDart underwater scooter	water-toys	water-toys
+2	74264652	Dog boarding ladder	NONE	NONE
+2	557491	Diving oxygen bottles: block	NONE	NONE
+2	557495	Diving stab	NONE	NONE
+2	29395772	Foil wake board	wakeboard	wakeboard
+2	100612	Ironing Board	NONE	NONE
+2	16605988	Kayak junior	kayak	kayak
+2	74928362	Williams MiniJet 280	NONE	NONE
+2	74929794	Jet Ski SEA-DOO Spark 2up	jet-ski	jet-ski
+2	74929795	Jet Ski SEA-DOO Spark 3up	jet-ski	jet-ski
+2	75207403	Charging bank	NONE	NONE
+2	75207410	LibertyKite	NONE	NONE
+2	75207412	XTRAMARINE Catamaran	NONE	NONE
+2	76243251	Speargun	NONE	NONE
+2	77229909	Spare cartridges for automatic life jackets	life-jackets	life-jackets

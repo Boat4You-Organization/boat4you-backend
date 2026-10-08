@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
+import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentAliases
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
 import hr.workspace.boat4you.domains.catalouge.services.OfferQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtQueryingService
@@ -41,6 +42,7 @@ class YachtControllerSuccessorTests {
                     mock(ExternalSyncService::class.java),
                     mock(UserRepository::class.java),
                     twins,
+                    mock(EquipmentAliases::class.java),
                 ),
             ).setControllerAdvice(ApiErrorHandler())
             .build()

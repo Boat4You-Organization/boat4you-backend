@@ -46,7 +46,8 @@ class AdminCatalogueController(
             direction = Sort.Direction.ASC,
         ) pageable: Pageable,
     ): ResponseEntity<PagedModel<EquipmentAdminDto>> {
-        return ResponseEntity.ok(PagedModel(equipmentRepository.findAll(pageable).map { it.toAdminDto() }))
+        // Alias rows (merged codes) left out.
+        return ResponseEntity.ok(PagedModel(equipmentRepository.findAllByMergedIntoIdIsNull(pageable).map { it.toAdminDto() }))
     }
 
     @GetMapping("/manufacturers")

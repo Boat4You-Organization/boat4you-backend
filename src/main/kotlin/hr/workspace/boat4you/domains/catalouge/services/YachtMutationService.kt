@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.IdDto
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.TranslationType
+import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentAliases
 import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtDetail
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtDetailRepository
@@ -46,6 +47,7 @@ class YachtMutationService(
     private val fileSystemService: FileSystemService,
     private val yachtQueryingService: YachtQueryingService,
     private val equipmentRepository: EquipmentRepository,
+    private val equipmentAliases: EquipmentAliases,
     private val manufacturerRepository: ManufacturerRepository,
     private val countryRepository: CountryRepository,
 ) {
@@ -131,7 +133,8 @@ class YachtMutationService(
         mergeYacht(yacht, customYachtRequest)
         if (customYachtRequest.equipmentIds != null) {
             val matched = mutableSetOf<Long>()
-            customYachtRequest.equipmentIds.forEach { equipmentId ->
+            // An old (merged) equipment id is saved as its canonical code.
+            customYachtRequest.equipmentIds.map { equipmentAliases.canonicalId(it) }.distinct().forEach { equipmentId ->
                 if (yacht.yachtEquipments.none { it.equipmentId == equipmentId }) {
                     val equipment = equipmentRepository.findById(equipmentId).orElseThrow()
                     val yachtEquipment = YachtEquipment()
@@ -312,7 +315,7 @@ class YachtMutationService(
         yacht: Yacht,
     ): MutableSet<YachtEquipment> {
         val yachtEquipments = mutableSetOf<YachtEquipment>()
-        equipmentIds?.forEach { id ->
+        equipmentIds?.map { equipmentAliases.canonicalId(it) }?.distinct()?.forEach { id ->
             val equipment = equipmentRepository.getReferenceById(id)
             val yachtEquipment = YachtEquipment()
             yachtEquipment.equipment = equipment

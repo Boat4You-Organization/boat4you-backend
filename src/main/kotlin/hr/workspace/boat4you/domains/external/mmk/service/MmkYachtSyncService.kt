@@ -9,9 +9,10 @@ import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.enums.TranslationType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentLinkResolver
+import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentNames
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
-import hr.workspace.boat4you.domains.catalouge.jpa.EquipmentRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalEquipmentRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
 import hr.workspace.boat4you.domains.catalouge.jpa.ExtraRepository
@@ -68,7 +69,7 @@ class MmkYachtSyncService(
     private val locationQueryingService: LocationQueryingService,
     private val reservationOptionRepository: ReservationOptionRepository,
     private val yachtEquipmentRepository: YachtEquipmentRepository,
-    private val equipmentRepository: EquipmentRepository,
+    private val equipmentLinkResolver: EquipmentLinkResolver,
     private val modelQueryingService: ModelQueryingService,
     private val externalEquipmentRepository: ExternalEquipmentRepository,
     private val extraRepository: ExtraRepository,
@@ -112,6 +113,8 @@ class MmkYachtSyncService(
         var skippedInland = 0
         val inlandShipyardIds = inlandShipyardIds()
         val inlandBaseIds = locationQueryingService.getInlandLocationExternalIds(ExternalSystemEnum.MMK.value.toLong())
+        // One catalogue + explicit-link snapshot per agency pass; loaded on the first yacht that ships equipment.
+        val equipmentLinks = lazy { equipmentLinkResolver.newPass() }
 
         mmkYachts.forEach { mmkYacht ->
             // Track every partner-reported id up front (before shouldSkip) —
@@ -197,6 +200,7 @@ class MmkYachtSyncService(
                 yacht = updatedYacht,
                 rawEquipment = mmkYacht.equipmentRaw?.toSet(),
                 slimEquipment = mmkYacht.equipment?.toSet(),
+                equipmentLinks = equipmentLinks,
             )
             syncExtras(updatedYacht, filteredProducts)
             syncReservationOptions(updatedYacht, mmkYacht)
@@ -503,10 +507,24 @@ class MmkYachtSyncService(
         val partnerComment: String?,
     )
 
-    private fun syncEquipment(
+    /**
+     * One yacht_equipment row per partner item, its link recomputed on every pass (equipment audit 8.10.2026):
+     * - a catalogue item (parentId > 0) owns the row with its external_id; a legacy row without external_id is adopted
+     *   by exact name;
+     * - an MMK free-text item (parentId -1, every agency-typed line shares it) owns the -1 row with the same normalised
+     *   name. They used to collapse into ONE row per yacht that kept the first name, borrowed another item's link and
+     *   took every item's comment ("Stereo" shown as USB sockets);
+     * - a row is taken once per pass: the same item (or free-text name) twice in one payload keeps the first
+     *   occurrence's row, link and comment;
+     * - the link comes from EquipmentLinkResolver (explicit mapping, then the best-hit matcher) and is written whenever it
+     *   differs, NULL included, so a key or mapping change reaches rows synced before it;
+     * - rows no item took are deleted (unchanged).
+     */
+    internal fun syncEquipment(
         yacht: Yacht,
         rawEquipment: Set<org.openapitools.client.mmk.model.EquipmentItemRaw>?,
         slimEquipment: Set<YachtEquipmentInner>?,
+        equipmentLinks: Lazy<EquipmentLinkResolver.Pass>,
     ) {
         // raw is the canonical source when present (inventory=raw response).
         // EquipmentItemRaw.parentId points at the generic Equipment record;
@@ -541,16 +559,15 @@ class MmkYachtSyncService(
         }
 
         val allYachtEquipment = yacht.yachtEquipments
-        val allEquipment = equipmentRepository.findAll()
         val allExternalEquipment = externalEquipmentRepository.getCachedByExternalSystemId(ExternalSystemEnum.MMK.value)
+        val links = equipmentLinks.value
         val matchedIds = mutableSetOf<Long>()
+        val normalizedNames = HashMap<YachtEquipment, String>()
 
         rows.forEach { row ->
             // Resolve the generic catalog row (external_equipment) by id, but
             // fall back to the partner-supplied name when the catalog entry
-            // is missing — that way raw items still land in yacht_equipment
-            // (the public Amenities tab will render their `name` even
-            // without a labelCode-translated row).
+            // is missing — that way raw items still land in yacht_equipment.
             val externalEquipmentMatch =
                 allExternalEquipment.firstOrNull { eq -> eq.externalId == row.partnerEquipmentId }
             val displayName = externalEquipmentMatch?.name ?: row.partnerName
@@ -558,35 +575,36 @@ class MmkYachtSyncService(
                 log.trace("MMK equipment not found and no name fallback: {}", row)
                 return@forEach
             }
-            val boat4youEquipmentMatch =
-                allEquipment.firstOrNull { eq ->
-                    val key = externalEquipmentMatch?.name ?: displayName ?: ""
-                    Matchers.extrasNameMatch(eq.getMatchKeysList(), key)
+            val link = links.resolve(ExternalSystemEnum.MMK.value, row.partnerEquipmentId, displayName)
+
+            val ownRow =
+                if (row.partnerEquipmentId > 0) {
+                    allYachtEquipment.find { eq -> eq.externalId == row.partnerEquipmentId }
+                        ?: allYachtEquipment.find { eq -> eq.externalId == null && eq.name == displayName && eq.id !in matchedIds }
+                } else {
+                    val name = EquipmentNames.normalize(displayName)
+                    allYachtEquipment
+                        .filter { eq -> eq.externalId == row.partnerEquipmentId && normalizedNames.getOrPut(eq) { EquipmentNames.normalize(eq.name) } == name }
+                        .let { sameName -> sameName.firstOrNull { it.id in matchedIds } ?: sameName.firstOrNull() }
                 }
 
-            // Dedup on partner equipmentId (row.partnerEquipmentId, stored on
-            // yacht_equipment.external_id) — the prior `eq.equipment?.id ==
-            // boat4youEquipmentMatch?.id` clause silently collapsed every
-            // unmatched partner item onto a single pre-existing unmatched
-            // yacht_equipment row because `null == null` returned true.
-            val equipmentAlreadyOnYacht =
-                allYachtEquipment.find { eq ->
-                    eq.externalId == row.partnerEquipmentId || eq.name == displayName
+            if (ownRow != null) {
+                if (ownRow.id in matchedIds) {
+                    log.trace("MMK equipment {} repeated on yacht {}; the first occurrence keeps the row", row, yacht.id)
+                    return@forEach
                 }
-
-            if (equipmentAlreadyOnYacht != null) {
-                if (equipmentAlreadyOnYacht.equipment == null && boat4youEquipmentMatch != null) {
-                    equipmentAlreadyOnYacht.equipment = boat4youEquipmentMatch
+                if (ownRow.equipmentId != link?.id) {
+                    ownRow.equipment = link
                 }
                 // MMK has no highlight flag; comment refreshes from value.
-                equipmentAlreadyOnYacht.comment = row.partnerComment
-                yachtEquipmentRepository.save(equipmentAlreadyOnYacht)
-                matchedIds.add(equipmentAlreadyOnYacht.id!!)
+                ownRow.comment = row.partnerComment
+                yachtEquipmentRepository.save(ownRow)
+                matchedIds.add(ownRow.id!!)
                 return@forEach
             }
 
             val yachtEquipment = YachtEquipment()
-            yachtEquipment.equipment = boat4youEquipmentMatch
+            yachtEquipment.equipment = link
             yachtEquipment.name = displayName
             yachtEquipment.externalId = row.partnerEquipmentId
             yachtEquipment.yacht = yacht

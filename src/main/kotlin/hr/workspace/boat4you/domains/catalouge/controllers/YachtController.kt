@@ -11,6 +11,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentAliases
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
 import hr.workspace.boat4you.domains.catalouge.services.OfferQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtQueryingService
@@ -49,6 +50,7 @@ class YachtController(
     private val externalSyncService: ExternalSyncService,
     private val userRepository: UserRepository,
     private val yachtTwinCanonicalService: YachtTwinCanonicalService,
+    private val equipmentAliases: EquipmentAliases,
 ) {
     @Operation(description = "Fetch all yachts by search criteria")
     @GetMapping
@@ -173,7 +175,8 @@ class YachtController(
                 minEnginePower = minEnginePower,
                 maxEnginePower = maxEnginePower,
                 currency = currency,
-                amenities = amenities,
+                // An old (merged) equipment id filters like its canonical code, and the cache key carries the canonical id.
+                amenities = equipmentAliases.canonicalIds(amenities),
                 services = services,
                 yachtIds = yachtIds,
                 agencyIds = agencyIds,

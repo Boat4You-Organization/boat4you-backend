@@ -22,6 +22,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtDetail
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomYachtView
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtEquipment
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtSearchSelectResult
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
@@ -148,6 +149,12 @@ class YachtMapper(
     /** The partner's raw capacity notes and internal remark - SYSTEM_ADMIN only, null for everyone else. */
     fun brokerNotes(columns: CapacityColumns): BrokerNotesDto? = if (isAdminUser()) capacityMapper.brokerNotes(columns) else null
 
+    /** Equipment rows a yacht page may show: linked rows only for the public, every row for an admin. */
+    fun amenityRows(rows: Collection<YachtEquipment>): List<YachtEquipment> {
+        val admin = isAdminUser()
+        return rows.filter { admin || it.equipmentId != null }.distinctBy { it.equipmentId ?: ("name:" + (it.name ?: "")) }
+    }
+
     fun toDetailsDto(
         result: Yacht,
         offerDtos: List<OfferDto>?,
@@ -232,17 +239,10 @@ class YachtMapper(
                     it.mainImage
                     it.position
                 },
-            // Emit every yacht_equipment row, not just rows that matched a
-            // predefined Equipment record. Partner sync (MMK / NauSys) ships
-            // ~25-30 equipment items per yacht but our Equipment table only
-            // covers a subset — historically the filter dropped everything
-            // unmatched, leaving the public Amenities tab with 6-8 items vs
-            // a competitor's 25+. Keep distinctBy keyed on equipmentId for
-            // matched rows and on name for unmatched rows so Hibernate's
-            // duplicate yacht_equipment writes still collapse cleanly.
-            amenities = result.yachtEquipments
-                .distinctBy { it.equipmentId ?: ("name:" + (it.name ?: "")) }
-                .map { it.toDto() },
+            // Public: only rows linked to our catalogue (Mario 8.10.2026, equipment audit). An unlinked partner row is
+            // free text the web would print raw (agency notes, "4 double cabins", a charter company's wording); it stays
+            // in the DB and reaches admins only. One row per code; unlinked admin rows collapse by name.
+            amenities = amenityRows(result.yachtEquipments).map { it.toDto() },
             services = extras,
             description = description,
             highlights = highlights,

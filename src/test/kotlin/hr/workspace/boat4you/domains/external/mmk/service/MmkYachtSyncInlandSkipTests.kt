@@ -121,7 +121,7 @@ class MmkYachtSyncInlandSkipTests {
             locationQueryingService = locations,
             reservationOptionRepository = any(),
             yachtEquipmentRepository = any(),
-            equipmentRepository = any(),
+            equipmentLinkResolver = any(),
             modelQueryingService = any(),
             externalEquipmentRepository = any(),
             extraRepository = any(),

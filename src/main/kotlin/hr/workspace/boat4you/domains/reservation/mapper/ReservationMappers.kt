@@ -205,7 +205,8 @@ class ReservationMappers(
             charterType = reservationView.charterType,
             vesselType = yacht.vesselType,
             manufacturerName = reservationView.manufacturerName,
-            amenities = yacht.yachtEquipments.distinctBy { it.equipmentId }.map { it.toDto() },
+            // Customer's my-bookings: linked rows only, one per code (equipment audit 8.10.2026), as on the boat page.
+            amenities = yacht.yachtEquipments.filter { it.equipmentId != null }.distinctBy { it.equipmentId }.map { it.toDto() },
             specialRequest = reservationView.reservationFlowRequest,
             // Yacht-catalogue extras (same source as boat-detail page ExtrasTab)
             // so my-bookings can render obligatory extras + virtual security
@@ -378,7 +379,8 @@ class ReservationMappers(
             crewNumber = yacht.crewNumber,
             vesselType = yacht.vesselType,
             charterType = reservationView.charterType,
-            amenities = yacht.yachtEquipments.distinctBy { it.equipmentId }.map { it.toDto() },
+            // Admin: every row; unlinked rows collapse by name (distinctBy equipmentId used to merge them all into one).
+            amenities = yacht.yachtEquipments.distinctBy { it.equipmentId ?: ("name:" + (it.name ?: "")) }.map { it.toDto() },
             specialRequest = reservationView.reservationFlowRequest,
             adminNotes = reservationView.reservationAdminNotes,
             charterUpdate = reservationView.reservationCharterUpdate,

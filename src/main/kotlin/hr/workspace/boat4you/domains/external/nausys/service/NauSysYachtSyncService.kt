@@ -10,9 +10,9 @@ import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.enums.TranslationType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentLinkResolver
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
-import hr.workspace.boat4you.domains.catalouge.jpa.EquipmentRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalEquipmentRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSeasonRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExtraRepository
@@ -66,7 +66,7 @@ class NauSysYachtSyncService(
     private val yachtImageRepository: YachtImageRepository,
     private val reservationOptionRepository: ReservationOptionRepository,
     private val yachtEquipmentRepository: YachtEquipmentRepository,
-    private val equipmentRepository: EquipmentRepository,
+    private val equipmentLinkResolver: EquipmentLinkResolver,
     private val locationQueryingService: LocationQueryingService,
     private val externalEquipmentRepository: ExternalEquipmentRepository,
     private val yachtExtraRepository: YachtExtraRepository,
@@ -98,6 +98,8 @@ class NauSysYachtSyncService(
         val allLocationMappings =
             externalMappingService.getCachedAllMappingsByType(Location::class.simpleName.toString(), externalSystem)
         val inlandBaseIds = locationQueryingService.getInlandLocationExternalIds(ExternalSystemEnum.NAUSYS.value.toLong())
+        // One catalogue + explicit-link snapshot per agency pass; loaded on the first yacht that ships equipment.
+        val equipmentLinks = lazy { equipmentLinkResolver.newPass() }
 
         nausysResponse.yachts?.forEach { nausysYacht ->
             val mapping = allMappings.find { mapping -> mapping.externalId == nausysYacht.id!!.toLong() }
@@ -164,7 +166,7 @@ class NauSysYachtSyncService(
 
             syncPictures(nausysYacht.pictures, isNewEntity, updatedYacht)
             yacht.mainImageId = getMainImage(updatedYacht)?.id
-            syncEquipment(updatedYacht, nausysYacht)
+            syncEquipment(updatedYacht, nausysYacht, equipmentLinks)
             syncExtras(updatedYacht, nausysYacht)
             syncReservationOptions(updatedYacht, nausysYacht.checkInPeriods)
 
@@ -429,18 +431,24 @@ class NauSysYachtSyncService(
         return yacht.yachtImages.firstOrNull { it.mainImage == true } ?: yacht.yachtImages.firstOrNull()
     }
 
-    private fun syncEquipment(
+    /**
+     * One yacht_equipment row per partner catalogue item (its external_id; a legacy row without external_id is adopted
+     * by exact name), the link recomputed on every pass by EquipmentLinkResolver and written whenever it differs, NULL
+     * included (equipment audit 8.10.2026). The same item twice in one payload keeps the first occurrence.
+     */
+    internal fun syncEquipment(
         yacht: Yacht,
         nausysYacht: RestYacht,
+        equipmentLinks: Lazy<EquipmentLinkResolver.Pass>,
     ) {
         if (nausysYacht.standardYachtEquipment.isNullOrEmpty()) {
             return
         }
 
         val allYachtEquipment = yacht.yachtEquipments
-        val allEquipment = equipmentRepository.findAll()
         val allExternalEquipment =
             externalEquipmentRepository.getCachedByExternalSystemId(ExternalSystemEnum.NAUSYS.value)
+        val links = equipmentLinks.value
         val matchedIds = mutableSetOf<Long>()
 
         nausysYacht.standardYachtEquipment?.forEach { nausysEquipment ->
@@ -453,24 +461,14 @@ class NauSysYachtSyncService(
                 log.warn("Nausys equipment not found in Nausys external equipment: $nausysEquipment")
                 return@forEach
             }
-            val boat4youEquipmentMatch =
-                allEquipment.firstOrNull { eq ->
-                    Matchers.extrasNameMatch(eq.getMatchKeysList(), externalEquipmentMatch.name)
-                }
+            val link = links.resolve(ExternalSystemEnum.NAUSYS.value, externalEquipmentMatch.externalId!!, externalEquipmentMatch.name)
 
-            // Dedup primarily on partner equipmentId (yacht_equipment.external_id
-            // is set to externalEquipmentMatch.externalId at insert time). Falls
-            // back to name match for safety. The pre-fix `eq.equipment?.id ==
-            // boat4youEquipmentMatch?.id` clause silently collapsed all
-            // unmatched (boat4youMatch=null) partner items onto a single
-            // pre-existing unmatched yacht_equipment row because `null == null`
-            // returned true — that's why yacht 13175 stayed at 16 items even
-            // though the partner ships 80.
+            // Dedup on partner equipmentId (yacht_equipment.external_id is set to
+            // externalEquipmentMatch.externalId at insert time); only a legacy row
+            // without external_id is adopted by name.
             val equipmentAlreadyOnYacht =
-                allYachtEquipment.find { eq ->
-                    eq.externalId == externalEquipmentMatch.externalId ||
-                        eq.name == externalEquipmentMatch.name
-                }
+                allYachtEquipment.find { eq -> eq.externalId == externalEquipmentMatch.externalId }
+                    ?: allYachtEquipment.find { eq -> eq.externalId == null && eq.name == externalEquipmentMatch.name && eq.id !in matchedIds }
 
             // NauSys ships highlight/quantity/comment per-item; sync them every
             // pass so partner edits propagate. comment is multilingual on the
@@ -485,9 +483,12 @@ class NauSysYachtSyncService(
                 }?.takeIf { it.isNotBlank() }
 
             if (equipmentAlreadyOnYacht != null) {
-                // change equipment match
-                if (equipmentAlreadyOnYacht.equipment == null && boat4youEquipmentMatch != null) {
-                    equipmentAlreadyOnYacht.equipment = boat4youEquipmentMatch
+                if (equipmentAlreadyOnYacht.id in matchedIds) {
+                    log.trace("NauSys equipment {} repeated on yacht {}; the first occurrence keeps the row", nausysEquipment.equipmentId, yacht.id)
+                    return@forEach
+                }
+                if (equipmentAlreadyOnYacht.equipmentId != link?.id) {
+                    equipmentAlreadyOnYacht.equipment = link
                 }
                 equipmentAlreadyOnYacht.highlight = partnerHighlight
                 equipmentAlreadyOnYacht.quantity = partnerQuantity
@@ -499,7 +500,7 @@ class NauSysYachtSyncService(
             }
 
             val yachtEquipment = YachtEquipment()
-            yachtEquipment.equipment = boat4youEquipmentMatch
+            yachtEquipment.equipment = link
             yachtEquipment.name = externalEquipmentMatch.name
             yachtEquipment.externalId = externalEquipmentMatch.externalId!!
             yachtEquipment.yacht = yacht
