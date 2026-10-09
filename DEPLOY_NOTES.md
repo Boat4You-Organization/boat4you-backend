@@ -1,5 +1,16 @@
 # Backend deploy notes
 
+## 2026-10-09 — Tlocrt broda: `yachtImages[].layout` na javnom detalju broda — ⏳ NIJE DEPLOYANO (commit `7489016`)
+
+Ide u **isti večerašnji jar** s `2269c75` / `68d3a9e` / `016501e` (HEAD ≥ `7489016`, isti redoslijed cusma2 → gate → cusma3). Samo kod: nema migracije, nema novog upita, nema cachea na detalju broda.
+
+- Svaka stavka `GET /public/yachts/{slug}` → `yachtImages[]` dobiva `layout: true|false` (isto i admin custom-yacht te detalji rezervacije, isti `YachtImage.toDto()`). Čita se iz imena datoteke u `external_url` (`LayoutImageRules`). `mainImage` se ne mijenja.
+- Prod 9.10. (read-only): 13.030 aktivnih brodova sa slikama, 232.927 slika. Označeno **11.196 brodova / 11.868 slika** (NauSys 5.593 / 5.898, MMK 5.603 / 5.970). 10.628 brodova ima 1 tlocrt, 568 ih ima 2–5. **12 brodova ima samo tlocrt**, pa bi im galerija bez njega ostala prazna (web). Glavna slika je tlocrt kod **21 broda** po `yacht.main_image_id`, odnosno kod 3 po `main_image`.
+- Web (b4y) čita polje. Dok novi jar nije live, polje ne postoji, pa web mora `undefined` tretirati kao `false`.
+- [ ] **Provjera nakon deploya:** `curl -s https://api.boat4you.com/public/yachts/12663 | jq '.id, [.yachtImages[] | select(.layout) | .id]'` → `12663`, `[218650]` (Lagoon 55 The Moon; ako twin canonical vrati drugi id, njegov tlocrt). Svaka stavka mora imati ključ `layout`.
+
+**Rollback:** prethodni jar (polje nestaje).
+
 ## 2026-10-09 — Oprema D+1: inverter nije priključak 220 V, „House fridge freezer (615L)…" je hladnjak (2 ključa u R__1_05) — ⏳ NIJE DEPLOYANO (commit `016501e`)
 
 Deploya se **večeras ZAJEDNO s `68d3a9e`** (isti jar iz HEAD ≥ `016501e`, isti redoslijed i gate kao unos ispod). Mijenjaju se samo ključevi u `R__1_05` (+ golden fixture i jedan test). Nema V-migracije ni promjene koda.
