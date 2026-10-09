@@ -109,6 +109,57 @@ class LayoutImageRulesTests {
     }
 
     @Test
+    fun `review 9-10 - plans the first rules missed (each image looked at on prod)`() {
+        layout(
+            "1184637610000100928_dufor_36_leaout.jpg",
+            "6143621161903502_lag_51_lauout.jpg",
+            "3797581560000105307_bigbluhorizont-lazout(3).jpg",
+            "4142851651702532_1642676114043_laout.jpg",
+            "43365681586300260_l43_laoyut.jpg",
+            "7953822500000102535_azurea_lagouyt.jpg",
+            "7854653930000108234_updated_lyaout_bali_5.4.jpg",
+            "8040331227801254_sicily_loyout.jpg",
+            "3553061399805322_loyaout.jpg",
+            "3296621363104307_catalina_42_-_lyout_interni.jpg",
+            "6058811237502535_bali-4.2-iayout.jpg",
+            "12166021175702315_riss.jpg",
+            "5252000971301921_yacht-400-riss.jpg",
+            "3057770240000104104_grundsriss_hekla.jpg",
+            "3906511604307152_1756375625608_hunter_32.6_piant.jpg",
+            "3073081367003207_piano_interni-1.jpg",
+            "4010651652607438_50-piano-interni-scaled.jpg",
+            "4471110829502610_configurazione_lagoon_421.jpg",
+            "6604112830000105899_nacrt_salon.jpg",
+            "6604112890000105899_nacrt_spavace.jpg",
+            "517112440000100000_oceanis-48_sheme.jpg",
+            "4110941235605390_schemainterni_13-98.jpg",
+            "3760270868003735_scheme1.jpg",
+            "5036150868003735_tw_scheme.jpg",
+            "4848951134704118_mmk.diagram.jpg",
+            "6187277790000105508_ap_deck_plane.jpg",
+        ) shouldBe emptyList()
+        photo(
+            "4032961301202371_410lout.jpg",
+            "6163751628804113_filiraout.jpg",
+            "chilloutimg_9001.jpg",
+            "sophia-photo-loutraki_furniss-august18.jpg",
+            "dscf6882-it-farout.jpg",
+            "lookout.jpg",
+            "input.jpg",
+            "about_us.jpg",
+            "hemera_ext1.jpg",
+            "schemer_main.jpg",
+            "morriss_saloon.jpg",
+            "risotto.jpg",
+            "piano_cottura-min.jpg",
+            "sardinia_piano_cucina.jpg",
+            "dufour_470_grand_large_-_piano02_main_interior.jpg",
+            "16604010896200667_drawing1_stck.jpg", // a side elevation, not a plan
+            "drone_top_view-lagoon_42.jpg",
+        ) shouldBe emptyList()
+    }
+
+    @Test
     fun `never a photo - planet, plants, play, relay, deck, side views, sail plans`() {
         photo(
             "dufour-460-discovery-planet-ext-01.jpg",
@@ -141,7 +192,6 @@ class LayoutImageRulesTests {
             "side_view.jpg",
             "main.%20a1%20dea%20profilna.jpg",
             "drawing_stock.jpg",
-            "tw_scheme.jpg",
             "rm-1070-en-location-bretagne-nord-amenagement-intrieur.jpg",
             "dufour-sail-plan-luxury-sailing-yacht-dufour-430-745x1024.jpg",
             "sail_plan.jpg",
