@@ -35,6 +35,34 @@ class OfferCharterRulesTests {
     }
 
     @Test
+    fun `the skipper need not come first, and what follows it in brackets or after a plus stays the skipper's`() {
+        listOf(
+            "Wintersailing | Skipper | 2026 - 2027",
+            "Tour leader (Skipper freelancer)",
+            "Tour leader 53",
+            "Crewed Skipper SEY",
+            "SURI'S CREW (SKIPPER)",
+            "Obligatory skipper including provision",
+            "Obligatory skipper (+ provision)",
+            "Saxdor - Obligatory daily Skipper",
+            "Cap Cat- Obligatory daily Skipper",
+            "Mandatory  Skipper",
+            "Luna Skipper",
+            "2026 Skipper obligatory (crew provisions not included)",
+            "MANDATORY VIP departure package - skipper included",
+            "Skipper (includes 300.00 EUR non-refundable deposit insurance) (his daily nutrition is extra)",
+            "Skipper + deposit insurance (daily nutrition is extra)",
+            "Skipper (food excluded) + Non-Refundable Skippered Insurance 365",
+            "Skipper Fee ( ex Provisioning) ",
+            "Skipper services - Driving boat and dingy, responsible for the crew, making reservations in the restaurants.",
+            "For DAILY CHARTER included in price: Captain, Fuel, 1 BBQ meal with buffet",
+        ).forEach { name ->
+            OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT), listOf(name)) shouldBe
+                OfferCharterDto(OfferCharterKind.SKIPPERED, OfferCharterBasis.OBLIGATORY_SKIPPER, name.trim())
+        }
+    }
+
+    @Test
     fun `One man crew reads Skipper (ExtraNameNormalizer)`() {
         OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT), listOf("One man crew (Caribbean)")) shouldBe
             OfferCharterDto(OfferCharterKind.SKIPPERED, OfferCharterBasis.OBLIGATORY_SKIPPER, "One man crew (Caribbean)")
@@ -52,6 +80,20 @@ class OfferCharterRulesTests {
             "Checkout Skipper",
             "Starter Pack 2 (Bed linen in each cabin); Bath Towel set (1 bath towel + hand towel for each crew member)",
             "Crew list",
+            "Damage Waiver-non refundable (ONLY when skippered by our skipper) (plus 1000€ refundable security deposit)",
+            "REQUIRED SAILING LICENSE: OFFSHORE YACHT SKIPPER/ YACHTMASTER OFFSHORE/ INTERNATIONAL SKIPPER LICENSE",
+            "REQUIRED LICENCE MORE THAN 30 GT + 1 crew member with valid licence obligatory",
+            "Skipper (IN CASE THE CLIENT DOESN'T OWN A BOAT DRIVING LICENSE)",
+            "In case of skippered charter (=captain on board if they don't have an own sailing license)",
+            "Handover fee (IN CASE THE CLIENT CHARTERS WITHOUT SKIPPER!)",
+            "Skipper liability insurance",
+            "Skipper 1st Day Mandatory",
+            "Skipper meals",
+            "Skipper training practice",
+            "Free Skipper training",
+            "Welcome drink and Captain's dinner",
+            "APA for skippered charters",
+            "Dinghy with Outboard Engine (Crew hands in charge) - included",
         ).forEach { name ->
             OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT), listOf(name)) shouldBe bareboat
         }
@@ -69,12 +111,43 @@ class OfferCharterRulesTests {
         OfferCharterRules.classify(false, UNKNOWN, setOf(CREWED, ALL_INCLUSIVE), emptyList()) shouldBe
             OfferCharterDto(OfferCharterKind.CREWED, OfferCharterBasis.CREWED_YACHT)
         // ... but a boat also sold bareboat decides by its charges
-        OfferCharterRules.classify(false, UNKNOWN, setOf(BAREBOAT, CREWED), emptyList()) shouldBe bareboat
+        OfferCharterRules.classify(false, UNKNOWN, setOf(BAREBOAT, CREWED), emptyList()).kind shouldBe OfferCharterKind.BAREBOAT
         // an MMK BAREBOAT product is bareboat even on a boat also listed crewed
         OfferCharterRules.classify(false, BAREBOAT, setOf(CREWED), emptyList()) shouldBe bareboat
         OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT), listOf("3 crew: 1 captain, 1 cook and 1 deckhand", "Skipper")) shouldBe
             OfferCharterDto(OfferCharterKind.CREWED, OfferCharterBasis.OBLIGATORY_CREW, "3 crew: 1 captain, 1 cook and 1 deckhand")
         OfferCharterRules.classify(false, UNKNOWN, setOf(BAREBOAT), listOf("Crew - included")).basis shouldBe OfferCharterBasis.OBLIGATORY_CREW
+        OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT), listOf("Seasoned Crew (Captian and Sailor)")).kind shouldBe OfferCharterKind.CREWED
+        OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT), listOf("Included in price (Vessel and crew Half board (buffet breakfast)")).kind shouldBe
+            OfferCharterKind.CREWED
+    }
+
+    @Test
+    fun `a skipper with anyone else is a crew, a hostess alone keeps the offer bareboat`() {
+        // one charge naming two people
+        listOf("Skipper & Chef", "Skipper+Cook", "Skipper+Hostess", "Captain, Hostess, Chef & Deckhand", "1.Crew: Skipper & Deckhand").forEach { name ->
+            OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT), listOf(name)) shouldBe
+                OfferCharterDto(OfferCharterKind.CREWED, OfferCharterBasis.OBLIGATORY_CREW, name)
+        }
+        // two charges
+        OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT), listOf("Skipper ", "Transit log", "Hostess mandatory Sardinia")) shouldBe
+            OfferCharterDto(OfferCharterKind.CREWED, OfferCharterBasis.OBLIGATORY_CREW, "Skipper + Hostess mandatory Sardinia")
+        // nobody but a hostess / deckhand: the client still skippers
+        listOf("Hostess", "Deckhand/ Marinero", "Obligatory Deckhand", "Cook").forEach { name ->
+            OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT), listOf(name)) shouldBe
+                OfferCharterDto(OfferCharterKind.BAREBOAT, OfferCharterBasis.OBLIGATORY_CREW_MEMBER, name)
+        }
+        // "Deckhand [Mandatory for Charters without our skipper ...]" is conditional: nobody
+        OfferCharterRules.roleOf("Deckhand [Mandatory for Charters without our skipper. If skipper is selected, we provide deckhand free of charge]") shouldBe null
+    }
+
+    @Test
+    fun `a NauSys offer of a boat listed both ways reads bareboat, unconfirmed`() {
+        OfferCharterRules.classify(false, UNKNOWN, setOf(BAREBOAT, CREWED), emptyList()) shouldBe
+            OfferCharterDto(OfferCharterKind.BAREBOAT, OfferCharterBasis.BAREBOAT_UNCONFIRMED)
+        OfferCharterRules.classify(false, null, setOf(BAREBOAT, CREWED), listOf("Skipper")).kind shouldBe OfferCharterKind.SKIPPERED
+        // an MMK BAREBOAT product is not a guess
+        OfferCharterRules.classify(false, BAREBOAT, setOf(BAREBOAT, CREWED), emptyList()) shouldBe bareboat
     }
 
     @Test

@@ -79,6 +79,10 @@ class YachtSearchGuletCharterTest {
         private val S: LocalDate = LocalDate.of(2030, 6, 15)
         private val E: LocalDate = S.plusDays(7)
 
+        /** A two-week search far from S..E: boats 17 / 18 only have two weekly offers there (a tiled card). */
+        private val S2: LocalDate = S.plusDays(70)
+        private val E2: LocalDate = S2.plusDays(14)
+
         private val MINIMAL_SCHEMA =
             """
             CREATE TABLE location (id bigint PRIMARY KEY, display_name text, country_code varchar(2));
@@ -116,6 +120,7 @@ class YachtSearchGuletCharterTest {
             val product: String,
             val obligatory: List<String> = emptyList(),
             val optional: List<String> = emptyList(),
+            val status: String = "FREE",
         )
 
         /** model 1 Oceanis 46.1, 2 "Gulet" (Gallant 11771), 3 Princess 62, 4 Lagoon 42 */
@@ -143,7 +148,21 @@ class YachtSearchGuletCharterTest {
                 Boat(10, "MOTOR_YACHT", 3, listOf("BAREBOAT"), "BAREBOAT", listOf("3 crew: 1 captain, 1 cook and 1 deckhand")),
                 // MMK boat sold both ways: its cheaper BAREBOAT offer is one-way (made one-way below)
                 Boat(11, "SAILING_YACHT", 1, listOf("BAREBOAT", "CREWED"), "BAREBOAT"),
+                // NauSys: the boat's obligatory skipper is limited to two other bases (prod 2583: Palma boat, "Skipper" valid
+                // only for Nassau / Road Town) - the price calculation never charges it
+                Boat(12, "SAILING_YACHT", 1, listOf("BAREBOAT"), "UNKNOWN"),
+                // NauSys: the same row limited to bases that include the boat's home base - charged
+                Boat(13, "SAILING_YACHT", 1, listOf("BAREBOAT"), "UNKNOWN"),
+                // a live option holds this BAREBOAT offer; the boat page takes the week's FREE CREWED offer (added below)
+                Boat(14, "SAILING_YACHT", 1, listOf("BAREBOAT", "CREWED"), "BAREBOAT", status = "OPTION"),
+                // an obligatory skipper and an obligatory hostess: a crew
+                Boat(15, "CATAMARAN", 4, listOf("BAREBOAT"), "BAREBOAT", listOf("Skipper", "Hostess")),
+                // an obligatory hostess alone: still bareboat (the client skippers), named
+                Boat(16, "CATAMARAN", 4, listOf("BAREBOAT"), "BAREBOAT", listOf("Hostess")),
             )
+
+        /** Two-week boats: id to (first week's obligatory charges, second week's), both BAREBOAT products, S2..E2. */
+        private val TWO_WEEK_BOATS = mapOf(17L to (emptyList<String>() to emptyList()), 18L to (emptyList<String>() to listOf("Skipper")))
 
         private val SEED: String =
             buildString {
@@ -160,7 +179,7 @@ class YachtSearchGuletCharterTest {
                     appendLine(
                         "INSERT INTO offer (id, yacht_id, location_from, location_to, date_from, date_to, client_price, " +
                             "ext_base_price, broker_commission, deposit, status, product) VALUES (${b.id}, ${b.id}, 1, 1, DATE '$S', " +
-                            "DATE '$E', ${3000 + b.id}, ${3000 + b.id}, 0, 1000, 'FREE', '${b.product}');",
+                            "DATE '$E', ${3000 + b.id}, ${3000 + b.id}, 0, 1000, '${b.status}', '${b.product}');",
                     )
                     b.obligatory.forEach { appendLine("INSERT INTO offer_extras (offer_id, name, obligatory) VALUES (${b.id}, '${it.replace("'", "''")}', true);") }
                     b.optional.forEach { appendLine("INSERT INTO offer_extras (offer_id, name, obligatory) VALUES (${b.id}, '$it', false);") }
@@ -185,6 +204,36 @@ class YachtSearchGuletCharterTest {
                     "INSERT INTO offer (id, yacht_id, location_from, location_to, date_from, date_to, client_price, ext_base_price, " +
                         "broker_commission, deposit, status, product) VALUES (110, 11, 1, 1, DATE '$S', DATE '$E', 9000, 9000, 0, 1000, 'FREE', 'CREWED');",
                 )
+                // the home base (agency 1, location 1) is NauSys base 500; boat 12's skipper is for bases 900 / 901 only
+                appendLine("INSERT INTO external_bases (external_id, agency_id, location_id) VALUES (500, 1, 1), (900, 1, 2);")
+                appendLine(
+                    "INSERT INTO yacht_extras (yacht_id, name, obligatory, valid_from, valid_to, valid_for_bases) VALUES " +
+                        "(12, 'Skipper', true, DATE '2030-01-01', DATE '2030-12-31', '{900,901}'), " +
+                        "(13, 'Skipper', true, DATE '2030-01-01', DATE '2030-12-31', '{901,500}');",
+                )
+                // boat 14: a live option (no expiry) holds offer 14; the same week's round trip 140 is FREE and CREWED
+                appendLine("INSERT INTO external_reservations (id, yacht_id, date_from, date_to, status) VALUES (1, 14, DATE '$S', DATE '$E', 'OPTION');")
+                appendLine(
+                    "INSERT INTO offer (id, yacht_id, location_from, location_to, date_from, date_to, client_price, ext_base_price, " +
+                        "broker_commission, deposit, status, product) VALUES (140, 14, 1, 1, DATE '$S', DATE '$E', 9000, 9000, 0, 1000, 'FREE', 'CREWED');",
+                )
+                TWO_WEEK_BOATS.forEach { (id, weeks) ->
+                    appendLine(
+                        "INSERT INTO yacht (id, name, agency_id, entry_type, sys_active, vessel_type, model_id, location_id, cabins) " +
+                            "VALUES ($id, 'Yacht $id', 1, 'EXTERNAL', true, 'SAILING_YACHT', 1, 1, 4);",
+                    )
+                    appendLine("INSERT INTO yacht_charter_type (yacht_id, type) VALUES ($id, 'BAREBOAT');")
+                    listOf(weeks.first, weeks.second).forEachIndexed { week, charges ->
+                        val offerId = id * 100 + week
+                        val from = S2.plusDays(7L * week)
+                        appendLine(
+                            "INSERT INTO offer (id, yacht_id, location_from, location_to, date_from, date_to, client_price, ext_base_price, " +
+                                "broker_commission, deposit, status, product) VALUES ($offerId, $id, 1, 1, DATE '$from', DATE '${from.plusDays(7)}', " +
+                                "3000, 3000, 0, 1000, 'FREE', 'BAREBOAT');",
+                        )
+                        charges.forEach { appendLine("INSERT INTO offer_extras (offer_id, name, obligatory) VALUES ($offerId, '$it', true);") }
+                    }
+                }
             }
     }
 
@@ -287,39 +336,42 @@ class YachtSearchGuletCharterTest {
         return factoryBean.`object`!!
     }
 
-    private fun params(charterTypes: List<CharterType>? = null) =
-        YachtSearchParamObject(
-            locationIds = null,
-            charterTypes = charterTypes,
-            vesselTypes = null,
-            manufacturers = null,
-            models = null,
-            mainSailTypes = null,
-            minBuildYear = null,
-            maxBuildYear = null,
-            minPersons = null,
-            maxPersons = null,
-            minCabins = null,
-            maxCabins = null,
-            minBerths = null,
-            maxBerths = null,
-            minLength = null,
-            maxLength = null,
-            minPrice = null,
-            maxPrice = null,
-            startDate = S,
-            endDate = E,
-            minWc = null,
-            maxWc = null,
-            minEnginePower = null,
-            maxEnginePower = null,
-            currency = CurrencyEnum.EUR,
-            amenities = null,
-            services = null,
-            yachtIds = null,
-            weeklyPrice = false,
-            language = LanguageEnum.EN,
-        )
+    private fun params(
+        charterTypes: List<CharterType>? = null,
+        start: LocalDate = S,
+        end: LocalDate = E,
+    ) = YachtSearchParamObject(
+        locationIds = null,
+        charterTypes = charterTypes,
+        vesselTypes = null,
+        manufacturers = null,
+        models = null,
+        mainSailTypes = null,
+        minBuildYear = null,
+        maxBuildYear = null,
+        minPersons = null,
+        maxPersons = null,
+        minCabins = null,
+        maxCabins = null,
+        minBerths = null,
+        maxBerths = null,
+        minLength = null,
+        maxLength = null,
+        minPrice = null,
+        maxPrice = null,
+        startDate = start,
+        endDate = end,
+        minWc = null,
+        maxWc = null,
+        minEnginePower = null,
+        maxEnginePower = null,
+        currency = CurrencyEnum.EUR,
+        amenities = null,
+        services = null,
+        yachtIds = null,
+        weeklyPrice = false,
+        language = LanguageEnum.EN,
+    )
 
     private fun signIn(vararg authorities: String) {
         SecurityContextHolder.getContext().authentication =
@@ -346,19 +398,32 @@ class YachtSearchGuletCharterTest {
                 9L to BAREBOAT, // not a gulet: LEAST(BAREBOAT, CREWED) as before
                 10L to BAREBOAT,
                 11L to BAREBOAT,
+                12L to BAREBOAT,
+                13L to BAREBOAT,
+                14L to BAREBOAT,
+                15L to BAREBOAT,
+                16L to BAREBOAT,
             ),
             search().mapValues { it.value.charterType },
         )
+        // under a filter the card reads an asked type: the CREWED filter passes every row of gulet 4 (BAREBOAT +
+        // ALL_INCLUSIVE), and the card says CREWED, not ALL_INCLUSIVE; boat 9 (not a gulet) reads its CREWED row
+        val crewedCards = search(listOf(CREWED))
+        assertEquals(CREWED, crewedCards.getValue(4).charterType)
+        assertEquals(CREWED, crewedCards.getValue(9).charterType)
+        assertEquals(CREWED, crewedCards.getValue(2).charterType)
+        assertEquals(ALL_INCLUSIVE, search(listOf(ALL_INCLUSIVE)).getValue(4).charterType)
+        assertEquals(ALL_INCLUSIVE, search(listOf(BAREBOAT, ALL_INCLUSIVE)).getValue(4).charterType)
     }
 
     @Test
     fun `charterType filter, its total and the facet counts - BAREBOAT never a gulet, CREWED every gulet`() {
-        val bareboat = setOf(1L, 6L, 7L, 9L, 10L, 11L)
-        val crewed = setOf(2L, 3L, 4L, 5L, 8L, 9L, 11L)
+        val bareboat = setOf(1L, 6L, 7L, 9L, 10L, 11L, 12L, 13L, 14L, 15L, 16L)
+        val crewed = setOf(2L, 3L, 4L, 5L, 8L, 9L, 11L, 14L)
         assertEquals(bareboat, search(listOf(BAREBOAT)).keys)
         assertEquals(crewed, search(listOf(CREWED)).keys)
         assertEquals(setOf(4L), search(listOf(ALL_INCLUSIVE)).keys)
-        assertEquals((1L..11L).toSet(), search(listOf(BAREBOAT, CREWED)).keys)
+        assertEquals((1L..16L).toSet(), search(listOf(BAREBOAT, CREWED)).keys)
         assertEquals(bareboat.size.toLong(), service.getYachtSearchTotalCount(params(listOf(BAREBOAT))))
         assertEquals(crewed.size.toLong(), service.getYachtSearchTotalCount(params(listOf(CREWED))))
 
@@ -387,9 +452,28 @@ class YachtSearchGuletCharterTest {
                 9L to bareboat, // the boat page's offer of the week (the first round trip), insurance is not a skipper
                 10L to OfferCharterDto(OfferCharterKind.CREWED, OfferCharterBasis.OBLIGATORY_CREW, "3 crew: 1 captain, 1 cook and 1 deckhand"),
                 11L to OfferCharterDto(OfferCharterKind.CREWED, OfferCharterBasis.CREWED_PRODUCT), // the round trip, not the one-way
+                12L to bareboat, // its skipper is for other bases: never charged, not Skippered
+                13L to OfferCharterDto(OfferCharterKind.SKIPPERED, OfferCharterBasis.OBLIGATORY_SKIPPER, "Skipper"),
+                14L to OfferCharterDto(OfferCharterKind.CREWED, OfferCharterBasis.CREWED_PRODUCT), // the FREE offer, not the held one
+                15L to OfferCharterDto(OfferCharterKind.CREWED, OfferCharterBasis.OBLIGATORY_CREW, "Skipper + Hostess"),
+                16L to OfferCharterDto(OfferCharterKind.BAREBOAT, OfferCharterBasis.OBLIGATORY_CREW_MEMBER, "Hostess"),
             ),
             cards,
         )
+    }
+
+    @Test
+    fun `admin listing - a two-week card gets a pill only when both weeks read the same`() {
+        signIn("SYSTEM_ADMIN")
+        val cards =
+            service
+                .getYachts(params(start = S2, end = E2).copy(yachtIds = listOf(17L, 18L)), "id", LanguageEnum.EN, 0, 50, true)
+                .content
+                .associateBy { it.id }
+        assertEquals(setOf(17L, 18L), cards.keys)
+        cards.values.forEach { assertEquals(S2 to E2, it.offerDateFrom to it.offerDateTo, "tiled card ${it.id}") }
+        assertEquals(OfferCharterDto(OfferCharterKind.BAREBOAT, OfferCharterBasis.BAREBOAT), cards.getValue(17).offerCharter)
+        assertNull(cards.getValue(18).offerCharter) // bareboat week + skippered week: no single answer
     }
 
     @Test
@@ -400,7 +484,7 @@ class YachtSearchGuletCharterTest {
                 SecurityContextHolder.clearContext()
                 if (who.isNotEmpty()) signIn(*who)
                 val cards = search(isAdmin = adminQuery)
-                assertEquals(11, cards.size)
+                assertEquals(16, cards.size)
                 assertTrue(cards.values.all { it.offerCharter == null }, "offerCharter for ${who.toList()} / adminQuery=$adminQuery")
                 val json = CapacityFixtures.mapper.writeValueAsString(cards.values)
                 assertFalse(json.contains("offerCharter"), "offerCharter key in the public JSON")
