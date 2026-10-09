@@ -1,5 +1,42 @@
 # Backend deploy notes
 
+## 2026-10-09 — Review `2269c75` → `68d3a9e`: admin pill čita samo ono što se naplaćuje, skiper / posada po ulozi, FREE ponuda kao stranica broda; gulet kartica pod filtrom — ⏳ NIJE DEPLOYANO
+
+Deploya se ZAJEDNO s `2269c75` (unos ispod = opis featurea, njegove API provjere vrijede): jar iz commita ≥ `68d3a9e`, NIKAD samo `2269c75`. Admin: `boat4you-admin` `6d9e8ac` (na `f27984b`).
+
+**Nalazi reviewa → `68d3a9e`:**
+
+- **F1 ✅ (visoko)** obvezni yacht red s `valid_for_bases` (NauSys) broji se samo kad je matična baza broda (`external_bases` po `agency_id` + `location_id`) među njima ili baza nema mapiranje — isto pravilo kao `PriceCalculationService`. Prod: 7.506 budućih ponuda / 106 brodova pisalo je „Skippered" zbog „Skipper" valjanog samo za Nassau / Road Town na brodovima u Palmi, Ibizi, Krfu (2583, 2600, 2650, 14183, 2577), a košarica i cijena ga ne naplaćuju.
+- **F2 ✅** `OfferCharterRules.roleOf`: uloga NE mora biti na početku imena — skipper / captain / captian / tour leader (jednina) bilo gdje, osim kad je stavka uvjetna (if / when / without / in case), dolazi iza deposit / waiver / insurance / licence / certificate / handover / invoice, iza fee / food / check-out / for … u svojoj klauzuli, ili odmah iza uloge stoji stvar (certificate, liability, insurance, training, meals, dinner, 1st day …). Osiguranje / polog IZA skipera („Skipper + deposit insurance") ga više ne skriva. Sad Skippered: „Wintersailing | Skipper | 2026 - 2027", „Tour leader 53", „Crewed Skipper SEY", „SURI'S CREW (SKIPPER)", „Obligatory skipper including provision", „Saxdor - Obligatory daily Skipper", „Mandatory  Skipper", „Luna Skipper"; Crewed: „Seasoned Crew (Captian and Sailor)"; više NIJE Skippered: „Skipper 1st Day Mandatory", „Skipper meals", „Skipper training practice", „Skipper (IN CASE THE CLIENT DOESN'T OWN A BOAT DRIVING LICENSE)".
+- **F3 ✅ default — Mario potvrđuje:** skiper + bilo tko drugi (jedna stavka „Skipper & Chef" ili dvije „Skipper" + „Hostess") = **Crewed** (`OBLIGATORY_CREW`, ime „Skipper + Hostess"); obvezna hostesa / kuhar / mornar BEZ skipera ostaje **Bareboat**, ali hover ih imenuje (novi basis `OBLIGATORY_CREW_MEMBER`). Promjena = jedna grana u `OfferCharterRules.classify`.
+- **F4 ✅** (admin `6d9e8ac`) pill nakon „‹ week ›" zatamnjen i prekrižen, u košaricu se ne kopira.
+- **F5 ✅** OPTION / OPTION_WAITING ponuda koju živa opcija još drži (bez isteka ili < `OPTION_ECHO_GRACE_HOURS` iza) nije FREE — kao stranica broda (`pickOfferForPeriod` nakon `OfferMapper.toDto`); prod 110 termina / 31 brod gdje se razlikovalo.
+- **F6 ✅** višetjedna kartica dobiva pill samo kad svi tjedni kažu isto (inače bez pilla; „Add to offer" za takvu karticu i dalje javlja grešku — pre-existing); NauSys ponuda bez producta na brodu označenom i bareboat i crewed bez ičeg obveznog = `BAREBOAT_UNCONFIRMED` (prod 897 ponuda / 20 brodova). Boje / tekstovi / tipkovnica u adminu.
+- **F7 ✅** pod `charterType` filtrom kartica guleta čita traženi tip (CREWED filter pušta sve retke guleta): gulet BAREBOAT + ALL_INCLUSIVE pod CREWED čita CREWED, kao prije GuletRules.
+- **Ispravak unosa ispod:** gulet ponude s productom BAREBOAT = **97 budućih ponuda na 8 guleta** (aktivni i svi isto), ne 79 / 5.
+
+**Prod 9.10. (cusma4 read-only; buduće ponude aktivnih ne-gulet brodova s bareboat / NauSys productom, po ponudi):** Skippered 32.422 / 487 brodova → **24.941 / 380**; Crewed po stavkama 66 / 2 → **1.135 / 29**; Bareboat s imenovanim članom posade **776 / 6**. Admin upiti po stranici od 100 brodova: ponude + opcije 42 ms (HR 3.–10.7.2027), yacht redovi 12 ms (HR) / 45 ms (ES, hladno).
+
+**Verifikacija:** `OfferCharterRulesTests` 9 (prod imena), `YachtSearchGuletCharterTest` 5 (Testcontainers: skiper samo za druge baze, opcija vs FREE ponuda, skiper + hostesa, sama hostesa, dvotjedna kartica, tip kartice guleta pod filterima), `YachtSearchCapacityTest` 5, JSON 4, mapper 2, AI chat 2 — zeleno. Puni suite 585, isti **31 pre-existing failure** kao prije (`ReservationPaymentPhasesServiceTest` 26, `ReservationOptionsCombinationProviderTests` 2, `Boat4youWsApplicationTests` 1, `MatchersTests` 1, `NauSysDateTimeWrapperTests` 1). ktlint 0 na promijenjenim linijama. Bez migracije.
+
+**Deploy (samo jar; redoslijed backend cusma2 → cusma3 → admin):**
+
+- [ ] Jar iz commita ≥ `68d3a9e` (`JAVA_HOME` 21).
+- [ ] **cusma2** (API): jar + restart izvan sync prozora (vidi unos 8.10.); health `GET /public/settings/card-surcharge` → 200.
+- [ ] **cusma3** (scheduler) isti jar, TVRDI gate u istoj skripti: `n=$(journalctl --since '10 minutes ago' | grep -ci 'nausys\|mmk'); [ "$n" -gt 0 ] && { echo ABORT; exit 1; }`.
+- [ ] **API (gulet nikad bareboat):**
+  - `curl -s https://api.boat4you.com/public/yachts/18886 | jq -c .charterType` → `["CREWED"]` (Sylvia R; partner BAREBOAT + CREWED); `…/11771` → `["CREWED"]` (Gallant, MOTOR_YACHT modela „Gulet"); `…/20213` → `["CREWED"]`.
+  - lista: `curl -s 'https://api.boat4you.com/public/yachts?yid=18886&yid=11771&size=10' | jq -c '[.content[] | {id, charterType}]'` → oba `CREWED`.
+  - BAREBOAT filter: `curl -s 'https://api.boat4you.com/public/yachts?yid=18886&yid=11771&charterType=BAREBOAT&size=10' | jq .page.totalElements` → `0`; isto s `charterType=CREWED` → `2`.
+  - javni JSON bez admin ključa: `curl -s 'https://api.boat4you.com/public/yachts?did=c-54&startDate=2027-07-03&endDate=2027-07-10&size=100' | grep -c offerCharter` → `0`.
+- [ ] **Admin `6d9e8ac` NAKON backenda**, pa u Offers (admin.boat4you.com/offers):
+  - Italija 1.6.–8.6.2027 → **8165 ITALIA IV** pill „Skippered" (narančast), hover „Bareboat offer with an obligatory skipper: "Skipper"" (ili Francuska Polinezija isti tjedan → 6595 Molokoi). Ako je tjedan u međuvremenu prodan: bilo koji red s narančastim pillom, hover imenuje obveznog skipera.
+  - Španjolska 5.6.–12.6.2027 → **2583** (Palma) NIJE „Skippered" (prije reviewa jest; njegov „Skipper" vrijedi samo za Nassau / Road Town).
+  - gulet: država broda, tjedan s njegovom ponudom → 18886 Sylvia R i 11771 Gallant „Crewed", hover „Gulet - always chartered with its crew, never bareboat." (BAREBOAT filter = API provjera gore; Offers nema charterType filter).
+  - „week ›" bez nove pretrage → pillovi zatamnjeni i prekriženi; „Add to offer" → u košarici bez oznake.
+
+**Rollback:** prethodni jar na cusma2 (+ cusma3); nema podataka. Admin neovisan (admin `f27984b` bez `6d9e8ac` nove basis vrijednosti čita kao Bareboat hover tekst — pill je i dalje ispravan).
+
 ## 2026-10-09 — Gulet nikad nije bareboat + admin Offers: Bareboat / Skippered / Crewed po retku — ⏳ NIJE DEPLOYANO (commit `2269c75`)
 
 **Što (Mario 9.10.):**
