@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-09 — Tlocrt broda: `yachtImages[].layout` na javnom detalju broda — ⏳ NIJE DEPLOYANO (commiti `7489016` + review `f90e184`)
+## 2026-10-09 — Tlocrt broda: `yachtImages[].layout` na javnom detalju broda — ✅ DEPLOYANO 9.10.2026 (cusma2 17:52:48, cusma3 17:53:44 UTC; jar b3fac2bf… c20735d) (commiti `7489016` + review `f90e184`)
 
 Ide u **isti večerašnji jar** s `2269c75` / `68d3a9e` / `016501e` (HEAD ≥ `f90e184`, isti redoslijed cusma2 → gate → cusma3). Samo kod: nema migracije, nema novog upita, nema cachea na detalju broda.
 
@@ -12,7 +12,7 @@ Ide u **isti večerašnji jar** s `2269c75` / `68d3a9e` / `016501e` (HEAD ≥ `f
 
 **Rollback:** prethodni jar (polje nestaje).
 
-## 2026-10-09 — Oprema D+1: inverter nije priključak 220 V, „House fridge freezer (615L)…" je hladnjak (2 ključa u R__1_05) — ⏳ NIJE DEPLOYANO (commit `016501e`)
+## 2026-10-09 — Oprema D+1: inverter nije priključak 220 V, „House fridge freezer (615L)…" je hladnjak (2 ključa u R__1_05) — ✅ DEPLOYANO 9.10.2026 (cusma2 17:52:48, cusma3 17:53:44 UTC; jar b3fac2bf… c20735d) (commit `016501e`)
 
 Deploya se **večeras ZAJEDNO s `68d3a9e`** (isti jar iz HEAD ≥ `016501e`, isti redoslijed i gate kao unos ispod). Mijenjaju se samo ključevi u `R__1_05` (+ golden fixture i jedan test). Nema V-migracije ni promjene koda.
 
@@ -51,7 +51,7 @@ Deploya se **večeras ZAJEDNO s `68d3a9e`** (isti jar iz HEAD ≥ `016501e`, ist
 
 **Rollback:** prethodni jar ima stari `R__1_05` (drugi checksum), pa Flyway vraća stare ključeve. Sljedeći sync vraća stare veze.
 
-## 2026-10-09 — Review `2269c75` → `68d3a9e`: admin pill čita samo ono što se naplaćuje, skiper / posada po ulozi, FREE ponuda kao stranica broda; gulet kartica pod filtrom — ⏳ NIJE DEPLOYANO
+## 2026-10-09 — Review `2269c75` → `68d3a9e`: admin pill čita samo ono što se naplaćuje, skiper / posada po ulozi, FREE ponuda kao stranica broda; gulet kartica pod filtrom — ✅ DEPLOYANO 9.10.2026 (cusma2 17:52:48, cusma3 17:53:44 UTC; jar b3fac2bf… c20735d)
 
 Deploya se ZAJEDNO s `2269c75` (unos ispod = opis featurea, njegove API provjere vrijede): jar iz commita ≥ `68d3a9e`, NIKAD samo `2269c75`. Admin: `boat4you-admin` `6d9e8ac` (na `f27984b`).
 
@@ -88,7 +88,7 @@ Deploya se ZAJEDNO s `2269c75` (unos ispod = opis featurea, njegove API provjere
 
 **Rollback:** prethodni jar na cusma2 (+ cusma3); nema podataka. Admin neovisan (admin `f27984b` bez `6d9e8ac` nove basis vrijednosti čita kao Bareboat hover tekst — pill je i dalje ispravan).
 
-## 2026-10-09 — Gulet nikad nije bareboat + admin Offers: Bareboat / Skippered / Crewed po retku — ⏳ NIJE DEPLOYANO (commit `2269c75`)
+## 2026-10-09 — Gulet nikad nije bareboat + admin Offers: Bareboat / Skippered / Crewed po retku — ✅ DEPLOYANO 9.10.2026 (cusma2 17:52:48, cusma3 17:53:44 UTC; jar b3fac2bf… c20735d) (commit `2269c75`)
 
 **Što (Mario 9.10.):**
 
