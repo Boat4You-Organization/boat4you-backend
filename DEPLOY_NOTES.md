@@ -1,5 +1,35 @@
 # Backend deploy notes
 
+## 2026-10-09 — Gulet nikad nije bareboat + admin Offers: Bareboat / Skippered / Crewed po retku — ⏳ NIJE DEPLOYANO (commit `2269c75`)
+
+**Što (Mario 9.10.):**
+
+- **Gulet = `vessel_type = GULET` ILI ime modela sadrži „gulet"** (`GuletRules`). Partnerovi podaci se NE diraju (`yacht_charter_type`, ponude, extrasi, cijene, rezervacije); mijenja se samo javno čitanje: detalj broda `charterType` bez BAREBOAT (ništa ne ostane → CREWED); lista `charterType` = LEAST bez gulet BAREBOAT redaka (null → CREWED); filter `charterType` (lista, total, facet `byCharterType`, relax-suggest): BAREBOAT nikad ne pogađa gulet, CREWED pogađa SVAKI gulet; AI chat (search redovi + „current page") za gulet kaže „crewed, never bareboat or skipper-only". Svi ostali brodovi nepromijenjeni.
+- **Admin-only `offerCharter`** u `YachtSearchResponseDto` (SYSTEM_ADMIN: upit samo za `isAdmin`, mapper ponovno gate-a, `@JsonInclude(NON_NULL)` → javni JSON NEMA ključ). Ponuda = ona koju „Add to offer" doda za prozor kartice (redoslijed `pickOfferForPeriod`). Pravila `OfferCharterRules`: gulet → CREWED; product CREWED / ALL_INCLUSIVE / CRUISE → CREWED; bez producta (NauSys UNKNOWN) + brod samo crewed → CREWED; obvezna posada („Crew - included", „3 crew: …") → CREWED; obvezni skiper / kapetan (offer redovi + yacht redovi valjani prvog dana, nakon `ExtraNameNormalizer`, ime MORA počinjati ulogom; insurance / fee / deposit / certificate / check-out ne) → SKIPPERED; inače BAREBOAT. 2 indeksirana upita po admin stranici.
+- **Bez migracije.** Admin frontend: `boat4you-admin` `f27984b` (pill + košarica; NE u e-mailu klijentu).
+
+**Prod mjerenja 9.10. (cusma4, read-only):** 251 aktivni gulet (247 po tipu + 4 po modelu: 47 Ok Ay, 11771 Gallant, 16032 Fatma Kristina, 18873 Bluefest); s BAREBOAT oznakom 3: **18886 Sylvia R** (BAREBOAT+CREWED, listan), **20213 Entre Cielos** (samo BAREBOAT, listan), 7390 Lato (samo BAREBOAT, nije listan). Facet cijeli view: BAREBOAT 10.410 → 10.408, CREWED 1.698 → 1.700 (HR nepromijenjen). Buduće ponude 868.057: skippered 27.488 (offer red 16.751 / 321 brod, yacht red 10.737 / 258), crewed 143.664 (gulet 17.109, product 110.559, NauSys crewed brod 15.953, obvezna posada 43), bareboat 696.905. Trošak: lista HR +20 ms (~7 %), facet +80 ms (HR) / +180 ms (cijeli view), facet je keširan 3–30 min.
+
+**Verifikacija:** novi testovi (GuletRules 6, OfferCharterRules 6, mapper detalj 2, AI chat 2, JSON 1, Testcontainers `YachtSearchGuletCharterTest` 4: lista / filter / total / facet / admin pill / javno nikad) + svi `YachtSearch*` / distribution / mapper / chat 76/76. Puni suite 580, isti **31 pre-existing failure** (`ReservationPaymentPhasesServiceTest` 26, `ReservationOptionsCombinationProviderTests` 2, `Boat4youWsApplicationTests` 1, `MatchersTests` 1, `NauSysDateTimeWrapperTests` 1). ktlint 0 na promijenjenim linijama.
+
+**Deploy (bez migracije, samo jar):**
+
+- [ ] `git pull`; jar iz commita ≥ `2269c75`.
+- [ ] **cusma2** (API): jar + restart izvan sync prozora (vidi unos 8.10.); health `GET /public/settings/card-surcharge` → 200.
+- [ ] **cusma3** (scheduler) isti jar, TVRDI gate: `n=$(journalctl --since '10 minutes ago' | grep -ci 'nausys\|mmk'); [ "$n" -gt 0 ] && { echo ABORT; exit 1; }`. Promjena ne dira sync, pa cusma3 smije i kasnije.
+- [ ] Restart čisti `yachtSearchListCache` (2 min), facet (3–30 min) i relax (3 min) cache.
+- [ ] **API provjere:**
+  - `curl -s https://api.boat4you.com/public/yachts/20213 | jq .charterType` → `["CREWED"]` (bilo `["BAREBOAT"]`); `…/18886` → `["CREWED"]`; `…/11771` → `["CREWED"]`.
+  - `curl -s 'https://api.boat4you.com/public/yachts?vesselType=GULET&charterType=BAREBOAT&size=1' | jq .page.totalElements` → `0`.
+  - javna lista bez ključa: `curl -s 'https://api.boat4you.com/public/yachts?did=c-54&startDate=2027-06-05&endDate=2027-06-12&size=100' | grep -c offerCharter` → `0`.
+  - `curl -s 'https://api.boat4you.com/public/yachts/distribution' | jq .byCharterType` → BAREBOAT ≈ −2, CREWED ≈ +2 prema prije.
+- [ ] Admin `f27984b` NAKON backenda (stari backend → admin samo ne pokaže pill).
+- [ ] Web: ISR stranica gulet brodova pokazuje novi `charterType` nakon revalidacije (≤ 1 h).
+
+**Rollback:** prethodni jar na cusma2 (+ cusma3); nema podataka za vraćati. Admin rollback neovisan (bez polja nema pilla).
+
+**Otvoreno / flag Mariju (NIJE dirano — booking flow / potvrđene rezervacije):** (1) ugovor o najmu (`CharterAgreementService`) piše „Bareboat charter" kad u rezervaciji nema skipper extrasa — za gulet bi to bilo krivo; (2) my-bookings / admin rezervacija `charterType` = `offer.product` (gulet ponuda s productom BAREBOAT: 79 budućih ponuda na 5 guleta); (3) **pre-existing**: 9.728 (brod, termin) parova ima >1 product — kartica liste prikazuje cijenu NAJJEFTINIJE ponude, a stranica broda / „Add to offer" / booking uzimaju `pickOfferForPeriod` (round trip, home base, najveći id) — cijena na kartici i dodana ponuda mogu se razlikovati; pill prati dodanu ponudu.
+
 ## 2026-10-08 — Veze opreme: review popravci + JEDINI deploy recept za `973a2cb` + `a98f4d1` — ✅ DEPLOYANO 8.10.2026 (backend 17:35 UTC, web 17:43–18:01 UTC)
 
 Deploya se ZAJEDNO s `973a2cb` (unos ispod = opis featurea; njegov redoslijed, SQL i rollback ZAMIJENJENI su ovim unosom). Jar iz commita ≥ `a98f4d1`, NIKAD samo `973a2cb`. Ugovor: `infra/equipment-mapping-audit-8-10/FIX_CONTRACT.md` §17 (dodatak reviewa); stare verzije podatkovnih datoteka su u `before_review_8_10/`.
