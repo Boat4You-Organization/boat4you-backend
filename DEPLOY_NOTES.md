@@ -1,5 +1,44 @@
 # Backend deploy notes
 
+## 2026-10-09 — Oprema D+1: inverter nije priključak 220 V, „House fridge freezer (615L)…" je hladnjak (2 ključa u R__1_05) — ⏳ NIJE DEPLOYANO (commit `016501e`)
+
+Deploya se **večeras ZAJEDNO s `68d3a9e`** (isti jar iz HEAD ≥ `016501e`, isti redoslijed i gate kao unos ispod). Mijenjaju se samo ključevi u `R__1_05` (+ golden fixture i jedan test). Nema V-migracije ni promjene koda.
+
+- `shore-connection-220v` + `not:inverter`: kad ime spominje inverter, 220 V je napon invertera, a ne priključak.
+- `fridge` + `token-match:house fridge`: prije je „water" + „maker" iz „chilled water, ice maker" vuklo na water-maker.
+
+**Simulacija** pravim `EquipmentMatcher` + `EquipmentLinkResolver` (HEAD prema novim ključevima) na svih 3.349 imena `links.csv` i 13.897 D+1 imena (HEAD reproducira sve D+1 veze 1:1). Mijenja se točno 7 imena, ukupno 160 D+1 redaka, svi MMK free-text (`-1`):
+
+| ime | prije → poslije | redaka (D+1) |
+|---|---|---|
+| Inverter 12 /220 V | shore-connection-220v → inverter | 121 |
+| Cable 220 V+Inverter | shore-connection-220v → inverter | 25 |
+| 220V Outlets from Shorepower or Inverter | shore-connection-220v → inverter | 5 |
+| 220v inverter | shore-connection-220v → inverter | 2 |
+| 220V Power Inverter | shore-connection-220v → inverter | 2 |
+| Charger / 220V Inverter 2400W | shore-connection-220v → inverter | 1 |
+| House fridge freezer (615L) with chilled water, ice maker and inverter | water-maker → fridge | 4 |
+
+- **Ne mijenja se:** „Shore power 220V", „220V sockets", „Shore Power Connection" (shore-connection-220v); „Battery charger / inverter", „Combined battery charger … inverter 12V/220V" (battery-charger, dvotokenski ključ stoji ispred); „Fridge 220V (home style) with dedicated inverter" (fridge); „Inverter air conditioning system" (air-conditioning); „Freezer in fridge" (freezer); „Water maker and ice maker" (water-maker).
+- **Odluka za Marija:** „Cable 220 V+Inverter" i „220V Outlets from Shorepower or Inverter" idu na inverter (220 V na sidru = inverter; priključak ima gotovo svaki brod). Ako trebaju ostati na shore-connection-220v, umjesto `not:inverter` idu tri uska veta `not:inverter 12, not:220v inverter, not:power inverter` (simulirano: 126 redaka umjesto 156).
+
+**Verifikacija:** testovi opreme 37/37 (golden 2.778 imena; migracijski test na Testcontainers PG izvršava novi R__1_05); puni suite 586, isti **31 pre-existing failure**; ktlint 0 na promijenjenim linijama.
+
+**Deploy (uz `68d3a9e`, cusma2 → cusma3):**
+- [ ] **cusma2:** promijenjen checksum `R__1_05`, pa ga Flyway ponovno izvršava pri restartu: UPDATE `equipment.match_keys` za `fridge` i `shore-connection-220v`, `partner_equipment_mapping` bez promjene. Provjera: `SELECT label_code, match_keys LIKE '%not:inverter%' OR match_keys LIKE '%house fridge%' FROM equipment WHERE label_code IN ('fridge','shore-connection-220v');` → oba `t`.
+- [ ] **cusma3:** restart nakon cusma2 (gate kao ispod). Restart osvježava `equipmentCache` (TTL 10 h) na oba čvora.
+- **Postojeći redovi:** `R__1_05` ne dira `yacht_equipment` i nema data naredbe. Veze se ponovno računaju tek pri **prvom sljedećem MMK yacht syncu (06:10 UTC)**. Do tada stranice tih brodova i dalje pokazuju „Shore connection 220 V" / „Water maker". Odmah se može samo ručno: `POST /admin/mmk/yachts` u mirnom prozoru (Mariova odluka, opterećuje partnerov API).
+- [ ] **D+1 (nakon 06:10, cusma4 read-only):**
+
+  ```sql
+  SELECT e.label_code, ye.name, count(*) FROM yacht_equipment ye JOIN equipment e ON e.id = ye.equipment_id
+  WHERE ye.external_id = -1 AND (ye.name ILIKE '%inverter%' OR ye.name LIKE 'House fridge freezer (615L)%') GROUP BY 1, 2 ORDER BY 3 DESC;
+  ```
+
+  Očekivano: nijedan redak na shore-connection-220v, „House fridge freezer (615L)…" na fridge. ISR stranice brodova osvježavaju se po svom TTL-u.
+
+**Rollback:** prethodni jar ima stari `R__1_05` (drugi checksum), pa Flyway vraća stare ključeve. Sljedeći sync vraća stare veze.
+
 ## 2026-10-09 — Review `2269c75` → `68d3a9e`: admin pill čita samo ono što se naplaćuje, skiper / posada po ulozi, FREE ponuda kao stranica broda; gulet kartica pod filtrom — ⏳ NIJE DEPLOYANO
 
 Deploya se ZAJEDNO s `2269c75` (unos ispod = opis featurea, njegove API provjere vrijede): jar iz commita ≥ `68d3a9e`, NIKAD samo `2269c75`. Admin: `boat4you-admin` `6d9e8ac` (na `f27984b`).
