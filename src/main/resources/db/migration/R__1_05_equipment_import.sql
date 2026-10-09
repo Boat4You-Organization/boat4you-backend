@@ -49,7 +49,7 @@ VALUES
     (11, 'outside-shower', 'Outside shower', 'DECK', 202, 'token-match:outside shower, token-match:outdoor shower, token-match:deck shower, token-match:cockpit shower, token-match:stern shower, token-match:bow shower, token-match:transom shower, token-match:external shower, token-match:exterior shower'),
     (12, 'oven', 'Oven', 'GALLEY', 205, 'token-match:oven'),
     (13, 'pillows-and-blankets', 'Pillows and blankets', 'INTERIOR', NULL, 'token-match:pillows and blankets, token-match:pillows, token-match:pillow, token-match:blankets, token-match:blanket, token-match:bed linen, token-match:bedding, token-match:duvet, not:fire'),
-    (14, 'fridge', 'Fridge', 'GALLEY', 206, 'token-match:fridge, token-match:refrigerator, token-match:wine cooler, token-match:compressor cooler, token-match:refrigeration'),
+    (14, 'fridge', 'Fridge', 'GALLEY', 206, 'token-match:fridge, token-match:refrigerator, token-match:wine cooler, token-match:compressor cooler, token-match:refrigeration, token-match:house fridge'),  -- 9.10.2026: house fridge, not its ice maker / chilled water
     (15, 'shower', 'Shower', 'INTERIOR', NULL, 'token-match:shower, not:no inside shower, not:shore, not:outside shower, not:outdoor shower, not:deck shower, not:cockpit shower, not:stern shower, not:bow shower, not:transom shower, not:towel'),
     (16, 'sink', 'Sink', 'GALLEY', NULL, 'token-match:sink'),
     (17, 'towels', 'Towels', 'INTERIOR', 207, 'token-match:towels, token-match:towel, not:towable, not:kitchen towel'),
@@ -140,7 +140,7 @@ VALUES
     (102, 'lazy-bag', 'Lazy bag', 'SAILS', NULL, 'token-match:lazy bag'),
     (103, 'lazy-jacks', 'Lazy jacks', 'SAILS', NULL, 'token-match:lazy jacks'),
     (104, 'battery-charger', 'Battery charger', 'YACHT_ELECTRICS', NULL, 'token-match:battery charger'),
-    (105, 'shore-connection-220v', 'Shore connection 220 V', 'YACHT_ELECTRICS', NULL, 'token-match:shore connection, token-match:shore power, token-match:shorepower, token-match:220V socket, token-match:220V, token-match:220 v, token-match:220 volt'),
+    (105, 'shore-connection-220v', 'Shore connection 220 V', 'YACHT_ELECTRICS', NULL, 'token-match:shore connection, token-match:shore power, token-match:shorepower, token-match:220V socket, token-match:220V, token-match:220 v, token-match:220 volt, not:inverter'),  -- 9.10.2026: next to an inverter 220 V is its voltage
     (106, 'usb-sockets', 'USB sockets', 'YACHT_ELECTRICS', NULL, 'token-match:USB sockets, token-match:USB socket, token-match:usb'),
     (107, 'cockpit-cushions', 'Cockpit cushions', 'COMFORT', NULL, 'token-match:cockpit cushions, token-match:cockpit cushion'),  -- added 8.10.2026
     (108, 'depth-sounder', 'Depth sounder', 'NAVIGATION', NULL, 'token-match:depth sounder, token-match:depthsounder, token-match:echo sounder, token-match:echosounder, token-match:sounder, token-match:depth gauge, token-match:depth meter');  -- added 8.10.2026

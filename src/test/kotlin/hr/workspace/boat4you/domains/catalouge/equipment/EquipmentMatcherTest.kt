@@ -200,6 +200,21 @@ class EquipmentMatcherTest {
     }
 
     @Test
+    fun `an inverter is no shore connection, a house fridge freezer no water maker - D+1 9_10`() {
+        assertEquals("inverter", label("Inverter 12 /220 V"))
+        assertEquals("inverter", label("220V Power Inverter"))
+        assertEquals("inverter", label("Charger / 220V Inverter 2400W"))
+        assertEquals("inverter", label("220V Outlets from Shorepower or Inverter"))
+        assertEquals("shore-connection-220v", label("Shore power 220V"))
+        assertEquals("shore-connection-220v", label("220V sockets"))
+        assertEquals("battery-charger", label("Battery charger / inverter"))
+        assertEquals("fridge", label("Fridge 220V (home style) with dedicated inverter"))
+        assertEquals("fridge", label("House fridge freezer (615L) with chilled water, ice maker and inverter"))
+        assertEquals("water-maker", label("Water maker and ice maker"))
+        assertEquals("freezer", label("Freezer in fridge"))
+    }
+
+    @Test
     fun `an alias row is never a candidate`() {
         val alias = row(1, "refrigerator", "token-match:refrigerator", mergedInto = 2)
         val canonical = row(2, "fridge", "token-match:fridge")

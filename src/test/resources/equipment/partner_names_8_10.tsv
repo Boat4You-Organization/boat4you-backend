@@ -999,7 +999,7 @@ system	partner_item_id	name	matcher	final
 1	28	Mainsail - Battened	NONE	NONE
 1	-1	Jet ski	jet-ski	jet-ski
 1	-1	Tube ride	water-toys	water-toys
-1	-1	220V Outlets from Shorepower or Inverter	shore-connection-220v	shore-connection-220v
+1	-1	220V Outlets from Shorepower or Inverter	inverter	inverter
 2	487200	Transportable Bilge pump	NONE	NONE
 1	-1	Bow thruster	bow-thruster	bow-thruster
 1	15	Furling Mainsail	NONE	NONE
@@ -1258,7 +1258,7 @@ system	partner_item_id	name	matcher	final
 2	579242	Boat equipment	NONE	NONE
 1	-1	Water Purifier	NONE	NONE
 1	-1	GPS chartplotter	salon-GPS-plotter	salon-GPS-plotter
-1	-1	Cable 220 V+Inverter	shore-connection-220v	shore-connection-220v
+1	-1	Cable 220 V+Inverter	inverter	inverter
 1	-1	Bow solarium	NONE	sun-pads
 1	-1	Stand Up Paddle Board (SUP)	stand-up-paddle	stand-up-paddle
 1	-1	Flares	distress-signals	distress-signals
