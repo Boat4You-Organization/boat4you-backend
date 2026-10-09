@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.LocationType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
+import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import jakarta.persistence.EntityManager
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
@@ -144,7 +145,8 @@ class YachtRelaxSuggestionService(
             params["vesselTypeNames"] = filters.vesselTypes.map { it.name }
         }
         if (!filters.charterTypes.isNullOrEmpty()) {
-            clauses += "charter_type IN (:charterTypeNames)"
+            // A gulet is never bareboat: BAREBOAT never matches it, CREWED always does (GuletRules, like the search).
+            clauses += GuletRules.charterTypeSql(filters.charterTypes, "charterTypeNames")
             params["charterTypeNames"] = filters.charterTypes.map { it.name }
         }
         // Relaxable dimensions (subject to `copy(... = null)` in [suggest]).

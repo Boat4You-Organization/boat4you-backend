@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.dto
 
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.databind.annotation.JsonSerialize
 import hr.workspace.boat4you.common.services.TwoDecimalSerializer
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
@@ -135,4 +136,10 @@ data class YachtSearchResponseDto(
      * broker's info icon. Never copied into customer text. Null for anonymous and customer callers.
      */
     val brokerNotes: BrokerNotesDto? = null,
+    /**
+     * ADMIN ONLY (same SYSTEM_ADMIN gate): Bareboat / Skippered / Crewed for the offer this card shows (the Offers
+     * workspace pill, Mario 9.10.2026). Left out of the JSON for everyone else - public answers stay byte for byte.
+     */
+    @field:JsonInclude(JsonInclude.Include.NON_NULL)
+    val offerCharter: OfferCharterDto? = null,
 )

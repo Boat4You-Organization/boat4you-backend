@@ -11,6 +11,7 @@ import hr.workspace.boat4you.domains.catalouge.exceptions.HeavyQueryBusyExceptio
 import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
+import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import jakarta.persistence.EntityManager
 import org.springframework.cache.Cache
 import org.springframework.cache.CacheManager
@@ -232,7 +233,7 @@ class YachtDistributionService(
                     // filters them out before the GROUP BY). Other filters (location,
                     // dates, availability) still apply.
                     byVesselType = enumCounts("vessel_type", VesselType::valueOf, ctx.copy(vesselTypeNames = null)),
-                    byCharterType = enumCounts("charter_type", CharterType::valueOf, ctx.copy(charterTypeNames = null)),
+                    byCharterType = charterTypeCounts(ctx.copy(charterTypeNames = null)),
                     byMainsailType = enumCounts("mainsail_type", SailTypeEnum::valueOf, ctx.copy(mainsailTypeNames = null)),
                     byCabins = cabinsCounts(ctx.copy(minCabins = null, maxCabins = null)),
                     byManufacturer = manufacturerCounts(ctx.copy(manufacturerIds = null)),
@@ -469,7 +470,8 @@ class YachtDistributionService(
             parts.add(" AND vessel_type IN (:vesselTypeNames)")
         }
         if (!ctx.charterTypeNames.isNullOrEmpty()) {
-            parts.add(" AND charter_type IN (:charterTypeNames)")
+            // A gulet is never bareboat: BAREBOAT never matches it, CREWED always does (GuletRules, like the search).
+            parts.add(" AND ${GuletRules.charterTypeSql(ctx.charterTypeNames.map { CharterType.valueOf(it) }, "charterTypeNames")}")
         }
         if (!ctx.mainsailTypeNames.isNullOrEmpty()) {
             parts.add(" AND mainsail_type IN (:mainsailTypeNames)")
@@ -718,6 +720,30 @@ class YachtDistributionService(
             parsed?.let { out[it] = (row[1] as Number).toLong() }
         }
         return out
+    }
+
+    /**
+     * Per-charter-type distinct yacht count, counted the way the charterType filter matches (GuletRules): a gulet's
+     * BAREBOAT row counts nowhere and every gulet counts under CREWED, so each chip's count equals the boats its filter
+     * lists. The second VALUES row exists for gulets only (NULL otherwise, dropped before the aggregate), so the scan
+     * and the aggregate stay the size of the old GROUP BY charter_type.
+     */
+    private fun charterTypeCounts(ctx: FilterContext): Map<CharterType, Long> {
+        val gulet = GuletRules.SQL_IS_GULET
+        val sql =
+            "SELECT ct.charter, COUNT(DISTINCT id) FROM yacht_search_view " +
+                "CROSS JOIN LATERAL (VALUES (CASE WHEN charter_type = 'BAREBOAT' AND $gulet THEN NULL ELSE charter_type END), " +
+                "(CASE WHEN $gulet THEN 'CREWED' END)) AS ct(charter) " +
+                "WHERE ct.charter IS NOT NULL${whereClause(ctx)} GROUP BY ct.charter"
+        val q = entityManager.createNativeQuery(sql)
+        bindFilters(q, ctx)
+        @Suppress("UNCHECKED_CAST")
+        val rows = q.resultList as List<Array<Any>>
+        return rows
+            .mapNotNull { row ->
+                val type = CharterType.entries.firstOrNull { it.name == row[0]?.toString() } ?: return@mapNotNull null
+                type to (row[1] as Number).toLong()
+            }.toMap()
     }
 
     /** Per-manufacturer distinct yacht count under the active filter set

@@ -153,6 +153,7 @@ class YachtSearchCapacityTest {
         jdbc.execute(SEED)
         ListingTwinTestSupport.createAndRefresh(jdbc)
         YachtCapacityTestSupport.addColumns(jdbc)
+        OfferCharterTestSupport.addTables(jdbc)
         jdbc.update(
             "UPDATE yacht SET cabins_note = '4 +2', berths_note = '(8+2)', internal_remark = 'CREWED | private', crew_number = 1 WHERE id = 1",
         )

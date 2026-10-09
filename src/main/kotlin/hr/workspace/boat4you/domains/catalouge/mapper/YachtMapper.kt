@@ -10,6 +10,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtResponse
 import hr.workspace.boat4you.domains.catalouge.dto.LocationDto
 import hr.workspace.boat4you.domains.catalouge.dto.MeasurementUnitDto
+import hr.workspace.boat4you.domains.catalouge.dto.OfferCharterDto
 import hr.workspace.boat4you.domains.catalouge.dto.OfferDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtDetailsDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtEquipmentDto
@@ -30,6 +31,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
+import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
@@ -63,6 +65,8 @@ class YachtMapper(
         updatedAt: java.time.Instant? = null,
         /** The yacht row's capacity columns (per-page primary-key lookup); null = no yacht record. */
         capacityColumns: CapacityColumns? = null,
+        /** Bareboat / Skippered / Crewed of the card's offer - looked up for admin searches only, gated again here. */
+        offerCharter: OfferCharterDto? = null,
     ): YachtSearchResponseDto {
         val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName)
         // One-way charter: surface drop-off as separate DTO only when
@@ -100,7 +104,8 @@ class YachtMapper(
             location = yachtLocation,
             locationTo = yachtLocationTo,
             totalLocations = result.sumLocations?.toInt(),
-            charterType = result.charterType,
+            // A gulet is never bareboat (GuletRules); every other boat keeps the partner's type.
+            charterType = GuletRules.publicCharterType(result.charterType, GuletRules.isGulet(result.vesselType, result.modelName)),
             vesselType = result.vesselType,
             buildYear = result.buildYear,
             maxPersons = result.maxPersons,
@@ -142,6 +147,7 @@ class YachtMapper(
             capacity = capacityColumns?.let { capacityMapper.capacity(it, YachtCapacityMapper.Mode.BRIEF) },
             // Raw partner notes + internal remark: admin only, same gate as agencyName.
             brokerNotes = capacityColumns?.let { brokerNotes(it) },
+            offerCharter = if (isAdminUser()) offerCharter else null,
         )
     }
 
@@ -264,7 +270,12 @@ class YachtMapper(
             crewNumber = result.crewNumber,
             defaultCheckin = result.defaultCheckin,
             defaultCheckout = result.defaultCheckout,
-            charterType = result.yachtCharterTypes.map { it.type!! }.toSet(),
+            // A gulet is never bareboat (GuletRules): its types without BAREBOAT, CREWED when nothing is left.
+            charterType =
+                GuletRules.publicCharterTypes(
+                    result.yachtCharterTypes.map { it.type!! }.toSet(),
+                    GuletRules.isGulet(result.vesselType, model?.name),
+                ),
             inquireOnly = result.isInquireOnly(),
             vesselType = result.vesselType ?: VesselType.OTHER,
             capacity = capacityMapper.capacity(capacityColumns, YachtCapacityMapper.Mode.FULL),

@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtResponse
 import hr.workspace.boat4you.domains.catalouge.dto.LocationDto
+import hr.workspace.boat4you.domains.catalouge.dto.OfferCharterDto
 import hr.workspace.boat4you.domains.catalouge.dto.VesselTypeYachtCountDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtAvailabilityDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtDetailsDto
@@ -22,6 +23,8 @@ import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.catalouge.jpa.ReplacementSearchRow
+import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
+import hr.workspace.boat4you.domains.catalouge.utils.OfferCharterRules
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
@@ -388,7 +391,14 @@ class YachtQueryingService(
             // HashAggregate). Null literal keeps the multiselect arity; the
             // mapper passes null through and no client renders it.
             cb.nullLiteral(Long::class.javaObjectType),
-            cb.least(root.get<CharterType>("charterType")),
+            // A gulet's BAREBOAT rows do not count (GuletRules: a gulet is never bareboat); a gulet with nothing else
+            // reads null here and CREWED on the card. Every other row is its partner type, as before.
+            cb.least(
+                cb
+                    .selectCase<CharterType>()
+                    .`when`(isGuletBareboatRow(cb, root), cb.nullLiteral(CharterType::class.java))
+                    .otherwise(root.get<CharterType>("charterType")),
+            ),
             cb.least(root.get<String>("locationFullName")),
             // Pickup and drop-off can differ for one-way charters. We
             // aggregate independently — for multi-offer yachts the pair
@@ -675,18 +685,25 @@ class YachtQueryingService(
                 .groupBy({ it.first }, { it.second })
                 .mapValues { (_, expiries) -> expiries.min() }
 
-        val searchResponseDtos =
+        // Multi-week period price: when the searched window is fully tiled by weekly offers
+        // (and no exact-period offer exists), swap the single-week per-day rate for the summed
+        // period total so the card shows the true 2-week price (e.g. 7615.30, not 5212.90).
+        val views =
             results.map { rawView ->
-                // Multi-week period price: when the searched window is fully tiled by weekly offers
-                // (and no exact-period offer exists), swap the single-week per-day rate for the summed
-                // period total so the card shows the true 2-week price (e.g. 7615.30, not 5212.90).
-                val view =
-                    applyCoveringPeriodPrice(
-                        applyChosenOffer(rawView, datedSearch, weeklyMode),
-                        requestedNights,
-                        searchParams.startDate,
-                        searchParams.endDate,
-                    )
+                applyCoveringPeriodPrice(
+                    applyChosenOffer(rawView, datedSearch, weeklyMode),
+                    requestedNights,
+                    searchParams.startDate,
+                    searchParams.endDate,
+                )
+            }
+
+        // Admin-only: Bareboat / Skippered / Crewed of the offer each card shows (Offers workspace pill, Mario
+        // 9.10.2026). Two indexed lookups per page, skipped entirely for customer searches.
+        val offerChartersByYachtId = if (isAdmin) fetchOfferCharters(views) else emptyMap()
+
+        val searchResponseDtos =
+            views.map { view ->
                 // isOption requires BOTH the aggregated offerStatus to flag
                 // OPTION(2) / OPTION_WAITING(3) AND a live external reservation
                 // ROW backing it (row presence, not expiry presence — a hold
@@ -717,6 +734,7 @@ class YachtQueryingService(
                     sourceSystemByYachtId[view.id],
                     pageFactsByYachtId[view.id]?.updatedAt,
                     pageFactsByYachtId[view.id]?.capacity,
+                    offerChartersByYachtId[view.id],
                 )
             }
 
@@ -873,6 +891,154 @@ class YachtQueryingService(
                         ),
                 )
         }.toMap()
+    }
+
+    private class CardOffer(
+        val id: Long,
+        val dateFrom: LocalDate,
+        val dateTo: LocalDate,
+        val locationFrom: Long?,
+        val locationTo: Long?,
+        /** Bookable as the boat page reads it: not RESERVED / SERVICE / UNAVAILABLE (an option counts, toCustomerStatus). */
+        val bookable: Boolean,
+        val product: CharterType?,
+        val obligatoryCharges: MutableList<String> = mutableListOf(),
+    )
+
+    private class YachtObligatoryCharge(
+        val name: String,
+        val validFrom: LocalDate?,
+        val validTo: LocalDate?,
+    ) {
+        /** Same window rule as PriceCalculationService: the row's validity covers the charter's first day. */
+        fun validOn(day: LocalDate?): Boolean = day == null || ((validFrom == null || !validFrom.isAfter(day)) && (validTo == null || !validTo.isBefore(day)))
+    }
+
+    /**
+     * The offer of one period that the boat page - and so the Offers workspace's "Add to offer" and the client's booking -
+     * takes: [pickOfferForPeriod]'s order (bookable, round trip, home base, highest id), rows in id order like the
+     * repository returns them.
+     */
+    private fun pickCardOffer(
+        offers: List<CardOffer>,
+        homeBaseId: Long?,
+    ): CardOffer? {
+        if (offers.size <= 1) return offers.firstOrNull()
+        val byId = offers.sortedBy { it.id }
+        val bookable = byId.filter { it.bookable }.ifEmpty { byId }
+        val candidates = bookable.filter { it.locationFrom != null && it.locationFrom == it.locationTo }.ifEmpty { bookable }
+        return candidates.firstOrNull { homeBaseId != null && it.locationFrom == homeBaseId } ?: candidates.maxByOrNull { it.id }
+    }
+
+    /**
+     * ADMIN ONLY (Offers workspace, Mario 9.10.2026): Bareboat / Skippered / Crewed of the offer each card stands for,
+     * classified by [OfferCharterRules]. That offer is the one "Add to offer" adds for the card's window (offerDateFrom /
+     * offerDateTo): the boat page's pick for that period ([pickCardOffer]); a multi-week card (tiled weeks) reads its
+     * first week; no offer (custom boat) reads the boat alone. Two indexed lookups per page (the yachts' offers in the
+     * page's date range with their obligatory rows; the yachts' home base, charter types and obligatory rows), never for
+     * customer searches.
+     */
+    private fun fetchOfferCharters(views: List<YachtSearchSelectResult>): Map<Long, OfferCharterDto> {
+        if (views.isEmpty()) return emptyMap()
+        val yachtIds = views.map { it.id }
+        val fromMin = views.mapNotNull { it.offerDateFrom }.minOrNull()
+        val toMax = views.mapNotNull { it.offerDateTo }.maxOrNull()
+
+        fun day(v: Any?): LocalDate? = (v as? LocalDate) ?: (v as? java.sql.Date)?.toLocalDate()
+
+        fun id(v: Any?): Long? = (v as? Number)?.toLong()
+
+        fun charterType(v: Any?): CharterType? = (v as? String)?.let { name -> CharterType.entries.firstOrNull { it.name == name } }
+
+        val blocked = setOf(OfferStatus.RESERVED.name, OfferStatus.SERVICE.name, OfferStatus.UNAVAILABLE.name)
+
+        val offersByYacht = mutableMapOf<Long, MutableMap<Long, CardOffer>>()
+        if (fromMin != null && toMax != null) {
+            @Suppress("UNCHECKED_CAST")
+            val rows =
+                entityManager
+                    .createNativeQuery(
+                        """
+                        SELECT o.id, o.yacht_id, o.date_from, o.date_to, o.location_from, o.location_to, o.status, o.product, oe.name
+                        FROM offer o
+                        LEFT JOIN offer_extras oe ON oe.offer_id = o.id AND oe.obligatory = true
+                        WHERE o.yacht_id IN (:yachtIds) AND o.date_from >= :fromMin AND o.date_to <= :toMax
+                        """.trimIndent(),
+                    ).setParameter("yachtIds", yachtIds)
+                    .setParameter("fromMin", fromMin)
+                    .setParameter("toMax", toMax)
+                    .resultList as List<Array<Any?>>
+            rows.forEach { row ->
+                val offerId = id(row[0]) ?: return@forEach
+                val yachtId = id(row[1]) ?: return@forEach
+                val from = day(row[2]) ?: return@forEach
+                val to = day(row[3]) ?: return@forEach
+                val offer =
+                    offersByYacht.getOrPut(yachtId) { mutableMapOf() }.getOrPut(offerId) {
+                        CardOffer(offerId, from, to, id(row[4]), id(row[5]), row[6]?.toString() !in blocked, charterType(row[7]))
+                    }
+                (row[8] as? String)?.takeIf { it.isNotBlank() }?.let { offer.obligatoryCharges += it }
+            }
+        }
+
+        // 'H' home base, 'T' partner charter types, 'X' obligatory yacht-level charges
+        @Suppress("UNCHECKED_CAST")
+        val yachtRows =
+            entityManager
+                .createNativeQuery(
+                    """
+                    SELECT 'H', y.id, CAST(y.location_id AS text), CAST(NULL AS date), CAST(NULL AS date)
+                    FROM yacht y WHERE y.id IN (:yachtIds)
+                    UNION ALL
+                    SELECT 'T', yct.yacht_id, yct.type, CAST(NULL AS date), CAST(NULL AS date)
+                    FROM yacht_charter_type yct WHERE yct.yacht_id IN (:yachtIds)
+                    UNION ALL
+                    SELECT 'X', ye.yacht_id, ye.name, ye.valid_from, ye.valid_to
+                    FROM yacht_extras ye WHERE ye.yacht_id IN (:yachtIds) AND ye.obligatory = true
+                    """.trimIndent(),
+                ).setParameter("yachtIds", yachtIds)
+                .resultList as List<Array<Any?>>
+        val homeBaseByYacht = mutableMapOf<Long, Long>()
+        val typesByYacht = mutableMapOf<Long, MutableSet<CharterType>>()
+        val chargesByYacht = mutableMapOf<Long, MutableList<YachtObligatoryCharge>>()
+        yachtRows.forEach { row ->
+            val yachtId = id(row[1]) ?: return@forEach
+            val value = (row[2] as? String)?.takeIf { it.isNotBlank() } ?: return@forEach
+            when (row[0]?.toString()) {
+                "H" -> value.toLongOrNull()?.let { homeBaseByYacht[yachtId] = it }
+                "T" -> charterType(value)?.let { typesByYacht.getOrPut(yachtId) { mutableSetOf() } += it }
+                "X" -> chargesByYacht.getOrPut(yachtId) { mutableListOf() } += YachtObligatoryCharge(value, day(row[3]), day(row[4]))
+            }
+        }
+
+        return views.associate { view ->
+            val from = view.offerDateFrom
+            val to = view.offerDateTo
+            val offers = offersByYacht[view.id]?.values.orEmpty()
+            val offer =
+                if (from == null || to == null) {
+                    null
+                } else {
+                    val period =
+                        offers.filter { it.dateFrom == from && it.dateTo == to }.ifEmpty {
+                            // a multi-week card: the weeks inside its window, the first one speaks
+                            val inside = offers.filter { !it.dateFrom.isBefore(from) && !it.dateTo.isAfter(to) }
+                            inside.minOfOrNull { it.dateFrom }?.let { first -> inside.filter { it.dateFrom == first } }.orEmpty()
+                        }
+                    pickCardOffer(period, homeBaseByYacht[view.id])
+                }
+            val firstDay = offer?.dateFrom ?: from
+            val charges =
+                offer?.obligatoryCharges.orEmpty() +
+                    chargesByYacht[view.id].orEmpty().filter { it.validOn(firstDay) }.map { it.name }
+            view.id to
+                OfferCharterRules.classify(
+                    gulet = GuletRules.isGulet(view.vesselType, view.modelName),
+                    product = offer?.product,
+                    yachtTypes = typesByYacht[view.id].orEmpty(),
+                    obligatoryCharges = charges,
+                )
+        }
     }
 
     /**
@@ -1476,6 +1642,24 @@ class YachtQueryingService(
         return entityManager.createQuery(cq).resultList.size.toLong()
     }
 
+    /** The row is a gulet: the criteria twin of [GuletRules.SQL_IS_GULET] (never NULL, so NOT / OR stay two-valued). */
+    private fun isGuletRow(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+    ): Predicate {
+        val vesselType = root.get<VesselType>("vesselType")
+        return cb.or(
+            cb.and(cb.isNotNull(vesselType), cb.equal(vesselType, VesselType.GULET)),
+            cb.like(cb.lower(cb.coalesce(root.get<String>("modelName"), "")), "%${GuletRules.MODEL_WORD}%"),
+        )
+    }
+
+    /** A gulet's BAREBOAT row - the one row type a gulet never shows or matches (GuletRules). */
+    private fun isGuletBareboatRow(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+    ): Predicate = cb.and(cb.equal(root.get<CharterType>("charterType"), CharterType.BAREBOAT), isGuletRow(cb, root))
+
     private fun buildYachtSearchPredicates(
         cq: CriteriaQuery<*>,
         cb: CriteriaBuilder,
@@ -1554,7 +1738,10 @@ class YachtQueryingService(
         }
 
         if (!searchParams.charterTypes.isNullOrEmpty()) {
-            predicates.add(root.get<CharterType>("charterType").`in`(searchParams.charterTypes))
+            // A gulet is never bareboat (GuletRules.charterTypeSql, the native twin for the facets / relax counts):
+            // BAREBOAT never matches a gulet, CREWED matches every gulet, whatever the partner tagged.
+            val asked = cb.and(root.get<CharterType>("charterType").`in`(searchParams.charterTypes), cb.not(isGuletBareboatRow(cb, root)))
+            predicates.add(if (CharterType.CREWED in searchParams.charterTypes) cb.or(asked, isGuletRow(cb, root)) else asked)
         }
 
         if (!searchParams.vesselTypes.isNullOrEmpty()) {

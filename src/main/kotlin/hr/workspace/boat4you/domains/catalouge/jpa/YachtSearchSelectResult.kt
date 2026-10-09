@@ -23,7 +23,8 @@ data class YachtSearchSelectResult(
     val agencyName: String?,
     val entryType: EntryType,
     val sumLocations: Long?,
-    val charterType: CharterType,
+    /** LEAST over the yacht's rows without a gulet's BAREBOAT rows: null for a gulet tagged only BAREBOAT (GuletRules). */
+    val charterType: CharterType?,
     val locationFullName: String,
     /** Drop-off location encoded same as `locationFullName`. Same as
      *  `locationFullName` for non-one-way offers; differs for one-way

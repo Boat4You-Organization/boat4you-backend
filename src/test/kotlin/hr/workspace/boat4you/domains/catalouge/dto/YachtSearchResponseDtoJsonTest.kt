@@ -77,4 +77,22 @@ class YachtSearchResponseDtoJsonTest {
             val partnerIdKey = Regex("agency|external|partner|company|source|mmk|nausys|operator", RegexOption.IGNORE_CASE)
             listOf("berths", "wc", "capacity", "brokerNotes").forEach { partnerIdKey.containsMatchIn(it) shouldBe false }
         }
+
+    /** The admin Offers pill (9.10.2026): absent from a public answer - not even a null key - and named as the admin reads it. */
+    @Test
+    fun `offerCharter is left out when null and wire-named for admins`() =
+        bootMapper { mapper ->
+            val public = mapper.readTree(mapper.writeValueAsString(YachtSearchResponseDto(id = 18886, slug = "gulet-sylvia-r-18886", name = "Sylvia R")))
+            public.has("offerCharter") shouldBe false
+            val admin =
+                mapper.writeValueAsString(
+                    YachtSearchResponseDto(
+                        id = 3528,
+                        slug = "beneteau-oceanis-461-ilia-3528",
+                        name = "Ilia",
+                        offerCharter = OfferCharterDto(OfferCharterKind.SKIPPERED, OfferCharterBasis.OBLIGATORY_SKIPPER, "Skipper + food"),
+                    ),
+                )
+            admin shouldContain "\"offerCharter\":{\"kind\":\"SKIPPERED\",\"basis\":\"OBLIGATORY_SKIPPER\",\"obligatoryExtra\":\"Skipper + food\"}"
+        }
 }

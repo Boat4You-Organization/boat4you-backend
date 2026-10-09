@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -41,7 +43,17 @@ class AiChatToolExecutor(
 
         /** Longest partner capacity note put into the system prompt. */
         const val CHAT_NOTE_MAX = 60
+
+        /** What the model is told about every gulet (GuletRules: a gulet is never bareboat, Mario 9.10.2026). */
+        const val GULET_CHARTER = "crewed - a gulet always sails with its crew, never bareboat or skipper-only"
     }
+
+    /** A gulet by the API's vesselType / modelName (GuletRules), for the search rows and the boat page alike. */
+    internal fun isGulet(y: JsonNode): Boolean =
+        GuletRules.isGulet(
+            VesselType.entries.firstOrNull { it.name == y.path("vesselType").asText("") },
+            y.path("modelName").asText(null),
+        )
 
     fun searchYachts(input: JsonNode): ToolOutcome {
         val countryCode = input.path("countryCode").asText("").uppercase().take(2)
@@ -127,6 +139,7 @@ class AiChatToolExecutor(
                     putPositive("maxPeopleOnBoard", y.path("maxPersons"))
                     put("year", y.path("buildYear").asInt(0))
                     put("base", y.path("location").path("name").asText(""))
+                    if (isGulet(y)) put("charter", GULET_CHARTER)
                     val amenities = y.path("amenityKeys").mapNotNull { it.asText(null) }
                     if (amenities.isNotEmpty()) put("topAmenities", amenities.joinToString(","))
                     put("url", "https://www.boat4you.com/boat/$slug?startDate=$startDate&endDate=$endDate&currency=EUR")
@@ -245,6 +258,7 @@ class AiChatToolExecutor(
             append("\n")
             capacityFacts(y)?.let { append("- $it\n") }
             capacityNotes(y)?.let { append("- $it\n") }
+            if (isGulet(y)) append("- Charter: $GULET_CHARTER\n")
             y.path("location").path("name").asText("").takeIf { it.isNotBlank() }
                 ?.let { append("- Base: $it\n") }
             if (amenities.isNotEmpty()) append("- Equipment: ${amenities.joinToString(", ")}\n")
