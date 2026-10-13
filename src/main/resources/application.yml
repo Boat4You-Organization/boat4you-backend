@@ -275,12 +275,17 @@ application:
     expiration: 60m
   stripe:
     enabled: true
-    # Fail fast at startup if the Stripe credentials are missing instead of
-    # falling back to literal "sk_test"/"whsec" placeholders that lead to
-    # confusing "session not found" errors downstream.
-    # Keys MUST come from the environment (.env / boat4you_vars.env).
-    secret-key: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY required}
-    webhook-secret: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET required}
+    # Keys come from the environment (.env / boat4you_vars.env). Blank defaults since the Revolut switch
+    # (plan 2A.9): a node without them still starts — StripeConfig then WARNs once and Stripe calls fail
+    # (no literal placeholder key is ever used). cusma2 keeps both set for the whole season (in-flight
+    # sessions, webhooks, disputes) even after PAYMENT_CARD_PROVIDER=revolut.
+    secret-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  payment:
+    # Provider of NEW online-booking card checkouts (/payments/card/*): stripe | revolut. Read once at startup
+    # (startup line "Card payments: provider=..."); rollback = stripe + restart. revolut without the Revolut
+    # Merchant keys logs an ERROR and every checkout answers 503 (the boot never fails because of it).
+    card-provider: ${PAYMENT_CARD_PROVIDER:stripe}
   revolut:
     # Revolut Merchant API (secret /pay/<key> custom payments; later online-booking card payments).
     # Blank defaults on purpose (pattern chat.anthropic-api-key): a node without the env vars keeps
@@ -304,6 +309,12 @@ application:
       terms-version: ${CUSTOM_PAYMENT_TERMS_VERSION:2026-10-08}
       # Secret link keys per site: site=key[,key];site2=key (two keys per site during a rotation).
       link-keys: ${CUSTOM_PAYMENT_LINK_KEYS:}
+    booking:
+      # Online-booking card payments (application.payment.card-provider=revolut). Default expire_pending_after
+      # of an order (capped by an option's expiry); zero/negative -> ERROR + PT1H.
+      order-ttl: ${REVOLUT_BOOKING_ORDER_TTL:PT1H}
+      # 3DS: automatic (Revolut decides) | forced.
+      enforce-challenge: ${REVOLUT_BOOKING_ENFORCE_CHALLENGE:automatic}
   trip-push:
     # Web-push VAPID keypair for the Boat4You Trip hub reminders (base64url,
     # P-256). Deliberately optional: blank keys = push disabled, the hub hides

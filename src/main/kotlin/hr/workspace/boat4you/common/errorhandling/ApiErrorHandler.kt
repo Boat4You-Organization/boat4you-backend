@@ -12,6 +12,10 @@ import hr.workspace.boat4you.domains.catalouge.exceptions.ImageNotFoundException
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageResizeBusyException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
+import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentNotFoundException
+import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentProviderException
+import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentTooManyException
+import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentsUnavailableException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalCancellationException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException
 import hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException
@@ -24,10 +28,11 @@ import hr.workspace.boat4you.domains.reservation.exceptions.ReservationFlowNotEx
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationStatusException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationUserNotExists
-import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentNotFoundException
-import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentProviderException
-import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentTooManyException
-import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentsUnavailableException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardAlreadyPaidException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentInProgressException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentNotFoundException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProviderException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentsUnavailableException
 import hr.workspace.boat4you.domains.review.exceptions.ReviewEditWindowClosedException
 import hr.workspace.boat4you.domains.review.exceptions.ReviewLinkInvalidException
 import hr.workspace.boat4you.domains.review.exceptions.ReviewNotFoundException
@@ -50,13 +55,6 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
-// F5-001: explicit import for Spring Security's AccessDeniedException.
-// Without this, the bare `AccessDeniedException` reference below resolves
-// via Kotlin's default `kotlin.io.*` import to `kotlin.io.AccessDeniedException`
-// (a file-I/O exception), which means Spring Security 403s were not
-// caught here and fell through to the catch-all 500 handler — a silent
-// production bug where authenticated-but-unauthorized requests looked
-// like server crashes in the logs and to the customer.
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.MissingServletRequestParameterException
@@ -134,9 +132,7 @@ internal class ApiErrorHandler {
     }
 
     @ExceptionHandler(MissingServletRequestParameterException::class)
-    fun handleMissingServletRequestParameterException(
-        e: MissingServletRequestParameterException,
-    ): ResponseEntity<ErrorSchema> {
+    fun handleMissingServletRequestParameterException(e: MissingServletRequestParameterException): ResponseEntity<ErrorSchema> {
         // Same family as above: a required parameter left out is a 400, not a 500.
         logger.warn("MissingServletRequestParameterException — parameter '{}' is missing", e.parameterName)
         return ResponseEntity(
@@ -466,6 +462,13 @@ internal class ApiErrorHandler {
         )
     }
 
+    // F5-001: explicit import for Spring Security's AccessDeniedException.
+    // Without this, the bare `AccessDeniedException` reference below resolves
+    // via Kotlin's default `kotlin.io.*` import to `kotlin.io.AccessDeniedException`
+    // (a file-I/O exception), which means Spring Security 403s were not
+    // caught here and fell through to the catch-all 500 handler — a silent
+    // production bug where authenticated-but-unauthorized requests looked
+    // like server crashes in the logs and to the customer.
     @ExceptionHandler(AccessDeniedException::class)
     fun handleAccessDeniedException(e: AccessDeniedException): ResponseEntity<ErrorSchema> {
         // F5-007: expected 403 from Spring Security's @PreAuthorize/@PostAuthorize
@@ -701,6 +704,67 @@ internal class ApiErrorHandler {
                 ApiErrorCodes.CUSTOM_PAYMENT_PROVIDER_ERROR.message,
             ),
             HttpStatus.BAD_GATEWAY,
+        )
+    }
+
+    // Online-booking card payments (/payments/card). Static texts only; the service already logged the context.
+    @ExceptionHandler(CardPaymentsUnavailableException::class)
+    fun handleCardPaymentsUnavailableException(e: CardPaymentsUnavailableException): ResponseEntity<ErrorSchema> {
+        logger.warn("CardPaymentsUnavailableException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CARD_PAYMENTS_UNAVAILABLE.code,
+                ApiErrorCodes.CARD_PAYMENTS_UNAVAILABLE.message,
+            ),
+            HttpStatus.SERVICE_UNAVAILABLE,
+        )
+    }
+
+    @ExceptionHandler(CardPaymentInProgressException::class)
+    fun handleCardPaymentInProgressException(e: CardPaymentInProgressException): ResponseEntity<ErrorSchema> {
+        logger.info("CardPaymentInProgressException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CARD_PAYMENT_IN_PROGRESS.code,
+                ApiErrorCodes.CARD_PAYMENT_IN_PROGRESS.message,
+            ),
+            HttpStatus.CONFLICT,
+        )
+    }
+
+    @ExceptionHandler(CardAlreadyPaidException::class)
+    fun handleCardAlreadyPaidException(e: CardAlreadyPaidException): ResponseEntity<ErrorSchema> {
+        logger.info("CardAlreadyPaidException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CARD_ALREADY_PAID.code,
+                ApiErrorCodes.CARD_ALREADY_PAID.message,
+            ),
+            HttpStatus.CONFLICT,
+        )
+    }
+
+    @ExceptionHandler(CardPaymentProviderException::class)
+    fun handleCardPaymentProviderException(e: CardPaymentProviderException): ResponseEntity<ErrorSchema> {
+        logger.warn("CardPaymentProviderException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CARD_PAYMENT_PROVIDER_ERROR.code,
+                ApiErrorCodes.CARD_PAYMENT_PROVIDER_ERROR.message,
+            ),
+            HttpStatus.BAD_GATEWAY,
+        )
+    }
+
+    @ExceptionHandler(CardPaymentNotFoundException::class)
+    fun handleCardPaymentNotFoundException(e: CardPaymentNotFoundException): ResponseEntity<ErrorSchema> {
+        logger.info("CardPaymentNotFoundException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CARD_PAYMENT_NOT_FOUND.code,
+                ApiErrorCodes.CARD_PAYMENT_NOT_FOUND.message,
+            ),
+            HttpStatus.NOT_FOUND,
         )
     }
 

@@ -8,6 +8,7 @@ enum class ApiErrorCodes(
     BAD_CREDENTIALS(1011, "Bad credentials"),
     LOGIN_ATTEMPTS_EXCEEDED(1012, "Maximum number of login attempts exceeded"),
     PASSWORD_RESET_INVALID(1013, "Password reset request invalid"),
+
     // F1-004: generic message — does not reveal exact minimum (was
     // "could contain at least six characters", which was both an
     // attacker hint AND a misleading typo of "must"). Enum constant
@@ -15,6 +16,7 @@ enum class ApiErrorCodes(
     // working; only the human-readable message changes.
     PASSWORD_INVALID_LENGTH(1014, "Password does not meet the strength requirements"),
     OLD_PASSWORD_INVALID(1015, "Old password not valid"),
+
     // Social login (Facebook) succeeded but the provider did not share an
     // email. Our account model is email-keyed, so we cannot find-or-create an
     // account — actionable user-facing message, NOT the generic BAD_CREDENTIALS
@@ -56,6 +58,7 @@ enum class ApiErrorCodes(
     RESERVATION_NOT_EXIST(3002, "Reservation does not exist"),
     RESERVATION_USER_NOT_EXIST(3003, "Reservation user does not exist"),
     RESERVATION_STATUS_ERROR(3004, "Reservation status error"),
+
     // B2: booking orchestration failed (partner option / reservation persist)
     // and the flow was compensated (offer freed, flow abandoned). User-facing
     // generic apology; the real cause stays in the backend log.
@@ -67,6 +70,7 @@ enum class ApiErrorCodes(
     PARTNER_PRICE_CHANGED(3007, "The price for this week has just changed at the charter company – please review."),
     RESOURCE_NOT_FOUND(4004, "Requested resource not found"),
     INVOICE_NOT_EXIST(5001, "Invoice does not exist"),
+
     // 6xxx codes are partner-integration failures (MMK / NauSys). The
     // messages are user-facing — they appear in toast notifications, so
     // they're intentionally generic apologies. Technical details (raw
@@ -76,6 +80,7 @@ enum class ApiErrorCodes(
     EXTERNAL_OPTION_ERROR(6002, "We're sorry, we're experiencing technical difficulties with this booking. Please contact our support team."),
     EXTERNAL_RESERVATION_ERROR(6003, "We're sorry, we couldn't complete your reservation due to a technical issue. Please contact our support team."),
     EXTERNAL_RESERVATION_CANCELLATION_ERROR(6004, "We're sorry, the cancellation couldn't be processed due to a technical issue. Please contact our support team."),
+
     // 7xxx: guest review form (magic link from the review request e-mail). Customer-facing wording.
     REVIEW_LINK_INVALID(7001, "This review link is invalid or has expired."),
     REVIEW_EDIT_WINDOW_CLOSED(7002, "This review can no longer be changed — reviews can be edited for 24 hours after sending."),
@@ -87,4 +92,15 @@ enum class ApiErrorCodes(
     CUSTOM_PAYMENT_NOT_FOUND(8002, "Payment not found."),
     CUSTOM_PAYMENT_TOO_MANY(8003, "Too many payment attempts. Please try again later."),
     CUSTOM_PAYMENT_PROVIDER_ERROR(8004, "We couldn't start the card payment. Please try again in a moment."),
+
+    // 81xx: online-booking card payments (provider-neutral /payments/card, Stripe or Revolut). Static customer-facing
+    // wording — the web shows the message in a toast, so never a provider or exception text.
+    CARD_PAYMENTS_UNAVAILABLE(8101, "Card payments are temporarily unavailable. Please try again later."),
+    CARD_PAYMENT_IN_PROGRESS(
+        8102,
+        "A card payment for this booking is already being processed. Please wait a few minutes and check your booking before paying again.",
+    ),
+    CARD_ALREADY_PAID(8103, "This payment has already been received. Please refresh the page to see your booking."),
+    CARD_PAYMENT_PROVIDER_ERROR(8104, "We couldn't start the card payment. Please try again in a moment."),
+    CARD_PAYMENT_NOT_FOUND(8105, "Payment not found."),
 }
