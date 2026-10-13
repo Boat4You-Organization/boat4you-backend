@@ -128,7 +128,13 @@ interface LocationRepository : JpaRepository<Location, Long> {
         @Param("id") id: Long,
     ): List<Long>
 
-    /** The curated same-marina pairs (location_same_place, V9_67): [location_id, same_as_location_id] rows. */
-    @Query(value = "SELECT location_id, same_as_location_id FROM location_same_place", nativeQuery = true)
+    /**
+     * The curated same-marina pairs (location_same_place, V9_67): [location_id, same_as_location_id] rows, oldest
+     * first, so the location list keeps a group's row when a later migration adds a third row to it (V9_79).
+     */
+    @Query(
+        value = "SELECT location_id, same_as_location_id FROM location_same_place ORDER BY created_at, location_id, same_as_location_id",
+        nativeQuery = true,
+    )
     fun findCuratedSamePlacePairs(): List<Array<Any>>
 }

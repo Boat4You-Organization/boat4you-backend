@@ -122,7 +122,8 @@ class LocationQueryingService(
      * "Marina Frapa Dubrovnik" but 170 km away, and the merged row put 17
      * Rogoznica boats on the Dubrovnik catamaran landing. Plus the curated
      * location_same_place pairs no name rule finds (V9_67: "D-Marin Marina
-     * Lefkas" / "Lefkas, D-Marin"), folded the same way.
+     * Lefkas" / "Lefkas, D-Marin"), folded the same way; a curated pair that
+     * touches a row already merged joins the two rows' groups ([joinGroups]).
      */
     internal fun mergeDualSourceMarinas(items: List<LocationViewDto>): List<LocationViewDto> {
         val marinas =
@@ -131,23 +132,27 @@ class LocationQueryingService(
         val byId = marinas.associateBy { it.realId!! }
         val rows =
             marinas.map { MarinaPlaces.Marina(it.realId!!, it.name.orEmpty(), it.countryCode, it.city, it.lat, it.lon) }
+        val nameLength = { id: Long -> MarinaPlaces.containmentFold(byId.getValue(id).name).length }
 
         // shorter -> longer (the row that stays)
         val pairs = MarinaPlaces.containmentPairs(rows).map { it.first.id to it.second.id }.toMutableList()
         val paired = pairs.flatMap { listOf(it.first, it.second) }.toMutableSet()
+        val joins = mutableListOf<Pair<Long, Long>>()
         curatedSamePlacePairs().forEach { (a, b) ->
-            val rowA = byId[a]
-            val rowB = byId[b]
-            if (rowA == null || rowB == null || a in paired || b in paired) return@forEach
-            val aShorter = MarinaPlaces.containmentFold(rowA.name).length <= MarinaPlaces.containmentFold(rowB.name).length
-            pairs.add(if (aShorter) a to b else b to a)
+            if (a !in byId || b !in byId) return@forEach
+            if (a in paired || b in paired) {
+                joins.add(a to b)
+                return@forEach
+            }
+            pairs.add(if (nameLength(a) <= nameLength(b)) a to b else b to a)
             paired.add(a)
             paired.add(b)
         }
         if (pairs.isEmpty()) return items
+        val merged = if (joins.isEmpty()) pairs else joinGroups(pairs, joins, nameLength)
 
-        val removed = pairs.map { "l-${it.first}" }.toSet()
-        val absorbed = pairs.groupBy({ "l-${it.second}" }, { "l-${it.first}" })
+        val removed = merged.map { "l-${it.first}" }.toSet()
+        val absorbed = merged.groupBy({ "l-${it.second}" }, { "l-${it.first}" })
         return items.mapNotNull { item ->
             val iid = item.id
             when {
@@ -157,6 +162,39 @@ class LocationQueryingService(
                 else -> item
             }
         }
+    }
+
+    /**
+     * One marina imported three to five times (V9_79: Lavrion Main Port, Marina Baška Voda, Porto di Mergellina): each
+     * curated pair alone leaves several rows of one name in the list, because a row joins at most one pair above.
+     * [joins] are the curated pairs that touch a row already merged; each one merges the two groups. Of the two rows
+     * that stay, the longer name wins, then the group that was formed first (the older pair, so a group keeps its
+     * row when it grows), then the lower id. [pairs] (shorter -> the row that stays) come back unchanged when no join
+     * connects them.
+     */
+    private fun joinGroups(
+        pairs: List<Pair<Long, Long>>,
+        joins: List<Pair<Long, Long>>,
+        nameLength: (Long) -> Int,
+    ): List<Pair<Long, Long>> {
+        val into = LinkedHashMap<Long, Long>() // row -> the row it is merged into (itself for a row that stays)
+        pairs.forEach { (shorter, stays) ->
+            into[shorter] = stays
+            into.putIfAbsent(stays, stays)
+        }
+        val formed = { id: Long -> into.keys.indexOf(id).let { if (it < 0) Int.MAX_VALUE else it } }
+        joins.forEach { (a, b) ->
+            val ra = into[a] ?: a
+            val rb = into[b] ?: b
+            if (ra == rb) return@forEach
+            val keepA = compareValuesBy(rb, ra, { -nameLength(it) }, formed, { it }) > 0
+            val keep = if (keepA) ra else rb
+            val drop = if (keepA) rb else ra
+            into.replaceAll { _, target -> if (target == drop) keep else target }
+            into[drop] = keep
+            into.putIfAbsent(keep, keep)
+        }
+        return into.filter { (row, target) -> row != target }.map { (row, target) -> row to target }
     }
 
     private fun curatedSamePlacePairs(): List<Pair<Long, Long>> =
