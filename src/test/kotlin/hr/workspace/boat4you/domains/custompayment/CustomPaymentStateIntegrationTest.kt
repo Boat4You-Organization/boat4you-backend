@@ -17,12 +17,16 @@ import hr.workspace.boat4you.domains.custompayment.service.CustomPaymentVerdict
 import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantClient
 import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantOrderData
 import hr.workspace.boat4you.domains.payment.revolut.RevolutOrder
+import hr.workspace.boat4you.domains.payment.revolut.RevolutOrderEventHandler.HandlerResult
+import hr.workspace.boat4you.domains.payment.revolut.RevolutOrderTypes
 import hr.workspace.boat4you.domains.payment.revolut.RevolutPayment
+import hr.workspace.boat4you.domains.payment.revolut.RevolutWebhookEvents
 import hr.workspace.boat4you.domains.payment.revolut.revolutProperties
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -36,6 +40,7 @@ import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.SpringBootConfiguration
@@ -46,11 +51,14 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Import
 import org.springframework.core.io.ClassPathResource
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.http.HttpStatus
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.ResourceAccessException
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.images.builder.Transferable
 import org.testcontainers.junit.jupiter.Container
@@ -66,7 +74,8 @@ import java.util.concurrent.TimeUnit
 /**
  * custom_payment against a real PostgreSQL 18 (prod: cusma4): the V9_80 migration (run by the container's init, then
  * twice more in a transaction like Flyway — idempotent), Hibernate `ddl-auto=validate` of the entity against it, the
- * CHECK constraints, and the state rules of CustomPaymentTx under real row locks. Only the custom payment entity and
+ * CHECK constraints, the state rules of CustomPaymentTx under real row locks, and CustomPaymentService (create, status,
+ * webhook events, refunds, reconcile) on top of them with a mocked Revolut client. Only the custom payment entity and
  * repository are in the context: the full Flyway chain cannot run on an empty database (V9_18 is a prod data fix),
  * so the FK target `reservation` is a one-column stand-in.
  */
@@ -518,5 +527,154 @@ class CustomPaymentStateIntegrationTest {
         // The FK keeps the payment when a reservation is purged.
         jdbc.update("DELETE FROM reservation WHERE id = 1441")
         row(id).reservationId shouldBe null
+    }
+
+    /** A PENDING row with its Revolut order attached, as after a successful create. */
+    private fun attached(
+        reference: String,
+        orderId: String,
+        amountMinor: Long = 110_900,
+    ): Long = pending(reference, amountMinor).also { tx.attachOrder(it, orderId, "https://checkout.revolut.com/$orderId") }
+
+    @Test
+    @Order(11)
+    fun `webhook - a declined or failed card attempt only stamps the row and never asks Revolut, an order we do not know is ignored`() {
+        val id = attached("WH-DECLINED", "ord-wh-declined")
+        val service = service()
+
+        service.onEvent(RevolutWebhookEvents.ORDER_PAYMENT_DECLINED, "ord-wh-declined") shouldBe HandlerResult.HANDLED
+        with(row(id)) {
+            status shouldBe CustomPaymentStatus.PENDING
+            lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_PAYMENT_DECLINED
+            lastWebhookAt.shouldNotBeNull()
+            lastCheckedAt.shouldBeNull()
+            orderSnapshot.shouldBeNull()
+        }
+        service.onEvent(RevolutWebhookEvents.ORDER_PAYMENT_FAILED, "ord-wh-declined") shouldBe HandlerResult.HANDLED
+        row(id).status shouldBe CustomPaymentStatus.PENDING
+        row(id).lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_PAYMENT_FAILED
+
+        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-nobody") shouldBe HandlerResult.HANDLED
+        verifyNoInteractions(client)
+        mailer.receipts shouldHaveSize 0
+        mailer.officeMails shouldHaveSize 0
+        mailer.alerts shouldHaveSize 0
+    }
+
+    @Test
+    @Order(12)
+    fun `webhook - Revolut unreachable or 5xx is TRANSIENT (503, Revolut retries) and leaves the row untouched, an unknown order is stamped`() {
+        val id = attached("WH-TRANSIENT", "ord-wh-transient")
+        `when`(client.getOrder("ord-wh-transient"))
+            .thenThrow(ResourceAccessException("I/O error: connect timed out"), HttpServerErrorException(HttpStatus.SERVICE_UNAVAILABLE))
+            .thenReturn(null)
+        val service = service()
+
+        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-transient") shouldBe HandlerResult.TRANSIENT
+        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-transient") shouldBe HandlerResult.TRANSIENT
+        with(row(id)) {
+            status shouldBe CustomPaymentStatus.PENDING
+            lastWebhookEvent.shouldBeNull()
+            lastWebhookAt.shouldBeNull()
+            lastCheckedAt.shouldBeNull()
+            orderSnapshot.shouldBeNull()
+            completedAt.shouldBeNull()
+        }
+
+        // Revolut answers 404 (client -> null): nothing to decide, the event is stamped and not retried.
+        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-transient") shouldBe HandlerResult.HANDLED
+        with(row(id)) {
+            status shouldBe CustomPaymentStatus.PENDING
+            lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_COMPLETED
+            lastWebhookAt.shouldNotBeNull()
+        }
+        verify(client, times(3)).getOrder("ord-wh-transient")
+        mailer.receipts shouldHaveSize 0
+        mailer.alerts shouldHaveSize 0
+    }
+
+    @Test
+    @Order(13)
+    fun `webhook - re-reads the order and applies the verdict, completion sends one receipt, a repeated event sends nothing more`() {
+        val id = attached("WH-COMPLETE", "ord-wh-complete")
+        val token = row(id).publicToken.toString()
+        `when`(client.getOrder("ord-wh-complete"))
+            .thenReturn(order("ord-wh-complete", "processing", token), order("ord-wh-complete", "completed", token))
+        val service = service()
+
+        service.onEvent(RevolutWebhookEvents.ORDER_AUTHORISED, "ord-wh-complete") shouldBe HandlerResult.HANDLED
+        row(id).status shouldBe CustomPaymentStatus.PENDING
+        row(id).lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_AUTHORISED
+        mailer.receipts shouldHaveSize 0
+
+        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-complete") shouldBe HandlerResult.HANDLED
+        with(row(id)) {
+            status shouldBe CustomPaymentStatus.COMPLETED
+            completedAt.shouldNotBeNull()
+            providerPaymentId shouldBe "pay-ord-wh-complete"
+            orderSnapshot!! shouldContain "ord-wh-complete"
+            lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_COMPLETED
+            lastWebhookAt.shouldNotBeNull()
+        }
+        mailer.receipts shouldContainExactly listOf(id)
+        mailer.officeMails shouldContainExactly listOf(id)
+
+        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-complete") shouldBe HandlerResult.HANDLED
+        row(id).status shouldBe CustomPaymentStatus.COMPLETED
+        mailer.receipts shouldContainExactly listOf(id)
+        mailer.officeMails shouldContainExactly listOf(id)
+        mailer.alerts shouldHaveSize 0
+        verify(client, times(3)).getOrder("ord-wh-complete")
+    }
+
+    @Test
+    @Order(14)
+    fun `refund webhook - Revolut's running total from the original order, the refund order's amount when that total is unreadable`() {
+        fun refundOrder(
+            id: String,
+            originalOrderId: String,
+            amount: Long,
+        ) = order(id, "completed", "-", amount = amount).copy(type = RevolutOrderTypes.REFUND, relatedOrderId = originalOrderId)
+
+        fun paid(
+            reference: String,
+            orderId: String,
+        ): Long =
+            attached(reference, orderId, amountMinor = 10_000).also {
+                tx.applyVerdict(it, CustomPaymentVerdict.Complete("pay-$orderId"), null) shouldBe CustomPaymentStatus.COMPLETED
+            }
+
+        val total = paid("WH-REFUND-TOTAL", "ord-wh-refund-total")
+        val unreadable = paid("WH-REFUND-UNREADABLE", "ord-wh-refund-unreadable")
+        val noTotal = paid("WH-REFUND-NO-TOTAL", "ord-wh-refund-no-total")
+        `when`(client.getOrder("ord-wh-refund-total"))
+            .thenReturn(order("ord-wh-refund-total", "completed", row(total).publicToken.toString(), amount = 10_000, refunded = 3000))
+        `when`(client.getOrder("ord-wh-refund-unreadable")).thenThrow(ResourceAccessException("I/O error: read timed out"))
+        `when`(client.getOrder("ord-wh-refund-no-total"))
+            .thenReturn(order("ord-wh-refund-no-total", "completed", row(noTotal).publicToken.toString(), amount = 10_000))
+        val service = service()
+        mailer.clear()
+
+        // The refund order itself says 1000, Revolut's running total on the original order says 3000: the total wins.
+        service.onRefund("ord-wh-refund-total", refundOrder("ref-wh-1", "ord-wh-refund-total", 1000))
+        row(total).refundedAmountMinor shouldBe 3000L
+        service.onRefund("ord-wh-refund-total", refundOrder("ref-wh-1", "ord-wh-refund-total", 1000))
+        row(total).refundedAmountMinor shouldBe 3000L
+        mailer.alerts.filter { it.first == total } shouldContainExactly listOf(total to CustomPaymentAlertKind.REFUND)
+
+        service.onRefund("ord-wh-refund-unreadable", refundOrder("ref-wh-2", "ord-wh-refund-unreadable", 2500))
+        row(unreadable).refundedAmountMinor shouldBe 2500L
+        mailer.alerts.filter { it.first == unreadable } shouldContainExactly listOf(unreadable to CustomPaymentAlertKind.REFUND)
+
+        service.onRefund("ord-wh-refund-no-total", refundOrder("ref-wh-3", "ord-wh-refund-no-total", 4000))
+        row(noTotal).refundedAmountMinor shouldBe 4000L
+        mailer.alerts.filter { it.first == noTotal } shouldContainExactly listOf(noTotal to CustomPaymentAlertKind.REFUND)
+
+        // A refund for an order that is not ours: nothing read, nothing written.
+        service.onRefund("ord-wh-refund-nobody", refundOrder("ref-wh-4", "ord-wh-refund-nobody", 500))
+        verify(client, times(0)).getOrder("ord-wh-refund-nobody")
+        listOf(total, unreadable, noTotal).forEach { row(it).status shouldBe CustomPaymentStatus.COMPLETED }
+        mailer.alerts shouldHaveSize 3
+        mailer.receipts shouldHaveSize 0
     }
 }
