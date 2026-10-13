@@ -89,6 +89,8 @@ class DataExportService(
                         amount = phase.amount,
                         paidOn = phase.paidOn,
                         stripePaymentIntentId = phase.stripePaymentIntentId,
+                        paymentProvider = phase.paymentProvider,
+                        providerPaymentId = phase.providerPaymentId,
                     )
                 } ?: emptyList(),
             )

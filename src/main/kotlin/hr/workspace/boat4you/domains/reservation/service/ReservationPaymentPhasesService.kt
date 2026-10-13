@@ -257,5 +257,7 @@ class ReservationPaymentPhasesService(
             amount = this.amount,
             paidOn = this.paidOn?.let { LocalDateTime.ofInstant(it, ZoneId.of("UTC")) },
             stripePaymentIntentId = this.stripePaymentIntentId,
+            paymentProvider = this.paymentProvider,
+            providerPaymentId = this.providerPaymentId,
         )
 }

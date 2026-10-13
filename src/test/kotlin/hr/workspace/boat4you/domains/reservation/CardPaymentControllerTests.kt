@@ -8,10 +8,15 @@ import com.stripe.model.checkout.Session
 import hr.workspace.boat4you.common.errorhandling.ApiErrorCodes
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
+import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantClient
 import hr.workspace.boat4you.domains.payment.revolut.RevolutProperties
 import hr.workspace.boat4you.domains.payment.revolut.TEST_SECRET_KEY
+import hr.workspace.boat4you.domains.payment.revolut.booking.BookingOrderCompletion
+import hr.workspace.boat4you.domains.payment.revolut.booking.ReservationCardOrderTx
+import hr.workspace.boat4you.domains.payment.revolut.booking.RevolutBookingCreateTx
 import hr.workspace.boat4you.domains.payment.revolut.booking.RevolutBookingPaymentService
 import hr.workspace.boat4you.domains.payment.revolut.booking.RevolutBookingProperties
+import hr.workspace.boat4you.domains.payment.revolut.booking.jpa.ReservationCardOrderRepository
 import hr.workspace.boat4you.domains.payment.revolut.revolutProperties
 import hr.workspace.boat4you.domains.reservation.controllers.CardPaymentController
 import hr.workspace.boat4you.domains.reservation.controllers.PublicCardPaymentController
@@ -26,8 +31,10 @@ import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentInPr
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProvider
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProviderException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentRouter
+import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentsUnavailableException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardProvider
 import hr.workspace.boat4you.domains.reservation.service.payment.StripeCardPaymentProvider
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
@@ -184,12 +191,31 @@ class CardPaymentControllerTests {
     }
 
     @Test
-    fun `stage A - the wired Revolut provider (stub) answers 503 and knows no reference`() {
-        val stub = RevolutBookingPaymentService()
-        stub.provider shouldBe CardProvider.REVOLUT
-        stub.checkStatus("ord-7f3a").shouldBeNull()
-        mvc(router("revolut", revolutProvider = stub)).create("/public/payments/card").expectError(503, ApiErrorCodes.CARD_PAYMENTS_UNAVAILABLE)
-        verifyNoInteractions(stripeService)
+    fun `the wired Revolut provider - a reference without a ledger row is unknown (Stripe, then 404), disabled keys 503 before any work`() {
+        val orders = mock(ReservationCardOrderRepository::class.java)
+        val client = mock(RevolutMerchantClient::class.java)
+        val createTx = mock(RevolutBookingCreateTx::class.java)
+        fun provider(properties: RevolutProperties) =
+            RevolutBookingPaymentService(
+                properties,
+                RevolutBookingProperties(Duration.ofHours(1), "automatic"),
+                client,
+                createTx,
+                mock(ReservationCardOrderTx::class.java),
+                orders,
+                mock(BookingOrderCompletion::class.java),
+                "https://www.boat4you.com",
+            )
+        val enabled = provider(revolutProperties())
+        enabled.provider shouldBe CardProvider.REVOLUT
+        enabled.checkStatus("ord-7f3a").shouldBeNull()
+        verify(orders).findByProviderOrderId("ord-7f3a")
+        mvc(router("revolut", revolutProvider = enabled)).post("/public/payments/card/checkPaymentStatus/ord-7f3a").expectError(404, ApiErrorCodes.CARD_PAYMENT_NOT_FOUND)
+
+        val disabled = provider(revolutProperties(secretKey = ""))
+        shouldThrow<CardPaymentsUnavailableException> { disabled.createCheckout(42, null, 7, "key-1", "de") }
+        mvc(router("revolut", revolutProperties(secretKey = ""), revolutProvider = disabled)).create("/public/payments/card").expectError(503, ApiErrorCodes.CARD_PAYMENTS_UNAVAILABLE)
+        verifyNoInteractions(client, createTx, stripeService)
     }
 
     @Test
@@ -259,6 +285,13 @@ class CardPaymentControllerTests {
         ApplicationContextRunner()
             .withInitializer { it.beanFactory.conversionService = ApplicationConversionService.getSharedInstance() }
             .withBean(StripeCardPaymentProvider::class.java, { StripeCardPaymentProvider(stripeService, phases) })
+            // The Revolut provider's collaborators (database + Merchant API) are mocks; the provider itself is the real bean.
+            .withBean(RevolutMerchantClient::class.java, { mock(RevolutMerchantClient::class.java) })
+            .withBean(RevolutBookingCreateTx::class.java, { mock(RevolutBookingCreateTx::class.java) })
+            .withBean(ReservationCardOrderTx::class.java, { mock(ReservationCardOrderTx::class.java) })
+            .withBean(ReservationCardOrderRepository::class.java, { mock(ReservationCardOrderRepository::class.java) })
+            .withBean(BookingOrderCompletion::class.java, { mock(BookingOrderCompletion::class.java) })
+            .withPropertyValues("server.host-public=https://www.boat4you.com")
             .withUserConfiguration(
                 RevolutProperties::class.java,
                 RevolutBookingProperties::class.java,

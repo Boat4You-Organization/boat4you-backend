@@ -31,6 +31,18 @@ class ReservationPaymentPhase : AbstractEntity<Long>() {
     @Column(name = "stripe_payment_intent_id", columnDefinition = "VARCHAR(511)", nullable = true)
     var stripePaymentIntentId: String? = null
 
+    /** Card provider that recorded the payment of this phase (`REVOLUT`, V9_81); null for Stripe-era and manual payments. */
+    @Column(name = "payment_provider", columnDefinition = "VARCHAR(16)", nullable = true)
+    var paymentProvider: String? = null
+
+    /** Provider order that paid this phase. Not unique: a pay-full checkout pays several phases with one order. */
+    @Column(name = "provider_order_id", columnDefinition = "VARCHAR(64)", nullable = true)
+    var providerOrderId: String? = null
+
+    /** Provider payment (charge) id inside [providerOrderId]. */
+    @Column(name = "provider_payment_id", columnDefinition = "VARCHAR(64)", nullable = true)
+    var providerPaymentId: String? = null
+
     @ManyToOne(fetch = FetchType.LAZY)
     @OnDelete(action = OnDeleteAction.SET_NULL)
     @JoinColumn(name = "reservation_flow_id", referencedColumnName = "id", nullable = false)

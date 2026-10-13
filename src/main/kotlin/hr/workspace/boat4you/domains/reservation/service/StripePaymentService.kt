@@ -38,6 +38,7 @@ class StripePaymentService(
     private val stripeEventIdempotencyService: StripeEventIdempotencyService,
     private val voucherService: VoucherService,
     private val eventPublisher: ApplicationEventPublisher,
+    private val stripeSessionExpirer: StripeSessionExpirer,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${application.stripe.enabled}") private val stripeEnabled: Boolean,
     // 3-letter ISO 4217. Stripe wants lowercase. EUR is the product default;
@@ -296,30 +297,8 @@ class StripePaymentService(
             // this call), expire the old one before overwriting so the
             // funds cannot be captured against both sessions in the gap
             // between issuing the new one and the user paying.
-            phase.stripeSessionId?.let { expireStripeSessionSafely(it) }
+            phase.stripeSessionId?.let { stripeSessionExpirer.expireStripeSessionSafely(it) }
             phase.stripeSessionId = sessionId
-        }
-    }
-
-    /**
-     * Best-effort expire of a previously-issued Stripe Checkout Session.
-     *
-     * Stripe rejects `expire` on terminal sessions (status `complete` or
-     * `expired`); we retrieve first and only call expire while still
-     * `open`. Network or API errors are logged but swallowed — the
-     * caller already has a new sessionId to stamp on the phase and
-     * blocking that on a Stripe API hiccup would be worse than the rare
-     * orphan-open-session it leaves behind.
-     */
-    private fun expireStripeSessionSafely(oldSessionId: String) {
-        try {
-            val oldSession = Session.retrieve(oldSessionId)
-            if (oldSession.status == "open") {
-                oldSession.expire()
-                logger.info("Expired prior open Stripe session $oldSessionId after reissue")
-            }
-        } catch (e: Exception) {
-            logger.warn("Could not expire prior Stripe session $oldSessionId: ${e.message}")
         }
     }
 

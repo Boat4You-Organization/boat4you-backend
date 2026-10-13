@@ -216,6 +216,27 @@ class RevolutMerchantClientTests {
     }
 
     @Test
+    fun `get order once - one attempt only (a customer is waiting), same answer otherwise`() {
+        server.expect(ExpectedCount.once(), requestTo("$ordersUrl/$orderId")).andRespond(withServerError())
+        shouldThrow<HttpServerErrorException> { client.getOrderOnce(orderId) }
+        server.verify()
+
+        server.reset()
+        server
+            .expect(ExpectedCount.once(), requestTo("$ordersUrl/$orderId"))
+            .andExpect(method(HttpMethod.GET))
+            .andExpect(header("Authorization", "Bearer $TEST_SECRET_KEY"))
+            .andRespond(withSuccess(orderJson(state = "completed"), MediaType.APPLICATION_JSON))
+        client.getOrderOnce(orderId)!!.state shouldBe "completed"
+        server.verify()
+
+        server.reset()
+        server.expect(ExpectedCount.once(), requestTo("$ordersUrl/$orderId")).andRespond(withResourceNotFound())
+        client.getOrderOnce(orderId) shouldBe null
+        server.verify()
+    }
+
+    @Test
     fun `get order - 404 is null`() {
         server
             .expect(ExpectedCount.once(), requestTo("$ordersUrl/$orderId"))
@@ -279,9 +300,11 @@ class RevolutMerchantClientTests {
         val offline = RevolutMerchantClient(RevolutMerchantClient.configure(RestClient.builder(), disabled), disabled)
         shouldThrow<IllegalStateException> { offline.createOrder(createRequest) }
         shouldThrow<IllegalStateException> { offline.getOrder(orderId) }
+        shouldThrow<IllegalStateException> { offline.getOrderOnce(orderId) }
         shouldThrow<IllegalStateException> { offline.cancelOrder(orderId) }
 
         shouldThrow<IllegalArgumentException> { client.getOrder("../refunds") }
+        shouldThrow<IllegalArgumentException> { client.getOrderOnce("../refunds") }
         shouldThrow<IllegalArgumentException> { client.cancelOrder("") }
         server.verify()
     }

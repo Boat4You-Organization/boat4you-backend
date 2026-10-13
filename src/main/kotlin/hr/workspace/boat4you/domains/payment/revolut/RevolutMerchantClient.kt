@@ -22,9 +22,10 @@ import java.time.Duration
  * a Spring `HttpClientErrorException` / `HttpServerErrorException` WITHOUT the response body or headers, so no caller
  * can leak an order body (payer e-mail, card data) into the logs by printing the exception.
  *
- * Retry policy: only [getOrder] is retried (I/O errors and 5xx, 3 attempts). [createOrder] has no idempotency key on
- * Revolut's side — a retry after a lost response would create a second order — and [cancelOrder] changes state, so
- * neither is ever retried; callers dedupe / reconcile instead.
+ * Retry policy: only [getOrder] is retried (I/O errors and 5xx, 3 attempts); [getOrderOnce] is the same read with ONE
+ * attempt for request paths where a customer waits. [createOrder] has no idempotency key on Revolut's side — a retry
+ * after a lost response would create a second order — and [cancelOrder] changes state, so neither is ever retried;
+ * callers dedupe / reconcile instead.
  */
 @Component
 class RevolutMerchantClient internal constructor(
@@ -56,7 +57,26 @@ class RevolutMerchantClient internal constructor(
         maxAttempts = GET_MAX_ATTEMPTS,
         backoff = Backoff(delay = GET_BACKOFF_DELAY_MS, multiplier = GET_BACKOFF_MULTIPLIER, random = true),
     )
-    fun getOrder(orderId: String): RevolutOrder? {
+    fun getOrder(orderId: String): RevolutOrder? = readOrder(orderId)
+
+    /**
+     * `GET /api/orders/{id}` with exactly ONE attempt (no [Retryable]): the online-booking checkout and its status
+     * endpoint, where a customer waits for the answer (Revolut plan 2A.10 §3). `null` when Revolut does not know the order.
+     */
+    fun getOrderOnce(orderId: String): RevolutOrder? = readOrder(orderId)
+
+    /** `POST /api/orders/{id}/cancel` (only a `pending` order can be cancelled). Never retried. */
+    fun cancelOrder(orderId: String): RevolutOrder? {
+        requireEnabled()
+        requireOrderId(orderId)
+        return restClient
+            .post()
+            .uri("/api/orders/{id}/cancel", orderId)
+            .retrieve()
+            .body(RevolutOrder::class.java)
+    }
+
+    private fun readOrder(orderId: String): RevolutOrder? {
         requireEnabled()
         requireOrderId(orderId)
         return try {
@@ -68,17 +88,6 @@ class RevolutMerchantClient internal constructor(
         } catch (notFound: HttpClientErrorException.NotFound) {
             null
         }
-    }
-
-    /** `POST /api/orders/{id}/cancel` (only a `pending` order can be cancelled). Never retried. */
-    fun cancelOrder(orderId: String): RevolutOrder? {
-        requireEnabled()
-        requireOrderId(orderId)
-        return restClient
-            .post()
-            .uri("/api/orders/{id}/cancel", orderId)
-            .retrieve()
-            .body(RevolutOrder::class.java)
     }
 
     private fun requireEnabled() {

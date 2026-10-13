@@ -76,6 +76,8 @@ data class ExportedPaymentPhaseDto(
     val amount: BigDecimal?,
     val paidOn: Instant?,
     val stripePaymentIntentId: String?,
+    val paymentProvider: String? = null,
+    val providerPaymentId: String? = null,
 )
 
 @JsonInclude(JsonInclude.Include.NON_NULL)

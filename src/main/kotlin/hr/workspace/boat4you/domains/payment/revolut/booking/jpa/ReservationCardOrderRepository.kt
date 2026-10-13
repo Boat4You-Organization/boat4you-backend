@@ -1,0 +1,125 @@
+package hr.workspace.boat4you.domains.payment.revolut.booking.jpa
+
+import jakarta.persistence.LockModeType
+import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
+import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Query
+import org.springframework.data.repository.query.Param
+import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
+
+interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, Long> {
+    fun findByProviderOrderId(providerOrderId: String): ReservationCardOrder?
+
+    fun existsByProviderOrderId(providerOrderId: String): Boolean
+
+    /**
+     * Row lock (`SELECT ... FOR UPDATE`) that serialises the webhook, the status endpoint, the reconcile job and the
+     * checkout on one order. Call it FIRST in the transaction (an entity already in the persistence context is not re-read).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM ReservationCardOrder o WHERE o.providerOrderId = :providerOrderId")
+    fun lockByProviderOrderId(
+        @Param("providerOrderId") providerOrderId: String,
+    ): ReservationCardOrder?
+
+    /** Same row lock as [lockByProviderOrderId], by ledger id. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM ReservationCardOrder o WHERE o.id = :id")
+    fun lockById(
+        @Param("id") id: Long,
+    ): ReservationCardOrder?
+
+    /**
+     * `SET LOCAL lock_timeout = '5s'` for the rest of the current transaction (plan 2A.10 §3): a checkout waiting for a
+     * locked phase / ledger row gives up after 5 s instead of holding a connection. Call it first in the transaction.
+     */
+    @Query(value = "SELECT set_config('lock_timeout', '5s', true)", nativeQuery = true)
+    fun setLocalLockTimeout(): String
+
+    /**
+     * Transaction-scoped advisory lock on [key] (as CustomPaymentRepository.lockDedupeKey): serialises the checkouts of
+     * one reservation flow, also when the charge has no phase rows to lock (legacy pay-full).
+     */
+    @Query(value = "SELECT 1 FROM (SELECT pg_advisory_xact_lock(hashtext(:key))) l", nativeQuery = true)
+    fun lockKey(
+        @Param("key") key: String,
+    ): Int
+
+    /**
+     * Reuse before create: a PENDING order of [reservationFlowId] for exactly this charge — same phase set, same cents,
+     * same `payment_phase_id` ([paymentPhaseKey] = the id, or -1 for NULL) — that Revolut keeps open until after
+     * [expiresAfter]. Newest first.
+     */
+    @Query(
+        value = """
+        SELECT * FROM reservation_card_order
+        WHERE status = 'PENDING'
+          AND reservation_flow_id = :reservationFlowId
+          AND phase_ids = :phaseIds
+          AND amount_minor = :amountMinor
+          AND COALESCE(payment_phase_id, -1) = :paymentPhaseKey
+          AND expires_at > :expiresAfter
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        nativeQuery = true,
+    )
+    fun findReusable(
+        @Param("reservationFlowId") reservationFlowId: Long,
+        @Param("phaseIds") phaseIds: String,
+        @Param("amountMinor") amountMinor: Long,
+        @Param("paymentPhaseKey") paymentPhaseKey: Long,
+        @Param("expiresAfter") expiresAfter: Instant,
+    ): ReservationCardOrder?
+
+    /** Every PENDING order of [reservationFlowId], oldest first (the ones a new checkout must clean up first). */
+    @Query(
+        value = """
+        SELECT * FROM reservation_card_order
+        WHERE status = 'PENDING' AND reservation_flow_id = :reservationFlowId
+        ORDER BY created_at, id
+        """,
+        nativeQuery = true,
+    )
+    fun findPendingByReservationFlow(
+        @Param("reservationFlowId") reservationFlowId: Long,
+    ): List<ReservationCardOrder>
+
+    /**
+     * Claims one Revolut check for the status endpoint: stamps `last_checked_at` only when the order is PENDING and was
+     * not checked in the last 10 s (database clock). 1 = go ask Revolut, 0 = someone just did / nothing to ask.
+     */
+    @Transactional
+    @Modifying
+    @Query(
+        value = """
+        UPDATE reservation_card_order SET last_checked_at = now()
+        WHERE id = :id AND status = 'PENDING'
+          AND (last_checked_at IS NULL OR last_checked_at < now() - interval '10 seconds')
+        """,
+        nativeQuery = true,
+    )
+    fun claimCheck(
+        @Param("id") id: Long,
+    ): Int
+
+    /**
+     * Reconcile job: PENDING orders created 5 min - 48 h ago, not checked in the last 5 min, oldest first, 50 per run
+     * (the backstop for missed webhooks and redirect-before-webhook).
+     */
+    @Query(
+        value = """
+        SELECT id FROM reservation_card_order
+        WHERE status = 'PENDING'
+          AND created_at < now() - interval '5 minutes'
+          AND created_at > now() - interval '48 hours'
+          AND (last_checked_at IS NULL OR last_checked_at < now() - interval '5 minutes')
+        ORDER BY created_at
+        LIMIT 50
+        """,
+        nativeQuery = true,
+    )
+    fun findReconcileCandidateIds(): List<Long>
+}
