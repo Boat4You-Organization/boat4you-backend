@@ -281,6 +281,29 @@ application:
     # Keys MUST come from the environment (.env / boat4you_vars.env).
     secret-key: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY required}
     webhook-secret: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET required}
+  revolut:
+    # Revolut Merchant API (secret /pay/<key> custom payments; later online-booking card payments).
+    # Blank defaults on purpose (pattern chat.anthropic-api-key): a node without the env vars keeps
+    # starting and the feature reports itself disabled. Enabled only when base-url + secret-key +
+    # webhook-secret are all set; the prod profile with a sandbox base-url is refused (ERROR, disabled).
+    # Prod https://merchant.revolut.com, sandbox https://sandbox-merchant.revolut.com (dev profile default).
+    base-url: ${REVOLUT_BASE_URL:}
+    secret-key: ${REVOLUT_SECRET_KEY:}
+    # Signing secret of the webhook registered for https://api.boat4you.com/webhooks/revolut.
+    webhook-secret: ${REVOLUT_WEBHOOK_SECRET:}
+    # Reconcile jobs (missed webhooks) — cusma2 only, switched on after the sandbox run.
+    reconcile-enabled: ${REVOLUT_RECONCILE_ENABLED:false}
+    # Comma-separated origins a checkout_url returned by Revolut may have.
+    checkout-origins: ${REVOLUT_CHECKOUT_ORIGINS:https://checkout.revolut.com}
+    custom-payment:
+      # 50 EUR in cents.
+      min-amount-minor: 5000
+      # Whole EUR.
+      max-amount: ${CUSTOM_PAYMENT_MAX_AMOUNT:100000}
+      order-ttl: ${CUSTOM_PAYMENT_ORDER_TTL:PT1H}
+      terms-version: ${CUSTOM_PAYMENT_TERMS_VERSION:2026-10-08}
+      # Secret link keys per site: site=key[,key];site2=key (two keys per site during a rotation).
+      link-keys: ${CUSTOM_PAYMENT_LINK_KEYS:}
   trip-push:
     # Web-push VAPID keypair for the Boat4You Trip hub reminders (base64url,
     # P-256). Deliberately optional: blank keys = push disabled, the hub hides
