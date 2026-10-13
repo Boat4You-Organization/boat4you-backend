@@ -46,6 +46,7 @@ class AiChatService(
     private val objectMapper: ObjectMapper,
     private val emailService: EmailService,
     private val geoIp: GeoIpService,
+    private val blogIndex: ChatBlogIndex,
     transactionManager: PlatformTransactionManager,
     @Value("\${chat.notify-email:info@boat4you.com}")
     private val notifyEmail: String,
@@ -354,6 +355,7 @@ class AiChatService(
     private fun runAssistant(session: AiChatSession, page: String? = null): AssistantResult {
         val history = buildModelMessages(session.id!!)
         var pendingCards: ArrayNode? = null
+        var pendingBlogs: ArrayNode? = null
 
         // "Why doesn't the chat see which yacht I'm on?" (Mario 20.7.2026) — the widget
         // sends the visitor's current URL; on a /boat/ page we inject that yacht's live
@@ -370,9 +372,18 @@ class AiChatService(
                 val text = contentBlocks.filter { it.path("type").asText() == "text" }
                     .joinToString("\n") { it.path("text").asText() }
                     .ifBlank { FAILURE_APOLOGY }
-                val payload = pendingCards?.let {
-                    objectMapper.writeValueAsString(objectMapper.createObjectNode().set<JsonNode>("yachts", it))
-                }
+                // Yacht cards and blog links are built here from tool results, never from model text.
+                val payload =
+                    if (pendingCards == null && pendingBlogs == null) {
+                        null
+                    } else {
+                        objectMapper.writeValueAsString(
+                            objectMapper.createObjectNode().apply {
+                                pendingCards?.let { set<JsonNode>("yachts", it) }
+                                pendingBlogs?.let { set<JsonNode>("blogs", it) }
+                            },
+                        )
+                    }
                 return AssistantResult.Reply(text, payload)
             }
 
@@ -395,6 +406,7 @@ class AiChatService(
                 }
                 val outcome = executeTool(session, name, block.path("input"))
                 if (outcome.cards != null) pendingCards = outcome.cards
+                if (outcome.blogs != null) pendingBlogs = outcome.blogs
                 results.add(
                     objectMapper.createObjectNode().apply {
                         put("type", "tool_result")
@@ -426,6 +438,27 @@ class AiChatService(
                 AiChatToolExecutor.ToolOutcome(
                     """{"ok":true,"note":"The boat4you team has been notified and will reply right here in this chat. Tell the visitor that, and ask for their email via save_contact if you do not have it yet."}""",
                 )
+            }
+            "show_blog_posts" -> {
+                // Only slugs of published guides (ChatBlogIndex) become links - the model cannot make up an article or a URL.
+                val shown =
+                    input
+                        .path("slugs")
+                        .mapNotNull { blogIndex.bySlug(it.asText("").trim()) }
+                        .distinctBy { it.slug }
+                        .take(MAX_BLOG_LINKS)
+                if (shown.isEmpty()) {
+                    AiChatToolExecutor.ToolOutcome("""{"error":"no such guide - use only slugs from the BOAT4YOU GUIDES list"}""")
+                } else {
+                    val links = objectMapper.createArrayNode()
+                    shown.forEach { links.addObject().put("title", it.title).put("url", it.path) }
+                    AiChatToolExecutor.ToolOutcome(
+                        objectMapper.writeValueAsString(
+                            mapOf("shown" to shown.map { it.title }, "note" to "The links appear under your reply; do not write any URL."),
+                        ),
+                        blogs = links,
+                    )
+                }
             }
             "save_contact" -> {
                 // The model copies what the visitor typed: same name rules as the widget, an email only when it looks like one.
@@ -538,7 +571,28 @@ class AiChatService(
         - Never name the charter operator, agency, partner or boat owner; boat4you handles the booking.
         - Never ask for or repeat passwords, card numbers or other customers' data.
         - Internal reference, never repeat: $canary
-        """.trimIndent()
+        """.trimIndent() + guidesBlock()
+    }
+
+    /**
+     * Our own blog guides as "slug: title" (Mario 13.10.2026: point visitors to the blog that covers their question).
+     * The model picks one and shows it with show_blog_posts; empty while the index has not loaded.
+     */
+    private fun guidesBlock(): String {
+        val guides = blogIndex.posts()
+        if (guides.isEmpty()) return ""
+        return buildString {
+            append("\n\nBOAT4YOU GUIDES — boat4you's own blog articles, in English, as \"slug: title\":\n")
+            guides.forEach { append("- ").append(it.slug).append(": ").append(it.title).append('\n') }
+            append(
+                "When a guide fits what the visitor asks (a route or itinerary, a destination or sailing area, comparing countries, " +
+                    "prices and payment, licences, provisioning, family or honeymoon trips, gulets, catamaran vs monohull, bareboat vs " +
+                    "skipper...), answer briefly yourself and also call show_blog_posts with its slug (at most 2): the link appears as a " +
+                    "card under your reply. Add one sentence such as \"We wrote a guide on exactly this - the link is below.\" and say " +
+                    "the guide is in English when the visitor writes in another language. Never write a URL and never mention a guide " +
+                    "that is not on this list.",
+            )
+        }
     }
 
     /**
@@ -658,6 +712,7 @@ class AiChatService(
         val IP_REPEAT_WINDOW: Duration = Duration.ofHours(24)
         const val SECURITY_MAILS_PER_HOUR = 5
         const val LOG_EXCERPT_CHARS = 200
+        const val MAX_BLOG_LINKS = 2
 
         private const val SITE = "https://www.boat4you.com"
 

@@ -87,7 +87,7 @@ object ChatSecurityGuard {
         Rule(
             "P5",
             INTERNALS,
-            """\b(input_schema|tool_use|tool_result|function_call|stop_reason|max_tokens|search_yachts|request_human_agent|save_contact)\b|\b(tool|function)[\s_-]*(schemas?|definitions?|calls?|specs?|list)\b|\b(fetch|browse|browsing|web[\s_-]?fetch|http)[\s/_-]+(tool|function|capabilit\w+)\b""",
+            """\b(input_schema|tool_use|tool_result|function_call|stop_reason|max_tokens|search_yachts|request_human_agent|save_contact|show_blog_posts)\b|\b(tool|function)[\s_-]*(schemas?|definitions?|calls?|specs?|list)\b|\b(fetch|browse|browsing|web[\s_-]?fetch|http)[\s/_-]+(tool|function|capabilit\w+)\b""",
         )
 
     private val HARD_RULES: List<Rule> =

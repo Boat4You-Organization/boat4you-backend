@@ -35,7 +35,8 @@ class AiChatToolExecutor(
     @Volatile
     private var amenityIdsByLabel: Map<String, Long> = emptyMap()
 
-    data class ToolOutcome(val resultForModel: String, val cards: ArrayNode? = null)
+    /** [cards] = yacht cards, [blogs] = blog guide links; both rendered by the widget from the message payload. */
+    data class ToolOutcome(val resultForModel: String, val cards: ArrayNode? = null, val blogs: ArrayNode? = null)
 
     private companion object {
         /** Charter types whose listing may state a crew count (capacity contract v1, 7.2). */
@@ -422,6 +423,15 @@ class AiChatToolExecutor(
                 "replies in this same chat.",
         ) {
             it.putObject("reason").put("type", "string").put("description", "Short reason for the handoff")
+        })
+        tools.add(tool(
+            "show_blog_posts",
+            "Show the visitor up to 2 boat4you blog guides from the BOAT4YOU GUIDES list as link cards under your " +
+                "reply. Use it whenever a listed guide fits the visitor's question.",
+        ) {
+            it.putObject("slugs").put("type", "array")
+                .put("description", "Guide slugs exactly as listed in BOAT4YOU GUIDES, at most 2")
+                .putObject("items").put("type", "string")
         })
         tools.add(tool(
             "save_contact",
