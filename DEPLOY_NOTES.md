@@ -1,5 +1,21 @@
 # Backend deploy notes
 
+## 2026-10-13 — Lokacije: `lat`/`lon` u javnom `LocationDto` + Marina Kaštela jedno ime (parkirani data fix) — ⏳ NIJE DEPLOYANO (commit `93275a5`)
+
+Mario 13.10.: kartice kažu „Marina Kastela" (red 63, NauSys) ili „Marina Kaštela | Kaštel Gomilica" (red 1935, MMK), a karta ne nalazi marinu. Kod (`93275a5`, bez migracije):
+- `LocationDto.lat`/`lon` (aditivno, `null` kad nema): detalj broda `location` + `offers[].locationFrom/To` (bez novog upita), kartice pretrage `location`/`locationTo` (+1 PK upit po stranici, `findCoordinatesByIds`), admin replacement. `/public/locations` (i `/marinas`): marine dobivaju `lat`/`lon` (NON_NULL; zemlje/regije bajt-za-bajt).
+- `findFirstByNameIgnoreCaseOrderByIdAsc` umjesto `findByNameIgnoreCase` u MMK/NauSys sinku lokacija (5 imena već dijele 2 reda — nova baza takvog imena rušila je cijeli sink lokacija).
+
+**Data fix PARKIRAN:** `docs/pending-migrations/LOCATION_KASTELA_fix.sql` → postaje `V9_<next>__location_kastela_one_name.sql` (danas zadnja `V9_76`, dakle `V9_77` ako nitko ne doda; `git pull` + `ls` prije!). Red 63 → ime „Marina Kaštela", grad „Kaštel Gomilica" (`display_name` se računa sam) + par `location_same_place (63, 1935)`; backup `ops_location_kastela_backup_20261013`, idempotentno, guard po id + imenu + mappingu (NauSys 54 / MMK 119). Sink ga ne vraća (NauSys ne piše ni ime ni grad; 63 nema MMK mapping). Bez merge-a: tražilica i facts već drže 63 + 1935 kao jedno mjesto, `l-63` linkovi ostaju.
+
+- [ ] Deploy uobičajeno (cusma2 → gate → cusma3), izvan sync prozora (`lock_timeout 5s` u migraciji).
+- [ ] Provjera: `curl -s 'https://api.boat4you.com/public/locations?name=kastela' | jq '.content[] | {id,name,lat,lon}'` → nakon data fixa JEDAN red `l-1935,l-63` s koordinatama; `curl -s 'https://api.boat4you.com/public/yachts?did=l-63&size=1' | jq '.content[0].location'` → `lat`/`lon` postoje, nakon refresha matviewa (≤10 min) ime „Marina Kaštela | Kaštel Gomilica".
+- Izvještaj duplikata (15 parova „isto mjesto, dva reda" uklj. Kaštelu + 1 imenjak; ništa nije dirano): `docs/location-duplicates-2026-10-13.md` — čeka Mariov DA po paru.
+
+**Rollback:** prethodni jar (polja nestaju, web mora tolerirati `undefined`); data fix: UPDATE iz backup tablice + DELETE para (upute na dnu SQL-a).
+
+## 2026-10-13 — AI chat (IRIS) zaštita: guard → LOCKED/423, provjera imena, model izvan transakcije, soft delete — ⏳ NIJE DEPLOYANO (čeka Mariov „da")
+
 ## 2026-10-13 — AI chat (IRIS) zaštita: guard → LOCKED/423, provjera imena, model izvan transakcije, soft delete, SCOPE, blog vodiči — ✅ cusma2 DEPLOYANO 13.10.2026 06:53 UTC (`83a6ebe`, jar md5 `f1a88608…`), nginx deny 06:57 UTC; ⏳ cusma3 u prozoru od 07:51 UTC
 
 **Live 13.10.2026 (Mario „da"):**
