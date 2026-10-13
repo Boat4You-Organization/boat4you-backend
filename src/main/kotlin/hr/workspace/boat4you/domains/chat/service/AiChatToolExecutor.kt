@@ -25,7 +25,7 @@ import java.time.temporal.ChronoUnit
  */
 @Component
 class AiChatToolExecutor(
-    @Value("\${chat.self-base-url:http://127.0.0.1:8080}") selfBaseUrl: String,
+    @Value("\${chat.self-base-url:http://127.0.0.1:8080}") private val selfBaseUrl: String,
     private val objectMapper: ObjectMapper,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -46,6 +46,11 @@ class AiChatToolExecutor(
 
         /** What the model is told about every gulet (GuletRules: a gulet is never bareboat, Mario 9.10.2026). */
         const val GULET_CHARTER = "crewed - a gulet always sails with its crew, never bareboat or skipper-only"
+
+        /** Tool parameters are model-controlled: only these shapes reach our own API (review B8). */
+        val COUNTRY_CODE = Regex("^[A-Z]{2}$")
+        val LOCATION = Regex("""^[\p{L}\p{M}\d ,.'\x{2019}()-]{2,60}$""")
+        val VESSEL_TYPES = VesselType.entries.map { it.name }.toSet()
     }
 
     /** A gulet by the API's vesselType / modelName (GuletRules), for the search rows and the boat page alike. */
@@ -56,11 +61,11 @@ class AiChatToolExecutor(
         )
 
     fun searchYachts(input: JsonNode): ToolOutcome {
-        val countryCode = input.path("countryCode").asText("").uppercase().take(2)
+        val countryCode = input.path("countryCode").asText("").trim().uppercase().take(2).takeIf { COUNTRY_CODE.matches(it) } ?: ""
         val startDate = input.path("startDate").asText("")
         val endDate = input.path("endDate").asText("")
-        val vesselType = input.path("vesselType").asText("")
-        val location = input.path("location").asText("")
+        val vesselType = input.path("vesselType").asText("").trim().uppercase().takeIf { it in VESSEL_TYPES } ?: ""
+        val location = input.path("location").asText("").trim().takeIf { LOCATION.matches(it) } ?: ""
         val minCabins = input.path("minCabins").asInt(0)
         val minPersons = input.path("minPersons").asInt(0)
         val maxTotalPriceEur = input.path("maxTotalPriceEur").asInt(0)
@@ -85,7 +90,7 @@ class AiChatToolExecutor(
         val resolved = if (location.isBlank()) null else resolveDestination(location, countryCode)
         val equipmentIds = equipment.mapNotNull { amenityId(it) }
 
-        val uri = UriComponentsBuilder.fromPath("/public/yachts")
+        val uri = UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts")
             .queryParam("startDate", startDate)
             .queryParam("endDate", endDate)
             .queryParam("currency", "EUR")
@@ -99,7 +104,7 @@ class AiChatToolExecutor(
                 if (minPersons > 0) queryParam("minPersons", minPersons)
                 if (equipmentIds.isNotEmpty()) queryParam("amenities", equipmentIds)
             }
-            .build().toUriString()
+            .build().encode().toUri()
 
         val body = try {
             client.get().uri(uri).retrieve().body(String::class.java)
@@ -199,8 +204,8 @@ class AiChatToolExecutor(
         val body = try {
             client.get()
                 .uri(
-                    UriComponentsBuilder.fromPath("/public/locations")
-                        .queryParam("name", query).queryParam("size", 20).build().toUriString(),
+                    UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/locations")
+                        .queryParam("name", query).queryParam("size", 20).build().encode().toUri(),
                 )
                 .retrieve().body(String::class.java)
         } catch (e: Exception) {

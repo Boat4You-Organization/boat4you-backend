@@ -40,6 +40,10 @@ import java.util.concurrent.ConcurrentHashMap
  *  - `POST /public/reviews/request/{token}` — anonymous review submit
  *    behind the e-mail magic link (25.9.2026). The 256-bit token cannot be
  *    guessed; the limit only stops a script from hammering one link.
+ *  - `POST /public/chat/sessions`, `.../{token}/messages`, `.../{token}/name`
+ *    — the AI chat (11.10.2026, review B5): each message can cost several
+ *    Anthropic calls, each new session can mail the broker. The 30 s presence
+ *    heartbeat stays unlimited here (several open tabs), nginx covers it.
  *
  * Implementation: token bucket keyed by (rule path, client IP). Every
  * accepted call consumes 1 token; tokens refill at
@@ -95,6 +99,18 @@ class PublicEndpointRateLimiter(
     private val reviewCapacity: Int,
     @Value("\${application.rate-limit.public-review.window-seconds:60}")
     private val reviewWindowSeconds: Long,
+    @Value("\${application.rate-limit.chat-session.capacity:5}")
+    private val chatSessionCapacity: Int,
+    @Value("\${application.rate-limit.chat-session.window-seconds:600}")
+    private val chatSessionWindowSeconds: Long,
+    @Value("\${application.rate-limit.chat-message.capacity:40}")
+    private val chatMessageCapacity: Int,
+    @Value("\${application.rate-limit.chat-message.window-seconds:600}")
+    private val chatMessageWindowSeconds: Long,
+    @Value("\${application.rate-limit.chat-name.capacity:10}")
+    private val chatNameCapacity: Int,
+    @Value("\${application.rate-limit.chat-name.window-seconds:600}")
+    private val chatNameWindowSeconds: Long,
 ) : OncePerRequestFilter() {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -102,6 +118,8 @@ class PublicEndpointRateLimiter(
         val method: String,
         val path: String,
         val prefix: Boolean = false,
+        /** Matches the whole request URI instead of [path] (a token in the middle of the path). */
+        val pattern: Regex? = null,
         val capacity: Int,
         val windowSeconds: Long,
         val label: String,
@@ -123,6 +141,23 @@ class PublicEndpointRateLimiter(
             Rule("POST", "/auth/register", capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "register"),
             Rule("POST", "/auth/requestPasswordReset", capacity = passwordResetCapacity, windowSeconds = passwordResetWindowSeconds, label = "password-reset"),
             Rule("POST", "/public/reviews/request/", prefix = true, capacity = reviewCapacity, windowSeconds = reviewWindowSeconds, label = "review-submit"),
+            Rule("POST", "/public/chat/sessions", capacity = chatSessionCapacity, windowSeconds = chatSessionWindowSeconds, label = "chat-session"),
+            Rule(
+                "POST",
+                "/public/chat/sessions/{token}/messages",
+                pattern = Regex("^/public/chat/sessions/[^/]+/messages$"),
+                capacity = chatMessageCapacity,
+                windowSeconds = chatMessageWindowSeconds,
+                label = "chat-message",
+            ),
+            Rule(
+                "POST",
+                "/public/chat/sessions/{token}/name",
+                pattern = Regex("^/public/chat/sessions/[^/]+/name$"),
+                capacity = chatNameCapacity,
+                windowSeconds = chatNameWindowSeconds,
+                label = "chat-name",
+            ),
         )
     }
 
@@ -165,7 +200,11 @@ class PublicEndpointRateLimiter(
     private fun matchingRule(request: HttpServletRequest): Rule? =
         rules.firstOrNull {
             it.method == request.method &&
-                if (it.prefix) request.requestURI.startsWith(it.path) else it.path == request.requestURI
+                when {
+                    it.pattern != null -> it.pattern.matches(request.requestURI)
+                    it.prefix -> request.requestURI.startsWith(it.path)
+                    else -> it.path == request.requestURI
+                }
         }
 
     private fun acquire(rule: Rule, ip: String): Boolean {

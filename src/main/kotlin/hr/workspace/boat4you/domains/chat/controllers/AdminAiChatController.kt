@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import hr.workspace.boat4you.domains.chat.service.AiChatService
 import org.springframework.data.domain.PageRequest
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.stereotype.Controller
@@ -22,6 +23,8 @@ import java.time.Instant
 /**
  * Broker inbox for the site chat: sessions where the visitor asked for a
  * person surface first; replying flips the session to HUMAN (AI stays out).
+ * Security guard (11.10.2026): flagged sessions carry lockReason/lockedAt, can be
+ * listed alone (flaggedOnly) and are never deleted; delete is a soft delete.
  */
 @Controller
 @RequestMapping("/admin/chat")
@@ -47,6 +50,9 @@ class AdminAiChatController(
         val countryCode: String?,
         val country: String?,
         val ip: String?,
+        val flagged: Boolean,
+        val lockReason: String?,
+        val lockedAt: Instant?,
     )
     data class ReplyRequest(val content: String? = null)
     data class BulkDeleteRequest(val ids: List<Long>? = null)
@@ -55,15 +61,17 @@ class AdminAiChatController(
     @ResponseBody
     fun list(
         @RequestParam(defaultValue = "false") needsHumanOnly: Boolean,
+        @RequestParam(defaultValue = "false") flaggedOnly: Boolean,
         @RequestParam(defaultValue = "50") size: Int,
     ): List<SessionDto> {
         val page = PageRequest.of(0, size.coerceIn(1, 200))
-        val list = if (needsHumanOnly) {
-            sessions.findAllByStatusInOrderByLastActivityAtDesc(
-                listOf(AiChatSession.STATUS_HUMAN_REQUESTED, AiChatSession.STATUS_HUMAN), page,
+        val list = when {
+            flaggedOnly -> sessions.findAllByDeletedAtIsNullAndFlaggedTrueOrderByLastActivityAtDesc(page)
+            // LOCKED = the guard handed the visitor to a live agent, so it waits for a broker too.
+            needsHumanOnly -> sessions.findAllByDeletedAtIsNullAndStatusInOrderByLastActivityAtDesc(
+                listOf(AiChatSession.STATUS_HUMAN_REQUESTED, AiChatSession.STATUS_HUMAN, AiChatSession.STATUS_LOCKED), page,
             )
-        } else {
-            sessions.findAllByOrderByLastActivityAtDesc(page)
+            else -> sessions.findAllByDeletedAtIsNullOrderByLastActivityAtDesc(page)
         }
         return list.map { s ->
             val last = messages.findAllBySessionIdOrderByIdAsc(s.id!!).lastOrNull()
@@ -72,6 +80,7 @@ class AdminAiChatController(
                 s.adminUnread, s.lastActivityAt, last?.content?.take(140),
                 s.lastSeenAt, s.currentPage, s.referrer, s.pageTrail,
                 s.countryCode, s.country, s.ip,
+                s.flagged, s.lockReason, s.lockedAt,
             )
         }
     }
@@ -79,45 +88,46 @@ class AdminAiChatController(
     @GetMapping("/sessions/{id}/messages")
     @ResponseBody
     fun transcript(@PathVariable id: Long): ResponseEntity<List<AiChatMessage>> {
-        sessions.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
+        active(id) ?: return ResponseEntity.notFound().build()
         return ResponseEntity.ok(messages.findAllBySessionIdOrderByIdAsc(id))
     }
 
     @PostMapping("/sessions/{id}/reply")
     @ResponseBody
     fun reply(@PathVariable id: Long, @RequestBody request: ReplyRequest): ResponseEntity<AiChatMessage> {
-        val session = sessions.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
+        val session = active(id) ?: return ResponseEntity.notFound().build()
         val content = request.content?.trim().orEmpty()
         if (content.isBlank()) return ResponseEntity.badRequest().build()
         return ResponseEntity.ok(chat.adminReply(session, content))
     }
 
-    /** Delete one conversation (transcript included) — broker housekeeping. */
+    /** Delete one conversation — broker housekeeping (soft delete). A flagged session is evidence: 409. */
     @DeleteMapping("/sessions/{id}")
     @ResponseBody
-    fun delete(@PathVariable id: Long): ResponseEntity<Void> {
-        val session = sessions.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
-        chat.deleteSession(session)
+    fun delete(@PathVariable id: Long): ResponseEntity<Any> {
+        val session = active(id) ?: return ResponseEntity.notFound().build()
+        if (!chat.deleteSession(session)) return ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "flagged"))
         return ResponseEntity.noContent().build()
     }
 
-    /** Delete several conversations at once (checkbox selection in the inbox). */
+    /** Delete several conversations at once (checkbox selection in the inbox); flagged ones are skipped. */
     @PostMapping("/sessions/bulk-delete")
     @ResponseBody
     fun bulkDelete(@RequestBody request: BulkDeleteRequest): ResponseEntity<Map<String, Int>> {
         val ids = request.ids.orEmpty().distinct()
         if (ids.isEmpty()) return ResponseEntity.badRequest().build()
-        val deleted = ids.count { id ->
-            sessions.findById(id).orElse(null)?.also { chat.deleteSession(it) } != null
-        }
-        return ResponseEntity.ok(mapOf("deleted" to deleted))
+        val found = ids.mapNotNull { active(it) }
+        val deleted = found.count { chat.deleteSession(it) }
+        return ResponseEntity.ok(mapOf("deleted" to deleted, "skipped" to found.size - deleted))
     }
 
     @PostMapping("/sessions/{id}/close")
     @ResponseBody
     fun close(@PathVariable id: Long): ResponseEntity<Void> {
-        val session = sessions.findById(id).orElse(null) ?: return ResponseEntity.notFound().build()
+        val session = active(id) ?: return ResponseEntity.notFound().build()
         chat.closeSession(session)
         return ResponseEntity.noContent().build()
     }
+
+    private fun active(id: Long): AiChatSession? = sessions.findById(id).orElse(null)?.takeIf { it.deletedAt == null }
 }

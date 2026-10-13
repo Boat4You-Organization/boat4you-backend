@@ -8,6 +8,8 @@ import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import java.time.Duration
+import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 
 /**
  * Minimal Anthropic Messages API client for the site chat assistant. No SDK
@@ -30,10 +32,17 @@ class AnthropicClient(
         .requestFactory(
             org.springframework.http.client.SimpleClientHttpRequestFactory().apply {
                 setConnectTimeout(Duration.ofSeconds(10))
-                setReadTimeout(Duration.ofSeconds(60))
+                // 25 s (was 60): a slow answer must not hold the request thread (review B5).
+                setReadTimeout(Duration.ofSeconds(25))
             },
         )
         .build()
+
+    /**
+     * At most [MAX_CONCURRENT_CALLS] Anthropic calls at once on this node (review B5): a few IPs firing messages in
+     * parallel must not tie up every request thread of cusma2, the only API node.
+     */
+    private val inFlight = Semaphore(MAX_CONCURRENT_CALLS)
 
     fun isEnabled(): Boolean = apiKey.isNotBlank()
 
@@ -44,6 +53,15 @@ class AnthropicClient(
      * apology, never a 500 to the visitor.
      */
     fun createMessage(system: String, messages: JsonNode, tools: JsonNode?, maxTokens: Int = 700): JsonNode {
+        if (!inFlight.tryAcquire(PERMIT_WAIT_SECONDS, TimeUnit.SECONDS)) throw IllegalStateException("Anthropic call limit reached")
+        try {
+            return call(system, messages, tools, maxTokens)
+        } finally {
+            inFlight.release()
+        }
+    }
+
+    private fun call(system: String, messages: JsonNode, tools: JsonNode?, maxTokens: Int): JsonNode {
         val body = objectMapper.createObjectNode().apply {
             put("model", model)
             put("max_tokens", maxTokens)
@@ -67,5 +85,10 @@ class AnthropicClient(
             throw IllegalStateException("Anthropic API error")
         }
         return tree
+    }
+
+    private companion object {
+        const val MAX_CONCURRENT_CALLS = 6
+        const val PERMIT_WAIT_SECONDS = 2L
     }
 }

@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.chat.controllers
 import hr.workspace.boat4you.domains.chat.jpa.AiChatMessage
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.service.AiChatService
+import hr.workspace.boat4you.domains.chat.service.ChatSecurityGuard
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -18,9 +19,13 @@ import org.springframework.web.bind.annotation.ResponseBody
 /**
  * Public endpoints for the site chat widget. Hand-written (no OpenAPI), same
  * precedent as PublicUserController. The session token is the only
- * credential — anonymous by design; nginx rate-limits /public/chat/.
- * When no Anthropic key is configured everything returns 503 and the widget
- * hides itself — deploy-safe until the key lands in the env.
+ * credential — anonymous by design; nginx and PublicEndpointRateLimiter
+ * rate-limit /public/chat/. When no Anthropic key is configured everything
+ * returns 503 and the widget hides itself — deploy-safe until the key lands in the env.
+ *
+ * Security guard contract with the widget (11.10.2026): a message to a locked
+ * session or one the guard stops -> 423 {"error":"locked","message":<handoff text>};
+ * the session status then reads "LOCKED"; a refused name -> 400 {"error":"invalid_name"}.
  */
 @Controller
 @RequestMapping("/public/chat")
@@ -47,7 +52,12 @@ class PublicAiChatController(
         if (!chat.isEnabled()) return disabled()
         // nginx forwards the client address as X-Real-IP; remoteAddr is the proxy.
         val clientIp = httpRequest.getHeader("X-Real-IP")?.takeIf { it.isNotBlank() } ?: httpRequest.remoteAddr
-        val session = chat.createSession(request?.locale, request?.name, clientIp)
+        val session =
+            try {
+                chat.createSession(request?.locale, request?.name, clientIp)
+            } catch (e: AiChatService.InvalidNameException) {
+                return invalidName()
+            }
         chat.updatePresence(session, request?.page, request?.referrer)
         return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList(), session.visitorName))
     }
@@ -62,8 +72,11 @@ class PublicAiChatController(
         val session = chat.getSession(token) ?: return notFound()
         val name = request.name?.trim().orEmpty()
         if (name.isBlank()) return ResponseEntity.badRequest().body(mapOf("error" to "empty"))
-        chat.setVisitorName(session, name)
-        return ResponseEntity.ok(mapOf("ok" to true))
+        return when (chat.setVisitorName(session, name)) {
+            AiChatService.NameOutcome.OK -> ResponseEntity.ok(mapOf("ok" to true))
+            AiChatService.NameOutcome.INVALID -> invalidName()
+            AiChatService.NameOutcome.LOCKED -> locked(ChatSecurityGuard.handoffText(session.locale))
+        }
     }
 
     /** Widget heartbeat — who is live on the site and which page they're on. */
@@ -87,12 +100,17 @@ class PublicAiChatController(
         val content = request.content?.trim().orEmpty()
         if (content.isBlank()) return ResponseEntity.badRequest().body(mapOf("error" to "empty"))
 
-        val new = try {
+        val outcome = try {
             chat.handleVisitorMessage(session, content, request.page?.trim()?.take(500))
         } catch (e: IllegalStateException) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(mapOf("error" to "cap"))
         }
-        return ResponseEntity.ok(SessionStateDto(token, session.status, new.map(::dto), session.visitorName))
+        return when (outcome) {
+            is AiChatService.MessageOutcome.Replied ->
+                ResponseEntity.ok(SessionStateDto(token, session.status, outcome.messages.map(::dto), session.visitorName))
+            is AiChatService.MessageOutcome.Locked -> locked(outcome.handoffText)
+            AiChatService.MessageOutcome.Busy -> ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "busy"))
+        }
     }
 
     /** Polling for broker replies once a human owns the session. */
@@ -106,6 +124,11 @@ class PublicAiChatController(
     }
 
     private fun dto(m: AiChatMessage) = MessageDto(m.id!!, m.role!!, m.content!!, m.payload)
+
+    private fun invalidName(): ResponseEntity<Any> = ResponseEntity.badRequest().body(mapOf("error" to "invalid_name"))
+
+    private fun locked(handoffText: String): ResponseEntity<Any> =
+        ResponseEntity.status(HttpStatus.LOCKED).body(mapOf("error" to "locked", "message" to handoffText))
 
     private fun disabled(): ResponseEntity<Any> =
         ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "chat disabled"))
