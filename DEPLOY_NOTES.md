@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-13 — Lokacije: `lat`/`lon` u javnom `LocationDto` + Marina Kaštela jedno ime (parkirani data fix) — ⏳ NIJE DEPLOYANO (commit `93275a5`)
+## 2026-10-13 — Lokacije: `lat`/`lon` u javnom `LocationDto` + Marina Kaštela jedno ime (parkirani data fix) — ✅ DEPLOYANO 13.10.2026: lat/lon cusma2 07:07:46 (71a15af), V9_77 Kaštela cusma2 07:20:55 + cusma3 08:02:54 UTC (1626542) 
 
 Mario 13.10.: kartice kažu „Marina Kastela" (red 63, NauSys) ili „Marina Kaštela | Kaštel Gomilica" (red 1935, MMK), a karta ne nalazi marinu. Kod (`93275a5`, bez migracije):
 - `LocationDto.lat`/`lon` (aditivno, `null` kad nema): detalj broda `location` + `offers[].locationFrom/To` (bez novog upita), kartice pretrage `location`/`locationTo` (+1 PK upit po stranici, `findCoordinatesByIds`), admin replacement. `/public/locations` (i `/marinas`): marine dobivaju `lat`/`lon` (NON_NULL; zemlje/regije bajt-za-bajt).
