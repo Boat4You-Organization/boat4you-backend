@@ -71,6 +71,16 @@ data class RevolutPayment(
     val id: String,
     val state: String,
     val createdAt: Instant? = null,
+    val paymentMethod: RevolutPaymentMethod? = null,
+)
+
+/** Only the non-sensitive card fields we keep (brand + last four); everything else of `payment_method` is ignored. */
+@JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy::class)
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class RevolutPaymentMethod(
+    val type: String? = null,
+    val cardBrand: String? = null,
+    val cardLastFour: String? = null,
 )
 
 /** Webhook body `{event, order_id, merchant_order_ext_ref}`; there is no event id (dedupe is on our side). */

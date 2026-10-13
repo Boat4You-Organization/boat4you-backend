@@ -55,6 +55,10 @@ import java.util.concurrent.ConcurrentHashMap
  *  - Chat rules key on X-Real-IP since 26.10.2026 (BACKEND-22); inquiries,
  *    reviews, reservations and auth keep the left-most X-Forwarded-For, which
  *    boat4you-web server actions fill with the visitor IP.
+ *  - `POST /public/payments/custom/orders` (5 / 10 min) and
+ *    `GET /public/payments/custom/orders/{token}` (30 / min) — the secret
+ *    `/pay/<key>` card payments (13.10.2026): each create opens a Revolut
+ *    order; the status poll can trigger a Revolut read.
  *
  * Implementation: token bucket keyed by (rule path, client IP). Every
  * accepted call consumes 1 token; tokens refill at
@@ -138,6 +142,14 @@ class PublicEndpointRateLimiter(
     private val ccHandoffCapacity: Int,
     @Value("\${application.rate-limit.cc-handoff.window-seconds:600}")
     private val ccHandoffWindowSeconds: Long,
+    @Value("\${application.rate-limit.custom-payment-create.capacity:5}")
+    private val customPaymentCreateCapacity: Int,
+    @Value("\${application.rate-limit.custom-payment-create.window-seconds:600}")
+    private val customPaymentCreateWindowSeconds: Long,
+    @Value("\${application.rate-limit.custom-payment-status.capacity:30}")
+    private val customPaymentStatusCapacity: Int,
+    @Value("\${application.rate-limit.custom-payment-status.window-seconds:60}")
+    private val customPaymentStatusWindowSeconds: Long,
 ) : OncePerRequestFilter() {
     internal var clock: Clock = Clock.systemUTC()
 
@@ -207,6 +219,21 @@ class PublicEndpointRateLimiter(
             // No rule for /public/cc/v1/replay-assets/ (P6 R2): every admin reaches it through the cusma1 proxy, one IP, so one
             // bucket would let anyone switch replay styling off; cusma1 limits per client, the reads have their own bounded slots.
             Rule("POST", "/public/cc/v1/handoff", capacity = ccHandoffCapacity, windowSeconds = ccHandoffWindowSeconds, label = "cc-handoff", realIp = true),
+            Rule(
+                "POST",
+                "/public/payments/custom/orders",
+                capacity = customPaymentCreateCapacity,
+                windowSeconds = customPaymentCreateWindowSeconds,
+                label = "custom-payment-create",
+            ),
+            Rule(
+                "GET",
+                "/public/payments/custom/orders/",
+                prefix = true,
+                capacity = customPaymentStatusCapacity,
+                windowSeconds = customPaymentStatusWindowSeconds,
+                label = "custom-payment-status",
+            ),
         )
     }
 
@@ -235,6 +262,7 @@ class PublicEndpointRateLimiter(
                 return
             }
         val ip = clientIp(request, rule)
+        val ip = ClientIp.of(request)
         if (!acquire(rule, ip)) {
             log.warn("Rate limit hit on {} {} for ip={}", rule.method, rule.path, ip)
             response.status = 429

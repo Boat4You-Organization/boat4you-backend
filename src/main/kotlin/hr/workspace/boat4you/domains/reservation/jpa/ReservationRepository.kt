@@ -14,6 +14,18 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
     fun findByTripToken(tripToken: String): Reservation?
 
     /**
+     * Exact reservation number (`1441NNN/YYYY`, unique) — the optional, informational link of a custom `/pay` payment
+     * whose free-text reference happens to be a web reservation number. Fictitious rows included on purpose.
+     */
+    fun findByReservationNumber(reservationNumber: String): Reservation?
+
+    /** Admin custom payments list: `[id, reservationNumber]` of the linked reservations, without loading them. */
+    @Query("SELECT r.id, r.reservationNumber FROM Reservation r WHERE r.id IN :ids")
+    fun findReservationNumbersByIdIn(
+        @Param("ids") ids: Collection<Long>,
+    ): List<Array<Any?>>
+
+    /**
      * All confirmed, customer-real bookings of a user — loyalty-voucher
      * "is this their first booking" check. Fictitious (admin-only) rows are
      * excluded; yacht-swap replacement chains are collapsed by the caller.

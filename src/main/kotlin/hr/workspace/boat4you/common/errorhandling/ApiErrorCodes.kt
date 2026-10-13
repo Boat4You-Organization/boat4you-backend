@@ -80,4 +80,11 @@ enum class ApiErrorCodes(
     REVIEW_LINK_INVALID(7001, "This review link is invalid or has expired."),
     REVIEW_EDIT_WINDOW_CLOSED(7002, "This review can no longer be changed — reviews can be edited for 24 hours after sending."),
     REVIEW_NOT_FOUND(7003, "Review does not exist"),
+
+    // 8xxx: secret /pay/<key> card payments (Revolut hosted checkout). Customer-facing wording; the web maps the codes
+    // to its own translated copy and never shows these strings raw.
+    CUSTOM_PAYMENTS_UNAVAILABLE(8001, "Card payments are temporarily unavailable. Please try again later."),
+    CUSTOM_PAYMENT_NOT_FOUND(8002, "Payment not found."),
+    CUSTOM_PAYMENT_TOO_MANY(8003, "Too many payment attempts. Please try again later."),
+    CUSTOM_PAYMENT_PROVIDER_ERROR(8004, "We couldn't start the card payment. Please try again in a moment."),
 }

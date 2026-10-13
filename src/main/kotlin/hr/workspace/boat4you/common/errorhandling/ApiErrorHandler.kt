@@ -24,6 +24,10 @@ import hr.workspace.boat4you.domains.reservation.exceptions.ReservationFlowNotEx
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationStatusException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationUserNotExists
+import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentNotFoundException
+import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentProviderException
+import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentTooManyException
+import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentsUnavailableException
 import hr.workspace.boat4you.domains.review.exceptions.ReviewEditWindowClosedException
 import hr.workspace.boat4you.domains.review.exceptions.ReviewLinkInvalidException
 import hr.workspace.boat4you.domains.review.exceptions.ReviewNotFoundException
@@ -647,6 +651,56 @@ internal class ApiErrorHandler {
                 ApiErrorCodes.REVIEW_NOT_FOUND.message,
             ),
             HttpStatus.NOT_FOUND,
+        )
+    }
+
+    // Secret /pay/<key> card payments. No link key, token or e-mail in these log lines (the key and token are secrets);
+    // the service already logged the context.
+    @ExceptionHandler(CustomPaymentsUnavailableException::class)
+    fun handleCustomPaymentsUnavailableException(e: CustomPaymentsUnavailableException): ResponseEntity<ErrorSchema> {
+        logger.warn("CustomPaymentsUnavailableException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CUSTOM_PAYMENTS_UNAVAILABLE.code,
+                ApiErrorCodes.CUSTOM_PAYMENTS_UNAVAILABLE.message,
+            ),
+            HttpStatus.SERVICE_UNAVAILABLE,
+        )
+    }
+
+    @ExceptionHandler(CustomPaymentNotFoundException::class)
+    fun handleCustomPaymentNotFoundException(e: CustomPaymentNotFoundException): ResponseEntity<ErrorSchema> {
+        logger.info("CustomPaymentNotFoundException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CUSTOM_PAYMENT_NOT_FOUND.code,
+                ApiErrorCodes.CUSTOM_PAYMENT_NOT_FOUND.message,
+            ),
+            HttpStatus.NOT_FOUND,
+        )
+    }
+
+    @ExceptionHandler(CustomPaymentTooManyException::class)
+    fun handleCustomPaymentTooManyException(e: CustomPaymentTooManyException): ResponseEntity<ErrorSchema> {
+        logger.warn("CustomPaymentTooManyException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CUSTOM_PAYMENT_TOO_MANY.code,
+                ApiErrorCodes.CUSTOM_PAYMENT_TOO_MANY.message,
+            ),
+            HttpStatus.TOO_MANY_REQUESTS,
+        )
+    }
+
+    @ExceptionHandler(CustomPaymentProviderException::class)
+    fun handleCustomPaymentProviderException(e: CustomPaymentProviderException): ResponseEntity<ErrorSchema> {
+        logger.warn("CustomPaymentProviderException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CUSTOM_PAYMENT_PROVIDER_ERROR.code,
+                ApiErrorCodes.CUSTOM_PAYMENT_PROVIDER_ERROR.message,
+            ),
+            HttpStatus.BAD_GATEWAY,
         )
     }
 
