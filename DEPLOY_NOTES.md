@@ -17,7 +17,7 @@ Mario 13.10.: kartice kažu „Marina Kastela" (red 63, NauSys) ili „Marina Ka
 
 ## 2026-10-13 — AI chat (IRIS) zaštita: guard → LOCKED/423, provjera imena, model izvan transakcije, soft delete — ⏳ NIJE DEPLOYANO (čeka Mariov „da")
 
-## 2026-10-13 — AI chat (IRIS) zaštita: guard → LOCKED/423, provjera imena, model izvan transakcije, soft delete, SCOPE, blog vodiči — ✅ cusma2 DEPLOYANO 13.10.2026 06:53 UTC (`83a6ebe`, jar md5 `f1a88608…`), nginx deny 06:57 UTC; ⏳ cusma3 u prozoru od 07:51 UTC
+## 2026-10-13 — AI chat (IRIS) zaštita: guard → LOCKED/423, provjera imena, model izvan transakcije, soft delete, SCOPE, blog vodiči — ✅ cusma2 DEPLOYANO 13.10.2026 06:53 UTC (`83a6ebe`, jar md5 `f1a88608…`), nginx deny 06:57 UTC; ⏳ cusma3: ADMIN deploya `71a15af` (sadrži ovo + LocationDto lat/lon) u prozoru 07:50–08:40 UTC — moje automatsko čekanje za cusma3 ugašeno 07:06 UTC da se ne sudarimo
 
 **Live 13.10.2026 (Mario „da"):**
 - web widget prvi (`2ed2014e9`, ~06:46 UTC), pa backend na cusma2 preko cusma3 (javni SSH cusma2 i dalje odbija lozinku; `infra` `8130787` `backend_deploy.sh`): 06:49:59 UTC jar `133fe46` — Flyway V9_76 primijenjen (14 ms), start 11,9 s, API 200 nakon ~16 s. Popravak nakon provjere uživo (`83a6ebe`: tekst uz poziv alata se zadržava, jezik po zadnjoj poruci) → ponovni deploy 06:53:10 UTC („up to date", start 11,8 s). ⚠️ `webservice.jar.prev` na cusma2 je sada jar `133fe46`; jar od 9.10. (`c20735d`) je još `webservice.jar` na cusma3 do njegovog deploya, poslije `webservice.jar.prev` na cusma3.
