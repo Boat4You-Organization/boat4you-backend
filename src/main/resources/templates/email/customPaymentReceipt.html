@@ -1,0 +1,256 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:v="urn:schemas-microsoft-com:vml"
+  xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:th="http://www.thymeleaf.org" lang="en" th:lang="${lang}">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light only" />
+  <meta name="supported-color-schemes" content="light" />
+  <!--[if !mso]><!-->
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <!--<![endif]-->
+  <title th:text="#{customPaymentReceipt.title}">Payment confirmation</title>
+
+  <!--[if gte mso 9]>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:AllowPNG />
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  <![endif]-->
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap"
+    rel="stylesheet" type="text/css" />
+
+  <style type="text/css">
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; width: 100% !important; background-color: #f4f6fb; }
+    a { color: #2856ff; text-decoration: none; }
+    a[x-apple-data-detectors] { color: inherit !important; text-decoration: none !important; }
+
+    @media only screen and (max-width: 620px) {
+      .container { width: 100% !important; max-width: 100% !important; }
+      .sheet { padding: 24px 20px !important; }
+      .gutter { padding-left: 12px !important; padding-right: 12px !important; }
+      .hero { padding: 18px !important; }
+      .footer { padding: 24px 20px !important; }
+      .footer-line { font-size: 11px !important; }
+      .stack-cell { display: block !important; width: 100% !important; padding: 0 0 4px 0 !important; }
+    }
+  </style>
+</head>
+
+<!--/*
+  Parser-level comment (removed at render, never reaches the inbox).
+  Payment confirmation for a payment made through the secret /pay/<linkKey> page of one of the 7 sites
+  (EmailCustomPaymentMailer). Brand-neutral: the site's own brand + Cusmanich d.o.o.; the Boat4You logo only for the
+  boat4you site (attached per call), a plain text brand line for the other sites. No yacht card, no my-bookings link.
+*/-->
+<body style="margin:0; padding:0; background-color:#f4f6fb; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; color:#0f172a;">
+
+  <!-- Preheader (hidden inbox preview text) -->
+  <div th:text="#{customPaymentReceipt.preheader(${amountLabel})}"
+    style="display:none; font-size:0; line-height:0; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
+    We have received your card payment of 2500.00€.
+  </div>
+
+  <!-- Outer wrapper -->
+  <table role="presentation" align="center" border="0" cellpadding="0" cellspacing="0" width="100%"
+    style="background-color:#f4f6fb;">
+    <tr>
+      <td align="center" style="padding:0 0 28px 0;">
+
+        <!-- Container 600px -->
+        <table role="presentation" class="container" border="0" cellpadding="0" cellspacing="0" width="600"
+          style="width:600px; max-width:600px;">
+
+          <!-- HEADER BAND (navy) -->
+          <tr>
+            <td bgcolor="#141857" style="background-color:#141857; padding:18px 28px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+                <tr>
+                  <td valign="middle" align="left">
+                    <img th:if="${showBoat4YouLogo}" src="cid:boat4youLogoFull" alt="Boat4You" width="138" height="35"
+                      style="display:block; border:0; outline:none; text-decoration:none;" />
+                    <div th:unless="${showBoat4YouLogo}" th:text="${brandName}"
+                      style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:17px; color:#ffffff; line-height:1.3; letter-spacing:-0.2px;">
+                      Catamaran Charter Croatia
+                    </div>
+                  </td>
+                  <td valign="middle" align="right">
+                    <div th:text="#{customPaymentReceipt.headerPaid(${paidAtLabel})}"
+                      style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:11px; color:#a3a8c2; line-height:1.3;">
+                      Paid October 13, 2026 &#183; 15:20 (GMT+2)
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Spacer -->
+          <tr><td style="height:16px; line-height:16px; font-size:0;">&#160;</td></tr>
+
+          <!-- WHITE SHEET -->
+          <tr>
+            <td class="gutter" style="padding:0 16px 0 16px;">
+              <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                style="background-color:#ffffff; border-radius:12px;">
+                <tr>
+                  <td class="sheet" style="padding:28px 32px;">
+
+                    <!-- HERO (dark navy) -->
+                    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%"
+                      style="background-color:#141857; border-radius:12px;">
+                      <tr>
+                        <td class="hero" style="padding:22px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td align="left" valign="middle" th:text="#{customPaymentReceipt.heroLabel}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:10px; font-weight:700; letter-spacing:1.4px; color:#4ade80; text-transform:uppercase;">
+                                Payment confirmation
+                              </td>
+                              <td align="right" valign="middle">
+                                <span th:text="${amountLabel}"
+                                  style="display:inline-block; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:11px; color:#4ade80; background-color:rgba(74,222,128,0.14); padding:5px 10px; border-radius:999px; letter-spacing:0.04em; white-space:nowrap;">
+                                  2500.00€
+                                </span>
+                              </td>
+                            </tr>
+                          </table>
+                          <div th:text="#{customPaymentReceipt.heroTitle}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:22px; font-weight:700; color:#ffffff; line-height:1.3; letter-spacing:-0.3px; margin:12px 0 0 0;">
+                            Thank you – we have received your payment
+                          </div>
+                          <div th:text="#{customPaymentReceipt.heroSub(${brandName})}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:14px; color:#ffffff; opacity:0.75; line-height:1.5; margin:8px 0 0 0;">
+                            This e-mail confirms your card payment to Catamaran Charter Croatia (Cusmanich d.o.o.). Please keep it for your records.
+                          </div>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:22px; font-size:0; line-height:22px;">&#160;</td></tr></table>
+
+                    <!-- PAYMENT DETAILS -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#ffffff; border:1px solid #e2e8f0; border-radius:10px;">
+                      <tr>
+                        <td style="padding:16px 18px;">
+                          <div th:text="#{customPaymentReceipt.detailsLabel}"
+                            style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:10px; color:#94a3b8; letter-spacing:0.14em; text-transform:uppercase; padding-bottom:10px;">
+                            Payment details
+                          </div>
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td class="stack-cell" valign="top" width="42%" th:text="#{customPaymentReceipt.fieldAmount}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#64748b; padding:6px 10px 6px 0;">
+                                Amount paid
+                              </td>
+                              <td class="stack-cell" valign="top" th:text="${amountLabel}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:700; font-size:15px; color:#0f172a; padding:6px 0;">
+                                2500.00€
+                              </td>
+                            </tr>
+                            <tr>
+                              <td class="stack-cell" valign="top" width="42%" th:text="#{customPaymentReceipt.fieldReference}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#64748b; padding:6px 10px 6px 0;">
+                                Contract / booking number
+                              </td>
+                              <td class="stack-cell" valign="top" th:text="${reference}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:14px; color:#0f172a; padding:6px 0;">
+                                100116/2027
+                              </td>
+                            </tr>
+                            <tr>
+                              <td class="stack-cell" valign="top" width="42%" th:text="#{customPaymentReceipt.fieldDate}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#64748b; padding:6px 10px 6px 0;">
+                                Date
+                              </td>
+                              <td class="stack-cell" valign="top" th:text="${paidAtLabel}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:14px; color:#0f172a; padding:6px 0;">
+                                October 13, 2026 &#183; 15:20 (GMT+2)
+                              </td>
+                            </tr>
+                            <tr th:if="${cardLabel}">
+                              <td class="stack-cell" valign="top" width="42%" th:text="#{customPaymentReceipt.fieldCard}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#64748b; padding:6px 10px 6px 0;">
+                                Card
+                              </td>
+                              <td class="stack-cell" valign="top" th:text="${cardLabel}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:600; font-size:14px; color:#0f172a; padding:6px 0;">
+                                Visa &#8226;&#8226;&#8226;&#8226; 4242
+                              </td>
+                            </tr>
+                            <tr>
+                              <td class="stack-cell" valign="top" width="42%" th:text="#{customPaymentReceipt.fieldPaymentRef}"
+                                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#64748b; padding:6px 10px 6px 0;">
+                                Payment reference
+                              </td>
+                              <td class="stack-cell" valign="top" th:text="${paymentRef}"
+                                style="font-family:Menlo,Consolas,'Courier New',monospace; font-weight:500; font-size:12px; color:#0f172a; padding:7px 0 6px 0; word-break:break-all;">
+                                3f2b8c1e-5d4a-4e1b-9f3c-2a7d6e8b9c01
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Spacer -->
+                    <table role="presentation" width="100%"><tr><td style="height:14px; font-size:0; line-height:14px;">&#160;</td></tr></table>
+
+                    <!-- QUESTIONS -->
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      style="background-color:#eef2ff; border:1px solid #c7d2fe; border-left:4px solid #2856ff; border-radius:10px;">
+                      <tr>
+                        <td th:text="#{customPaymentReceipt.questions}"
+                          style="padding:14px 18px; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#1f2937; line-height:1.6;">
+                          Questions about this payment? Simply reply to this e-mail and quote the payment reference.
+                        </td>
+                      </tr>
+                    </table>
+
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- FOOTER (outside white sheet) -->
+          <tr>
+            <td class="footer" align="center" style="padding:28px 32px 0 32px;">
+
+              <div class="footer-line"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#64748b; margin:0 0 8px 0;">
+                <a th:href="${siteUrl}" th:text="${siteHost}" href="https://www.catamaran-croatia-charter.com" target="_blank"
+                  style="color:#2856ff; font-weight:700; text-decoration:none;">www.catamaran-croatia-charter.com</a>
+              </div>
+
+              <div class="footer-line" th:text="#{customPaymentReceipt.footerLegal(${currentYear}, ${brandName})}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                &#169; 2026 Catamaran Charter Croatia &#183; Cusmanich d.o.o., Split, Croatia
+              </div>
+
+              <div class="footer-line" th:text="#{customPaymentReceipt.footerNotice(${siteHost})}"
+                style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:11px; line-height:1.7; color:#94a3b8;">
+                You are receiving this e-mail because a card payment was made on www.catamaran-croatia-charter.com.
+              </div>
+
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+</body>
+
+</html>

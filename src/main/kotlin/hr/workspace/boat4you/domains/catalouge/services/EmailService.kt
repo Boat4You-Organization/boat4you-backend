@@ -106,6 +106,11 @@ class EmailService(
         "email/inquiryNotification",
         // Plain <pre> admin mails: no cid: reference at all, the shared PNGs would arrive as orphan attachments.
         "email/adminBookingFailed",
+        // Custom payment (/pay link) office notification: plain English, no cid: images.
+        "email/customPaymentAdmin",
+        // Custom payment receipt: one template for all 7 sites. Only the boat4you site shows the Boat4You logo and
+        // attaches it per call (extraInlineImages); a sister site's receipt must not carry it as an orphan attachment.
+        "email/customPaymentReceipt",
         // userInvite + passwordReset + birthdayWish + fewMoreDetails +
         // reservationConfirmed + optionExpiryReminder + optionExpired were
         // redesigned around inline-SVG logo + footer (no boat4youLogoFull /

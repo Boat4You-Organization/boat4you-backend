@@ -64,6 +64,9 @@ data class OrderSnapshot(
                     },
             )
 
+        /** The stored `order_snapshot` back as an object (e-mails read the card brand + last four); null when absent or unreadable. */
+        fun parseOrNull(json: String?): OrderSnapshot? = json?.takeIf { it.isNotBlank() }?.let { runCatching { MAPPER.readValue(it, OrderSnapshot::class.java) }.getOrNull() }
+
         /** Revolut ids / states are plain tokens; anything else (unexpected input) is dropped, never stored. */
         private fun safe(value: String?): String? = value?.takeIf { SAFE_TOKEN.matches(it) }
     }
