@@ -38,6 +38,15 @@
 -- dev) changes nothing; a second run changes nothing. Backup: ops_location_kastela_backup_20261013 (rows before the fix).
 -- The catalogue syncs write location rows; give up fast instead of waiting on a sync transaction - a timeout rolls the
 -- migration back and the API's systemd restart tries again (deploy outside the sync windows, DEPLOY_NOTES).
+--
+-- WEB PRECONDITION (review 13.10.2026): boat4you-web names a landing after the catalogue row it resolves to
+-- (destinationDid.ts: biggest fleet wins; URL = lowercased name, landingRedirectPath 308s every other spelling). Today
+-- that is 63 "Marina Kastela" (159 boats), so 27 sitemap-categories URLs (CATAMARAN / MOTOR_YACHT / SAILING_YACHT x 9
+-- locales) are canonical `/search?destinations=marina%20kastela&boatTypes=...` and "marina kaštela" 308s to them. After
+-- this fix the only row is "Marina Kaštela" (l-1935,l-63), so all 27 canonicals flip to `marina%20ka%C5%A1tela` and the
+-- indexed URLs 308 away. Before (or with) this migration, ship a web pin in src/config/landing-identity.config.ts:
+--   { name: 'Marina Kastela', dids: ['l-1935', 'l-63'], kind: LocationType.MARINA, countryCode: 'HR', aliases: [] }
+-- (the key folds diacritics, so "marina kaštela" resolves to the pin) - or get Mario's OK for the URL change.
 SET LOCAL lock_timeout = '5s';
 
 CREATE TABLE IF NOT EXISTS ops_location_kastela_backup_20261013 (

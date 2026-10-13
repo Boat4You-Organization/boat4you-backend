@@ -31,6 +31,10 @@ parkirani data fix `docs/pending-migrations/LOCATION_KASTELA_fix.sql` (još nije
   **NauSys red preuzme MMK ime + grad** (NauSys ne piše ni ime ni grad) **+ kurirani par** u `location_same_place`
   (lista = jedan red, tražilica = jedno mjesto i kad se imena razlikuju u interpunkciji). Bez brisanja redova i bez
   prebacivanja ponuda — `l-<id>` linkovi ostaju živi. Isti obrazac kao Kaštela.
+- **Pazi na URL landinga (b4y web):** landing nosi ime reda s najvećom flotom, a druga pisanja dobivaju 308 na njega.
+  Preimenovanje ili kurirani par mogu promijeniti kanonski URL već indeksiranog landinga (Kaštela: 27 URL-ova
+  `marina kastela` → `marina kaštela`). Prije svakog para treba pin u `landing-identity.config.ts` (web) koji drži
+  današnje ime.
 
 ## Isto mjesto, dva reda
 
