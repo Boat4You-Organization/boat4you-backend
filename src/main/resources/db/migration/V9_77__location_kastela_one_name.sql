@@ -1,6 +1,4 @@
--- LOCATION_KASTELA_fix - PARKED, not in db/migration yet (another session is adding V9_76). The lead turns it into
--- src/main/resources/db/migration/V9_<next>__location_kastela_one_name.sql after `git pull --ff-only` +
--- `ls src/main/resources/db/migration | sort -V | tail -3` (never two files with one V9_ version - V9_46 took the API down).
+-- V9_77 (13.10.2026): Marina Kaštela one name. Web precondition MET: boat4you-web landing pin 2e57befdc LIVE 13.10. (canonical marina%20kastela kept, ka%C5%A1tela 308 -> ASCII).
 --
 -- Mario 13.10.2026: boat cards read "Marina Kastela" for some boats and "Marina Kaštela, Kaštel Gomilica" for others,
 -- and the map did not find the marina. Prod (read only, 13.10.2026): ONE marina, TWO location rows, one per partner:
