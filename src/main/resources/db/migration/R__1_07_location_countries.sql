@@ -10,6 +10,10 @@
 -- city / lat / lon (audit B14): MARINA only, for the dual-source merge of the location list (MarinaPlaces): "Marina
 -- Frapa" (Rogoznica) is inside "Marina Frapa Dubrovnik" by name but 170 km away, so the coordinates / city veto it.
 --
+-- search_filed (13.10.2026): a MARINA also carries a copy of "name city" without diacritics, so the autocomplete
+-- (LOWER(search_filed) LIKE '%input%') still finds "Marina Kaštela", "Marina Špinut" or "Adaköy Marina" typed as
+-- "kastela", "spinut", "adakoy" - spellings that came from the NauSYS rows V9_77 / V9_78 renamed to the MMK name.
+--
 -- New columns are appended at the end: CREATE OR REPLACE VIEW may only add columns after the existing ones.
 CREATE OR REPLACE VIEW public.location_view
 AS
@@ -18,7 +22,10 @@ SELECT 'l-' || l.id            as id,
        l.name,
        'MARINA'                as location_type,
        country_code            as country_code,
-       l.name || ' ' || COALESCE(l.city, '') as search_filed,
+       l.name || ' ' || COALESCE(l.city, '') || ' ' ||
+       translate(lower(l.name || ' ' || COALESCE(l.city, '')),
+                 'áàâäãåāăąčćçĉċđďéèêëěēėęȩğģíìîïıīįķłľĺļñňńņóòôöõøőōřŕšśşșŝťţțúùûüůűūųýÿžźż',
+                 'aaaaaaaaacccccddeeeeeeeeeggiiiiiiikllllnnnnoooooooorrssssstttuuuuuuuuyyzzz') as search_filed,
        NULL::text              as aliases,
        l.city::text            as city,
        l.lat::numeric          as lat,
