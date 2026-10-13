@@ -187,6 +187,7 @@ class YachtSearchScopeTest {
     private val yachtMapper: YachtMapper = mock(YachtMapper::class.java)
     private lateinit var service: YachtQueryingService
     private lateinit var distribution: YachtDistributionService
+    private lateinit var locations: LocationRepository
 
     @BeforeAll
     fun setUp() {
@@ -210,7 +211,7 @@ class YachtSearchScopeTest {
         entityManagerFactory = buildEntityManagerFactory()
         entityManager = entityManagerFactory.createEntityManager()
         val repositories = JpaRepositoryFactory(entityManager)
-        val locations = repositories.getRepository(LocationRepository::class.java)
+        locations = repositories.getRepository(LocationRepository::class.java)
         val regions = repositories.getRepository(RegionRepository::class.java)
         val countries = repositories.getRepository(CountryRepository::class.java)
         service =
@@ -376,6 +377,21 @@ class YachtSearchScopeTest {
         // the curated D-Marin Lefkas pair
         landing("l-8").first shouldContainExactlyInAnyOrder listOf(109L, 110L)
         landing("l-9").first shouldContainExactlyInAnyOrder listOf(109L, 110L)
+    }
+
+    @Test
+    fun `a partner base without a mapping takes the lowest id of a shared name instead of failing the location sync`() {
+        // three rows named "Port Veli" (and "Marina Kaštela" twice on prod after the Kaštela fix): the single-result
+        // findByNameIgnoreCase threw IncorrectResultSizeDataAccessException and rolled back the whole sync
+        locations.findFirstByNameIgnoreCaseOrderByIdAsc("port VELI")?.id shouldBe 7L
+        locations.findFirstByNameIgnoreCaseOrderByIdAsc("Marina Kastela")?.id shouldBe 2L
+        locations.findFirstByNameIgnoreCaseOrderByIdAsc("Marina Nowhere") shouldBe null
+    }
+
+    @Test
+    fun `the cards' coordinates lookup returns only locations with both coordinates`() {
+        locations.findCoordinatesByIds(listOf(1L, 2L, 3L, 99L)).associate { (it[0] as Number).toLong() to (it[1] as Number).toDouble() } shouldBe
+            mapOf(1L to 43.5516, 3L to 42.6710)
     }
 
     @Test

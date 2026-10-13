@@ -85,7 +85,7 @@ class YachtSearchGuletCharterTest {
 
         private val MINIMAL_SCHEMA =
             """
-            CREATE TABLE location (id bigint PRIMARY KEY, display_name text, country_code varchar(2));
+            CREATE TABLE location (id bigint PRIMARY KEY, display_name text, country_code varchar(2), lat numeric, lon numeric);
             CREATE TABLE agency (id bigint PRIMARY KEY, name text, active boolean NOT NULL DEFAULT true,
                                  availability_blocked boolean NOT NULL DEFAULT false, recommended boolean);
             CREATE TABLE manufacturer (id bigint PRIMARY KEY, name text);

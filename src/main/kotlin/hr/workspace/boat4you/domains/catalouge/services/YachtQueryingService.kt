@@ -4,6 +4,7 @@ import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtResponse
+import hr.workspace.boat4you.domains.catalouge.dto.LocationCoordinates
 import hr.workspace.boat4you.domains.catalouge.dto.LocationDto
 import hr.workspace.boat4you.domains.catalouge.dto.OfferCharterDto
 import hr.workspace.boat4you.domains.catalouge.dto.VesselTypeYachtCountDto
@@ -704,6 +705,11 @@ class YachtQueryingService(
         // 9.10.2026). Two indexed lookups per page, skipped entirely for customer searches.
         val offerChartersByYachtId = if (isAdmin) fetchOfferCharters(views) else emptyMap()
 
+        // The cards' pickup / drop-off coordinates (LocationDto.lat / lon, the web's marina map, Mario 13.10.2026): one
+        // primary-key lookup per page - the matview carries only the location's id, label and country.
+        val locationCoordinates =
+            fetchLocationCoordinates(views.flatMap { listOfNotNull(locationIdOf(it.locationFullName), locationIdOf(it.locationToFullName)) })
+
         val searchResponseDtos =
             views.map { view ->
                 // isOption requires BOTH the aggregated offerStatus to flag
@@ -737,6 +743,7 @@ class YachtQueryingService(
                     pageFactsByYachtId[view.id]?.updatedAt,
                     pageFactsByYachtId[view.id]?.capacity,
                     offerChartersByYachtId[view.id],
+                    locationCoordinates,
                 )
             }
 
@@ -836,6 +843,20 @@ class YachtQueryingService(
         val updatedAt: Instant?,
         val capacity: CapacityColumns,
     )
+
+    /** The location id of a matview label "63-Marina Kastela-HR" (the part before the first dash). */
+    private fun locationIdOf(fullName: String?): Long? = fullName?.substringBefore('-')?.toLongOrNull()
+
+    /** Coordinates of the given locations (both set, not 0,0), by location id: one primary-key lookup. */
+    private fun fetchLocationCoordinates(locationIds: Collection<Long>): Map<Long, LocationCoordinates> {
+        if (locationIds.isEmpty()) return emptyMap()
+        return locationRepository
+            .findCoordinatesByIds(locationIds.toSet())
+            .mapNotNull { row ->
+                val id = (row[0] as? Number)?.toLong() ?: return@mapNotNull null
+                coordinatesOf(row[1] as? BigDecimal, row[2] as? BigDecimal)?.let { id to it }
+            }.toMap()
+    }
 
     /**
      * The yachts on this page by primary key: their capacity columns (capacity contract v1, 2.2) and yacht_content_modified
@@ -1583,13 +1604,15 @@ class YachtQueryingService(
                 endDate = endDate,
             )
 
-        val dtos = rows.map { toReplacementDto(it, searchParams.currency) }
+        val locationCoordinates = fetchLocationCoordinates(rows.mapNotNull { it.locationId })
+        val dtos = rows.map { toReplacementDto(it, searchParams.currency, locationCoordinates) }
         return PageImpl(dtos, org.springframework.data.domain.PageRequest.of(page, pageSize), total)
     }
 
     private fun toReplacementDto(
         row: ReplacementSearchRow,
         currency: CurrencyEnum,
+        locationCoordinates: Map<Long, LocationCoordinates>,
     ): YachtSearchResponseDto {
         val vesselType = row.vesselType?.let { v -> VesselType.entries.firstOrNull { it.name == v } }
         val offerStatus =
@@ -1631,6 +1654,8 @@ class YachtQueryingService(
                         id = "l-$it",
                         name = row.locationName ?: "",
                         countryCode = row.locationCountry,
+                        lat = locationCoordinates[it]?.lat,
+                        lon = locationCoordinates[it]?.lon,
                     )
                 },
             vesselType = vesselType,

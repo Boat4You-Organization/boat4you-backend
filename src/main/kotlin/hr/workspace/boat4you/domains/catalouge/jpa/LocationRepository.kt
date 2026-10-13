@@ -40,7 +40,23 @@ interface LocationRepository : JpaRepository<Location, Long> {
         externalSystemId: Long,
     ): Location?
 
-    fun findByNameIgnoreCase(name: String): Location?
+    /**
+     * The catalogue syncs' fallback for a partner base without an external mapping yet: a row of that name (any case),
+     * the lowest id when several rows share it. Five names did on prod on 13.10.2026 ("Skiathos" 160 / 2017, "Siracusa",
+     * "Sorrento", "Marigot Bay", "Port Calanova"), and "Marina Kaštela" 63 / 1935 does after the Kaštela data fix: the
+     * single-result findByNameIgnoreCase threw IncorrectResultSizeDataAccessException for a new base of such a name and
+     * rolled back that whole MMK / NauSys location sync.
+     */
+    fun findFirstByNameIgnoreCaseOrderByIdAsc(name: String): Location?
+
+    /**
+     * [id, lat, lon] of the given locations that have both coordinates: the search cards' pickup / drop-off coordinates
+     * (the matview carries only id, label and country). One primary-key lookup per listing page.
+     */
+    @Query("SELECT l.id, l.lat, l.lon FROM Location l WHERE l.id IN :ids AND l.lat IS NOT NULL AND l.lon IS NOT NULL")
+    fun findCoordinatesByIds(
+        @Param("ids") ids: Collection<Long>,
+    ): List<Array<Any>>
 
     /**
      * The partner's base ids (external_mapping 'Location') of our inland bases - river, canal and lake marinas,

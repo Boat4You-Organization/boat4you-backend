@@ -29,8 +29,15 @@ data class LocationViewDto(
     /** MARINA only, internal: the same-place check of the dual-source merge (not part of the public payload). */
     @get:JsonIgnore
     val city: String? = null,
-    @get:JsonIgnore
+    /**
+     * MARINA only: the marina's coordinates (the merge's same-place check, and since 13.10.2026 public for the web's
+     * marina map, like LocationDto.lat / lon). Left out of the JSON when unknown, so countries and regions stay byte for
+     * byte; a merged dual-source row ("l-57,l-1749") carries the coordinates of the row that stays.
+     */
+    @get:JsonProperty("lat")
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
     val lat: Double? = null,
-    @get:JsonIgnore
+    @get:JsonProperty("lon")
+    @get:JsonInclude(JsonInclude.Include.NON_NULL)
     val lon: Double? = null,
 )

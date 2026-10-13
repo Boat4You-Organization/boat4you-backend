@@ -30,7 +30,7 @@ class LocationQueryingService(
     }
 
     fun getLocationByNameIgnoreCase(name: String): Location? {
-        return locationRepository.findByNameIgnoreCase(name)
+        return locationRepository.findFirstByNameIgnoreCaseOrderByIdAsc(name)
     }
 
     fun getLocationByExternalIdAndExternalSystemId(

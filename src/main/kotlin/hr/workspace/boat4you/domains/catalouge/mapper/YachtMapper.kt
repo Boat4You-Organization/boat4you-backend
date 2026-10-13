@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.CapacityDto
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsDto
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtResponse
+import hr.workspace.boat4you.domains.catalouge.dto.LocationCoordinates
 import hr.workspace.boat4you.domains.catalouge.dto.LocationDto
 import hr.workspace.boat4you.domains.catalouge.dto.MeasurementUnitDto
 import hr.workspace.boat4you.domains.catalouge.dto.OfferCharterDto
@@ -31,6 +32,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
+import hr.workspace.boat4you.domains.catalouge.services.withCoordinates
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
 import org.springframework.security.core.context.SecurityContextHolder
@@ -67,15 +69,17 @@ class YachtMapper(
         capacityColumns: CapacityColumns? = null,
         /** Bareboat / Skippered / Crewed of the card's offer - looked up for admin searches only, gated again here. */
         offerCharter: OfferCharterDto? = null,
+        /** Coordinates of the page's pickup / drop-off locations by location id (one lookup per page, the caller's). */
+        locationCoordinates: Map<Long, LocationCoordinates> = emptyMap(),
     ): YachtSearchResponseDto {
-        val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName)
+        val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName).withCoordinates(locationCoordinates)
         // One-way charter: surface drop-off as separate DTO only when
         // it differs from the pickup. View encodes both as `id-name-cc`
         // strings so straight equality is enough to detect "same marina".
         val yachtLocationTo =
             result.locationToFullName
                 ?.takeIf { it != result.locationFullName }
-                ?.let { parseYachtSearchViewLocationName(it) }
+                ?.let { parseYachtSearchViewLocationName(it).withCoordinates(locationCoordinates) }
 
         // Resolve the raw Int offer_status (from the view) into the enum for UI.
         // Demote a stale OPTION/OPTION_WAITING to FREE when no live (non-expired) option backs it

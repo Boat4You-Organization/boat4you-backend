@@ -80,7 +80,7 @@ class YachtSearchCapacityTest {
 
         private val MINIMAL_SCHEMA =
             """
-            CREATE TABLE location (id bigint PRIMARY KEY, display_name text, country_code varchar(2));
+            CREATE TABLE location (id bigint PRIMARY KEY, display_name text, country_code varchar(2), lat numeric, lon numeric);
             CREATE TABLE agency (id bigint PRIMARY KEY, name text, active boolean NOT NULL DEFAULT true,
                                  availability_blocked boolean NOT NULL DEFAULT false, recommended boolean);
             CREATE TABLE manufacturer (id bigint PRIMARY KEY, name text);
@@ -111,7 +111,9 @@ class YachtSearchCapacityTest {
 
         private val SEED: String =
             buildString {
-                appendLine("INSERT INTO location (id, display_name, country_code) VALUES (1, 'Marina Kastela | Split', 'HR');")
+                appendLine(
+                    "INSERT INTO location (id, display_name, country_code, lat, lon) VALUES (1, 'Marina Kastela | Split', 'HR', 43.546021, 16.401395);",
+                )
                 appendLine("INSERT INTO agency (id, name, active, availability_blocked, recommended) VALUES (1, 'Agency', true, false, false);")
                 BOATS.forEach { (id, max, berths, cabins, wc) ->
                     appendLine(
@@ -426,5 +428,25 @@ class YachtSearchCapacityTest {
         assertEquals(BrokerNotesDto(cabinsNote = "4 +2", berthsNote = "(8+2)", headsNote = null, remark = "CREWED | private"), admin.getValue(1).brokerNotes)
         assertEquals(BrokerNotesDto(cabinsNote = null, berthsNote = null, headsNote = null, remark = null), admin.getValue(2).brokerNotes)
         assertEquals("CREWED | private", replacementRows().getValue(1).brokerNotes?.remark)
+    }
+
+    @Test
+    fun `cards and the replacement search carry the pickup marina's coordinates from one page lookup`() {
+        signIn()
+        val cards = realService.getYachts(params(), "id", LanguageEnum.EN, 0, 50, false).content
+        assertEquals(4, cards.size)
+        cards.forEach { card ->
+            assertEquals("1", card.location?.id)
+            assertEquals("Marina Kastela | Split", card.location?.name)
+            assertEquals(43.546021, card.location?.lat)
+            assertEquals(16.401395, card.location?.lon)
+        }
+        assertTrue(CapacityFixtures.mapper.writeValueAsString(cards.first()).contains("\"lat\":43.546021,\"lon\":16.401395"))
+
+        signIn("SYSTEM_ADMIN")
+        val replacement = replacementRows().getValue(1).location
+        assertEquals("l-1", replacement?.id)
+        assertEquals(43.546021, replacement?.lat)
+        assertEquals(16.401395, replacement?.lon)
     }
 }
