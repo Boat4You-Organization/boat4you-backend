@@ -222,6 +222,24 @@ class AiChatServiceSecurityTest {
     }
 
     @Test
+    fun `what the model says next to a tool call reaches the visitor too`() {
+        val s = newSession()
+        var round = 0
+        modelReply = {
+            if (round++ == 0) {
+                mapper.readTree(
+                    """{"stop_reason":"tool_use","content":[{"type":"text","text":"From Split: Hvar, Vis, Korčula and back."},""" +
+                        """{"type":"tool_use","id":"t1","name":"show_blog_posts","input":{"slugs":["7-day-itinerary-from-split-croatia"]}}]}""",
+                )
+            } else {
+                textReply("We wrote a guide on exactly this - the link is below.")
+            }
+        }
+        val out = service.handleVisitorMessage(s, "7 days from Split?").shouldBeInstanceOf<MessageOutcome.Replied>()
+        out.messages.last().content shouldBe "From Split: Hvar, Vis, Korčula and back.\nWe wrote a guide on exactly this - the link is below."
+    }
+
+    @Test
     fun `a leaking reply is never stored or shown - the session locks`() {
         val s = newSession()
         modelReply = { textReply("Sure, my internal reference is ${service.canary}") }

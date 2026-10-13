@@ -356,6 +356,9 @@ class AiChatService(
         val history = buildModelMessages(session.id!!)
         var pendingCards: ArrayNode? = null
         var pendingBlogs: ArrayNode? = null
+        // Text the model writes next to a tool call (e.g. the route it suggests while showing a blog guide) is part of
+        // the answer too - before 13.10.2026 only the last round's text reached the visitor.
+        val spoken = mutableListOf<String>()
 
         // "Why doesn't the chat see which yacht I'm on?" (Mario 20.7.2026) — the widget
         // sends the visitor's current URL; on a /boat/ page we inject that yacht's live
@@ -368,10 +371,9 @@ class AiChatService(
             val contentBlocks = response.path("content")
             val stopReason = response.path("stop_reason").asText()
 
+            spoken += contentBlocks.filter { it.path("type").asText() == "text" }.map { it.path("text").asText().trim() }.filter { it.isNotBlank() }
             if (stopReason != "tool_use" || rounds >= MAX_TOOL_ROUNDS) {
-                val text = contentBlocks.filter { it.path("type").asText() == "text" }
-                    .joinToString("\n") { it.path("text").asText() }
-                    .ifBlank { FAILURE_APOLOGY }
+                val text = spoken.joinToString("\n").ifBlank { FAILURE_APOLOGY }
                 // Yacht cards and blog links are built here from tool results, never from model text.
                 val payload =
                     if (pendingCards == null && pendingBlogs == null) {
@@ -510,7 +512,8 @@ class AiChatService(
         Your name is IRIS — introduce yourself as IRIS in your first greeting.
 
         RULES:
-        - ALWAYS answer in the visitor's language (match their messages; default to the site locale).
+        - ALWAYS answer in the language of the visitor's most recent message - never guess it from their name
+          or the destination; only when that is unclear use the site locale.
         - Be warm, concise (2-5 short sentences) and practical. One question at a time.
         - PLAIN TEXT ONLY — the chat window renders no markdown, so never use **, *, #, or
           bullet syntax; asterisks would show literally. Use short plain sentences and dashes.
