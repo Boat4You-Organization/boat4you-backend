@@ -1,5 +1,21 @@
 # Backend deploy notes
 
+## 2026-10-13 — V9_78 duple marine: jedno ime + par za ostala mjesta iz izvještaja duplikata — ⏳ NIJE DEPLOYANO (nije pushano; čeka web pin)
+
+Mario 13.10.: „da, spoji sve duple marine" (`docs/location-duplicates-2026-10-13.md`, #2–#15). Isti recept kao V9_77 Kaštela, samo podaci (bez koda):
+- NauSys red preuzima ime + grad MMK reda (sink ga ne vraća: imena se pišu samo kod kreiranja, NauSys ne piše grad, preimenovani redovi nemaju MMK mapping) i par ide u `location_same_place` → tražilica (`l-<id>`), lista i facts vide jedno mjesto, kartice i stranica broda jedno ime. 14 preimenovanja + 848: 150 Lavrion Main Port, 134 Preveza Main Port, 160 Skiathos (+grad), 204 Adaköy Marina, 72 Marina Lav, 26 D-Marin Borik, 76 Marina Baška Voda, 548 + 848 „Marina de Dénia" (MMK piše „Dènia"; gradu 848 ostaje MMK-ov „Dènia"), 396 Tromsø, 13 Marina Admiral, 229 Siracusa (+grad), 65 Marina Špinut, 502 Skopea Marina, 242 Sorrento (+grad). 16 parova (+ 2099/2007 Mergellina i 1781/1516 Port Calanova samo par, bez preimenovanja).
+- Mergellina bez preimenovanja: s imenom „Porto di Mergellina" lista bi „Naples" (209, 156 m od Mergellina) spojila s „Naples, Pozzuoli" (8,8 km). Marigot Bay (MF/LC, 500 km) i Marina Frapa / Frapa Dubrovnik NE spajati.
+- Guard po paru: oba id-a + država + današnja prod imena + grad MMK blizanca + oba partner mappinga; renamed red ne smije imati MMK mapping. Neslaganje → par se preskače cijeli. Idempotentno, `lock_timeout 5s`, backup `ops_location_dual_source_backup_20261013` (32 reda). Bez brisanja redova i bez prebacivanja ponuda/brodova; `l-<id>` linkovi rade.
+- **Verificirano:** prod read-only 13.10. — svih 16 guardova prolazi s doslovnim vrijednostima iz migracije (bajtovi „Dènia", „Göcek", „Baška Voda" provjereni), nijedan par već ne postoji, zadnja primijenjena 9.77. Docker PG18 s prod redovima (2.036 lokacija + 2.217 mappinga): run 1 = 15 redova + 16 parova, run 2 = bez promjene, undo = točno početno stanje, ponovni run = isti rezultat; drift baza (promijenjen grad blizanca ×2, MMK mapping na NauSys redu, maknut mapping, drugo ime 848) → tih 5 parova preskočeno cijelih, ostali prolaze; dev baza s drugim redovima pod istim id-evima → ništa.
+
+- [ ] **PRIJE (web, obavezno):** pin „Marina Lav - Podstrana" (`dids ['l-72','l-1423']`) u boat4you-web `src/config/landing-identity.config.ts` LIVE — objekti i provjera u `docs/location-merge-pins-2026-10-13.md` (+ 4 preporučena: Lavrion Main Port, Preveza Main Port, Skiathos, Adaköy Marina). Bez pina 9 indeksiranih `destinations=marina%20lav%20-%20podstrana&boatTypes=MOTOR_YACHT` URL-ova daje 404.
+- [ ] `git pull` + `ls src/main/resources/db/migration | sort -V | tail -3` prije pusha (V9_78 slobodna 13.10. na svim granama).
+- [ ] Deploy uobičajeno (cusma2 → gate → cusma3), izvan sync prozora (MMK/NauSys sink lokacija piše iste redove).
+- [ ] Provjera: SQL na dnu migracije (16 novih parova); `curl -s 'https://api.boat4you.com/public/locations?name=lavrion' | jq '.content[] | {id,name}'` → jedan „Lavrion Main Port" `l-1069,l-150` (nakon restarta; cache liste 10 h); kartice po `yacht_search_view` nakon refresha (≤ 10 min); web probe iz pins dokumenta (isti kanonski URL-ovi, 72 URL-a u sitemapu).
+- Zatečeno, nije dirano: lista već spaja „Tromsø" (624) s „Tromsø Eidkjosen" (1218, ~10 km; ime unutar imena) — nakon V9_78 tamo ulazi i 396. Sljedeći korak (čeka Marija): 58 parova „različita imena, iste koordinate" iz izvještaja + „Naples" 209 ↔ Mergellina.
+
+**Rollback:** UPDATE iz backup tablice + DELETE 16 parova (upute na dnu migracije); web pinovi mogu ostati.
+
 ## 2026-10-13 — Lokacije: `lat`/`lon` u javnom `LocationDto` + Marina Kaštela jedno ime (parkirani data fix) — ✅ DEPLOYANO 13.10.2026: lat/lon cusma2 07:07:46 (71a15af), V9_77 Kaštela cusma2 07:20:55 + cusma3 08:02:54 UTC (1626542) 
 
 Mario 13.10.: kartice kažu „Marina Kastela" (red 63, NauSys) ili „Marina Kaštela | Kaštel Gomilica" (red 1935, MMK), a karta ne nalazi marinu. Kod (`93275a5`, bez migracije):
