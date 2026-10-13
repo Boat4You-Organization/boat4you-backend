@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-13 — V9_78 duple marine: jedno ime + par za ostala mjesta iz izvještaja duplikata — ✅ cusma2 09:55:21 UTC (`fa01a2d`, V9_78 + R__1_07 za 0,12 s, start 12,5 s); ⏳ cusma3 u prozoru od 13:00 UTC iza 10-min gatea
+## 2026-10-13 — V9_78 duple marine: jedno ime + par za ostala mjesta iz izvještaja duplikata — ✅ cusma2 09:55:21 UTC (`fa01a2d`, V9_78 + R__1_07 za 0,12 s, start 12,5 s); ✅ cusma3 13:25:03 UTC (gate 10 min = 0, „Schema up to date", start 13,1 s, jar md5 ca55775d…); tag live/2026-10-13i
 
 **Live 13.10.2026:** web pinovi `a9590e20f` (BOAT4YOU 3, ~09:50 UTC) → backend cusma2 09:55 UTC. Prod nakon: 15 redova preimenovano (Frapa 2029/775 netaknute), `location_same_place` 19 (3 + 16), backup 32 reda. API: `kastela`, `spinut`, `baska`, `adakoy`, `denia`, `skopea` → jedan red po paru (`l-1935,l-63`, `l-1421,l-65`, `l-1571,l-76`, `l-904,l-204`, `l-848,l-548`, `l-780,l-502`); `tromso` → `l-1218,l-396,l-624` „Tromsø Eidkjosen" (zatečeno spajanje liste, vidi dolje). Landinzi (8 proba EN/DE): status, canonical i robots isti prije i poslije; `marina lav` 308 → `marina lav - podstrana`.
 
