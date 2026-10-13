@@ -4,8 +4,9 @@ Backend migracija `V9_79__location_near_duplicate_marinas_one_name.sql` daje sva
 (`docs/location-near-duplicates-review-2026-10-13.md`: „A sve da", „C može", plus Olympic Marine, Marina di Olbia i ACI
 Marina Split) jedno ime i upisuje parove u `location_same_place`. boat4you-web landing nosi ime reda s najvećom flotom
 (`destinationDid.ts`), URL je to ime malim slovima, a druga pisanja dobivaju 308 samo dok ih nešto još razrješava
-(`landingRedirectPath`). Ovaj dokument kaže koji pinovi (`src/config/landing-identity.config.ts`) i koji alias teksta
-(`src/utils/static/curatedSeoSlug.ts`) moraju biti LIVE **prije** migracije.
+(`landingRedirectPath`). Ovaj dokument kaže koji pinovi (`src/config/landing-identity.config.ts`), koji alias teksta
+(`src/utils/static/curatedSeoSlug.ts`), koja izmjena link-blokova (`landingNav.ts` / `catalogueHubs.ts`) i koje brisanje teksta
+s imenom agencije moraju biti LIVE **prije** migracije — sve četiri stvari u jednom web deployu.
 
 ## Kako je provjereno (13.10.2026, samo čitanje)
 
@@ -21,7 +22,11 @@ Marina Split) jedno ime i upisuje parove u `location_same_place`. boat4you-web l
 
 ## OBAVEZNO prije V9_79
 
-Bez ovoga **90 indeksiranih URL-ova daje 404**, a `marina di golfo aranci` nema tekst (noindex).
+Bez točaka 1 + 2 **90 indeksiranih URL-ova daje 404**, a `marina di golfo aranci` nema tekst (noindex). Bez točke 3 spojeni
+landinzi ispadaju iz link-blokova svojih regija (Sardinija već s pinom „Olbia"). Točka 4 ide u isti commit kao 1 + 2, nikad prije.
+
+Dodano nakon dva nezavisna review-a 13.10. (podaci + web), ponovno provjereno na produkciji (read-only 17:23 UTC) i na live
+API-ju: točke 3 i 4, brojke flote nakon blizanaca, sitemap i „Zatečeno".
 
 ### 1. Pinovi (`src/config/landing-identity.config.ts`)
 
@@ -118,6 +123,39 @@ dalo 308 na noindex stranicu. S aliasom čita `golfo-aranci-catamaran-charter.ht
 nijedno drugo mjesto ne čita taj prefiks (`Porto di Golfo Aranci` je `porto-di-golfo-aranci`). Fleet `l-411,l-1550`
 CATAMARAN = 10 (prag je 10, isto kao danas).
 
+### 3. Link-blokovi regija (`src/utils/server/landingNav.ts`, `src/utils/server/catalogueHubs.ts`) — isti web deploy kao pinovi
+
+NauSys red i njegov MMK blizanac imaju **različite regije** (`location_region`, prod 13.10.): 609 Marina di Olbia je u 179
+„Sardinia / Corsica" + 181, a 222/225 u 51 „Sardinia"; 2012 Netsel u 174 „Marmaris / Fethiye / Gocek", 185 u 85 „Aegean";
+744 Andratx u 40 + 141 „Mallorca", 573 samo u 40; 1550 Golfo Aranci u 179, 411 u 51; 1813 Mandalina u 4 + 190 „Kornati", 49
+samo u 4; 710 Olympic / 910 Zeas u 21 + 165, 139 / 116 u 24. `liesInside` (REGION) traži da **svi** `entry.dids` budu u regiji
+(`/public/locations-count?regionId=` vraća pojedinačne redove), pa spojeni landing ispada iz bloka „Popularna odredišta" svih
+svojih regija. Već sam pin „Olbia" (`l-609`) izbacuje Olbiju iz Sardinije: blok Sardinije danas ima točno 4 linka (Portisco
+SAIL/CAT, Olbia CAT/SAIL = `MIN_POPULAR_LINKS`), s 2 pada na fallback „u Italiji". Nakon migracije isto za `marmaris / fethiye /
+gocek` (Netsel), `sardinia / corsica` (Golfo Aranci), `mallorca` (Andratx), `kornati` (Mandalina), a Olympic Marina (već s
+pinom) i Marina Zeas ispadaju iz regija 21 / 165 (Kiklade, Athens / Saronic Gulf). Breadcrumb
+(`regionHubAbove`) gleda samo `place.dids[0]`.
+
+```ts
+// landingNav.ts, liesInside, grana REGION
+return entry.kind === LocationType.MARINA && entry.dids.some(d => regionMarinas.has(d));
+
+// catalogueHubs.ts, regionHubAbove (nakon guarda): regije svih redova mjesta, ne samo prvog
+const countryCode = place.countryCode;
+const names = [...new Set((await Promise.all(place.dids.map(did => regionsForMarina(countryCode, did)))).flat())];
+```
+
+(`itinerariesFor` u `landingNav.ts` isto čita samo `place.dids[0]` — ista izmjena po želji.) Olympic Marina i Marina Zeas time
+ostaju u bloku Kiklada (MMK-ova regija), kao danas.
+
+### 4. Tekst s imenom agencije — obrisati u ISTOM web commitu kao pinovi (ne prije)
+
+`public/seo-content/{de,en,es,fr,hr,it,nl,pl,pt}/catamaran-charter-mare-fun-charter-marina.html` (9 datoteka) danas je tekst
+indeksiranog Golfo Aranci CAT landinga i nosi ime agencije u svih 9 jezika. Javno je dostupan:
+`https://www.boat4you.com/seo-content/en/catamaran-charter-mare-fun-charter-marina.html` → 200 (samo `X-Robots-Tag: noindex`).
+Nakon pina „Marina di Golfo Aranci" nitko ga više ne čita (landing čita `golfo-aranci-catamaran-charter.html` preko aliasa), pa
+se briše u istom commitu (`git rm`); prije pina bi indeksirani landing ostao bez teksta (noindex). Ime agencije nikad javno.
+
 ## Što se događa s indeksiranim URL-ovima
 
 „Prije migracije" = pinovi live, migracija još ne. Svi brojevi su URL-ovi × 9 jezika iz današnjeg sitemapa.
@@ -142,14 +180,25 @@ Ostalih 14 (isti kanonski URL, landing dobiva brodove NauSys reda): `d-marin mar
 `puerto de andratx` 9 (+573), `salamis yachting club` 9 (+462), `sami port` 9 (+450), `sant antoni de portmany port` 9 (+399).
 `hyeres port saint pierre` 18 već danas ima oba reda (spojeni po imenu), ostaje isti.
 
-Od 169 indeksiranih odredišta samo ova 24 mijenjaju razrješenje; nijedno ne gubi brodove. Fleet po tipu nakon spajanja
-(`/public/yachts`): Marina Zadar CAT 13 / MOTORBOAT 15 / SAIL 91; Marina Paleros SAIL 27; Golfo Aranci CAT 10; Olympic CAT 33 /
-SAIL 83; Olbia CAT 64 / SAIL 38 — svi iznad praga 10, tekstovi postoje (uz alias gore).
+Od 169 indeksiranih odredišta samo ova 24 mijenjaju razrješenje; nijedno ne pada ispod današnje flote ni ispod praga 10.
 
-Sitemap: 45 URL-ova odobrenih 308 (Zadar 27, Palairos 9, Golfo Aranci 9) i 18 spajanja duplikata (Olympic 9, Olbia 9) izlaze iz
-sitemapa; ulaze `marina zadar` 27 i `marina di golfo aranci` 9. Moguće nove stranice kad prođu prag i imaju vlastiti tekst:
-„Marina Baotić" (306 brodova, tekstovi CAT / MOTOR_YACHT / MOTORBOAT / POWER_CATAMARAN — danas je ime sa zarezom i nema landing),
-veće flote ostalih spojenih marina.
+**Dvostruki oglasi (review 13.10.):** `yacht_listing_twin` (V9_69/V9_70) prepoznaje dva primjerka istog broda po imenu baze. Kad
+oba reda mjesta dobiju isto ime, MMK i NauSys primjerci **131 broda** postaju blizanci i prvo osvježavanje (≤ 10 min) skriva drugi
+primjerak iz nedatirane pretrage, brojki landinga, sitemapa i facts (B17, jedna kartica po brodu; 557 → 688). Prikazani primjerak
+je uvijek u istom mjestu. Zato su brojke spajanja niže od zbroja oba reda. Fleet po tipu (`/public/yachts` 13.10. s oba did-a →
+nakon osvježavanja blizanaca): Marina Zadar CAT 13 → 13 / MOTORBOAT 15 → 14 / SAIL 91 → 78; Marina Paleros SAIL 27 → 22; Golfo
+Aranci CAT 10 → 10 (na pragu, kao danas); Olympic CAT 33 → 33 / SAIL 83 → 71; Olbia CAT 64 / SAIL 38 (bez promjene) — svi ≥ 10,
+tekstovi postoje (uz alias gore). Landinzi koji danas broje samo MMK red ne mogu pasti ispod današnje brojke (svaki skriveni
+primjerak ima prikazani par istog tipa u istom mjestu).
+
+Sitemap (nakon migracije + osvježavanja blizanaca):
+- **izlazi 63:** 45 odobrenih 308 (Zadar 27, Palairos 9, Golfo Aranci 9) + 18 spajanja duplikata (`lavrion - olympic marine` 9,
+  `marina di olbia yachting services` 9);
+- **ulazi ~108:** `marina zadar` 27 i `marina di golfo aranci` 9, plus nova mjesta koja tek sad imaju ime bez zareza ili prelaze
+  prag (tekstovi postoje u 9 jezika): Marina Baotić CAT 136 / MOTORBOAT 20 / MOTOR_YACHT 16 (27), Marina Agana CAT 14 / SAIL 35
+  (18), Marina Kos CAT 29 (9), Paros port SAIL 20 (9), Port of Split / West Harbour MOTOR_YACHT 10 (9, točno na pragu — može
+  ispasti). Reial Club Nàutic Port de Pollença SAIL 12 → 7 nakon blizanaca → **ne** ulazi. Baotić POWER_CATAMARAN 7 i SAIL (bez
+  teksta) ne ulaze. To je očekivano, nije greška pri provjeri nakon deploya.
 
 ## Stara pisanja koja nisu indeksirana (noindex danas) → 404 nakon migracije
 
@@ -197,10 +246,23 @@ Opcionalno, jedini koji danas 308 vodi na indeksirani landing:
 - **NauSys 225 „Marina di Olbia Yachting Services"** (0 aktivnih brodova) je već danas po imenu jedan red s 609; najduže ime
   i dalje imenuje red liste i facts („Marina di Olbia Yachting Services"). Ako i 225 treba „Marina di Olbia", to je jedan
   dodatni red (Mariov DA).
-- **MMK 1375 „Placencia"** (0 aktivnih brodova, ~5 km od Robert's Grove) bio je po imenu spojen s Robert's Grove; nakon
-  preimenovanja #51 je zaseban red liste „Placencia".
-- Tekst `catamaran-charter-mare-fun-charter-marina.html` (9 jezika) nosi ime agencije; nakon 308 se više ne prikazuje — može
-  se obrisati.
+- **MMK 1375 „Placencia"** (~5 km južno od Robert's Grove): tamo nema baziranog broda, ali je mjesto preuzimanja za **3 broda
+  Robert's Grove** (MMK 1302): 346 budućih bookabilnih ponuda (prod 13.10. 17:23 UTC). Danas ga lista po imenu spaja s Robert's
+  Grove (`l-265,l-1375,l-1302`); nakon #51 ta preuzimanja idu u zaseban red liste „Placencia", a red Robert's Grove je
+  `l-265,l-1302`. Fizički točno (5 km), ali Mario odlučuje: ostaje zaseban ili par 1375 ↔ Robert's Grove. (Belize nije
+  promovirana zemlja, pa facts nisu pogođeni.)
+- **Charter facts, NauSys 233 „Milazzo"** (preuzimanje 1 broda iz Portorose, 13 tjednih ponuda, nije blizanac): danas je u facts
+  mjestu Poseidon Marina samo zato što je „milazzo" unutar „Marina Poseidon, Milazzo"; nakon #34 je zasebno mjesto (1,3 km od
+  Poseidona). Nema indeksiranog landinga. Mario: par 233 ↔ Poseidon ili ostaviti. Ako 212 „Marina Santa Maria Maggiore,
+  Milazzo" (danas bez brodova i ponuda) jednom dobije podatke, 233 se po imenu spaja s njim.
+- **boat4you autocomplete „trogir"** (`search_filed` = ime + grad, regija „Trogir" ne postoji): nakon migracije više ne nalazi
+  Marinu Baotić (57 + 1749, ~306 brodova) ni Marinu Agana (55 + 993) — NauSys imena su nosila „Trogir", gradovi MMK blizanaca
+  su „Seget Donji" / „Marina". Ostaju ACI Marina Trogir, SCT Marina Trogir i ostali. Opcije za Marija: prihvatiti, ili 57 (i
+  55) dobiva grad „Trogir" (kartice bi tada imale dva različita grada za istu marinu). Manji gubici: `naples` (Pozzuoli 16),
+  `tivat`, `santorini`, `kefalonia` po 1–2 broda.
+- **Povučeni brodovi (308):** 22 retka `yacht_successor` pokazuju na primjerak koji postaje blizanac; idući izračun (07:55)
+  ih prebacuje na prikazani primjerak istog broda (svih 22 i dalje prolazi pravilo nasljednika, nijedan ne gubi 308).
+- Tekst s imenom agencije: vidi „OBAVEZNO" točka 4 (briše se u istom web commitu kao pinovi).
 - `location_region` nema jedinstveni ključ; ACI Marina Split (69) ima regiju 5 dvaput (MMK + NauSys sink). Nije dirano.
 - Rendering grupa u listi (Lavrion 3, Baška Voda 3, Mergellina 5 redova) treba backend kod iz istog paketa
   (`mergeDualSourceMarinas` spaja grupu); stari jar prikazuje grupu kao 2–3 reda istog imena (tražilica je i tada ispravna).

@@ -8,7 +8,10 @@
 -- WEB PRECONDITION: the boat4you-web landing pins and the curated-text alias in docs/location-merge-pins-v979-2026-10-13.md must be
 -- live BEFORE this migration. Without them 90 indexed landing URLs answer 404 ("marina zadar (ex. tankerkomerc)" 27, "olympic marina"
 -- 18, "lavrion - olympic marine" 9, "olbia" 18, "palairos" 9, the agency-named Golfo Aranci marina 9) and "marina di golfo aranci"
--- has no curated text (noindex).
+-- has no curated text (noindex). The same web deploy also carries (review 13.10.2026): landingNav.ts liesInside `some` instead of
+-- `every` and regionHubAbove over all of a place's dids (a NauSys row and its MMK twin sit in different regions, so a merged landing
+-- otherwise drops out of its regions' link blocks - the "Olbia" pin alone empties Sardinia's), and the removal of the 9 agency-named
+-- curated texts (public/seo-content/*/catamaran-charter-<agency>.html; never before the pins: today they are an indexed landing's text).
 --
 -- What it does, per place (unit): every row of the place takes ONE name; a NauSys row also takes its MMK twin's town as city (MMK
 -- keeps writing its own); the rows go into location_same_place (V9_67), so the search's l- resolution, the location list and the
@@ -62,8 +65,9 @@
 --  46  TR  Gümbet Limanı                       445 "Bodrum, Gümbet Marina"; MMK 831 "Gumbet Limani"
 --  48  HR  Sumpetar                            582 "Sumpetar, Marina Sumpetar"
 --  49  HR  Port of Vodice                      45 "Vodice"
---  51  BZ  Robert's Grove Marina               265 "Belize, Placencia, Roberts Grove Marina" (MMK 1375 "Placencia", 0 active boats,
---                                              ~5 km south, was folded in by name and becomes its own list row)
+--  51  BZ  Robert's Grove Marina               265 "Belize, Placencia, Roberts Grove Marina" (MMK 1375 "Placencia", ~5 km south, no
+--                                              boat based there but the pick-up of 3 Robert's Grove boats - 346 bookable future
+--                                              offers - was folded in by name and becomes its own list row; Mario's call)
 --  52  IT  Marina di Riposto                   419 "Sicily, Riposto"; MMK 1045 "Riposto"
 --  53  GR  Port of Pachi                       452 "Megara, Port Pachi"
 --  54  FR  Vieux-Port de Cannes                2093 "Cannes"; MMK 2002 "IGY Vieux-Port de Cannes"
@@ -82,6 +86,19 @@
 -- Not in this migration: #25 Tourlos Marina (NauSys 158 "Mykonos" + MMK 1561). 158 sits in the indexed "Port of Mykonos" landing by
 -- name today; renamed, Port of Mykonos keeps 9 boats (3 catamarans) and its 18 indexed URLs fall to noindex - waits for Mario.
 -- B (#6, 17, 26, 47, 57) and the third rows Zea 1554, Kavala 932, Marmaris 1395 (Mario: "ne znam") are not touched.
+--
+-- Side effects of the one name (review 13.10.2026, prod read only):
+--   - yacht_listing_twin (V9_69 / V9_70) pairs two copies of a boat by the base NAME (base_key). With one name per place the MMK and
+--     NauSys copies of 131 boats at these places become twins: the next refresh (YachtSearchViewRefresher, <= 10 min) hides the
+--     second copy from the undated search, the landings' fleet counts, the sitemaps and the charter facts (audit B17, one card per
+--     boat; 557 -> 688 twins on 13.10.). None leaves a place: every copy shown sits in the same place. Biggest: Mandalina 26,
+--     Portorosa 18, Marina Zadar 14, Olympic Marine 12, Sant Antoni 9, Paleros 8, Pollença 7.
+--   - YachtSuccessorComputeService (same twin table + base_key): 22 retired boats' 308 targets move to the copy the listings show
+--     (same boat, other channel; all 22 still pass the successor rule) on the next 07:55 run.
+--   - Charter facts: NauSys 233 "Milazzo" (pick-up of 1 Portorosa boat) is in the Poseidon Marina place today only because "milazzo"
+--     sits inside "Marina Poseidon, Milazzo"; after #34 it is a place of its own (no indexed landing).
+--   - Autocomplete (search_filed = name + city): "trogir" no longer finds Marina Baotić (57 / 1749) or Marina Agana (55 / 993) - the
+--     NauSys names carried "Trogir", the MMK twins' towns are Seget Donji / Marina; no "Trogir" region exists. Mario's call.
 --
 -- Groups: LocationRepository.findSamePlaceMarinaIds pairs rows by the same name (country, <= 50 km) plus the anchor's OWN
 -- location_same_place rows - not transitive. Every group gets a full mesh of pairs, so each member did resolves the whole group even
@@ -401,6 +418,7 @@ DROP VIEW v9_79_row_ok;
 --     JOIN location l ON l.id = b.id ORDER BY b.id;                                    -> 113 rows, final names
 --   SELECT count(*) FROM location_same_place WHERE note LIKE '%V9_79)';                 -> 64
 --   SELECT * FROM location_region WHERE location_id = 1755;                             -> region 5
+--   SELECT count(*) FROM yacht_listing_twin;          -> about 131 more than before (557 -> 688 on 13.10.), after the next refresh
 --   GET https://api.boat4you.com/public/locations?name=mergellina -> ONE "Porto di Mergellina" row,
 --     id "l-2007,l-2099,l-209,l-1118,l-1301" (after the jar restart; the list cache keeps 10 h)
 --   https://www.boat4you.com/search?destinations=marina%20zadar%20(ex.%20tankerkomerc)&boatTypes=CATAMARAN -> 308 to
