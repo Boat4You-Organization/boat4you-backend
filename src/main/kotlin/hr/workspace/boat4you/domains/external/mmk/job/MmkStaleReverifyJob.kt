@@ -50,7 +50,10 @@ class MmkStaleReverifyJob(
         val r = mmkFreeOfferReverifyService.reverifyFreeOffers()
         log.info(
             "Daily MMK free-offer reverify took ${System.currentTimeMillis() - start} ms: ${r.seasons} seasons, ${r.emptySeasons} unquoted, " +
-                "${r.firstStrikes} first strikes, ${r.hiddenPeriods} periods hidden (${r.hiddenRows} rows)${r.aborted?.let { "; ABORTED: $it" } ?: ""}",
+                "${r.firstStrikes} first strikes, ${r.hiddenPeriods} periods hidden (${r.hiddenRows} rows); " +
+                "option verify: ${r.upserts} upserts, ${r.optionFirstStrikes} first strikes, ${r.optionHiddenPeriods} periods hidden, " +
+                "${r.wouldFlipRows} would-flip rows; runs free=${r.freeRunId} option=${r.optionRunId}" +
+                (r.aborted?.let { "; ABORTED: $it" } ?: ""),
         )
     }
 
