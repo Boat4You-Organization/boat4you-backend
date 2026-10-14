@@ -1,0 +1,9 @@
+# R02 (owner rule 14.10.2026, flag F4): a partner yacht whose WHOLE name is a charter agency's trade name is shown as
+# "Boat4You". Curated and approved by Mario - never derived from the agency table: most boats named like their (one-boat)
+# agency carry the owner's boat name (Zenith, Despina, Omnia, Athena Blu, Ionian Spirit, Hermes...) and keep it.
+# Borderline names (Sailtours, Trapani Vela Club, Pronto Sail, Sailing Spirit) wait for Mario, name by name.
+#
+# Format: one name per line, matched on the whole name (lowercase, common accents folded, spaces collapsed).
+# '#' starts a comment. V9_87 (r02_yacht_public_name_v1) carries the same list frozen - a test keeps them equal.
+Rhodes Yachting
+Active Cruises

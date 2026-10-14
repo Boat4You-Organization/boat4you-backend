@@ -38,6 +38,7 @@ import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
+import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
@@ -128,7 +129,7 @@ class NauSysYachtSyncService(
                 // doesn't surface a half-empty card; updateFromNausysModel
                 // flips it back to true on the next iteration after model
                 // resolves.
-                yacht.name = nausysYacht.name
+                YachtNamePolicy.applyTo(yacht, nausysYacht.name, agency, "nausysYachtId=${nausysYacht.id}")
                 yacht.agency = agency
                 yacht.entryType = EntryType.EXTERNAL
                 yacht.buildYear = nausysYacht.buildYear?.toShort()
@@ -242,7 +243,7 @@ class NauSysYachtSyncService(
         yacht.agency = agency
         yacht.location = location
         yacht.model = model
-        yacht.name = nausysYacht.name
+        YachtNamePolicy.applyTo(yacht, nausysYacht.name, agency, "nausysYachtId=${nausysYacht.id}")
         yacht.deposit = nausysYacht.deposit
         yacht.insuredDeposit = nausysYacht.depositWhenInsured
         yacht.depositCurrency = nausysYacht.depositCurrency

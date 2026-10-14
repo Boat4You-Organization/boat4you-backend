@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.job
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
@@ -144,8 +145,8 @@ class TripPushJob(
         }.onFailure { log.error("Trip push '$tag' failed for reservation $id", it) }.getOrDefault(0)
     }
 
-    private fun yachtLabel(reservation: Reservation): String =
-        reservation.reservationFlow?.yacht?.name?.takeIf { it.isNotBlank() } ?: "your yacht"
+    // R02 flag F11: the public name; the model label when the boat is named after its agency (public name "Boat4You").
+    private fun yachtLabel(reservation: Reservation): String = reservation.reservationFlow?.yacht?.let { YachtNamePolicy.tripName(it.name, it.model?.name) } ?: "your yacht"
 
     private fun marinaSuffix(reservation: Reservation): String =
         reservation.locationFrom?.name?.takeIf { it.isNotBlank() }?.let { " at $it" } ?: ""

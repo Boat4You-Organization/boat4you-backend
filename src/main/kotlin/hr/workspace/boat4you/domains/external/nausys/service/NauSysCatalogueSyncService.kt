@@ -32,6 +32,7 @@ import hr.workspace.boat4you.domains.catalouge.services.RegionNames
 import hr.workspace.boat4you.domains.catalouge.services.ManufacturerAliasResolver
 import hr.workspace.boat4you.domains.catalouge.services.applyLocationRegions
 import hr.workspace.boat4you.domains.catalouge.services.ModelNameNormaliser
+import hr.workspace.boat4you.domains.catalouge.utils.BrandModelAliases
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
@@ -453,9 +454,14 @@ class NauSysCatalogueSyncService(
             // Strip noisy cabin-config suffix ("- 4 + 1 cab.*" etc.) before
             // lookup/create so partner cannot fork "Bali 4.4" into N variants.
             val canonicalModelName = modelNameNormaliser.canonicalName(it.name!!)
+            // R02 G3: a charter brand's label resolves to the builder model it is (brand_model_alias.txt). The aliased
+            // target is mapped, never created, and never gets the partner's manufacturer or dimensions.
+            val alias = aliasedModel(canonicalModelName, allModels)
             val model =
                 if (mapping != null) {
                     allModels.find { model -> model.id == mapping.systemId!! }!!
+                } else if (alias != null) {
+                    alias
                 } else {
                     // Oldest match wins if duplicates exist (unique-result crash here
                     // aborted the whole catalogue sync 4x/day until V9_45 merged them).
@@ -466,18 +472,23 @@ class NauSysCatalogueSyncService(
                                 it.yachtBuilderId?.toLong() ?: -1L,
                                 ExternalSystemEnum.NAUSYS.value,
                             ).minByOrNull { model -> model.id ?: Long.MAX_VALUE }
-                    m ?: Model().apply { name = canonicalModelName }
+                    m ?: newModel(canonicalModelName, it.id)
                 }
+
+            if (alias != null && model.id == alias.id) {
+                if (mapping == null) {
+                    externalMappingService.saveMapping(it.id!!.toLong(), model.id!!, externalSystem, Model::class.simpleName.toString())
+                    log.info("R02 brand model alias: NauSys model ${it.id} '$canonicalModelName' -> ${model.id} '${model.name}'")
+                }
+                return@forEach
+            }
 
             val manufacturerMapping =
                 allManufacturerMappings.find { manufacturerMapping -> manufacturerMapping.externalId == it.yachtBuilderId?.toLong() }
             val manufacturer =
                 allManufacturers.find { manufacturer -> manufacturer.id == manufacturerMapping!!.systemId!! }
 
-            if (model.manufacturer != null && model.manufacturer!!.id != manufacturer!!.id) {
-                log.warn("Model ${model.name} has different existing manufacturer ${model.manufacturer!!.name} than new $manufacturer")
-            }
-            model.manufacturer = manufacturer
+            applyManufacturer(model, manufacturer, it.id)
             model.externalCategoryId = it.yachtCategoryId
             // Nausys puts length/beam on the model (RestYachtModel), not the
             // per-yacht payload. Copy them here so yacht sync can resolve the
@@ -495,6 +506,49 @@ class NauSysCatalogueSyncService(
                 )
             }
         }
+    }
+
+    private fun newModel(
+        canonicalModelName: String,
+        nausysModelId: Int?,
+    ): Model {
+        if (BrandModelAliases.isBrandLabel(canonicalModelName)) {
+            log.warn("R02 charter-brand model label created: NauSys model $nausysModelId '$canonicalModelName' - add it to ${BrandModelAliases.RESOURCE}")
+        }
+        return Model().apply { name = canonicalModelName }
+    }
+
+    /**
+     * R02 G2: an existing model keeps its manufacturer - overwriting it from NauSys put a charter brand ("Sunsail") onto
+     * builder models and "sunsail-" back into their slugs. G5: a charter brand is never set as a model's manufacturer.
+     */
+    private fun applyManufacturer(
+        model: Model,
+        manufacturer: Manufacturer?,
+        nausysModelId: Int?,
+    ) {
+        val existing = model.manufacturer
+        when {
+            existing != null ->
+                if (existing.id != manufacturer?.id) {
+                    log.warn("Model ${model.name} keeps its manufacturer ${existing.name}; NauSys says ${manufacturer?.name}")
+                }
+            manufacturer != null && BrandModelAliases.isBrandManufacturer(manufacturer.name) ->
+                log.warn("R02 brand manufacturer '${manufacturer.name}' not set on NauSys model $nausysModelId '${model.name}'")
+            else -> model.manufacturer = manufacturer
+        }
+    }
+
+    /** R02 G3: the builder model a charter-brand label is aliased to, when the target row is still as the file says. */
+    private fun aliasedModel(
+        modelLabel: String,
+        allModels: List<Model>,
+    ): Model? {
+        val alias = BrandModelAliases.aliasFor(ExternalSystemEnum.NAUSYS, modelLabel) ?: return null
+        val row = allModels.find { it.id == alias.targetModelId }
+        val target = row?.takeIf { BrandModelAliases.matchesTarget(alias, it.name) }
+        if (target == null) log.error("R02 brand model alias ignored: '$modelLabel' -> model ${alias.targetModelId} is '${row?.name}'")
+        return target
     }
 
     // See MmkCatalogueSyncService.equipmentSync for the rationale —

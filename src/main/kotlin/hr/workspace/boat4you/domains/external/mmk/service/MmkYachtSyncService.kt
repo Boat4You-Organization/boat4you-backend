@@ -39,8 +39,10 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslationRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.ModelQueryingService
+import hr.workspace.boat4you.domains.catalouge.utils.BrandModelAliases
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
+import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
@@ -266,7 +268,8 @@ class MmkYachtSyncService(
         yacht.agency = agency
         yacht.location = location
         yacht.model = model
-        yacht.name = mmkYacht.name.ifBlank { mmkYacht.model?.ifBlank { "N/A" } }
+        // R02: public name + raw partner name (YachtNamePolicy)
+        YachtNamePolicy.applyTo(yacht, mmkYacht.name.ifBlank { mmkYacht.model?.ifBlank { "N/A" } } ?: "N/A", agency, "mmkYachtId=${mmkYacht.id}")
         yacht.deposit = mmkYacht.deposit?.toBigDecimal()
         yacht.insuredDeposit = null
         yacht.depositCurrency = mmkYacht.currency
@@ -323,7 +326,7 @@ class MmkYachtSyncService(
         }
     }
 
-    private fun syncAndGetModel(mmkYacht: org.openapitools.client.mmk.model.Yacht): Model? {
+    internal fun syncAndGetModel(mmkYacht: org.openapitools.client.mmk.model.Yacht): Model? {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.MMK.value.toLong())
         return if (mmkYacht.modelId == null) {
             null
@@ -341,33 +344,61 @@ class MmkYachtSyncService(
                 // ModelNameNormaliser. Mario rule (3.5.2026): partner cannot
                 // fork "Bali 4.4" into a dozen "- N + M cab.*" variants.
                 val canonicalModelName = modelNameNormaliser.canonicalName(mmkYacht.model ?: "Unknown")
-                val modelByName =
-                    try {
-                        modelQueryingService.findByNameIgnoreCaseAndExternalManufacturerId(
-                            canonicalModelName,
-                            mmkYacht.shipyardId ?: -1L,
-                            ExternalSystemEnum.MMK.value,
-                        )
-                    } catch (e: Exception) {
-                        log.error(
-                            "Error finding model for mmkModelId: ${mmkYacht.modelId} mmkModelName: $canonicalModelName mmkManufacturerId ${mmkYacht.shipyardId}",
-                            e,
-                        )
-                        throw e
-                    }
-                return if (modelByName != null) {
-                    externalMappingService.saveMapping(
-                        mmkYacht.modelId!!,
-                        modelByName.id!!,
-                        externalSystem,
-                        Model::class.simpleName.toString(),
-                    )
-                    modelByName
-                } else {
-                    syncModel(externalSystem, mmkYacht.modelId!!, canonicalModelName, mmkYacht.shipyardId)
-                }
+                // R02 G3: a charter brand's label ("Sunsail 424") lands on the builder model it is (V9_84 pairs) - mapped
+                // to the existing target, never created, never renamed.
+                aliasedModel(mmkYacht.modelId!!, canonicalModelName, externalSystem)
+                    ?: modelByNameOrNew(mmkYacht, canonicalModelName, externalSystem)
             }
         }
+    }
+
+    private fun modelByNameOrNew(
+        mmkYacht: org.openapitools.client.mmk.model.Yacht,
+        canonicalModelName: String,
+        externalSystem: ExternalSystem,
+    ): Model {
+        val modelByName =
+            try {
+                modelQueryingService.findByNameIgnoreCaseAndExternalManufacturerId(
+                    canonicalModelName,
+                    mmkYacht.shipyardId ?: -1L,
+                    ExternalSystemEnum.MMK.value,
+                )
+            } catch (e: Exception) {
+                log.error(
+                    "Error finding model for mmkModelId: ${mmkYacht.modelId} mmkModelName: $canonicalModelName mmkManufacturerId ${mmkYacht.shipyardId}",
+                    e,
+                )
+                throw e
+            }
+        return if (modelByName != null) {
+            externalMappingService.saveMapping(
+                mmkYacht.modelId!!,
+                modelByName.id!!,
+                externalSystem,
+                Model::class.simpleName.toString(),
+            )
+            modelByName
+        } else {
+            syncModel(externalSystem, mmkYacht.modelId!!, canonicalModelName, mmkYacht.shipyardId)
+        }
+    }
+
+    private fun aliasedModel(
+        mmkModelId: Long,
+        modelLabel: String,
+        externalSystem: ExternalSystem,
+    ): Model? {
+        val alias = BrandModelAliases.aliasFor(ExternalSystemEnum.MMK, modelLabel) ?: return null
+        val row = modelRepository.findById(alias.targetModelId).getOrNull()
+        val target = row?.takeIf { BrandModelAliases.matchesTarget(alias, it.name) }
+        if (target == null) {
+            log.error("R02 brand model alias ignored: '$modelLabel' -> model ${alias.targetModelId} is '${row?.name}'")
+        } else {
+            externalMappingService.saveMapping(mmkModelId, target.id!!, externalSystem, Model::class.simpleName.toString())
+            log.info("R02 brand model alias: MMK model $mmkModelId '$modelLabel' -> ${target.id} '${target.name}'")
+        }
+        return target
     }
 
     private fun syncModel(
@@ -391,7 +422,16 @@ class MmkYachtSyncService(
 
         val model = Model()
         model.name = mmkModelName ?: "Unknown"
-        model.manufacturer = manufacturer
+        // R02 G5: a charter brand is never a model's manufacturer (SlugUtils would prefix "sunsail-" to its slugs).
+        model.manufacturer =
+            manufacturer?.takeUnless { BrandModelAliases.isBrandManufacturer(it.name) }.also {
+                if (it == null && manufacturer != null) {
+                    log.warn("R02 brand manufacturer '${manufacturer.name}' not set on new MMK model $mmkModelId '${model.name}'")
+                }
+            }
+        if (BrandModelAliases.isBrandLabel(model.name)) {
+            log.warn("R02 charter-brand model label created: MMK model $mmkModelId '${model.name}' - add it to ${BrandModelAliases.RESOURCE}")
+        }
 
         modelRepository.save(model)
 

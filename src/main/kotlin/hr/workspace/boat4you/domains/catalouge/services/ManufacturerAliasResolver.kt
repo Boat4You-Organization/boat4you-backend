@@ -22,6 +22,9 @@ class ManufacturerAliasResolver {
     /**
      * Map of normalised partner-supplied names (lowercase, accent-stripped)
      * → canonical brand name we persist in `manufacturer.name`.
+     *
+     * R02 G4 (14.10.2026): never alias a charter brand ("Sunsail", "The Moorings", "NSS") to one builder - their fleets
+     * span Leopard, Jeanneau, Beneteau, Dufour and Lagoon. Brand labels are resolved per model (BrandModelAliases).
      */
     private val aliases: Map<String, String> = mapOf(
         // Brand-merge aliases. Without these the sync forks the brand again.

@@ -23,24 +23,7 @@ interface YachtTwinRepository : JpaRepository<Yacht, Long> {
      * Returns no rows when the boat's identity fields are null (→ caller treats
      * as "no twins", i.e. a safe no-op).
      */
-    @Query(
-        value = """
-            SELECT y2.id
-            FROM yacht y1
-            JOIN yacht y2
-              ON y2.entry_type = 'EXTERNAL'
-             AND lower(btrim(y2.name)) = lower(btrim(y1.name))
-             AND y2.location_id = y1.location_id
-             AND y2.build_year  = y1.build_year
-             AND y2.vessel_type = y1.vessel_type
-             AND abs(coalesce(y2.length, 0) - coalesce(y1.length, 0)) < 0.2
-            WHERE y1.id = :id
-              AND y1.name IS NOT NULL
-              AND y1.location_id IS NOT NULL
-              AND y1.build_year IS NOT NULL
-        """,
-        nativeQuery = true,
-    )
+    @Query(value = FIND_TWIN_IDS_SQL, nativeQuery = true)
     fun findTwinIds(@Param("id") id: Long): List<Long>
 
     /**
@@ -78,6 +61,26 @@ interface YachtTwinRepository : JpaRepository<Yacht, Long> {
     ): Long?
 
     companion object {
+        /**
+         * Matched on the raw partner name (R02: yacht.name is the public name - two fleet boats "Sunsail 41.3 Premium"
+         * and "Moorings 41.3 Premium" both read "Boat4You 41.3 Premium"); partner_name NULL = the name was never changed.
+         */
+        const val FIND_TWIN_IDS_SQL = """
+            SELECT y2.id
+            FROM yacht y1
+            JOIN yacht y2
+              ON y2.entry_type = 'EXTERNAL'
+             AND lower(btrim(COALESCE(y2.partner_name, y2.name))) = lower(btrim(COALESCE(y1.partner_name, y1.name)))
+             AND y2.location_id = y1.location_id
+             AND y2.build_year  = y1.build_year
+             AND y2.vessel_type = y1.vessel_type
+             AND abs(coalesce(y2.length, 0) - coalesce(y1.length, 0)) < 0.2
+            WHERE y1.id = :id
+              AND COALESCE(y1.partner_name, y1.name) IS NOT NULL
+              AND y1.location_id IS NOT NULL
+              AND y1.build_year IS NOT NULL
+        """
+
         /**
          * The copy's boat page answers 200 (YachtQueryingService.getValidYacht): active, and a partner copy's agency
          * active and not availability-blocked. A retired copy that still has FREE weeks must never win: the live twin's

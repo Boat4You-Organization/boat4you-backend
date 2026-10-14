@@ -9,6 +9,7 @@ import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.service.ReservationIntegrationService
 import hr.workspace.boat4you.domains.reservation.service.ReservationMutationService
+import hr.workspace.boat4you.domains.reservation.service.emailYachtLabel
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -181,10 +182,7 @@ class OptionExpiryService(
         val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModelName = yacht.model?.name
         val yachtName = yacht.name
-        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModelName, yachtName)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { yachtName ?: "—" }
+        val yachtFullLabel = emailYachtLabel(yachtManufacturer, yachtModelName, yachtName)
 
         val yachtImageUrl = yacht.mainImageId?.let { "$serverHost/public/image/$it?width=936" }
         val displayReservationRef = reservation.reservationNumber ?: "${reservation.id!!}"
@@ -361,10 +359,7 @@ class OptionExpiryService(
         val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModelName = yacht.model?.name
         val yachtName = yacht.name
-        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModelName, yachtName)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { yachtName ?: "—" }
+        val yachtFullLabel = emailYachtLabel(yachtManufacturer, yachtModelName, yachtName)
 
         val yachtImageUrl = yacht.mainImageId?.let { "$serverHost/public/image/$it?width=936" }
         val displayReservationRef = reservation.reservationNumber ?: "${reservation.id!!}"

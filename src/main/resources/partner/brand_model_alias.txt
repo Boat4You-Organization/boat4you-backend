@@ -1,0 +1,10 @@
+# R02 guard G3 (14.10.2026): a charter brand's model label -> the builder model it really is. Read by the MMK yacht sync
+# (model resolution) and the NauSys catalogue sync (modelsSync) when a partner model id has no mapping yet: an alias hit
+# saves the mapping to the target model id. The target is never created and never gets its name, manufacturer or
+# dimensions from the partner. An entry whose target id is missing or whose name differs is ignored (log ERROR).
+# Seeded from V9_84 (the CERTAIN pairs only; uncertain labels such as Sunsail 41, Moorings 5000, Dream 60/82 wait for Mario).
+#
+# Format: <system MMK|NAUSYS>|<partner model label, lowercase, spaces collapsed>|<target model id>|<target model name>
+MMK|sunsail 424|2234|Leopard 42
+MMK|moorings 42.3|2716|Oceanis 40.1
+MMK|moorings 352|2701|Oceanis 35.1
