@@ -1,7 +1,9 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.common.config.RealPriceSwitches
+import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
 import hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum
+import org.mockito.Mockito.mock
 import org.springframework.cache.support.NoOpCacheManager
 import org.springframework.jdbc.core.JdbcTemplate
 import java.time.Duration
@@ -39,4 +41,10 @@ object SearchSwitchesTestSupport {
 
     /** All switches at their defaults (= today's search). */
     fun defaults(): RealPriceSwitches = SearchSwitches().switches
+
+    /**
+     * A real [LiveOptionLookup] over a mocked [ExternalReservationRepository] (no partner options): the boat page's
+     * live-option test answers false, as with BOOKING_C1=OFF.
+     */
+    fun liveOptionLookup(): LiveOptionLookup = LiveOptionLookup(mock(ExternalReservationRepository::class.java))
 }

@@ -287,6 +287,7 @@ class YachtSearchGuletCharterTest {
                 countries,
                 PassThroughHeavyQueries,
                 SearchSwitchesTestSupport.defaults(),
+                SearchSwitchesTestSupport.liveOptionLookup(),
             )
         distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager(), SearchSwitchesTestSupport.defaults())
     }

@@ -67,6 +67,7 @@ class YachtSearchListGateRoutingTest {
             mock(CountryRepository::class.java),
             RecordingRunner(),
             SearchSwitchesTestSupport.defaults(),
+            SearchSwitchesTestSupport.liveOptionLookup(),
         )
 
     private fun routeOf(isAdmin: Boolean): Routed =

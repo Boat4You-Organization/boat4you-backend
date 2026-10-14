@@ -176,6 +176,7 @@ class YachtSearchPagingStabilityTest {
                 mock(CountryRepository::class.java),
                 PassThroughHeavyQueries,
                 SearchSwitchesTestSupport.defaults(),
+                SearchSwitchesTestSupport.liveOptionLookup(),
             )
     }
 

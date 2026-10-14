@@ -20,7 +20,6 @@ import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
 import hr.workspace.boat4you.domains.catalouge.enums.MatchKind
-import hr.workspace.boat4you.domains.catalouge.enums.OPTION_ECHO_GRACE_HOURS
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
@@ -44,6 +43,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Manufacturer
 import hr.workspace.boat4you.domains.catalouge.jpa.Model
+import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
@@ -101,6 +101,7 @@ class YachtQueryingService(
     private val countryRepository: CountryRepository,
     private val heavyQueries: HeavyQueryRunner,
     private val realPriceSwitches: RealPriceSwitches,
+    private val liveOptionLookup: LiveOptionLookup,
 ) {
     companion object {
         private const val MAX_PAGE_SIZE = 100
@@ -1015,7 +1016,7 @@ class YachtQueryingService(
                     .setParameter("fromMin", fromMin)
                     .setParameter("toMax", toMax)
                     // the boat page's live option (OfferQueryingService): no expiry, or expired less than the grace ago
-                    .setParameter("optionCutoff", java.time.LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS))
+                    .setParameter("optionCutoff", liveOptionLookup.optionCutoff())
                     .resultList as List<Array<Any?>>
             rows.forEach { row ->
                 val offerId = id(row[0]) ?: return@forEach
@@ -2619,6 +2620,16 @@ class YachtQueryingService(
             ?.distinct()
             .orEmpty()
 
+    /**
+     * Live-option test for the boat page's offers (WS-C, path 11): with BOOKING_C1=ON an OPTION / OPTION_WAITING row
+     * held by a live partner option keeps its badge; OFF answers false for every offer, today's default, with no query.
+     */
+    private fun liveOptionTest(
+        yacht: Yacht,
+        offers: List<Offer>,
+    ): (Offer) -> Boolean =
+        if (realPriceSwitches.bookingC1.isOn) liveOptionLookup.forOffers(yacht.id!!, offers) else { _ -> false }
+
     fun getYacht(
         id: Long,
         dateFrom: LocalDate?,
@@ -2631,7 +2642,8 @@ class YachtQueryingService(
         val offerDto =
             if (dateFrom != null && dateTo != null) {
                 val offers = offerRepository.findAllByYachtAndDateFromAndDateTo(yacht, dateFrom!!, dateTo!!)
-                offers.map { offerMapper.toDto(it, currency) }
+                val live = liveOptionTest(yacht, offers)
+                offers.map { offerMapper.toDto(it, currency, live(it)) }
             } else {
                 // SEO / canonical URL with no date filter: still load the
                 // next 12 months of offers so the detail page's Product
@@ -2650,7 +2662,8 @@ class YachtQueryingService(
                     today,
                     today.plusYears(1),
                 )
-                offers.map { offerMapper.toDto(it, currency) }
+                val live = liveOptionTest(yacht, offers)
+                offers.map { offerMapper.toDto(it, currency, live(it)) }
             }
 
         // Pick-up location for a DATED request comes from that week's offers,

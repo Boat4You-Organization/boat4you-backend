@@ -61,6 +61,7 @@ class YachtSearchDidScopeTests {
             countryRepository,
             PassThroughHeavyQueries,
             SearchSwitchesTestSupport.defaults(),
+            SearchSwitchesTestSupport.liveOptionLookup(),
         )
 
     private fun marina(

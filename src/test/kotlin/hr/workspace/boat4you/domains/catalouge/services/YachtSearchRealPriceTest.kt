@@ -132,6 +132,7 @@ class YachtSearchRealPriceTest {
                 countries,
                 PassThroughHeavyQueries,
                 settings.switches,
+                SearchSwitchesTestSupport.liveOptionLookup(),
             )
         distribution =
             YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager(), settings.switches)

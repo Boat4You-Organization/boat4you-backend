@@ -62,6 +62,7 @@ class YachtNotActiveSuccessorTest {
             mock(CountryRepository::class.java),
             PassThroughHeavyQueries,
             SearchSwitchesTestSupport.defaults(),
+            SearchSwitchesTestSupport.liveOptionLookup(),
         )
 
     private fun stored(

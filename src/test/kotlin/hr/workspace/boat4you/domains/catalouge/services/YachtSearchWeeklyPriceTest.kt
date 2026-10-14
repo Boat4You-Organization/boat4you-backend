@@ -213,6 +213,7 @@ class YachtSearchWeeklyPriceTest {
                 mock(CountryRepository::class.java),
                 PassThroughHeavyQueries,
                 SearchSwitchesTestSupport.defaults(),
+                SearchSwitchesTestSupport.liveOptionLookup(),
             )
     }
 
