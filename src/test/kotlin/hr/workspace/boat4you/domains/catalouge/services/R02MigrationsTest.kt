@@ -399,6 +399,28 @@ class R02MigrationsTest {
     }
 
     @Test
+    fun `V9_87 waits for a sync holding an R31 boat's lastmod row and still bumps it`() {
+        listOf(V9_84, V9_85, V9_86).forEach { migrate(it) }
+        stampAll(LONG_AGO)
+        dataSource.connection.use { sync ->
+            // a sync updating yacht 5 ("Gulet" on model "Gulet") holds its yacht_content_modified row (V9_71 trigger) for 5 s
+            sync.autoCommit = false
+            sync.createStatement().use { it.executeUpdate("UPDATE yacht_content_modified SET modified_at = modified_at WHERE yacht_id = 5") }
+            val started = System.nanoTime()
+            val deploy = CompletableFuture.runAsync { migrate(V9_87) }
+            Thread.sleep(5_000)
+            deploy.isDone shouldBe false
+            sync.commit()
+            sync.autoCommit = true
+            deploy.get(60, TimeUnit.SECONDS)
+            (System.nanoTime() - started > TimeUnit.SECONDS.toNanos(3)) shouldBe true
+        }
+        bumped() shouldContainExactlyInAnyOrder listOf(1L, 2L, 3L, 5L, 6L, 10L, 11L)
+        jdbc.queryForList("SELECT step || '=' || rows FROM _r02_v9_87_done ORDER BY step", String::class.java) shouldContainExactly
+            listOf("names=6", "r31_lastmod=1")
+    }
+
+    @Test
     fun `R02NamePolicyParity - the SQL rule equals YachtNamePolicy on every fixture and on the curated list`() {
         allR02()
         (YachtNamePolicyFixtures.CASES.map { it.first } + YachtNamePolicy.brandNames).forEach { raw ->

@@ -99,28 +99,45 @@ BEGIN
 
     -- R31: the slug drops a name that repeats the model (YachtLabel.nameRepeatsModel: same words, or the model's last words;
     -- case, accents, punctuation and a vessel-type prefix ignored). Active boats only (the sitemaps list them).
+    -- Its own retry: lock_timeout (3 s, transaction-local from the names step) also covers the row locks the V9_71
+    -- trigger takes on yacht_content_modified for a yacht a sync is writing right now.
     IF NOT EXISTS (SELECT 1 FROM public._r02_v9_87_done WHERE step = 'r31_lastmod') THEN
-        INSERT INTO public.yacht_content_modified AS m (yacht_id, modified_at)
-        SELECT y.id, clock_timestamp()
-        FROM public.yacht y
-        JOIN public.model mo ON mo.id = y.model_id
-        CROSS JOIN LATERAL (
-            SELECT regexp_replace(btrim(regexp_replace(translate(lower(mo.name), 'šžčćđáàâäãåéèêëíìîïóòôöõúùûüçñ',
-                                                                 'szccdaaaaaaeeeeiiiiooooouuuucn'),
-                                                       '[^[:alnum:]]+', ' ', 'g')),
-                                  '^(m s|m y|s y|m v|s v|msy|ms|my|sy|mv|sv) +', '') AS mk,
-                   regexp_replace(btrim(regexp_replace(translate(lower(y.name), 'šžčćđáàâäãåéèêëíìîïóòôöõúùûüçñ',
-                                                                 'szccdaaaaaaeeeeiiiiooooouuuucn'),
-                                                       '[^[:alnum:]]+', ' ', 'g')),
-                                  '^(m s|m y|s y|m v|s v|msy|ms|my|sy|mv|sv) +', '') AS nk
-        ) k
-        WHERE y.sys_active
-          AND k.mk <> '' AND k.nk <> ''
-          AND (k.mk = k.nk OR k.mk LIKE '% ' || k.nk)
-        ON CONFLICT (yacht_id) DO UPDATE SET modified_at = EXCLUDED.modified_at
-            WHERE m.modified_at < EXCLUDED.modified_at;
-        GET DIAGNOSTICS n = ROW_COUNT;
-        RAISE NOTICE 'V9_87 R31 lastmod bumped: %', n;
-        INSERT INTO public._r02_v9_87_done (step, rows) VALUES ('r31_lastmod', n);
+        attempt := 0;
+        LOOP
+            BEGIN
+                PERFORM set_config('lock_timeout', '3s', true);
+                INSERT INTO public.yacht_content_modified AS m (yacht_id, modified_at)
+                SELECT y.id, clock_timestamp()
+                FROM public.yacht y
+                JOIN public.model mo ON mo.id = y.model_id
+                CROSS JOIN LATERAL (
+                    SELECT regexp_replace(btrim(regexp_replace(translate(lower(mo.name), 'šžčćđáàâäãåéèêëíìîïóòôöõúùûüçñ',
+                                                                         'szccdaaaaaaeeeeiiiiooooouuuucn'),
+                                                               '[^[:alnum:]]+', ' ', 'g')),
+                                          '^(m s|m y|s y|m v|s v|msy|ms|my|sy|mv|sv) +', '') AS mk,
+                           regexp_replace(btrim(regexp_replace(translate(lower(y.name), 'šžčćđáàâäãåéèêëíìîïóòôöõúùûüçñ',
+                                                                         'szccdaaaaaaeeeeiiiiooooouuuucn'),
+                                                               '[^[:alnum:]]+', ' ', 'g')),
+                                          '^(m s|m y|s y|m v|s v|msy|ms|my|sy|mv|sv) +', '') AS nk
+                ) k
+                WHERE y.sys_active
+                  AND k.mk <> '' AND k.nk <> ''
+                  AND (k.mk = k.nk OR k.mk LIKE '% ' || k.nk)
+                ON CONFLICT (yacht_id) DO UPDATE SET modified_at = EXCLUDED.modified_at
+                    WHERE m.modified_at < EXCLUDED.modified_at;
+                GET DIAGNOSTICS n = ROW_COUNT;
+                RAISE NOTICE 'V9_87 R31 lastmod bumped: %', n;
+                INSERT INTO public._r02_v9_87_done (step, rows) VALUES ('r31_lastmod', n);
+                EXIT;
+            EXCEPTION
+                WHEN lock_not_available THEN
+                    attempt := attempt + 1;
+                    IF attempt >= 10 THEN
+                        RAISE;
+                    END IF;
+                    RAISE NOTICE 'V9_87: lastmod rows locked (attempt % of 10), retrying in 3 s', attempt;
+                    PERFORM pg_sleep(3);
+            END;
+        END LOOP;
     END IF;
 END $$;
