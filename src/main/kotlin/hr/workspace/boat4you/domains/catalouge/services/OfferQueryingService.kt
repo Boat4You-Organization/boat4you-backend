@@ -5,7 +5,6 @@ import hr.workspace.boat4you.domains.catalouge.dto.PriceCalcDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
-import hr.workspace.boat4you.domains.catalouge.enums.OPTION_ECHO_GRACE_HOURS
 import hr.workspace.boat4you.domains.catalouge.enums.OfferType
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
@@ -24,7 +23,6 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.temporal.ChronoUnit
 import kotlin.math.abs
 
@@ -37,6 +35,7 @@ class OfferQueryingService(
     private val userRepository: UserRepository,
     private val priceCalculationService: PriceCalculationService,
     private val externalReservationRepository: ExternalReservationRepository,
+    private val liveOptionLookup: LiveOptionLookup,
 ) {
     fun getYachtStandardOffers(
         yachtId: Long,
@@ -59,15 +58,8 @@ class OfferQueryingService(
         // lapsed less than OPTION_ECHO_GRACE_HOURS ago (partners hold past the
         // stated deadline without bumping it — Vernicos 28.7.2026). The finder
         // is half-open (date_from < end AND date_to > start) so a turnaround
-        // day never counts.
-        val liveOptions =
-            externalReservationRepository.findOptionsByYachtIdsAndPeriod(
-                listOf(yachtId),
-                ExternalReservationStatus.OPTION,
-                dateFrom,
-                dateTo,
-                LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS),
-            )
+        // day never counts. Shared with /offers and the boat page (LiveOptionLookup).
+        val hasLiveOption = liveOptionLookup.forYachtWindow(yachtId, dateFrom, dateTo)
 
         // ONE row per charter period (Mario 14.9.2026). The same week can carry
         // several rows — legitimate one-way variants between neighbouring bases,
@@ -81,11 +73,7 @@ class OfferQueryingService(
         val homeBaseId = validYacht.location?.id?.let { "l-$it" }
         val mappedOffers =
             offers
-                .map { offer ->
-                    val hasLiveOption =
-                        liveOptions.any { r -> halfOpenOverlap(offer.dateFrom, offer.dateTo, r.dateFrom, r.dateTo) }
-                    offerMapper.toDto(offer, currency, hasLiveOption)
-                }
+                .map { offer -> offerMapper.toDto(offer, currency, hasLiveOption(offer)) }
                 .groupBy { it.dateFrom to it.dateTo }
                 .values
                 .mapNotNull { pickOfferForPeriod(it, homeBaseId) }
@@ -187,16 +175,7 @@ class OfferQueryingService(
         // stick out past the requested window, so the option lookup spans the
         // offers' envelope, not the raw window — an option overlapping only the
         // out-of-window tail of an offer still counts.
-        val optionWindowFrom = offers.mapNotNull { it.dateFrom }.minOrNull() ?: dateFrom
-        val optionWindowTo = offers.mapNotNull { it.dateTo }.maxOrNull() ?: dateTo
-        val liveOptions =
-            externalReservationRepository.findOptionsByYachtIdsAndPeriod(
-                listOf(yachtId),
-                ExternalReservationStatus.OPTION,
-                optionWindowFrom,
-                optionWindowTo,
-                LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS),
-            )
+        val hasLiveOption = liveOptionLookup.forOffers(yachtId, offers, dateFrom, dateTo)
 
         // One row per period here too, so the sister forms price and caption the
         // same week the detail calendar shows. The widened window still returns
@@ -204,11 +183,7 @@ class OfferQueryingService(
         // overlap pick needs — only same-week route duplicates collapse.
         val homeBaseId = yacht.location?.id?.let { "l-$it" }
         return offers
-            .map { offer ->
-                val hasLiveOption =
-                    liveOptions.any { r -> halfOpenOverlap(offer.dateFrom, offer.dateTo, r.dateFrom, r.dateTo) }
-                offerMapper.toDto(offer, currency, hasLiveOption)
-            }
+            .map { offer -> offerMapper.toDto(offer, currency, hasLiveOption(offer)) }
             .groupBy { it.dateFrom to it.dateTo }
             .values
             .mapNotNull { pickOfferForPeriod(it, homeBaseId) }

@@ -12,9 +12,13 @@ import hr.workspace.boat4you.domains.reservation.dto.YachtSwapInfoDto
 import hr.workspace.boat4you.domains.reservation.enums.PaymentType
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.exceptions.BookingCreationException
+import hr.workspace.boat4you.domains.reservation.exceptions.OfferNotBookableException
+import hr.workspace.boat4you.domains.reservation.exceptions.PartnerPriceChangedException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.service.BookingFailureAlertService
+import hr.workspace.boat4you.domains.reservation.service.OfferNotBookableFollowUp
+import hr.workspace.boat4you.domains.reservation.service.PartnerPriceGuard
 import hr.workspace.boat4you.domains.reservation.service.ReservationEmailService
 import hr.workspace.boat4you.domains.reservation.service.ReservationFlowMutationService
 import hr.workspace.boat4you.domains.reservation.service.ReservationFlowQueryingService
@@ -64,6 +68,8 @@ class ReservationController(
     private val reservationSyncService: ReservationSyncService,
     private val reservationDocumentService: hr.workspace.boat4you.domains.reservation.service.ReservationDocumentService,
     private val voucherService: VoucherService,
+    private val partnerPriceGuard: PartnerPriceGuard,
+    private val offerNotBookableFollowUp: OfferNotBookableFollowUp,
 ) {
     private val log = org.slf4j.LoggerFactory.getLogger(this::class.java)
 
@@ -159,7 +165,11 @@ class ReservationController(
                 // Our own exceptions and IllegalArgument are ordinary rejections (offer gone, agency inactive, bad
                 // voucher). Anything else is a defect that loses the booking before a flow row even exists - the
                 // other half of 19.9.2026 (a 264-char partner extra name as the extras key), which left no trace.
-                if (e !is IllegalArgumentException && !e.javaClass.name.startsWith("hr.workspace.boat4you.")) {
+                // The one exception (BOOKING_C1): a week we showed as bookable is gone (409 / 3006) - tell the admins
+                // and queue exactly that period for a partner re-check.
+                if (e is OfferNotBookableException) {
+                    offerNotBookableFollowUp.handle(createReservationDto, e)
+                } else if (e !is IllegalArgumentException && !e.javaClass.name.startsWith("hr.workspace.boat4you.")) {
                     runCatching { bookingFailureAlertService.alertRejectedRequest(createReservationDto, e) }
                         .onFailure { log.error("Booking failure alert failed for offer {}", createReservationDto.offerId, it) }
                 }
@@ -190,6 +200,11 @@ class ReservationController(
             val externalReservation =
                 reservationIntegrationService.createExternalReservation(reservationFlowId)
             partnerOption = externalReservation
+
+            // PARTNER_PRICE_GUARD: the partner's price on the option just created vs our snapshot, before any
+            // Reservation exists. OFF (default) does nothing; ENFORCE may throw PartnerPriceChangedException, which
+            // the catch below compensates like any failure (option released by wrapper, flow abandoned, alert).
+            partnerPriceGuard.check(reservationFlowId, externalReservation)
 
             reservation = reservationMutationService.createReservation(reservationFlowId, externalReservation)
 
@@ -254,7 +269,8 @@ class ReservationController(
             val partnerRejection =
                 e is hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException ||
                     e is hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException ||
-                    e is hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException
+                    e is hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException ||
+                    e is PartnerPriceChangedException
             runCatching { bookingFailureAlertService.alertFailedFlow(reservationFlowId, e, partnerRejection) }
                 .onFailure { log.error("Booking failure alert failed for flow {}", reservationFlowId, it) }
 
@@ -271,6 +287,7 @@ class ReservationController(
                 is hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException,
                 is hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException,
                 is hr.workspace.boat4you.domains.reservation.exceptions.ReservationFlowNotExists,
+                is PartnerPriceChangedException,
                 -> e
                 else -> BookingCreationException("Booking orchestration failed for flow $reservationFlowId", e)
             }
