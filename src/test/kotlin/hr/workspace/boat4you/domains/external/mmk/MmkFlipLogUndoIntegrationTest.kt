@@ -132,7 +132,7 @@ class MmkFlipLogUndoIntegrationTest {
         offers = JpaRepositoryFactory(em).getRepository(OfferRepository::class.java)
         runs = ReverifyRunStore(jdbc)
         checks = PartnerPeriodCheckStore(jdbc)
-        undo = PartnerFlipUndoService(jdbc, checks, DataSourceTransactionManager(dataSource))
+        undo = PartnerFlipUndoService(jdbc, checks, runs, DataSourceTransactionManager(dataSource))
     }
 
     @AfterAll
@@ -388,6 +388,43 @@ class MmkFlipLogUndoIntegrationTest {
         r.clearedPeriods shouldBe 2 // yacht 1 (two rows, one period) and yacht 3
 
         undo.undoRun(run).restored shouldBe 0 // idempotent
+        // The undo is recorded: its own run and one UNDO flip-log row per restored offer.
+        val undoRun = jdbc.queryForMap("SELECT id, job, aborted_reason FROM reverify_run WHERE job = 'UNDO'")
+        undoRun["aborted_reason"] shouldBe "undo of run #$run: 3 offers restored"
+        jdbc.queryForList(
+            "SELECT offer_id FROM partner_offer_flip_log WHERE run_id = ? AND reason = 'UNDO' AND old_status = 'UNAVAILABLE' ORDER BY offer_id",
+            Long::class.java,
+            undoRun["id"],
+        ) shouldContainExactly listOf(1L, 2L, 4L)
+        jdbc.queryForObject("SELECT new_status FROM partner_offer_flip_log WHERE reason = 'UNDO' AND offer_id = 2", String::class.java) shouldBe
+            "OPTION_WAITING"
+    }
+
+    @Test
+    fun `re-posting an old undo never overrides a later run's flip of the same offer`() {
+        offer(1, "FREE")
+        val runA = runs.start(ReverifyJobs.MMK_FREE, ReverifyRunMode.WRITE)
+        mark(runA, includeOptionWaiting = false)
+        undo.undoRun(runA).restored shouldBe 1
+        statusOf(1) shouldBe "FREE"
+        // Run B flips the same offer again on fresh two-day evidence.
+        val runB = runs.start(ReverifyJobs.MMK_FREE, ReverifyRunMode.WRITE)
+        mark(runB, includeOptionWaiting = false)
+        jdbc.update(
+            "INSERT INTO mmk_free_week_strike (yacht_id, date_from, date_to, first_empty_on, hidden_on, hidden_rows) VALUES (1, ?, ?, ?, ?, 1)",
+            F,
+            T,
+            TODAY.minusDays(1),
+            TODAY,
+        )
+
+        val again = undo.undoRun(runA)
+
+        again.restored shouldBe 0
+        again.skippedSupersededByLaterRun shouldBe 1
+        statusOf(1) shouldBe "UNAVAILABLE"
+        jdbc.queryForObject("SELECT count(*) FROM mmk_free_week_strike WHERE hidden_on IS NOT NULL", Int::class.java) shouldBe 1
+        undo.undoRun(runB).restored shouldBe 1 // run B's own undo still works
     }
 
     @Test

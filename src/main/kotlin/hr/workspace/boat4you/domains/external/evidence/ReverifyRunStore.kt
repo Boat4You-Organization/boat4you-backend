@@ -15,6 +15,9 @@ object ReverifyJobs {
     const val MMK_OPTION = "MMK_OPTION"
     const val NAUSYS_REVERIFY = "NAUSYS_REVERIFY"
     const val NAUSYS_D3 = "NAUSYS_D3"
+
+    /** An admin undo of another run (PartnerFlipUndoService); its flip-log rows carry reason `UNDO`. */
+    const val UNDO = "UNDO"
 }
 
 /** Counter deltas of one run; every store call ADDS them to the stored values. */
