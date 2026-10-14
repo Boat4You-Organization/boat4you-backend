@@ -100,6 +100,9 @@ spring:
     driver-class-name: org.postgresql.Driver
     target: ${FLYWAY_TARGET_VERSION:latest}
     out-of-order: ${FLYWAY_OUT_OF_ORDER:false}
+    # Flyway's own default, made explicit so an emergency jar rollback across parallel migration lines can set
+    # FLYWAY_IGNORE_MIGRATION_PATTERNS='*:missing,*:future' for that one restart (remove it afterwards).
+    ignore-migration-patterns: ${FLYWAY_IGNORE_MIGRATION_PATTERNS:*:future}
   web:
     resources:
       add-mappings: ${SWAGGER_ENDPOINT_ENABLED:true}

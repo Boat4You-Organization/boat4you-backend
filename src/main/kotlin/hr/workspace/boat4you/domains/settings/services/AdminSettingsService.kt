@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.settings.services
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.settings.dto.SettingsDto
 import hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum
@@ -44,10 +45,33 @@ class AdminSettingsService(
         return settingsRepository.save(dbSetting).toDto()
     }
 
-    private fun validateSetting(setting: SettingsDto) {
+    internal fun validateSetting(setting: SettingsDto) {
         when (setting.name) {
             SettingsKeyEnum.CARD_PAYMENT_SURCHARGE -> validateCardPaymentSurchargeValue(setting.value)
             SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE -> validateBankTransferFixedFeeValue(setting.value)
+            SettingsKeyEnum.SEARCH_PREDICATE,
+            SettingsKeyEnum.SEARCH_PRICE_FLOOR,
+            SettingsKeyEnum.SEARCH_DEMOTE_STALE_OPTIONS,
+            SettingsKeyEnum.BOOKING_C1,
+            SettingsKeyEnum.PARTNER_PRICE_GUARD,
+            SettingsKeyEnum.EXTRAS_ZERO_OPTIONAL_ON_SITE,
+            SettingsKeyEnum.MMK_OPTION_VERIFY,
+            SettingsKeyEnum.MMK_ONDEMAND_STRIKE,
+            SettingsKeyEnum.NAUSYS_REVERIFY,
+            SettingsKeyEnum.NAUSYS_D3_MODE,
+            SettingsKeyEnum.NAUSYS_WARM_LONG_RANGES,
+            -> validateRealPriceSwitchValue(setting.name, setting.value)
+        }
+    }
+
+    /** Real-price switches (RealPriceSwitches): only the listed values; a reset is done by writing the default. */
+    private fun validateRealPriceSwitchValue(
+        name: SettingsKeyEnum,
+        value: String?,
+    ) {
+        if (!RealPriceSwitches.isAllowedValue(name, value)) {
+            val allowed = RealPriceSwitches.ALLOWED_VALUES[name].orEmpty().joinToString(", ")
+            throw ParameterValidationException(mapOf("value" to "Value must be one of: $allowed"))
         }
     }
 
