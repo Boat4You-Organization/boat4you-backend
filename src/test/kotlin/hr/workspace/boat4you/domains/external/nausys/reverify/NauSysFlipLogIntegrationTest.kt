@@ -240,6 +240,8 @@ class NauSysFlipLogIntegrationTest {
         val run = runs.start(ReverifyJobs.NAUSYS_REVERIFY, ReverifyRunMode.WRITE)
 
         offers.countNauSysPeriodFlippable(1, F, T, null, false) shouldBe 3
+        offers.existsReservationFlowForOffer(6) shouldBe true
+        offers.existsReservationFlowForOffer(1) shouldBe false
         mark(run) shouldBe 3
 
         (1L..8L).map(::statusOf) shouldContainExactly

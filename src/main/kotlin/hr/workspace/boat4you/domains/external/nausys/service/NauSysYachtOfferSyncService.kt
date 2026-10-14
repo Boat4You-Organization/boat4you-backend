@@ -140,8 +140,7 @@ class NauSysYachtOfferSyncService(
         val quotedOptions = mutableListOf<PeriodCheck>()
         // D3 per-response breaker: a reseller losing its pricing must never strike its whole fleet.
         val unpricedBreaker = d3 != null && unpricedYachtShare(nausysOffers, dateFrom, dateTo) > D3_MAX_UNPRICED_SHARE
-        if (unpricedBreaker) {
-            d3!!.escalate(agency.id!!)
+        if (unpricedBreaker && d3!!.escalate(agency.id!!)) {
             log.error(
                 "NauSys D3 [${d3.mode}]: agency ${agency.id} answered more than ${(D3_MAX_UNPRICED_SHARE * 100).toInt()} % of its yachts " +
                     "FREE without a price for $dateFrom..$dateTo - no unpriced strikes from this answer, escalated for a human decision",

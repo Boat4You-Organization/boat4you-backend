@@ -58,10 +58,11 @@ class NauSysD3Run internal constructor(
         if (n > 0) rows.getOrPut(agencyId to reason) { AtomicInteger() }.addAndGet(n)
     }
 
-    /** The per-response unpriced breaker fired for this agency: no strikes from that response, admin decides. */
-    internal fun escalate(agencyId: Long) {
-        escalated += agencyId
-    }
+    /**
+     * The per-response unpriced breaker fired for this agency: no strikes from that response, admin decides.
+     * @return true the first time in this run (the caller logs one ERROR line per agency, not one per interval).
+     */
+    internal fun escalate(agencyId: Long): Boolean = escalated.add(agencyId)
 
     internal fun escalatedAgencies(): Set<Long> = escalated.toSet()
 
