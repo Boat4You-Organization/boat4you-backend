@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.domains.external.service
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
+import hr.workspace.boat4you.common.config.RealPriceSwitches.NauSysReverifyMode
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import hr.workspace.boat4you.domains.catalouge.enums.OPTION_ECHO_GRACE_HOURS
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservation
@@ -14,7 +16,10 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -42,8 +47,16 @@ class ExternalAvailabilityReconcileService(
     // deletes nothing, so a key bug can't wipe valid bookings. Flip RECONCILE_SHADOW=false only
     // after the shadow log proves the candidates are all real cancellations. Mario 29.6.2026.
     @Value("\${reconcile.shadow-mode:true}") private val shadowMode: Boolean,
+    private val switches: RealPriceSwitches,
+    transactionManager: PlatformTransactionManager,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
+    // The real-price B2 purge hook commits on its own: a failure there must never roll back the mirror purge.
+    private val hookTx =
+        TransactionTemplate(transactionManager).apply {
+            propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
+        }
 
     companion object {
         private const val RESERVATION_TYPE = "ExternalReservation"
@@ -68,15 +81,7 @@ class ExternalAvailabilityReconcileService(
         // next availability sync resurrected the row. Matches the read-time cutoff in
         // findOptionsByYachtIdsAndPeriod so display and purge agree on when an echo is dead.
         val graceCutoff = LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS)
-        // Real-price B2 hook: the OPTION offers these lapsed NauSys holds overlap are queued for a partner re-check
-        // (partner_period_check, priority 2) before the mirror rows go - nothing else would ever ask again whether the
-        // partner still holds them. Bookkeeping only, never an offer write.
-        val optionPeriodsQueued =
-            offerRepository.queueNauSysOptionsUnderExpiringHolds(
-                ExternalSystemEnum.NAUSYS.value.toLong(),
-                graceCutoff,
-                PeriodCheckPriority.STALE_OPTION,
-            )
+        val optionPeriodsQueued = queueNauSysOptionRechecks(graceCutoff)
         val optionsRemoved =
             externalReservationRepository.deleteExpiredOptions(ExternalReservationStatus.OPTION, graceCutoff)
         // Zombie RESERVATION rows: an expired option hold that was stored under RESERVATION status
@@ -100,6 +105,26 @@ class ExternalAvailabilityReconcileService(
         if (optionPeriodsQueued > 0) {
             log.info("Purge mirror: $optionPeriodsQueued NauSys OPTION periods under a lapsed hold queued for a partner re-check")
         }
+    }
+
+    /**
+     * Real-price B2 hook: the OPTION offers these lapsed NauSys holds overlap are queued for a partner re-check
+     * (partner_period_check, priority 2) before the mirror rows go - nothing else would ever ask again whether the
+     * partner still holds them. Bookkeeping only, never an offer write. Only while `NAUSYS_REVERIFY` is not OFF (the
+     * default runs nothing new), in its own transaction and best-effort: it can never roll back the purge.
+     */
+    private fun queueNauSysOptionRechecks(graceCutoff: LocalDateTime): Int {
+        if (switches.nausysReverify == NauSysReverifyMode.OFF) return 0
+        return runCatching {
+            hookTx.execute {
+                offerRepository.queueNauSysOptionsUnderExpiringHolds(
+                    ExternalSystemEnum.NAUSYS.value.toLong(),
+                    graceCutoff,
+                    PeriodCheckPriority.STALE_OPTION,
+                )
+            } ?: 0
+        }.onFailure { log.warn("Purge mirror: NauSys OPTION re-check queue not written (the purge goes on): ${it.message}") }
+            .getOrDefault(0)
     }
 
     /**

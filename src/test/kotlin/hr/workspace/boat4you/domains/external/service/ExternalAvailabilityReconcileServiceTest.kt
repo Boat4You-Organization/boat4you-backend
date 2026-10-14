@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.external.service
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservation
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
@@ -19,6 +20,7 @@ import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.slf4j.LoggerFactory
+import org.springframework.transaction.PlatformTransactionManager
 import java.time.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -49,7 +51,14 @@ class ExternalAvailabilityReconcileServiceTest {
     }
 
     private fun service(shadow: Boolean) =
-        ExternalAvailabilityReconcileService(reservationRepository, mappingRepository, offerRepository, shadow)
+        ExternalAvailabilityReconcileService(
+            reservationRepository,
+            mappingRepository,
+            offerRepository,
+            shadow,
+            mock<RealPriceSwitches>().also { `when`(it.nausysReverify).thenReturn(RealPriceSwitches.NauSysReverifyMode.OFF) },
+            mock<PlatformTransactionManager>(),
+        )
 
     /** `count` consecutive one-week RESERVATION rows on [yacht] starting 2026-04-04. */
     private fun rows(count: Int): List<ExternalReservation> =
