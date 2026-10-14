@@ -397,9 +397,25 @@ class NauSysFlipLogIntegrationTest {
 
         candidates() shouldContainExactly listOf(Triple(2L, F, 4))
 
-        // decided today -> not again today
+        // re-struck today (the 10:40 / 16:40 near-term D3 pass, path 4): still due for the 17:30 confirmation
         checks.recordFirstStrike(ExternalSystemEnum.NAUSYS, 2, F, T, 3, PeriodCheckResult.UNPRICED, TODAY)
-        candidates() shouldContainExactly emptyList()
+        checks.find(ExternalSystemEnum.NAUSYS, 2, F, T)!!.lastCheckedOn shouldBe TODAY
+        candidates() shouldContainExactly listOf(Triple(2L, F, 4))
+    }
+
+    @Test
+    fun `P3 - a strike first recorded today waits for tomorrow, a near-term strike from yesterday re-struck today is selected`() {
+        offer(1, "FREE", from = F) // grid row, struck for the first time today
+        offer(2, "FREE", yacht = 2, from = F) // struck yesterday at 16:40, again today at 10:40 and 16:40
+        offer(3, "FREE", yacht = 3, from = F) // hidden yesterday, shown again: not P3
+        checks.recordFirstStrike(ExternalSystemEnum.NAUSYS, 1, F, T, 3, PeriodCheckResult.EMPTY, TODAY)
+        checks.recordFirstStrike(ExternalSystemEnum.NAUSYS, 2, F, T, 3, PeriodCheckResult.EMPTY, TODAY.minusDays(1))
+        checks.recordFirstStrike(ExternalSystemEnum.NAUSYS, 2, F, T, 3, PeriodCheckResult.EMPTY, TODAY)
+        checks.recordFirstStrike(ExternalSystemEnum.NAUSYS, 2, F, T, 3, PeriodCheckResult.EMPTY, TODAY)
+        checks.recordFirstStrike(ExternalSystemEnum.NAUSYS, 3, F, T, 3, PeriodCheckResult.EMPTY, TODAY.minusDays(9))
+        checks.markHidden(ExternalSystemEnum.NAUSYS, 3, F, T, 1, TODAY.minusDays(8))
+
+        candidates().filter { it.third == 4 } shouldContainExactly listOf(Triple(2L, F, 4))
     }
 
     @Test

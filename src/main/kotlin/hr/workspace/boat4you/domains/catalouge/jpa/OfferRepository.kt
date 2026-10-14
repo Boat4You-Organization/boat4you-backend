@@ -545,11 +545,13 @@ interface OfferRepository : JpaRepository<Offer, Long> {
      *  - 2 P2 OPTION / OPTION_WAITING without a live hold (48 h) or reservation_flow, `ext_status` not UNDER_OPTION,
      *    SYNTHETIC_OPTION or SYNTHETIC_DISAPPEARANCE;
      *  - 3 P2b real UNDER_OPTION rows the partner has not quoted for 7 days (evidence only, never flipped);
-     *  - 4 P3 open strikes (not decided today) and never-checked periods queued with priority <= 3;
+     *  - 4 P3 open strikes from an earlier day (selected by strike age, not by the last check: the near-term D3 pass and
+     *    path 4 re-strike a period during the day, which must not hide it from the 17:30 confirmation) and
+     *    never-checked periods queued with priority <= 3;
      *  - 5 P4 FREE rows off the nightly grid (not Sat->Sat 7 nights, not Sat->Sat of the season's minimal duration);
      *  - 6 P5 grid FREE rows: the first, middle and last eligible period per yacht and year;
      *  - 7 P6 UNAVAILABLE rows no live RESERVATION / SERVICE overlaps (zombie escape) - the stale-UNAVAILABLE healer.
-     * Rotation: P1/P2/P2b/P6 skip periods decided in the last 7 days, P4/P5 in the last 14 days, P3 only today.
+     * Rotation: P1/P2/P2b/P6 skip periods decided in the last 7 days, P4/P5 in the last 14 days, P3 strikes struck today.
      * Within a class: lowest stored priority, never-checked, oldest check, earliest period first.
      */
     @Query(
@@ -584,8 +586,8 @@ interface OfferRepository : JpaRepository<Offer, Long> {
             ($NAUSYS_CAND_SELECT, 4 AS cls $NAUSYS_CAND_FROM
              AND o.status IN ('FREE', 'OPTION', 'OPTION_WAITING')
              AND c.hidden_on IS NULL
-             AND (c.first_empty_on IS NOT NULL OR (c.priority <= 3 AND c.last_checked_on IS NULL))
-             AND (c.last_checked_on IS NULL OR c.last_checked_on < :today) $NAUSYS_CAND_ORDER LIMIT :capP3)
+             AND ((c.first_empty_on IS NOT NULL AND c.first_empty_on < :today) OR (c.priority <= 3 AND c.last_checked_on IS NULL))
+             $NAUSYS_CAND_ORDER LIMIT :capP3)
             UNION ALL
             ($NAUSYS_CAND_SELECT, 5 AS cls $NAUSYS_CAND_FROM
              AND o.status = 'FREE' AND NOT $NAUSYS_GRID_ROW
