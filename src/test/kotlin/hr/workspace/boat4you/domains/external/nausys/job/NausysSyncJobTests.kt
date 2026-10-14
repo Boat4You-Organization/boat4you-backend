@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.external.nausys.job
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.external.enums.MethodCacheEnum
 import hr.workspace.boat4you.domains.external.nausys.config.NauSysRateLimitStats
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysAvailabilityIntegrationService
@@ -52,6 +53,7 @@ class NausysSyncJobTests {
             availabilityWaitMaxMs = 0
             gateWaitMaxMs = 0
             nearTermWaitMaxMs = 0
+            reverifyGateWaitMaxMs = 0
             sleep = {}
             today = { LocalDate.of(2026, 9, 5) }
         }
@@ -255,5 +257,63 @@ class NausysSyncJobTests {
 
         `when`(cache.lastScheduledSync(MethodCacheEnum.SCHEDULED_NAUSYS_YACHT_OFFER_STARTED)).thenReturn(Instant.now().minus(11, ChronoUnit.HOURS))
         assertFalse(job.nightlyOfferSyncStillRunning(), "a crashed night older than 10 h must not block the backup forever")
+    }
+
+    // ---- real-price B2: 17:30 free-offer reverify
+
+    @Test
+    fun `free-offer reverify OFF logs one line and touches neither the gate nor the partner`() {
+        `when`(reverify.mode()).thenReturn(RealPriceSwitches.NauSysReverifyMode.OFF)
+        job.nausysBusy.set(true)
+
+        job.runFreeOfferReverify()
+
+        verify(reverify, never()).reverify(ArgumentMatchers.anyLong(), anyK())
+        assertTrue(job.nausysBusy.get(), "OFF must not clear a gate it does not own")
+    }
+
+    @Test
+    fun `free-offer reverify deadline is the cron tick plus 2 h 20 min, gate wait included, and the gate is released`() {
+        `when`(reverify.mode()).thenReturn(RealPriceSwitches.NauSysReverifyMode.LOG)
+        job.nowMillis = { 1_000L }
+        job.nausysBusy.set(true)
+        job.reverifyGateWaitMaxMs = 10_000
+        job.sleep = { job.nausysBusy.set(false) } // the running sync finishes during the first poll
+
+        job.runFreeOfferReverify()
+
+        verify(reverify, times(1)).reverify(1_000L + Duration.ofMinutes(140).toMillis(), LocalDate.of(2026, 9, 5))
+        assertFalse(job.nausysBusy.get())
+    }
+
+    @Test
+    fun `free-offer reverify skips when the gate stays busy past its wait budget`() {
+        `when`(reverify.mode()).thenReturn(RealPriceSwitches.NauSysReverifyMode.WRITE)
+        job.nausysBusy.set(true)
+
+        job.runFreeOfferReverify()
+
+        verify(reverify, never()).reverify(ArgumentMatchers.anyLong(), anyK())
+        assertTrue(job.nausysBusy.get())
+    }
+
+    @Test
+    fun `free-offer reverify failure releases the gate`() {
+        `when`(reverify.mode()).thenReturn(RealPriceSwitches.NauSysReverifyMode.WRITE)
+        doAnswer { throw IllegalStateException("boom") }.`when`(reverify).reverify(ArgumentMatchers.anyLong(), anyK())
+
+        job.runFreeOfferReverify()
+
+        assertFalse(job.nausysBusy.get())
+    }
+
+    @Test
+    fun `free-offer reverify runs at 17 30 under its own PT3H lock`() {
+        val m = NausysSyncJob::class.java.getMethod("runFreeOfferReverify")
+        assertEquals("0 30 17 * * ?", m.getAnnotation(Scheduled::class.java).cron)
+        val lock = m.getAnnotation(SchedulerLock::class.java)
+        assertEquals("nausysFreeOfferReverify", lock.name)
+        assertEquals("PT3H", lock.lockAtMostFor)
+        assertTrue(NausysSyncJob.REVERIFY_DEADLINE < Duration.parse(lock.lockAtMostFor).minusMinutes(30), "the deadline keeps a margin to the lock")
     }
 }
