@@ -9,6 +9,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.TranslationType
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
@@ -114,19 +115,23 @@ class ReservationMappers(
         language: LanguageEnum,
         currency: CurrencyEnum,
     ): MyReservationDetailsDto {
-        val selectedExtrasDto = reservationExtras.map { extrasMapper.toExtrasPriceDto(it, currency) }
+        // R01: an EXTERNAL yacht's partner copy is cleaned on the wire (booked snapshot names included); keys stay raw.
+        val partnerCopy = PartnerCopySanitizer.isPartnerCopy(yacht.entryType)
+        val selectedExtrasDto = reservationExtras.map { extrasMapper.toExtrasPriceDto(it, currency, partnerCopy) }
 
         val description =
             yacht.yachtTranslations
                 .filter { it.language?.locale == language.locale && it.type == TranslationType.DESCRIPTION }
                 .map { it.value }
                 .firstOrNull()
+                .let { PartnerCopySanitizer.description(it, partnerCopy) }
 
         val highlights =
             yacht.yachtTranslations
                 .filter { it.language?.locale == language.locale && it.type == TranslationType.HIGHLIGHTS }
                 .map { it.value }
                 .firstOrNull()
+                .let { PartnerCopySanitizer.description(it, partnerCopy) }
 
         val capacityColumns = CapacityColumns.of(yacht)
 
@@ -207,7 +212,7 @@ class ReservationMappers(
             vesselType = yacht.vesselType,
             manufacturerName = reservationView.manufacturerName,
             // Customer's my-bookings: linked rows only, one per code (equipment audit 8.10.2026), as on the boat page.
-            amenities = publicAmenities(yacht.yachtEquipments),
+            amenities = publicAmenities(yacht.yachtEquipments, partnerCopy),
             specialRequest = reservationView.reservationFlowRequest,
             // Yacht-catalogue extras (same source as boat-detail page ExtrasTab)
             // so my-bookings can render obligatory extras + virtual security
@@ -236,8 +241,10 @@ class ReservationMappers(
                     .groupBy { Triple(it.name?.trim()?.lowercase().orEmpty(), it.payableInBase ?: false, it.unit) }
                     .map { (_, rows) -> rows.maxBy { it.price ?: java.math.BigDecimal.ZERO } }
                     .map { ye ->
-                        val dto = extrasMapper.toDto(ye, currency)
-                        bookedIdentity(ye, reservationExtras)?.let { (name, key) -> dto.copy(name = name, key = key) } ?: dto
+                        val dto = extrasMapper.toDto(ye, currency, partnerCopy)
+                        bookedIdentity(ye, reservationExtras)
+                            ?.let { (name, key) -> dto.copy(name = PartnerCopySanitizer.extraName(name, partnerCopy), key = key) }
+                            ?: dto
                     },
             // Admin-curated docs (crew list pdf/docx, pickup info, contract
             // scans). Customer downloads via /secured/reservations/my-reservations/{id}/documents/{docId}.
@@ -308,7 +315,8 @@ class ReservationMappers(
         currency: CurrencyEnum,
         language: LanguageEnum,
     ): ReservationViewDetailsDto {
-        val selectedExtrasDto = reservationExtras.map { extrasMapper.toExtrasPriceDto(it, currency) }
+        val partnerCopy = PartnerCopySanitizer.isPartnerCopy(yacht.entryType)
+        val selectedExtrasDto = reservationExtras.map { extrasMapper.toExtrasPriceDto(it, currency, partnerCopy) }
 
         return ReservationViewDetailsDto(
             reservationId = reservationView.reservationId,
@@ -404,8 +412,10 @@ class ReservationMappers(
                     .groupBy { Triple(it.name?.trim()?.lowercase().orEmpty(), it.payableInBase ?: false, it.unit) }
                     .map { (_, rows) -> rows.maxBy { it.price ?: java.math.BigDecimal.ZERO } }
                     .map { ye ->
-                        val dto = extrasMapper.toDto(ye, currency)
-                        bookedIdentity(ye, reservationExtras)?.let { (name, key) -> dto.copy(name = name, key = key) } ?: dto
+                        val dto = extrasMapper.toDto(ye, currency, partnerCopy)
+                        bookedIdentity(ye, reservationExtras)
+                            ?.let { (name, key) -> dto.copy(name = PartnerCopySanitizer.extraName(name, partnerCopy), key = key) }
+                            ?: dto
                     },
         )
     }

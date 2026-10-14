@@ -1,0 +1,8 @@
+# R01: short forms on replace.txt that operators.txt does not list itself, and the name each one stands for.
+# Format: "<alias> = <operators.txt entry>" or "<alias> = agency:<agency name in the V1_08/V1_09 seed>".
+NSS = NSS Charter
+Moorings = The Moorings
+Navigare = Navigare Yachting
+Pitter = Pitter Yachting
+# boat 8477 is named after its own agency (R02 F4); the agency is not on operators.txt yet (infra copy, lead adds it)
+Rhodes Yachting = agency:Rhodes Yachting

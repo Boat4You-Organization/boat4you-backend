@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.job
 
 import hr.workspace.boat4you.common.services.resolveEmailLocale
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
@@ -240,11 +241,13 @@ class PaymentPendingNotificationService(
         // the customer sees the full picture: what's locked into the wire
         // payment (in-base), what they'll settle on-site, and what's still
         // browsable from the yacht's catalogue at pickup.
+        // R01: extras names of an EXTERNAL yacht as the customer may read them (the stored name stays the key).
+        val partnerCopy = PartnerCopySanitizer.isPartnerCopy(yacht.entryType)
         val resvExtras = flow.reservationExtras
         fun extraToView(e: hr.workspace.boat4you.domains.reservation.jpa.ReservationExtra): Map<String, Any?> {
             val priceVal = e.price ?: BigDecimal.ZERO
             return mapOf(
-                "name" to (e.name ?: "—"),
+                "name" to (PartnerCopySanitizer.extraName(e.name, partnerCopy) ?: "—"),
                 "priceLabel" to "${priceVal.toPlainString()}$currencySymbol",
                 "unitLabel" to unitLabel(e.unit, customerLocale),
                 "obligatory" to (e.obligatory == true),
@@ -265,7 +268,7 @@ class PaymentPendingNotificationService(
             .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }
             .map { ye ->
                 mapOf(
-                    "name" to (ye.name ?: "—"),
+                    "name" to (PartnerCopySanitizer.extraName(ye.name, partnerCopy) ?: "—"),
                     "priceLabel" to "${(ye.price ?: BigDecimal.ZERO).toPlainString()}$currencySymbol",
                     "unitLabel" to unitLabel(ye.unit, customerLocale),
                     "obligatory" to (ye.obligatory == true),

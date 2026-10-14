@@ -1,0 +1,21 @@
+# FROZEN snapshot of replace.txt used by V9_83__r01_partner_extras_descriptions.sql (14.10.2026). Never edit: the
+# migration's N3/N4 alternation is generated from these lines (ReplaceListContractTest checks that it is equal and that
+# every line is still in replace.txt). Same format as replace.txt.
+Dream Yacht Charter
+Navigare Yachting
+Ionian Catamarans
+Athenian Yachts
+Hermes Yachting
+Rhodes Yachting
+Active Cruises
+Kavas Yachting
+More Yachting
+The Moorings
+NSS Charter
+Kiriacoulis
+Navigare
+Moorings @model
+Sunsail
+Istion
+Pitter
+NSS

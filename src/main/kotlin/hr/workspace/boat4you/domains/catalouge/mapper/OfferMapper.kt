@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
 import hr.workspace.boat4you.domains.catalouge.enums.toCustomerStatus
 import hr.workspace.boat4you.domains.catalouge.jpa.Offer
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
@@ -24,6 +25,8 @@ class OfferMapper(
     ): OfferDto {
         val pricePerDayEur = offer.pricePerDayEur()
         val filteredOfferExtras = offer.filterDuplicateExtras(pricedFirst = realPriceSwitches.extrasZeroOptionalOnSite.isOn)
+        // R01: an EXTERNAL yacht's offer extras show cleaned names / descriptions; keys stay raw.
+        val partnerCopy = PartnerCopySanitizer.isPartnerCopy(offer.yacht?.entryType)
         return OfferDto(
             id = offer.id,
             dateFrom = offer.dateFrom,
@@ -66,7 +69,7 @@ class OfferMapper(
             extras =
                 filteredOfferExtras
                     .filter { it.first.shouldDisplay() }
-                    .map { yachtExtrasMapper.toBasicDto(it.first, currency, it.second) }
+                    .map { yachtExtrasMapper.toBasicDto(it.first, currency, it.second, partnerCopy) }
                     .toSet(), // TODO remove this?
             locationFrom = offer.locationFrom?.toDto(),
             locationTo = offer.locationTo?.toDto(),

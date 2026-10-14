@@ -34,6 +34,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtImageRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslationRepository
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer.syncDescription
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
@@ -529,7 +530,8 @@ class NauSysYachtSyncService(
         }
     }
 
-    private fun syncExtras(
+    /** R01: every description written here goes through the partner-copy sanitizer; names stay the raw join key. */
+    internal fun syncExtras(
         yacht: Yacht,
         nausysYacht: RestYacht,
         optionalOnSite: Boolean,
@@ -588,7 +590,7 @@ class NauSysYachtSyncService(
                     equipmentAlreadyOnYacht.validFrom = externalSeason?.validFrom
                     equipmentAlreadyOnYacht.validTo = externalSeason?.validTo
                     equipmentAlreadyOnYacht.validForBases = nausysEquipment.validForBases
-                    equipmentAlreadyOnYacht.description = nausysEquipment.comment?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }?.takeIf { it.isNotBlank() }
+                    equipmentAlreadyOnYacht.description = syncDescription(nausysEquipment.comment?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }, yacht.agency)
                     matchedIds.add(equipmentAlreadyOnYacht.id!!)
                     return@forEach
                 }
@@ -608,7 +610,7 @@ class NauSysYachtSyncService(
                 yachtExtra.validTo = externalSeason?.validTo
                 yachtExtra.type = ExtrasType.EQUIPMENT
                 yachtExtra.validForBases = nausysEquipment.validForBases
-                yachtExtra.description = nausysEquipment.comment?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }?.takeIf { it.isNotBlank() }
+                yachtExtra.description = syncDescription(nausysEquipment.comment?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }, yacht.agency)
 
                 yachtExtraRepository.save(yachtExtra)
                 yacht.yachtExtras.add(yachtExtra)
@@ -652,7 +654,7 @@ class NauSysYachtSyncService(
                     equipmentAlreadyOnYacht.validFrom = nausysService.validPeriodFrom?.value ?: externalSeason?.validFrom
                     equipmentAlreadyOnYacht.validTo = nausysService.validPeriodTo?.value ?: externalSeason?.validTo
                     equipmentAlreadyOnYacht.validForBases = nausysService.validForBases
-                    equipmentAlreadyOnYacht.description = nausysService.description?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }?.takeIf { it.isNotBlank() }
+                    equipmentAlreadyOnYacht.description = syncDescription(nausysService.description?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }, yacht.agency)
                     matchedIds.add(equipmentAlreadyOnYacht.id!!)
                     return@forEach
                 }
@@ -672,7 +674,7 @@ class NauSysYachtSyncService(
                 yachtExtra.validTo = nausysService.validPeriodTo?.value ?: externalSeason?.validTo
                 yachtExtra.type = ExtrasType.EXTRAS
                 yachtExtra.validForBases = nausysService.validForBases
-                yachtExtra.description = nausysService.description?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }?.takeIf { it.isNotBlank() }
+                yachtExtra.description = syncDescription(nausysService.description?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE }, yacht.agency)
 
                 yachtExtraRepository.save(yachtExtra)
                 yacht.yachtExtras.add(yachtExtra)
@@ -740,7 +742,7 @@ class NauSysYachtSyncService(
             InlandVesselRules.isInlandBuilder(model.name) ||
             nausysYacht.locationId?.toLong() in inlandBaseIds
 
-    private fun createTranslations(
+    internal fun createTranslations(
         newYacht: Yacht,
         text: RestInternationalText,
         type: TranslationType,
@@ -776,7 +778,8 @@ class NauSysYachtSyncService(
                     LanguageEnum.HR -> text.textHR ?: default
                     else -> default
                 }
-            yachtTranslation.value = value
+            // R01: partner prose cleaned before it is stored (rewritten on every sync); the column is NOT NULL
+            yachtTranslation.value = syncDescription(value, newYacht.agency) ?: ""
 
             newYacht.yachtTranslations.add(yachtTranslation)
             yachtTranslationRepository.save(yachtTranslation)

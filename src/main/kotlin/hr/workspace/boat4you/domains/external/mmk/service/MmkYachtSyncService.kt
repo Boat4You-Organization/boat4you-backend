@@ -36,6 +36,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtImageRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslationRepository
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.ModelQueryingService
@@ -631,7 +632,7 @@ class MmkYachtSyncService(
         }
     }
 
-    private fun syncExtras(
+    internal fun syncExtras(
         yacht: Yacht,
         filteredProducts: List<Product>,
         optionalOnSite: Boolean,
@@ -693,7 +694,8 @@ class MmkYachtSyncService(
                         ?: mmkExtra.validDateFrom?.value?.toLocalDate()
                     extraAlreadyOnYacht.validTo = mmkExtra.sailingDateTo?.value?.toLocalDate()
                         ?: mmkExtra.validDateTo?.value?.toLocalDate()
-                    extraAlreadyOnYacht.description = mmkExtra.description?.takeIf { it.isNotBlank() }
+                    // R01: partner copy cleaned before it is stored (descriptions only; the name stays the raw key)
+                    extraAlreadyOnYacht.description = PartnerCopySanitizer.syncDescription(mmkExtra.description, yacht.agency)
                     matchedIds.add(extraAlreadyOnYacht.id!!)
                     return@forEach
                 }
@@ -714,7 +716,7 @@ class MmkYachtSyncService(
                 yachtExtra.validTo = mmkExtra.sailingDateTo?.value?.toLocalDate()
                     ?: mmkExtra.validDateTo?.value?.toLocalDate()
                 yachtExtra.type = ExtrasType.EXTRAS
-                yachtExtra.description = mmkExtra.description?.takeIf { it.isNotBlank() }
+                yachtExtra.description = PartnerCopySanitizer.syncDescription(mmkExtra.description, yacht.agency)
                 yachtExtraRepository.save(yachtExtra)
                 yacht.yachtExtras.add(yachtExtra)
                 matchedIds.add(yachtExtra.id!!)
@@ -884,7 +886,7 @@ class MmkYachtSyncService(
         }
     }
 
-    private fun createTranslations(
+    internal fun createTranslations(
         newYacht: Yacht,
         descriptions: List<Description>,
         type: TranslationType,
@@ -901,8 +903,11 @@ class MmkYachtSyncService(
                 this.type = type
             }
 
+        // R01: partner prose cleaned before it is stored (rewritten on every sync)
         yachtTranslation.value =
-            descriptions.firstOrNull { it.category == "general" }?.text
+            descriptions.firstOrNull { it.category == "general" }?.text?.let {
+                PartnerCopySanitizer.syncDescription(it, newYacht.agency) ?: ""
+            }
         newYacht.yachtTranslations.add(yachtTranslation)
         yachtTranslationRepository.save(yachtTranslation)
     }

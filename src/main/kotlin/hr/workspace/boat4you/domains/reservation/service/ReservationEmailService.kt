@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.service
 
 import hr.workspace.boat4you.common.services.resolveEmailLocale
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.CharterAgreementService
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
@@ -200,11 +201,13 @@ class ReservationEmailService(
         // Extras — split by payment timing. `payableAtBase = true` means
         // the customer settles it on-site (cash/card at the marina),
         // false means it's bundled into the base wire transfer.
+        // R01: extras names of an EXTERNAL yacht as the customer may read them (the stored name stays the key).
+        val partnerCopy = PartnerCopySanitizer.isPartnerCopy(yacht.entryType)
         val resvExtras = reservation.reservationFlow!!.reservationExtras
         fun extraToView(e: hr.workspace.boat4you.domains.reservation.jpa.ReservationExtra): Map<String, Any?> {
             val priceVal = e.price ?: java.math.BigDecimal.ZERO
             return mapOf(
-                "name" to (e.name ?: "—"),
+                "name" to (PartnerCopySanitizer.extraName(e.name, partnerCopy) ?: "—"),
                 "priceLabel" to "${priceVal.money()}$currencySymbol",
                 "unitLabel" to unitLabel(e.unit, customerLocale),
                 "obligatory" to (e.obligatory == true),
@@ -232,7 +235,7 @@ class ReservationEmailService(
             .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }
             .map { ye ->
                 mapOf(
-                    "name" to (ye.name ?: "—"),
+                    "name" to (PartnerCopySanitizer.extraName(ye.name, partnerCopy) ?: "—"),
                     "priceLabel" to "${(ye.price ?: java.math.BigDecimal.ZERO).money()}$currencySymbol",
                     "unitLabel" to unitLabel(ye.unit, customerLocale),
                     "obligatory" to (ye.obligatory == true),
@@ -434,11 +437,13 @@ class ReservationEmailService(
         }.getOrDefault(if (paymentType == PaymentType.BANK_TRANSFER) "bank transfer" else "credit card")
 
         // Extras split — same logic as sendOptionCreatedEmail.
+        // R01: extras names of an EXTERNAL yacht as the customer may read them (the stored name stays the key).
+        val partnerCopy = PartnerCopySanitizer.isPartnerCopy(yacht.entryType)
         val resvExtras = reservation.reservationFlow!!.reservationExtras
         fun extraToView(e: hr.workspace.boat4you.domains.reservation.jpa.ReservationExtra): Map<String, Any?> {
             val priceVal = e.price ?: BigDecimal.ZERO
             return mapOf(
-                "name" to (e.name ?: "—"),
+                "name" to (PartnerCopySanitizer.extraName(e.name, partnerCopy) ?: "—"),
                 "priceLabel" to "${priceVal.money()}$currencySymbol",
                 "unitLabel" to unitLabel(e.unit, customerLocale),
                 "obligatory" to (e.obligatory == true),
@@ -461,7 +466,7 @@ class ReservationEmailService(
             .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }
             .map { ye ->
                 mapOf(
-                    "name" to (ye.name ?: "—"),
+                    "name" to (PartnerCopySanitizer.extraName(ye.name, partnerCopy) ?: "—"),
                     "priceLabel" to "${(ye.price ?: BigDecimal.ZERO).money()}$currencySymbol",
                     "unitLabel" to unitLabel(ye.unit, customerLocale),
                     "obligatory" to (ye.obligatory == true),

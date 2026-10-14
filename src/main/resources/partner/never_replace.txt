@@ -1,0 +1,27 @@
+# R01: words and names the partner-copy sanitizer must leave byte-identical, in this case and with a capital first letter
+# (PartnerCopySanitizerTest + ReplaceListContractTest). Agency brands that are ordinary words, places, builders or models
+# (rehearsal 14.10.2026: "BVI Cruising Tax" 1,959 rows, "marina" 1,683, "Lagoon 42" 267, "Sun Odyssey 349" ...), and boat
+# or place names that look like a partner. Every '!' name of operators.txt is a negative too (read from there).
+cruising
+marina
+premium
+catamaran
+croatia
+split
+olympic
+lagoon
+oceanis
+odyssey
+dubrovnik
+ionian
+aegean
+adriatic
+riviera
+dream
+your dream yacht
+moorings
+mooring
+mooring fees
+Athena Blu
+Athenian Riviera
+Hermes
