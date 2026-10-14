@@ -157,7 +157,7 @@ The single NauSys credential is throttled on *concurrent* calls, so NauSys jobs 
 
 **Search warm (Mario, 5.9.2026 — search is served from the DB, freshness via the scheduler):** a dated + located public search on VM2 fires **no partner warm at all** when the range is a multiple of 7 days (7/14/21/28 d, any start day — the nightly grid already has those intervals; `SearchWarmPolicy`). Non-weekly ranges still warm asynchronously (NauSys + MMK, 3 h marker), but VM2 never retries NauSys itself: a 429 / 5xx / timeout parks the (dates, NauSys filter) request in `nausys_search_sync_retry` (V9_55), which only VM3 drains — every 15 min via `runSearchRetryDrain` and chained after the agency-queue drain in the nightly / backup runs.
 **Near-term refresh (Mario, 5.9.2026 — search is served from the DB, freshness via the scheduler):** the bookable 12 weeks are refreshed intraday by **near-term offer refreshes** — NauSys **10:40 / 16:40** (same per-agency grid capped at today+84 d, est. ≈1 h, waits ≤30 min on the gate, then drains the agency retry queue) and MMK **10:50 / 16:50** (one `/offers` call per agency × option group, bounded today..today+84 d). The nightly `nausysYachtSync` lock is **PT10H** (the run measured 6 h 39 m on 4/5.9.2026) and the backup slots' "night still in flight" marker rule uses the same 10 h.
-**Safe restart/deploy windows for VM3:** 07:50–08:40, 13:00–16:15, ≈17:50–20:35, 21:05–22:15 UTC (10:40–≈12:00 is no longer safe: near-term refreshes).
+**Safe restart/deploy windows for VM3 (14.10.2026, enforced by `backend_deploy.sh` in boat4you-infra):** 13:00–14:10, 15:10–16:15, ≈17:50–20:35, 21:05–22:15 UTC. 07:50–08:40 withdrawn (MMK lang backup 08:00, availability 08:40); 13:00–16:15 split because the 13:30 MMK free-offer reverifier may run until ≈15:10; 10:40–≈12:00 unsafe (near-term refreshes). The gate also requires: no NauSys/MMK cron within 15 min, no ShedLock held on VM4 except `refreshYachtSearchView`, and 0 mmk/nausys journal lines in the last 3 min.
 
 | Job class | Method | Cron (UTC) | Lock (`lockAtMostFor`) | Schedule / measured |
 |---|---|---|---|---|
@@ -179,6 +179,9 @@ The single NauSys credential is throttled on *concurrent* calls, so NauSys jobs 
 | `MmkSyncJob` | `availabilitySync` | `0 40 8,12,16,20 * * ?` | `mmkAvailabilitySync` PT1H | 10–40 min (08:40 run longest, ≤09:20) |
 | `MmkSyncJob` | `runNearTermOfferRefresh` | `0 50 10,16 * * *` | `mmkNearTermOfferRefresh` PT2H | 10:50 / 16:50; same per-agency sweep bounded today..today+84 d (one `/offers` call per agency × option group, flex 6, upsert-only); writes no marker; may overlap the tail of the 16:40 availability run — measure |
 | `MmkStaleReverifyJob` | `runNightlyReverify` | `0 25 9 * * ?` | `mmkStaleOfferReverify` PT4H | 09:25; 6–10 min |
+| `MmkStaleReverifyJob` | `runDailyFreeReverify` | `0 30 13 * * ?` | `mmkFreeOfferReverify` PT2H30M | 13:30; ≤100 min budget (+ steps 2c/2b ≈4–5 min when `MMK_OPTION_VERIFY` ≠ OFF); heartbeat log every 2 min |
+| `RealPriceEvidenceRetentionJob` | `run` | `0 40 4 * * ?` (`zone=UTC`) | `realPriceEvidenceRetention` PT30M | 04:40; purges partner_period_check (date_to < today−30 d), reverify_run / partner_offer_flip_log (> 180 d) |
+| `ReverifyDigestJob` | `run` | `0 0 7 * * ?` (`zone=UTC`) | `reverifyDigest` PT15M | 07:00; admin-only mail (agency ids only): yesterday's reverify runs, escalations, A2 criterion count per partner |
 | `AvailabilityIntegrityDetectorJob` | `check` | `0 55 9 * * ?` | `availabilityIntegrityDetector` PT30M | 09:55; ~2 s (after all morning syncs) |
 | `ConsistencyVerifierJob` | `runWeekly` | `0 0 10 * * SUN` | `consistencyVerifier` PT4H | Sunday 10:00; ~6 min |
 | `GenerateInvoiceJob` | `runJob` | `0 7 0/2 ? * *` | `generateInvoice` PT1H | every 2 h at :07; seconds |
