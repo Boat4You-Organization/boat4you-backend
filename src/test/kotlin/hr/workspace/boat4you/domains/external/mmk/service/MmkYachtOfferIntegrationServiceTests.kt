@@ -1,9 +1,12 @@
 package hr.workspace.boat4you.domains.external.mmk.service
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencySource
+import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.external.config.SyncConfigurationProperties
+import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
 import hr.workspace.boat4you.domains.external.mmk.client.MmkRetryableClient
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferIntegrationServiceAsync.Companion.fullHorizonWindows
 import org.mockito.ArgumentMatchers
@@ -11,6 +14,7 @@ import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import org.springframework.transaction.PlatformTransactionManager
 import java.time.LocalDate
 import java.util.concurrent.CompletableFuture
 import kotlin.test.BeforeTest
@@ -33,6 +37,11 @@ class MmkYachtOfferIntegrationServiceTests {
             async,
             mock(MmkOfferIntegrationUtils::class.java),
             mock(MmkRetryableClient::class.java),
+            mock(RealPriceSwitches::class.java),
+            mock(OfferRepository::class.java),
+            mock(MmkFreeOfferReverifyService::class.java),
+            mock(PartnerPeriodCheckStore::class.java),
+            mock(PlatformTransactionManager::class.java),
         )
 
     private val today = LocalDate.of(2026, 9, 5)

@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.time.LocalDate
 
+@Suppress("TooManyFunctions") // one repository per entity; every query is a named, documented native statement
 interface OfferRepository : JpaRepository<Offer, Long> {
     @Query(
         """
@@ -306,6 +307,200 @@ interface OfferRepository : JpaRepository<Offer, Long> {
         @Param("dateFrom") dateFrom: LocalDate,
         @Param("dateTo") dateTo: LocalDate,
     ): Int
+
+    /**
+     * MMK-only successor of [markPeriodUnavailable] (real-price DESIGN.md WS-B "Common machinery"): hides the rows of
+     * ONE probed period and writes one `partner_offer_flip_log` row per flipped offer IN THE SAME STATEMENT (a CTE),
+     * so a flip without its log row (or the reverse) cannot exist and every flip can be undone exactly
+     * (PartnerFlipUndoService). Write scope, re-checked at write time under a row lock:
+     *  - FREE rows;
+     *  - OPTION rows that no live partner hold (RESERVATION/SERVICE, OPTION within the 48 h echo grace) and no
+     *    reservation_flow back;
+     *  - OPTION_WAITING rows under the same guards ONLY when [includeOptionWaiting] (MMK_OPTION_VERIFY=ON): two empty
+     *    exact-date answers with `showOptions = true` on different days are partner evidence that nobody holds it;
+     *  - never a SYNTHETIC_OPTION row, never a row with other dates (evidence scope == write scope).
+     * NauSys has its own query (WS-B2) so the two partners never widen each other's scope.
+     *
+     * @return the number of offer rows flipped (= flip-log rows written).
+     */
+    @Modifying
+    @Query(
+        "WITH cand AS (SELECT o.id, o.status, o.ext_status, o.client_price FROM offer o WHERE $MMK_FLIPPABLE_PERIOD_ROWS " +
+            "FOR UPDATE OF o), " +
+            "upd AS (UPDATE offer o SET status = 'UNAVAILABLE' FROM cand WHERE o.id = cand.id RETURNING o.id) " +
+            "INSERT INTO partner_offer_flip_log (run_id, job, reason, external_system_id, offer_id, yacht_id, date_from, " +
+            "date_to, old_status, old_ext_status, old_client_price, new_status, first_empty_on, decided_on) " +
+            "SELECT CAST(:runId AS BIGINT), :job, :reason, 1, cand.id, :yachtId, :dateFrom, :dateTo, cand.status, " +
+            "cand.ext_status, cand.client_price, 'UNAVAILABLE', CAST(:firstEmptyOn AS DATE), :decidedOn " +
+            "FROM cand JOIN upd USING (id)",
+        nativeQuery = true,
+    )
+    @Suppress("LongParameterList") // the exact period, the run it belongs to and the evidence it was decided on
+    fun markMmkPeriodUnavailable(
+        @Param("yachtId") yachtId: Long,
+        @Param("dateFrom") dateFrom: LocalDate,
+        @Param("dateTo") dateTo: LocalDate,
+        @Param("runId") runId: Long?,
+        @Param("job") job: String,
+        @Param("reason") reason: String,
+        @Param("firstEmptyOn") firstEmptyOn: LocalDate?,
+        @Param("decidedOn") decidedOn: LocalDate,
+        @Param("includeOptionWaiting") includeOptionWaiting: Boolean,
+    ): Int
+
+    /** The rows [markMmkPeriodUnavailable] would flip right now (LOG mode would-flip count); nothing is written. */
+    @Query(
+        "SELECT count(*) FROM offer o WHERE $MMK_FLIPPABLE_PERIOD_ROWS",
+        nativeQuery = true,
+    )
+    fun countMmkPeriodFlippable(
+        @Param("yachtId") yachtId: Long,
+        @Param("dateFrom") dateFrom: LocalDate,
+        @Param("dateTo") dateTo: LocalDate,
+        @Param("includeOptionWaiting") includeOptionWaiting: Boolean,
+    ): Int
+
+    /**
+     * Step 2c of the MMK free-offer reverifier (DESIGN.md B1): future OPTION / OPTION_WAITING periods of active
+     * MMK-primary yachts that no live partner hold (48 h echo grace) and no reservation_flow back, never
+     * SYNTHETIC_OPTION, distinct per yacht + exact dates, rotated on `partner_period_check` (MMK): periods checked on or
+     * after [checkedBefore] are skipped, never-checked periods come first, then the oldest check, then the earliest
+     * period. Bounded by [limit]; the rotation drains the tail over a few runs and then re-checks every period weekly.
+     */
+    @Query(
+        """
+        SELECT DISTINCT o.yacht_id AS "yachtId", em.external_id AS "externalYachtId",
+               y.agency_id AS "agencyId", o.date_from AS "dateFrom", o.date_to AS "dateTo",
+               c.last_checked_on AS "lastCheckedOn"
+        FROM offer o
+        JOIN yacht y ON y.id = o.yacht_id AND y.sys_active = true
+        JOIN agency a ON a.id = y.agency_id AND a.active = true AND a.availability_blocked = false
+        JOIN agency_source s ON s.agency_id = a.id AND s."primary" = true AND s.external_system_id = :mmkSystemId
+        JOIN external_mapping em ON em.type = 'Yacht' AND em.external_system_id = :mmkSystemId
+             AND em.system_id = o.yacht_id AND em.extended_type = 'Yacht-AgencyId-' || y.agency_id
+        LEFT JOIN partner_period_check c ON c.external_system_id = :mmkSystemId AND c.yacht_id = o.yacht_id
+             AND c.date_from = o.date_from AND c.date_to = o.date_to
+        WHERE o.date_from >= :today
+        AND o.date_to > o.date_from
+        AND o.status IN ('OPTION', 'OPTION_WAITING')
+        AND (o.ext_status IS NULL OR o.ext_status <> 'SYNTHETIC_OPTION')
+        AND NOT EXISTS (
+            SELECT 1 FROM external_reservations r
+            WHERE r.yacht_id = o.yacht_id
+            AND r.date_from < o.date_to AND r.date_to > o.date_from
+            AND (
+                r.status IN ('RESERVATION','SERVICE')
+                OR (r.status = 'OPTION' AND (r.option_expiration IS NULL OR r.option_expiration > NOW() - INTERVAL '48 hours'))
+            )
+        )
+        AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = o.id)
+        AND (c.last_checked_on IS NULL OR c.last_checked_on < :checkedBefore)
+        ORDER BY "lastCheckedOn" NULLS FIRST, "dateFrom", "yachtId"
+        LIMIT :limit
+        """,
+        nativeQuery = true,
+    )
+    fun findStaleMmkOptionPeriods(
+        @Param("mmkSystemId") mmkSystemId: Long,
+        @Param("today") today: LocalDate,
+        @Param("checkedBefore") checkedBefore: LocalDate,
+        @Param("limit") limit: Int,
+    ): List<StaleMmkOfferCombo>
+
+    /**
+     * Step 2b of the MMK free-offer reverifier: open strikes in `mmk_free_week_strike` (struck on an earlier day, not
+     * hidden; e.g. written by the on-demand path) of future periods of active MMK-primary yachts that no probe decided
+     * today (`partner_period_check`), oldest strike first.
+     */
+    @Query(
+        """
+        SELECT k.yacht_id AS "yachtId", em.external_id AS "externalYachtId", y.agency_id AS "agencyId",
+               k.date_from AS "dateFrom", k.date_to AS "dateTo"
+        FROM mmk_free_week_strike k
+        JOIN yacht y ON y.id = k.yacht_id AND y.sys_active = true
+        JOIN agency a ON a.id = y.agency_id AND a.active = true AND a.availability_blocked = false
+        JOIN agency_source s ON s.agency_id = a.id AND s."primary" = true AND s.external_system_id = :mmkSystemId
+        JOIN external_mapping em ON em.type = 'Yacht' AND em.external_system_id = :mmkSystemId
+             AND em.system_id = k.yacht_id AND em.extended_type = 'Yacht-AgencyId-' || y.agency_id
+        WHERE k.hidden_on IS NULL
+        AND k.first_empty_on < :today
+        AND k.date_from >= :today
+        AND NOT EXISTS (
+            SELECT 1 FROM partner_period_check c
+            WHERE c.external_system_id = :mmkSystemId AND c.yacht_id = k.yacht_id
+            AND c.date_from = k.date_from AND c.date_to = k.date_to AND c.last_checked_on >= :today
+        )
+        ORDER BY k.first_empty_on, k.yacht_id, k.date_from
+        LIMIT :limit
+        """,
+        nativeQuery = true,
+    )
+    fun findOpenMmkStrikePeriods(
+        @Param("mmkSystemId") mmkSystemId: Long,
+        @Param("today") today: LocalDate,
+        @Param("limit") limit: Int,
+    ): List<StaleMmkOfferCombo>
+
+    /** Status and partner total of every row of exactly this period (MMK drift check, DESIGN.md B1 path 8). */
+    @Query(
+        """
+        SELECT o.status AS "status", o.ext_total_price AS "extTotalPrice"
+        FROM offer o WHERE o.yacht_id = :yachtId AND o.date_from = :dateFrom AND o.date_to = :dateTo
+        """,
+        nativeQuery = true,
+    )
+    fun findPeriodStatusPrices(
+        @Param("yachtId") yachtId: Long,
+        @Param("dateFrom") dateFrom: LocalDate,
+        @Param("dateTo") dateTo: LocalDate,
+    ): List<OfferStatusPrice>
+
+    /**
+     * Our yachts behind one MMK yacht id that show a row (FREE / OPTION / OPTION_WAITING, not SYNTHETIC_OPTION) with
+     * exactly these dates: the on-demand path records a strike only for a period the site actually shows.
+     */
+    @Query(
+        """
+        SELECT DISTINCT o.yacht_id
+        FROM offer o
+        JOIN yacht y ON y.id = o.yacht_id
+        JOIN agency_source s ON s.agency_id = y.agency_id AND s."primary" = true AND s.external_system_id = :mmkSystemId
+        JOIN external_mapping em ON em.type = 'Yacht' AND em.external_system_id = :mmkSystemId
+             AND em.system_id = o.yacht_id AND em.extended_type = 'Yacht-AgencyId-' || y.agency_id
+        WHERE em.external_id = :externalYachtId
+        AND o.date_from = :dateFrom AND o.date_to = :dateTo
+        AND o.status IN ('FREE', 'OPTION', 'OPTION_WAITING')
+        AND (o.ext_status IS NULL OR o.ext_status <> 'SYNTHETIC_OPTION')
+        """,
+        nativeQuery = true,
+    )
+    fun findYachtIdsShowingMmkPeriod(
+        @Param("mmkSystemId") mmkSystemId: Long,
+        @Param("externalYachtId") externalYachtId: Long,
+        @Param("dateFrom") dateFrom: LocalDate,
+        @Param("dateTo") dateTo: LocalDate,
+    ): List<Long>
+}
+
+/**
+ * Write scope of [OfferRepository.markMmkPeriodUnavailable] / [OfferRepository.countMmkPeriodFlippable] (alias `o`,
+ * params :yachtId, :dateFrom, :dateTo, :includeOptionWaiting). One text for both, so the LOG-mode would-flip count
+ * can never disagree with what WRITE mode flips.
+ */
+private const val MMK_FLIPPABLE_PERIOD_ROWS =
+    "o.yacht_id = :yachtId AND o.date_from = :dateFrom AND o.date_to = :dateTo " +
+        "AND (o.ext_status IS NULL OR o.ext_status <> 'SYNTHETIC_OPTION') " +
+        "AND (o.status = 'FREE' OR ((o.status = 'OPTION' OR (CAST(:includeOptionWaiting AS BOOLEAN) AND o.status = 'OPTION_WAITING')) " +
+        "AND NOT EXISTS (SELECT 1 FROM external_reservations r WHERE r.yacht_id = o.yacht_id " +
+        "AND r.date_from < o.date_to AND r.date_to > o.date_from " +
+        "AND (r.status IN ('RESERVATION','SERVICE') OR (r.status = 'OPTION' " +
+        "AND (r.option_expiration IS NULL OR r.option_expiration > NOW() - INTERVAL '48 hours')))) " +
+        "AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = o.id)))"
+
+/** Native projection for [OfferRepository.findPeriodStatusPrices]. */
+interface OfferStatusPrice {
+    val status: String
+    val extTotalPrice: java.math.BigDecimal?
 }
 
 /**
