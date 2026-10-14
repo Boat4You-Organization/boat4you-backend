@@ -14,13 +14,17 @@
 -- Additive only: three new tables and one nullable column without default (metadata-only), nothing on offer,
 -- offer_extras, yacht_extras or the search matview. Idempotent (IF NOT EXISTS everywhere). Column types follow the real
 -- DDL: offer.status VARCHAR(31) (V1_90), offer.ext_status VARCHAR(50) (V1_42), offer.client_price unconstrained
--- NUMERIC (V1_03). The FK on yacht and the reservation_extras column take short locks; start the jar in a quiet window.
+-- NUMERIC (V1_03). No foreign key on yacht: an FK would take SHARE ROW EXCLUSIVE on yacht, which waits behind any
+-- open catalogue / offer sync transaction (one @Transactional pass per agency) and could fail the boot on the only API
+-- node; the rows are keyed by our own yacht ids and reaped by the retention job, nothing depends on a cascade. The
+-- reservation_extras column takes a short ACCESS EXCLUSIVE lock (metadata-only); a lock timeout fails the boot cleanly
+-- (the whole migration rolls back) and a plain restart retries it.
 -- Rows are purged by RealPriceEvidenceRetentionJob (periods ended > 30 days ago, runs and flips older than 180 days).
 SET LOCAL lock_timeout = '5s';
 
 CREATE TABLE IF NOT EXISTS partner_period_check (
     external_system_id SMALLINT    NOT NULL,                  -- 1 MMK, 2 NauSys (ExternalSystemEnum)
-    yacht_id           BIGINT      NOT NULL REFERENCES yacht (id) ON DELETE CASCADE,
+    yacht_id           BIGINT      NOT NULL,                  -- our yacht id; no FK on purpose (see the header)
     date_from          DATE        NOT NULL,
     date_to            DATE        NOT NULL,
     priority           SMALLINT    NOT NULL DEFAULT 5,        -- 1 synthetic, 2 stale option, 3 on-demand/booking, 4 off-grid/stale UNAVAILABLE, 5 sample
@@ -37,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_ppc_hidden ON partner_period_check (hidden_on) WH
 
 CREATE TABLE IF NOT EXISTS reverify_run (
     id                   BIGSERIAL PRIMARY KEY,
-    job                  VARCHAR(40) NOT NULL,                -- MMK_FREE | MMK_OPTION | NAUSYS_REVERIFY | NAUSYS_D3 | ...
+    job                  VARCHAR(40) NOT NULL,                -- MMK_FREE | MMK_OPTION | NAUSYS_REVERIFY | NAUSYS_D3 | UNDO | ...
     mode                 VARCHAR(8)  NOT NULL,                -- LOG | WRITE
     started_at           TIMESTAMP   NOT NULL,
     ended_at             TIMESTAMP,
@@ -53,7 +57,7 @@ CREATE TABLE IF NOT EXISTS partner_offer_flip_log (           -- every status fl
     id                 BIGSERIAL PRIMARY KEY,
     run_id             BIGINT      REFERENCES reverify_run (id),
     job                VARCHAR(40) NOT NULL,
-    reason             VARCHAR(24) NOT NULL,                  -- STEP0_OCCUPANCY | TWO_STRIKE_EMPTY | ROUTE_GONE | UNPRICED_TWO_DAY
+    reason             VARCHAR(24) NOT NULL,                  -- STEP0_OCCUPANCY | TWO_STRIKE_EMPTY | ROUTE_GONE | UNPRICED_TWO_DAY | UNDO
     external_system_id SMALLINT    NOT NULL,
     offer_id           BIGINT      NOT NULL,                  -- no FK: the retention reaper may delete old offers
     yacht_id           BIGINT      NOT NULL,
