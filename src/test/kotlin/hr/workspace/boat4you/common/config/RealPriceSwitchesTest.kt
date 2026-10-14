@@ -236,21 +236,39 @@ class RealPriceSwitchesTest {
     }
 
     @Test
-    fun `missing or invalid value warns at most once per key per hour`() {
+    fun `an invalid value warns at most once per key per hour, a missing row never warns`() {
         db.set(SettingsKeyEnum.SEARCH_PREDICATE, "bogus")
         switches.snapshot()
-        warnings().size shouldBe 11 // 10 missing + 1 invalid
+        warnings().size shouldBe 1 // the 10 missing rows are the documented default: silent
         warnings().count { it.contains("SEARCH_PREDICATE") && it.contains("bogus") } shouldBe 1
 
         repeat(5) {
             advance(Duration.ofMinutes(10))
             switches.snapshot()
         }
-        warnings().size shouldBe 11
+        warnings().size shouldBe 1
 
         advance(Duration.ofMinutes(10))
         switches.snapshot()
-        warnings().size shouldBe 22
+        warnings().size shouldBe 2
+    }
+
+    @Test
+    fun `default state logs one neutral INFO line and no WARN, a change logs again`() {
+        repeat(3) {
+            switches.snapshot()
+            advance(Duration.ofMinutes(10))
+        }
+        warnings() shouldBe emptyList()
+        val infos = { appender.list.filter { it.level == Level.INFO }.map { it.formattedMessage } }
+        infos() shouldBe listOf("Real-price switches effective: 0 of 11 away from the default, search rp:LEGACY:OFF:true")
+        infos().none { it.contains("mmk", ignoreCase = true) || it.contains("nausys", ignoreCase = true) } shouldBe true
+
+        db.set(SettingsKeyEnum.MMK_OPTION_VERIFY, "LOG")
+        advance(Duration.ofSeconds(60))
+        switches.snapshot()
+        infos().last() shouldBe "Real-price switches effective: 1 of 11 away from the default, search rp:LEGACY:OFF:true"
+        infos().none { it.contains("mmk", ignoreCase = true) || it.contains("nausys", ignoreCase = true) } shouldBe true
     }
 
     // AdminSettingsService.validateSetting for the switch keys

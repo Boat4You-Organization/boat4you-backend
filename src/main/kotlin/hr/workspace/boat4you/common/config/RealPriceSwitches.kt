@@ -88,6 +88,29 @@ class RealPriceSwitches(
         val nausysD3Mode: NauSysD3Mode = NauSysD3Mode.LEGACY,
         val nausysWarmLongRanges: OnOff = OnOff.OFF,
     ) {
+        /** How many switches differ from their default (today's behaviour). */
+        val nonDefaultCount: Int
+            get() = values().zip(DEFAULT.values()).count { (v, d) -> v != d }
+
+        private fun values(): List<Any> =
+            listOf(
+                searchPredicate,
+                searchPriceFloor,
+                demoteStaleOptions,
+                bookingC1,
+                partnerPriceGuard,
+                extrasZeroOptionalOnSite,
+                mmkOptionVerify,
+                mmkOnDemandStrike,
+                nausysReverify,
+                nausysD3Mode,
+                nausysWarmLongRanges,
+            )
+
+        private companion object {
+            val DEFAULT = Snapshot()
+        }
+
         /** The SEARCH_* values as one string, to be included in every search cache key. */
         val searchKey: String
             get() = "rp:$searchPredicate:$searchPriceFloor:$demoteStaleOptions"
@@ -148,6 +171,11 @@ class RealPriceSwitches(
             }
         current = next
         loadedAtNanos = now
+        // Once at startup and on every change, INFO. Neutral wording on purpose: the cusma3 restart gate greps the
+        // journal for partner names, so this line must not repeat the partner-named switch keys.
+        if (previous != next) {
+            log.info("Real-price switches effective: {} of {} away from the default, search {}", next.nonDefaultCount, SPECS.size, next.searchKey)
+        }
         if (previous != null && previous.searchKey != next.searchKey) clearSearchCaches(previous, next)
         return next
     }
@@ -188,27 +216,20 @@ class RealPriceSwitches(
     ): T {
         val value = raw[spec.key]
         val parsed = spec.parse(value)
-        when {
-            parsed != null -> return parsed
-            value == null ->
-                if (shouldWarn(spec.key, now)) {
-                    log.warn("Real-price switch {} has no settings value, using the default {}", spec.key, spec.defaultText)
-                }
-            else ->
-                if (shouldWarn(spec.key, now)) {
-                    log.warn(
-                        "Real-price switch {} has the invalid value '{}' (allowed {}), using the default {}",
-                        spec.key,
-                        value,
-                        spec.allowed,
-                        spec.defaultText,
-                    )
-                }
+        // A missing row is the documented default (today's behaviour), not a fault: no WARN for it.
+        if (parsed == null && value != null && shouldWarn(spec.key, now)) {
+            log.warn(
+                "Real-price switch {} has the invalid value '{}' (allowed {}), using the default {}",
+                spec.key,
+                value,
+                spec.allowed,
+                spec.defaultText,
+            )
         }
-        return spec.default
+        return parsed ?: spec.default
     }
 
-    /** At most one WARN per key per hour (key null = the load failure itself). */
+    /** At most one WARN per key per hour (key null = the load failure itself); only invalid values and load failures warn. */
     private fun shouldWarn(
         key: SettingsKeyEnum?,
         now: Long,
