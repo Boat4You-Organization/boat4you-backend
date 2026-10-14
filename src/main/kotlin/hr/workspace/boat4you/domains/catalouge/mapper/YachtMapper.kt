@@ -29,6 +29,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtEquipment
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtSearchSelectResult
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
@@ -167,12 +168,18 @@ class YachtMapper(
     /** The partner's raw capacity notes and internal remark - SYSTEM_ADMIN only, null for everyone else. */
     fun brokerNotes(columns: CapacityColumns): BrokerNotesDto? = if (isAdminUser()) capacityMapper.brokerNotes(columns) else null
 
-    /** Equipment rows a yacht page may show: linked rows only for the public, every row for an admin. */
-    fun amenities(rows: Collection<YachtEquipment>): List<YachtEquipmentDto> =
+    /**
+     * Equipment rows a yacht page may show: linked rows only for the public, every row for an admin.
+     * [partnerCopy] = the yacht is EXTERNAL: the public comment goes through the R01 partner-copy sanitizer.
+     */
+    fun amenities(
+        rows: Collection<YachtEquipment>,
+        partnerCopy: Boolean,
+    ): List<YachtEquipmentDto> =
         if (isAdminUser()) {
             rows.distinctBy { it.equipmentId ?: ("name:" + (it.name ?: "")) }.map { it.toDto() }
         } else {
-            publicAmenities(rows)
+            publicAmenities(rows, partnerCopy)
         }
 
     fun toDetailsDto(
@@ -193,18 +200,22 @@ class YachtMapper(
     ): YachtDetailsDto {
         val model = result.model
         val manufacturer = model?.manufacturer
+        // R01: an EXTERNAL yacht's partner prose and extras are cleaned on the wire; a CUSTOM yacht's copy is ours.
+        val partnerCopy = PartnerCopySanitizer.isPartnerCopy(result.entryType)
 
         val description =
             result.yachtTranslations
                 .filter { it.language?.locale == language.locale && it.type == TranslationType.DESCRIPTION }
                 .map { it.value }
                 .firstOrNull()
+                .let { PartnerCopySanitizer.description(it, partnerCopy) }
 
         val highlights =
             result.yachtTranslations
                 .filter { it.language?.locale == language.locale && it.type == TranslationType.HIGHLIGHTS }
                 .map { it.value }
                 .firstOrNull()
+                .let { PartnerCopySanitizer.description(it, partnerCopy) }
 
         val location =
             if (result.entryType == EntryType.CUSTOM) {
@@ -221,7 +232,7 @@ class YachtMapper(
         val extras =
             yachtExtras
                 .filter { it.shouldDisplay() }
-                .map { yachtExtrasMapper.toDto(it, currency) }
+                .map { yachtExtrasMapper.toDto(it, currency, partnerCopy) }
 
         val capacityColumns = CapacityColumns.of(result)
 
@@ -263,7 +274,7 @@ class YachtMapper(
             // catalogue name; an unlinked partner row is free text the web would print raw (agency notes, "4 double
             // cabins", a charter company's wording) and stays in the DB, for admins only. One row per code; unlinked
             // admin rows collapse by name.
-            amenities = amenities(result.yachtEquipments),
+            amenities = amenities(result.yachtEquipments, partnerCopy),
             services = extras,
             description = description,
             highlights = highlights,

@@ -2,10 +2,12 @@ package hr.workspace.boat4you.domains.catalouge.mapper
 
 import hr.workspace.boat4you.domains.catalouge.dto.ExtrasPriceDto
 import hr.workspace.boat4you.domains.catalouge.dto.InternalCalcDto
+import hr.workspace.boat4you.domains.catalouge.dto.PriceCalcDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtExtrasDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferExtra
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationExtra
@@ -13,6 +15,11 @@ import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
 
+/**
+ * R01 (owner rule 14.10.2026): `partnerCopy` = the owning yacht is EXTERNAL. Then the DTO `name` and `description` go
+ * through [PartnerCopySanitizer]; `key`, `paymentType` (classify) and [toInternalCalc] always use the RAW stored name,
+ * which is a join key (DESIGN WS-R01 D2). A CUSTOM yacht's extras are our own copy and pass unchanged.
+ */
 @Component
 class YachtExtrasMapper(
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
@@ -30,10 +37,11 @@ class YachtExtrasMapper(
     fun toDto(
         extras: YachtExtra,
         currency: CurrencyEnum?,
+        partnerCopy: Boolean,
     ): YachtExtrasDto {
         return YachtExtrasDto(
             id = extras.id!!,
-            name = extras.name,
+            name = PartnerCopySanitizer.extraName(extras.name, partnerCopy),
             payableInBase = extras.payableInBase!!,
             obligatory = extras.obligatory!!,
             priceEur = extras.price!!,
@@ -46,7 +54,7 @@ class YachtExtrasMapper(
             extras = extras.extras?.toDto(),
             key = extras.extrasKey(),
             isStartingPrice = null,
-            description = extras.description,
+            description = PartnerCopySanitizer.description(extras.description, partnerCopy),
             paymentType = extras.paymentType,
             externalId = partnerIdForAdmin(extras.externalId),
         )
@@ -55,10 +63,11 @@ class YachtExtrasMapper(
     fun toBasicDto(
         extras: YachtExtra,
         currency: CurrencyEnum?,
+        partnerCopy: Boolean,
     ): YachtExtrasDto {
         return YachtExtrasDto(
             id = extras.id!!,
-            name = extras.name,
+            name = PartnerCopySanitizer.extraName(extras.name, partnerCopy),
             payableInBase = extras.payableInBase!!,
             obligatory = extras.obligatory!!,
             priceEur = extras.price!!,
@@ -71,7 +80,7 @@ class YachtExtrasMapper(
             extras = null,
             key = extras.extrasKey(),
             isStartingPrice = null,
-            description = extras.description,
+            description = PartnerCopySanitizer.description(extras.description, partnerCopy),
             paymentType = extras.paymentType,
             externalId = partnerIdForAdmin(extras.externalId),
         )
@@ -81,10 +90,11 @@ class YachtExtrasMapper(
         extras: OfferExtra,
         currency: CurrencyEnum?,
         isStartingPrice: Boolean?,
+        partnerCopy: Boolean,
     ): YachtExtrasDto {
         return YachtExtrasDto(
             id = extras.id!!,
-            name = extras.name,
+            name = PartnerCopySanitizer.extraName(extras.name, partnerCopy),
             payableInBase = extras.payableInBase!!,
             obligatory = extras.obligatory!!,
             priceEur = extras.price!!,
@@ -97,19 +107,21 @@ class YachtExtrasMapper(
             extras = null,
             key = extras.extrasKey(),
             isStartingPrice = isStartingPrice,
-            description = extras.description,
+            description = PartnerCopySanitizer.description(extras.description, partnerCopy),
             paymentType = extras.paymentType,
             externalId = partnerIdForAdmin(extras.externalId),
         )
     }
 
+    /** A booked extra (my-bookings, admin): the snapshot name is shown cleaned, classify keeps the raw one. */
     fun toExtrasPriceDto(
         reservationExtras: ReservationExtra,
         currency: CurrencyEnum?,
+        partnerCopy: Boolean,
     ): ExtrasPriceDto {
         return ExtrasPriceDto(
             id = reservationExtras.id!!,
-            name = reservationExtras.name!!,
+            name = PartnerCopySanitizer.extraName(reservationExtras.name!!, partnerCopy)!!,
             labelCode = reservationExtras.extras?.labelCode,
             priceEur = reservationExtras.price ?: BigDecimal.ZERO,
             priceInfo =
@@ -143,6 +155,10 @@ class YachtExtrasMapper(
     }
 
     /**
+     * The price calculation's own rows keep the RAW name: PriceCalculationService dedupes the NauSys re-quote on it and
+     * ReservationFlowMutationService stores it as the booking snapshot. The public price response is cleaned once at the
+     * end by [forDisplay].
+     *
      * @param optionalOnSite The D6 switch `EXTRAS_ZERO_OPTIONAL_ON_SITE`, read once per price calculation; it only
      *                       matters for a row without a persisted payment type (see `ExtraPaymentType.zeroPrice`).
      */
@@ -228,5 +244,21 @@ class YachtExtrasMapper(
             isStartingPrice = isStartingPrice,
             paymentType = offerExtras.paymentType,
         )
+    }
+
+    companion object {
+        /** R01: the public price-calculation response with display names (EXTERNAL yachts only); keys and types unchanged. */
+        fun forDisplay(
+            price: PriceCalcDto,
+            partnerCopy: Boolean,
+        ): PriceCalcDto {
+            if (!partnerCopy) return price
+
+            fun ExtrasPriceDto.clean() = copy(name = PartnerCopySanitizer.extraName(name) ?: name)
+            return price.copy(
+                selectedExtrasAtBase = price.selectedExtrasAtBase.map { it.clean() },
+                selectedExtrasInPrice = price.selectedExtrasInPrice.map { it.clean() },
+            )
+        }
     }
 }

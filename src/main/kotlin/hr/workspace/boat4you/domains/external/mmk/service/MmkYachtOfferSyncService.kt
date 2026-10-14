@@ -15,6 +15,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.OfferPaymentPlan
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
@@ -337,7 +338,8 @@ class MmkYachtOfferSyncService(
                 extraAlreadyOnOffer.price = mmkPrice
                 extraAlreadyOnOffer.payableInBase = mmkExtra.payableInBase
                 extraAlreadyOnOffer.paymentType = mmkPaymentType
-                extraAlreadyOnOffer.description = mmkExtra.description?.takeIf { it.isNotBlank() }
+                // R01: partner copy cleaned before it is stored (descriptions only; the name stays the raw key)
+                extraAlreadyOnOffer.description = PartnerCopySanitizer.description(mmkExtra.description)
                 matchedIds.add(extraAlreadyOnOffer.id!!)
                 return@forEach
             }
@@ -353,7 +355,7 @@ class MmkYachtOfferSyncService(
             offerExtra.unit = ExtrasUnitType.PER_BOOKING
             offerExtra.externalUnit = null
             offerExtra.externalId = mmkExtra.id // its extrasId, so duplicates are possible across different yachts
-            offerExtra.description = mmkExtra.description?.takeIf { it.isNotBlank() }
+            offerExtra.description = PartnerCopySanitizer.description(mmkExtra.description)
             offer.offerExtras.add(offerExtra)
             offerExtraRepository.save(offerExtra)
             matchedIds.add(offerExtra.id!!)

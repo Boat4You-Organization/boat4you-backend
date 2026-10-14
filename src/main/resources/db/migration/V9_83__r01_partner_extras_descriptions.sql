@@ -1,7 +1,7 @@
 -- V9_83 R01 (owner rule 14.10.2026, "Di pise NSS ili SUNSAIL stavi BOAT4YOU tu i gotovo"): partner yacht_extras
 -- descriptions -> customer copy. SQL subset of PartnerCopySanitizer.description (N2 + N3 + N4 + N5 only):
 --   * internal "update manually" notes dropped,
---   * "(to be (re)confirmed by NSS[ office])" -> "(to be confirmed by Boat4You)",
+--   * "(to be (re)confirmed by NSS[ office])" -> "(to be confirmed by Boat4You)" (capital T kept),
 --   * curated partner names (resources/partner/replace.v9_83.txt, a frozen snapshot of replace.txt) -> Boat4You.
 -- Rows that need Kotlin-only rules - premises (P1, possessive and possessive-free), legal disclaimers (P2), "the Company",
 -- contacts, HTML - are SKIPPED: N4 alone would turn "Athenian Yachts' Pier" into "Boat4You' Pier". Every sync rewrites
@@ -37,7 +37,7 @@ CREATE OR REPLACE FUNCTION public.r01_partner_copy_v1(t text) RETURNS text LANGU
     regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(t,
       '[[:space:]]*\((number of guests )?to (be )?update(d)? manually\)', '', 'gi'),                    -- N2
       '[[:space:]]*[-–][[:space:]]*to be updated manually', '', 'gi'),                                  -- N2
-      '[Tt]o be (re-?)?confirmed by (Dream Yacht Charter|Navigare Yachting|Ionian Catamarans|Athenian Yachts|Hermes Yachting|Rhodes Yachting|Active Cruises|Kavas Yachting|More Yachting|The Moorings|NSS Charter|Kiriacoulis|Navigare|Moorings(?=[[:space:]]*[0-9]|[''’]s\M)|Sunsail|Istion|Pitter|NSS)( office)?', 'to be confirmed by Boat4You', 'g'),            -- N3 (replace.v9_83.txt)
+      '([Tt])o be (re-?)?confirmed by (Dream Yacht Charter|Navigare Yachting|Ionian Catamarans|Athenian Yachts|Hermes Yachting|Rhodes Yachting|Active Cruises|Kavas Yachting|More Yachting|The Moorings|NSS Charter|Kiriacoulis|Navigare|Moorings(?=[[:space:]]*[0-9]|[''’]s\M)|Sunsail|Istion|Pitter|NSS)( office)?', '\1o be confirmed by Boat4You', 'g'),            -- N3 (replace.v9_83.txt)
       '\m(Dream Yacht Charter|Navigare Yachting|Ionian Catamarans|Athenian Yachts|Hermes Yachting|Rhodes Yachting|Active Cruises|Kavas Yachting|More Yachting|The Moorings|NSS Charter|Kiriacoulis|Navigare|Moorings(?=[[:space:]]*[0-9]|[''’]s\M)|Sunsail|Istion|Pitter|NSS)\M', 'Boat4You', 'g'),                                                                  -- N4 (replace.v9_83.txt)
       'Boat4You[[:space:]]*\(Boat4You\)', 'Boat4You', 'g'),                                             -- N5
       'Boat4You([[:space:]/]+Boat4You)+', 'Boat4You', 'g'),                                             -- N5

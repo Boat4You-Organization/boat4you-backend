@@ -77,17 +77,17 @@ class YachtMapperAmenitiesTest {
     fun `the public sees linked rows only, one per code`() {
         SecurityContextHolder.getContext().authentication =
             AnonymousAuthenticationToken("key", "anonymousUser", listOf(SimpleGrantedAuthority("ROLE_ANONYMOUS")))
-        assertEquals(listOf(1L, 4L), mapper.amenities(rows).map { it.id })
+        assertEquals(listOf(1L, 4L), mapper.amenities(rows, partnerCopy = true).map { it.id })
         SecurityContextHolder.clearContext()
-        assertEquals(listOf(1L, 4L), mapper.amenities(rows).map { it.id }, "no authentication at all")
+        assertEquals(listOf(1L, 4L), mapper.amenities(rows, partnerCopy = true).map { it.id }, "no authentication at all")
         SecurityContextHolder.getContext().authentication =
             UsernamePasswordAuthenticationToken("customer", null, listOf(SimpleGrantedAuthority("USER")))
-        assertEquals(listOf(1L, 4L), mapper.amenities(rows).map { it.id }, "a signed-in customer")
+        assertEquals(listOf(1L, 4L), mapper.amenities(rows, partnerCopy = true).map { it.id }, "a signed-in customer")
     }
 
     @Test
     fun `public rows carry our catalogue name, free-text rows no comment`() {
-        val public = mapper.amenities(rows)
+        val public = mapper.amenities(rows, partnerCopy = true)
         assertEquals(listOf("Fridge", "WiFi"), public.map { it.name }, "never the partner's wording")
         assertEquals(listOf("130 L", null), public.map { it.comment }, "a catalogue item keeps its value, MMK free text none")
         assertEquals(listOf("fridge", "wifi"), public.map { it.equipment?.labelCode })
@@ -104,17 +104,17 @@ class YachtMapperAmenitiesTest {
                 row(14, "Fridge", fridge, comment = "true"),
                 row(15, "Generator 2", generator, comment = "n/a"),
             )
-        assertEquals(listOf(14L), publicAmenities(absent).map { it.id }, "the present fridge row wins over the absent one")
+        assertEquals(listOf(14L), publicAmenities(absent, partnerCopy = true).map { it.id }, "the present fridge row wins over the absent one")
         SecurityContextHolder.getContext().authentication =
             UsernamePasswordAuthenticationToken("admin", null, listOf(SimpleGrantedAuthority("SYSTEM_ADMIN")))
-        assertEquals(listOf(10L, 11L, 12L, 13L), mapper.amenities(absent).map { it.id }, "admins see every code, absent ones too")
+        assertEquals(listOf(10L, 11L, 12L, 13L), mapper.amenities(absent, partnerCopy = true).map { it.id }, "admins see every code, absent ones too")
     }
 
     @Test
     fun `an admin sees every row with the partner's wording, unlinked rows one per name`() {
         SecurityContextHolder.getContext().authentication =
             UsernamePasswordAuthenticationToken("admin", null, listOf(SimpleGrantedAuthority("SYSTEM_ADMIN")))
-        val admin = mapper.amenities(rows)
+        val admin = mapper.amenities(rows, partnerCopy = true)
         assertEquals(listOf(1L, 3L, 4L, 5L), admin.map { it.id })
         assertEquals("Wi-Fi by the operator's office", admin.single { it.id == 4L }.name)
         assertEquals("password at the base", admin.single { it.id == 4L }.comment)

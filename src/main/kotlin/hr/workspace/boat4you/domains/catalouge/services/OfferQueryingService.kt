@@ -16,6 +16,8 @@ import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.mapper.OfferMapper
+import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import hr.workspace.boat4you.security.ANONYMOUS_USER_ID
 import hr.workspace.boat4you.security.getAuthenticatedUserId
@@ -204,7 +206,11 @@ class OfferQueryingService(
 
         val yacht = yachtRepository.findById(yachtId).orElseThrow { YachtDoesNotExistException() }
 
-        return priceCalculationService.calculatePrice(yacht, offer, currency, selectedExtras)
+        // R01: the response shows the partner's extras names cleaned; the calculation itself ran on the raw names.
+        return YachtExtrasMapper.forDisplay(
+            priceCalculationService.calculatePrice(yacht, offer, currency, selectedExtras),
+            PartnerCopySanitizer.isPartnerCopy(yacht.entryType),
+        )
     }
 
     private fun getValidYacht(yachtId: Long): Yacht {

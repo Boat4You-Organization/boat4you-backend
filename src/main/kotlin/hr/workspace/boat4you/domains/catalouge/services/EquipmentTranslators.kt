@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.EquipmentDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtEquipmentDto
 import hr.workspace.boat4you.domains.catalouge.jpa.Equipment
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtEquipment
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 
 fun Equipment.toDto(): EquipmentDto =
     EquipmentDto(
@@ -49,8 +50,12 @@ fun YachtEquipment.isPresent(): Boolean = !ABSENT_VALUE.matches(comment?.trim().
  * catalogue that the partner marks present, one per code. Each carries our catalogue name, never the partner's wording,
  * and an MMK free-text row no comment: name and value of those lines are an agency's own text (review 8.10.2026). The
  * web shows the translated label code; the name is only its fallback. Admins get every row (toDto).
+ * [partnerCopy] = the yacht is EXTERNAL: the comment is partner text and goes through the R01 sanitizer.
  */
-fun publicAmenities(rows: Collection<YachtEquipment>): List<YachtEquipmentDto> =
+fun publicAmenities(
+    rows: Collection<YachtEquipment>,
+    partnerCopy: Boolean,
+): List<YachtEquipmentDto> =
     rows
         .filter { it.equipmentId != null && it.equipment != null && it.isPresent() }
         .distinctBy { it.equipmentId }
@@ -61,6 +66,6 @@ fun publicAmenities(rows: Collection<YachtEquipment>): List<YachtEquipmentDto> =
                 equipment = row.equipment!!.toDto(),
                 highlight = row.highlight,
                 quantity = row.quantity,
-                comment = if (row.externalId == FREE_TEXT_PARTNER_ITEM) null else row.comment,
+                comment = if (row.externalId == FREE_TEXT_PARTNER_ITEM) null else PartnerCopySanitizer.description(row.comment, partnerCopy),
             )
         }

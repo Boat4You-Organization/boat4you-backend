@@ -185,7 +185,16 @@ class PartnerCopySanitizerTest {
         assertEquals("Sea Breeze Yachting", s.unlistedAgencyName("Sea Breeze Yachting provides the skipper", "Sea Breeze Yachting d.o.o."))
         assertNull(s.unlistedAgencyName("Boat4You provides the skipper", "Kavas Yachting"))
         assertNull(s.unlistedAgencyName("anything", "Abc"), "too short to judge")
-        assertEquals("Boat4You", s.syncDescription("NSS", 1L, "NSS Charter"))
+        assertEquals(
+            "Boat4You",
+            s.syncDescription(
+                "NSS",
+                hr.workspace.boat4you.domains.catalouge.jpa.Agency().apply {
+                    id = 1
+                    name = "NSS Charter"
+                },
+            ),
+        )
     }
 
     companion object {

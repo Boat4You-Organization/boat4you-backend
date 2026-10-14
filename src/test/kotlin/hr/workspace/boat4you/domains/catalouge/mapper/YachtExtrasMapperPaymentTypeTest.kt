@@ -59,25 +59,25 @@ class YachtExtrasMapperPaymentTypeTest {
 
     @Test
     fun `a booked extra with a persisted ON_SITE stays ON_SITE`() {
-        val dto = mapper.toExtrasPriceDto(booked("Skipper", "0", obligatory = false, payableAtBase = true, ExtraPaymentType.ON_SITE), null)
+        val dto = mapper.toExtrasPriceDto(booked("Skipper", "0", obligatory = false, payableAtBase = true, ExtraPaymentType.ON_SITE), null, partnerCopy = true)
         assertEquals(ExtraPaymentType.ON_SITE, dto.paymentType)
         // The persisted value wins over what classify() would say for the same row today.
         val prepaid = booked("Tourist tax", "20", obligatory = true, payableAtBase = false, ExtraPaymentType.WITH_BOOKING)
-        assertEquals(ExtraPaymentType.WITH_BOOKING, mapper.toExtrasPriceDto(prepaid, null).paymentType)
+        assertEquals(ExtraPaymentType.WITH_BOOKING, mapper.toExtrasPriceDto(prepaid, null, partnerCopy = true).paymentType)
     }
 
     @Test
     fun `a legacy booked extra without a stored type keeps its historical label`() {
         // 0 EUR optional extra booked before V9_82: INCLUDED, exactly as before (history never changes).
         val legacyFree = booked("Skipper", "0", obligatory = false, payableAtBase = true, paymentType = null)
-        assertEquals(ExtraPaymentType.INCLUDED, mapper.toExtrasPriceDto(legacyFree, null).paymentType)
+        assertEquals(ExtraPaymentType.INCLUDED, mapper.toExtrasPriceDto(legacyFree, null, partnerCopy = true).paymentType)
         val legacyObligatoryFree = booked("Wifi", "0.00", obligatory = true, payableAtBase = false, paymentType = null)
-        assertEquals(ExtraPaymentType.INCLUDED, mapper.toExtrasPriceDto(legacyObligatoryFree, null).paymentType)
+        assertEquals(ExtraPaymentType.INCLUDED, mapper.toExtrasPriceDto(legacyObligatoryFree, null, partnerCopy = true).paymentType)
         // Priced legacy rows: the same name/flag classification as before.
         val legacySkipper = booked("Skipper", "1540", obligatory = false, payableAtBase = true, paymentType = null)
-        assertEquals(ExtraPaymentType.ADVANCE_TO_OPERATOR, mapper.toExtrasPriceDto(legacySkipper, null).paymentType)
+        assertEquals(ExtraPaymentType.ADVANCE_TO_OPERATOR, mapper.toExtrasPriceDto(legacySkipper, null, partnerCopy = true).paymentType)
         val legacyTax = booked("Tourist tax", "20", obligatory = true, payableAtBase = true, paymentType = null)
-        assertEquals(ExtraPaymentType.ON_SITE, mapper.toExtrasPriceDto(legacyTax, null).paymentType)
+        assertEquals(ExtraPaymentType.ON_SITE, mapper.toExtrasPriceDto(legacyTax, null, partnerCopy = true).paymentType)
     }
 
     @Test

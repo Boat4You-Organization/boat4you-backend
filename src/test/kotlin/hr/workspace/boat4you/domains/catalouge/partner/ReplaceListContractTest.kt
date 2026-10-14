@@ -107,7 +107,7 @@ class ReplaceListContractTest {
                 e.name + if (e.beforeModelOrPossessive) "(?=[[:space:]]*[0-9]|[''’]s\\M)" else ""
             }
         val sql = ClassPathResource(R01MigrationTest.MIGRATION).inputStream.bufferedReader().readText()
-        val n3 = Regex("""confirmed by \((.*?)\)\( office\)\?'""").find(sql)?.groupValues?.get(1)
+        val n3 = Regex("""confirmed by \((.*?)\)\( office\)\?', '\\1o be confirmed by Boat4You'""").find(sql)?.groupValues?.get(1)
         val n4 = Regex("""'\\m\((.*?)\)\\M', 'Boat4You'""").find(sql)?.groupValues?.get(1)
         assertEquals(expected, n3, "N3 alternation in V9_83")
         assertEquals(expected, n4, "N4 alternation in V9_83")

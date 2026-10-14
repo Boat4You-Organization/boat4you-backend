@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.partner
 
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
+import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
@@ -113,7 +114,7 @@ object PartnerCopySanitizer {
     private val sentenceBoundary = Regex("""(?<=[.!?])[ \t]+|\n""")
 
     // N3 / N4
-    private val n3 = Regex("""[Tt]o be (re-?)?confirmed by (?:$replaceAlt)( office)?""")
+    private val n3 = Regex("""([Tt])o be (?:re-?)?confirmed by (?:$replaceAlt)(?: office)?""")
     private val n4 = Regex("""\b(?:$replaceAlt)\b""")
     private val theCompany = Regex("""\b[Tt]he Company\b""")
 
@@ -156,10 +157,9 @@ object PartnerCopySanitizer {
         var s = ExtraNameNormalizer.normalize(raw)!!
         s = dropNotes(s)
         s = premises(s)
-        s = n3.replace(s, "to be confirmed by $BOAT4YOU")
+        s = n3.replace(s) { it.groupValues[1] + "o be confirmed by $BOAT4YOU" }
         s = n4.replace(s, BOAT4YOU)
-        if (s == raw) return raw
-        return collapse(s)
+        return if (s == raw) raw else collapse(s)
     }
 
     /** [extraName] for an EXTERNAL yacht's extra, the raw name otherwise. */
@@ -173,18 +173,16 @@ object PartnerCopySanitizer {
      * contacts, P1, P2, N3, N4 + "the Company", N5. Null when nothing customer-worthy is left.
      */
     fun description(raw: String?): String? {
-        if (raw == null) return null
-        if (raw.isBlank()) return null
+        if (raw.isNullOrBlank()) return null
         var s = tidy(raw)
         s = dropNotes(s)
         s = dropContacts(s)
         s = premises(s)
         s = dropDisclaimers(s)
-        s = n3.replace(s, "to be confirmed by $BOAT4YOU")
+        s = n3.replace(s) { it.groupValues[1] + "o be confirmed by $BOAT4YOU" }
         s = n4.replace(s, BOAT4YOU)
         s = theCompany.replace(s, BOAT4YOU)
-        if (s == raw) return raw
-        return collapse(s).takeIf { it.isNotBlank() }
+        return if (s == raw) raw else collapse(s).takeIf { it.isNotBlank() }
     }
 
     /** [description] for an EXTERNAL yacht's text, the raw text otherwise. */
@@ -198,7 +196,7 @@ object PartnerCopySanitizer {
      * agency per process, when the cleaned text still carries the boat's own agency name that replace.txt does not list
      * (internal log only - the list grows by review, never automatically).
      */
-    fun syncDescription(
+    private fun syncDescription(
         raw: String?,
         agencyId: Long?,
         agencyName: String?,
@@ -210,6 +208,12 @@ object PartnerCopySanitizer {
         }
         return cleaned
     }
+
+    /** [syncDescription] for a yacht of [agency] (the sync writers' form). */
+    fun syncDescription(
+        raw: String?,
+        agency: Agency?,
+    ): String? = syncDescription(raw, agency?.id, agency?.name)
 
     private val loggedAgencies: MutableSet<Long> = ConcurrentHashMap.newKeySet()
 
@@ -224,13 +228,13 @@ object PartnerCopySanitizer {
         text: String?,
         agencyName: String?,
     ): String? {
-        if (text.isNullOrBlank() || agencyName.isNullOrBlank()) return null
-        val form = legalForm.replace(agencyName.trim(), "").trim()
-        if (form.length < 5) return null
-        if (replaceEntries.any { it.name.equals(form, ignoreCase = true) }) return null
-        val hit = Regex("""\b${Regex.escape(form)}\b""", RegexOption.IGNORE_CASE).containsMatchIn(text)
-        return if (hit) form else null
+        val form = agencyName?.let { legalForm.replace(it.trim(), "").trim() }
+        if (text.isNullOrBlank() || form == null || form.length < MIN_AGENCY_FORM) return null
+        val listed = replaceEntries.any { it.name.equals(form, ignoreCase = true) }
+        return form.takeIf { !listed && Regex("""\b${Regex.escape(form)}\b""", RegexOption.IGNORE_CASE).containsMatchIn(text) }
     }
+
+    private const val MIN_AGENCY_FORM = 5
 
     /** Which rules would fire on [text] and on what (for logs and counts). */
     fun findings(text: String?): List<Finding> {
@@ -258,7 +262,6 @@ object PartnerCopySanitizer {
     // ---- rules -----------------------------------------------------------------------------------------------------
 
     private fun tidy(s: String): String {
-        if (!htmlTag.containsMatchIn(s) && !s.contains("  ") && !s.contains('\t') && !s.contains("\n\n\n")) return s
         var t = s
         if (htmlTag.containsMatchIn(t)) {
             t = htmlBreak.replace(t, "\n")

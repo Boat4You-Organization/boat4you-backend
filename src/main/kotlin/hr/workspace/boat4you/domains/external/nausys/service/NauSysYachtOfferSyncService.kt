@@ -20,6 +20,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.OfferPaymentPlan
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
@@ -857,11 +858,11 @@ class NauSysYachtOfferSyncService(
             // before embarkation"). Mirror MMK obligatory mapper which copies
             // `mmkExtra.description` — we do the same so the "small print"
             // surfaces under the extras name on /boat detail and admin offer.
+            // R01: partner copy cleaned before it is stored (descriptions only; the name stays the raw key)
             val nausysCondition =
-                nausysExtra.condition
-                    ?.let {
-                        it.textEN ?: it.textHR ?: it.textIT ?: it.textDE
-                    }?.takeIf { it.isNotBlank() }
+                PartnerCopySanitizer.description(
+                    nausysExtra.condition?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE },
+                )
 
             val equipmentAlreadyOnOffer =
                 offer.offerExtras.find { ex ->
@@ -918,11 +919,11 @@ class NauSysYachtOfferSyncService(
                 allExtras.firstOrNull { eq ->
                     Matchers.extrasNameMatch(eq.getMatchKeysList(), externalEquipmentMatch.name)
                 }
+            // R01: partner copy cleaned before it is stored (descriptions only; the name stays the raw key)
             val nausysCondition =
-                nausysExtra.condition
-                    ?.let {
-                        it.textEN ?: it.textHR ?: it.textIT ?: it.textDE
-                    }?.takeIf { it.isNotBlank() }
+                PartnerCopySanitizer.description(
+                    nausysExtra.condition?.let { it.textEN ?: it.textHR ?: it.textIT ?: it.textDE },
+                )
 
             val equipmentAlreadyOnOffer =
                 offer.offerExtras.find { ex ->

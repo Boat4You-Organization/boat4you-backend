@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder
 import hr.workspace.boat4you.domains.catalouge.jpa.Country
+import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.service.BankTransferFeeShare
 import hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum
@@ -72,7 +73,7 @@ class CharterAgreementService(
         }
     }
 
-    private fun buildVariables(reservation: Reservation): Map<String, Any?> {
+    internal fun buildVariables(reservation: Reservation): Map<String, Any?> {
         // F4-012: PDF render is an admin-side operation on a confirmed
         // reservation — `reservationFlow`, its `yacht`, and its `user`
         // are all required for the template variables. The earlier
@@ -203,6 +204,9 @@ class CharterAgreementService(
         // Extras split by settlement. `payableAtBase == true` = paid on-site at
         // the marina (charter pack, harbour fees). Everything else is folded
         // into what we collect online (crew, APA, with-booking items).
+        // R01: the extras names in the PDF are shown as the customer copy (EXTERNAL yachts); the charter type below
+        // still reads the raw stored names.
+        val partnerCopy = PartnerCopySanitizer.isPartnerCopy(yacht.entryType)
         val marinaExtras = flow.reservationExtras.filter { it.payableAtBase == true }
         val inPaymentExtras = flow.reservationExtras.filter { it.payableAtBase != true }
         val inPaymentExtrasSum = inPaymentExtras.sumOf { it.price ?: BigDecimal.ZERO }
@@ -234,7 +238,7 @@ class CharterAgreementService(
         // schedule. Empty for a plain bareboat booking with no such extras.
         val inPaymentExtrasList: List<Map<String, Any?>> = inPaymentExtras.map { e ->
             mapOf(
-                "name" to (e.name ?: EM_DASH),
+                "name" to (PartnerCopySanitizer.extraName(e.name, partnerCopy) ?: EM_DASH),
                 "priceLabel" to "${(e.price ?: BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol",
             )
         }
@@ -315,7 +319,7 @@ class CharterAgreementService(
         // are itemised in the Charter price block instead.)
         val obligatoryExtras: List<Map<String, Any?>> = marinaExtras.map { e ->
             mapOf(
-                "name" to (e.name ?: EM_DASH),
+                "name" to (PartnerCopySanitizer.extraName(e.name, partnerCopy) ?: EM_DASH),
                 "priceLabel" to "${(e.price ?: BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol",
                 "unitLabel" to (e.unit?.name?.lowercase()?.replace('_', ' ')?.replaceFirstChar { it.uppercase() } ?: ""),
                 "payAtMarina" to true,
