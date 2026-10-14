@@ -83,8 +83,22 @@ data class YachtSearchParamObject(
      */
     val idFrom: Long? = null,
     val idTo: Long? = null,
+    /**
+     * Admin callers only (set by YachtController for SYSTEM_ADMIN, the same check as `includeUnavailable`): keep the
+     * LEGACY availability predicate and no price floor whatever the real-price switches say (DESIGN.md WS-A), so the
+     * admin Offers workspace and the reservation wizard still see placeholder-priced boats and can fix them.
+     */
+    val legacyAvailability: Boolean = false,
     val language: LanguageEnum,
 ) {
+    /**
+     * A sitemap request: one of the sitemap-only parameters (`idFrom`, `idTo`, `countryCodes`) is present. The D5 price
+     * floor is skipped for it (Mario 7.10.2026: never reduce boat URLs; open question in DESIGN.md), so a
+     * placeholder-priced boat keeps its sitemap entry and its inquiry page. Derived, so no caller can forget it.
+     */
+    val sitemapRequest: Boolean
+        get() = idFrom != null || idTo != null || !countryCodes.isNullOrEmpty()
+
     fun getMinLengthInMeters(): BigDecimal? {
         if (minLength == null) {
             return null

@@ -1,17 +1,20 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.dto.RelaxSuggestionDto
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.CountryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.LocationRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.RegionRepository
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import jakarta.persistence.EntityManager
 import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 /**
  * Picks the active filter that — if dropped — would surface the most
@@ -37,6 +40,8 @@ class YachtRelaxSuggestionService(
     private val entityManager: EntityManager,
     private val locationRepository: LocationRepository,
     private val countryRepository: CountryRepository,
+    private val regionRepository: RegionRepository,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     // Same search interactions that hit /distribution also hit /relax-suggest;
     // cache the 4-5 COUNT(DISTINCT id) scans behind one entry on the same 3-min
@@ -44,46 +49,49 @@ class YachtRelaxSuggestionService(
     // boundary — resolved inside, after the cache check — so keys stay stable).
     // null (no worthwhile hint) is not cached so the typed cache value never
     // holds a NullValue marker. Annotated on the public method the controller
-    // (separate bean) invokes through the Spring proxy.
-    @Cacheable(cacheNames = ["relaxSuggestCache"], key = "#filters.toString()", unless = "#result == null")
+    // (separate bean) invokes through the Spring proxy. The key carries the SEARCH_* real-price
+    // switch values (DESIGN.md WS-A), so a hint computed under one rule is never served under another.
+    @Cacheable(
+        cacheNames = ["relaxSuggestCache"],
+        key = "#filters.toString() + @realPriceSwitches.searchCacheKey()",
+        unless = "#result == null",
+    )
     @Transactional(readOnly = true)
     fun suggest(filters: ActiveFilters): RelaxSuggestionDto? {
         if (!filters.hasAnyRelaxable()) return null
+        val mode = SearchAvailabilitySql.Mode.of(realPriceSwitches.snapshot())
 
         // Resolve `did` (country / region / marina) once — avoids re-running
         // the lookups in every WHERE build. Regions/marinas expand to marina
         // ids; countries resolve to 2-letter codes matched on the view's
         // indexed country_code columns (a 200+ marina IN-list forced a
         // full-view walk on every count).
-        val resolved = filters.copy(
-            marinaIds = resolveMarinaIds(filters.locationIds),
-            didCountryCodes = resolveCountryCodes(filters.locationIds),
-        )
-        val baseline = countWith(resolved)
+        val resolved = resolve(filters, mode)
+        val baseline = countWith(resolved, mode)
 
         val candidates = mutableListOf<RelaxSuggestionDto>()
 
         if (resolved.minBuildYear != null || resolved.maxBuildYear != null) {
             val withoutYear = resolved.copy(minBuildYear = null, maxBuildYear = null)
-            val delta = countWith(withoutYear) - baseline
+            val delta = countWith(withoutYear, mode) - baseline
             val label = formatYearLabel(resolved.minBuildYear, resolved.maxBuildYear)
             candidates += RelaxSuggestionDto(listOf("minBuildYear", "maxBuildYear"), label, delta)
         }
         if (resolved.minLength != null || resolved.maxLength != null) {
             val withoutLen = resolved.copy(minLength = null, maxLength = null)
-            val delta = countWith(withoutLen) - baseline
+            val delta = countWith(withoutLen, mode) - baseline
             val label = formatLengthLabel(resolved.minLength, resolved.maxLength)
             candidates += RelaxSuggestionDto(listOf("minLength", "maxLength"), label, delta)
         }
         if (resolved.maxPrice != null) {
             val withoutPriceCap = resolved.copy(maxPrice = null)
-            val delta = countWith(withoutPriceCap) - baseline
+            val delta = countWith(withoutPriceCap, mode) - baseline
             val label = "Price ≤ €${resolved.maxPrice}"
             candidates += RelaxSuggestionDto(listOf("maxPrice"), label, delta)
         }
         if (resolved.minCabins != null || resolved.maxCabins != null) {
             val withoutCab = resolved.copy(minCabins = null, maxCabins = null)
-            val delta = countWith(withoutCab) - baseline
+            val delta = countWith(withoutCab, mode) - baseline
             val label = formatCabinsLabel(resolved.minCabins, resolved.maxCabins)
             candidates += RelaxSuggestionDto(listOf("minCabins", "maxCabins"), label, delta)
         }
@@ -93,8 +101,32 @@ class YachtRelaxSuggestionService(
             .maxByOrNull { it.delta }
     }
 
-    private fun countWith(filters: ActiveFilters): Long {
-        val (where, params) = buildWhereClause(filters)
+    /**
+     * The relax baseline - the listing's "Boats available" for the filters relax supports - under the current switch
+     * values. Read-only; the parity tests compare it with the listing's count.
+     */
+    @Transactional(readOnly = true)
+    fun baselineCount(filters: ActiveFilters): Long {
+        val mode = SearchAvailabilitySql.Mode.of(realPriceSwitches.snapshot())
+        return countWith(resolve(filters, mode), mode)
+    }
+
+    /** [filters] with its destination resolved; under D1 also the own countries of its regions (search parity). */
+    private fun resolve(
+        filters: ActiveFilters,
+        mode: SearchAvailabilitySql.Mode,
+    ): ActiveFilters =
+        filters.copy(
+            marinaIds = resolveMarinaIds(filters.locationIds),
+            didCountryCodes = resolveCountryCodes(filters.locationIds),
+            regionCountryCodes = if (mode.d1) resolveRegionCountryCodes(filters.locationIds) else null,
+        )
+
+    private fun countWith(
+        filters: ActiveFilters,
+        mode: SearchAvailabilitySql.Mode,
+    ): Long {
+        val (where, params) = buildWhereClause(filters, mode)
         // COUNT(DISTINCT id) — yacht_search_view has one row per offer; a
         // yacht with multiple candidate offers in the date-flex window would
         // otherwise be counted multiple times and the delta would explode.
@@ -105,7 +137,10 @@ class YachtRelaxSuggestionService(
         return (q.singleResult as Number).toLong()
     }
 
-    private fun buildWhereClause(filters: ActiveFilters): Pair<String, Map<String, Any>> {
+    private fun buildWhereClause(
+        filters: ActiveFilters,
+        mode: SearchAvailabilitySql.Mode = SearchAvailabilitySql.Mode.LEGACY,
+    ): Pair<String, Map<String, Any>> {
         val clauses = mutableListOf<String>()
         val params = mutableMapOf<String, Any>()
         // Always-on filters (mirror `YachtQueryingService` so relax delta
@@ -126,20 +161,7 @@ class YachtRelaxSuggestionService(
                 }
             }
         }
-        filters.startDate?.let {
-            clauses += "date_from BETWEEN :startMinusFlex AND :startPlusFlex"
-            params["startMinusFlex"] = it.minusDays(DATE_FLEX_DAYS)
-            params["startPlusFlex"] = it.plusDays(DATE_FLEX_DAYS)
-        } ?: filters.endDate?.let {
-            clauses += "date_to BETWEEN :endMinusFlex AND :endPlusFlex"
-            params["endMinusFlex"] = it.minusDays(DATE_FLEX_DAYS)
-            params["endPlusFlex"] = it.plusDays(DATE_FLEX_DAYS)
-        } ?: run {
-            // Undated: bookable offers only (starting today or later), like the search (audit B12), one card per
-            // physical boat (audit B17).
-            clauses += "(date_from IS NULL OR date_from >= CURRENT_DATE)"
-            clauses += "NOT EXISTS (SELECT 1 FROM yacht_listing_twin t WHERE t.yacht_id = yacht_search_view.id)"
-        }
+        addAvailability(filters, mode, clauses, params)
         if (!filters.vesselTypes.isNullOrEmpty()) {
             clauses += "vessel_type IN (:vesselTypeNames)"
             params["vesselTypeNames"] = filters.vesselTypes.map { it.name }
@@ -162,6 +184,78 @@ class YachtRelaxSuggestionService(
         filters.maxCabins?.let { clauses += "cabins <= :maxCabins"; params["maxCabins"] = it }
         return "WHERE ${clauses.joinToString(" AND ")}" to params
     }
+
+    /**
+     * The availability part of [buildWhereClause]: the D5 floor, under D1 the region's own country (search parity) and
+     * the listing's dated clauses, else today's start / end clamp or the undated bookable / one-card-per-boat rule.
+     */
+    private fun addAvailability(
+        filters: ActiveFilters,
+        mode: SearchAvailabilitySql.Mode,
+        clauses: MutableList<String>,
+        params: MutableMap<String, Any>,
+    ) {
+        if (mode.floor) {
+            // D5: no placeholder-priced row (below 300 EUR a week) in any branch; custom yachts always count.
+            clauses += SearchAvailabilitySql.FLOOR_CLAUSE
+            params[SearchAvailabilitySql.P_FLOOR] = SearchAvailabilitySql.MIN_WEEK_PRICE_PER_DAY
+        }
+        if (mode.d1 && !filters.regionCountryCodes.isNullOrEmpty()) {
+            // A region search lists only boats in the region's own country (search: deriveRegionCountryCodes).
+            clauses += "country_code IN (:regionCountryCodes)"
+            params["regionCountryCodes"] = filters.regionCountryCodes
+        }
+        if (mode.d1 && filters.startDate != null && filters.endDate != null) {
+            // D1 (the listing's d1DatedPredicates) instead of the start-day clamp: the searched length within +-3 days
+            // or a tiling by priced weeks passing these row filters, the hull hard block, the requested period taken.
+            val dated = SearchAvailabilitySql.d1Dated(filters.startDate, filters.endDate, rowVaryingClauses(filters), LocalDateTime.now())
+            clauses += dated.clauses
+            params.putAll(dated.params)
+        } else {
+            filters.startDate?.let {
+                clauses += "date_from BETWEEN :startMinusFlex AND :startPlusFlex"
+                params["startMinusFlex"] = it.minusDays(DATE_FLEX_DAYS)
+                params["startPlusFlex"] = it.plusDays(DATE_FLEX_DAYS)
+            } ?: filters.endDate?.let {
+                clauses += "date_to BETWEEN :endMinusFlex AND :endPlusFlex"
+                params["endMinusFlex"] = it.minusDays(DATE_FLEX_DAYS)
+                params["endPlusFlex"] = it.plusDays(DATE_FLEX_DAYS)
+            } ?: run {
+                // Undated: bookable offers only (starting today or later), like the search (audit B12), one card per
+                // physical boat (audit B17).
+                clauses += "(date_from IS NULL OR date_from >= CURRENT_DATE)"
+                clauses += "NOT EXISTS (SELECT 1 FROM yacht_listing_twin t WHERE t.yacht_id = yacht_search_view.id)"
+            }
+        }
+    }
+
+    /**
+     * The row-varying filters of [buildWhereClause] (offer status, pickup, region country, charter type, price ceiling)
+     * for the D1 tiled-ids subquery; their parameters are bound by [buildWhereClause] itself.
+     */
+    private fun rowVaryingClauses(filters: ActiveFilters): List<String> {
+        val clauses = mutableListOf("offer_status <> 'UNAVAILABLE'")
+        val hasMarinas = !filters.marinaIds.isNullOrEmpty()
+        val hasDidCountries = !filters.didCountryCodes.isNullOrEmpty()
+        when {
+            filters.marinaIds == null && filters.didCountryCodes == null -> {}
+            !hasMarinas && !hasDidCountries -> clauses += "FALSE"
+            else -> clauses += DestinationScopeSql.pickup(hasMarinas, hasDidCountries)
+        }
+        if (!filters.regionCountryCodes.isNullOrEmpty()) clauses += "country_code IN (:regionCountryCodes)"
+        if (!filters.charterTypes.isNullOrEmpty()) clauses += GuletRules.charterTypeSql(filters.charterTypes, "charterTypeNames")
+        if (filters.maxPrice != null) clauses += "client_price <= :maxPrice"
+        return clauses
+    }
+
+    /** Own countries of the `r-` regions in [locationIds] (YachtQueryingService.deriveRegionCountryCodes). */
+    private fun resolveRegionCountryCodes(locationIds: List<String>?): List<String>? =
+        locationIds
+            ?.filter { it.firstOrNull() == 'r' }
+            ?.mapNotNull { it.drop(2).toLongOrNull() }
+            ?.mapNotNull { regionRepository.findById(it).orElse(null)?.countryCode?.uppercase() }
+            ?.distinct()
+            ?.takeIf { it.isNotEmpty() }
 
     /** Resolve `r-12 / l-9001` did strings into the matching marina IDs
      *  (mirrors `YachtQueryingService.getMarinas` / `YachtDistributionService`).
@@ -255,6 +349,8 @@ class YachtRelaxSuggestionService(
          *  AFTER the @Cacheable boundary (always null in the key), so keys
          *  stay deterministic per input. */
         val didCountryCodes: List<String>? = null,
+        /** D1 only: own countries of the `r-` regions - populated internally, never set by callers. */
+        val regionCountryCodes: List<String>? = null,
     ) {
         fun hasAnyRelaxable(): Boolean =
             listOf(minBuildYear, maxBuildYear, minLength, maxLength, maxPrice, minCabins, maxCabins)

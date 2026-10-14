@@ -60,6 +60,7 @@ class YachtSearchDidScopeTests {
             mock(RegionRepository::class.java),
             countryRepository,
             PassThroughHeavyQueries,
+            SearchSwitchesTestSupport.defaults(),
         )
 
     private fun marina(

@@ -286,8 +286,9 @@ class YachtSearchGuletCharterTest {
                 regions,
                 countries,
                 PassThroughHeavyQueries,
+                SearchSwitchesTestSupport.defaults(),
             )
-        distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager())
+        distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager(), SearchSwitchesTestSupport.defaults())
     }
 
     @AfterEach

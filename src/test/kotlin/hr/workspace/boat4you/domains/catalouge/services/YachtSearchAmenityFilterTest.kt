@@ -199,6 +199,7 @@ class YachtSearchAmenityFilterTest {
                 mock(RegionRepository::class.java),
                 mock(CountryRepository::class.java),
                 PassThroughHeavyQueries,
+                SearchSwitchesTestSupport.defaults(),
             )
     }
 

@@ -189,8 +189,9 @@ class YachtSearchCapacityTest {
                 regions,
                 countries,
                 PassThroughHeavyQueries,
+                SearchSwitchesTestSupport.defaults(),
             )
-        distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager())
+        distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager(), SearchSwitchesTestSupport.defaults())
         val exchangeRates = mock(ExchangeRateCalculationService::class.java)
         realService =
             YachtQueryingService(
@@ -211,6 +212,7 @@ class YachtSearchCapacityTest {
                 regions,
                 countries,
                 PassThroughHeavyQueries,
+                SearchSwitchesTestSupport.defaults(),
             )
     }
 
