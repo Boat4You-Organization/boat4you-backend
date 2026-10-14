@@ -130,11 +130,11 @@ class YachtExtrasMapper(
             externalId = reservationExtras.externalId,
             extrasId = reservationExtras.extras?.id,
             isStartingPrice = null,
-            // reservation_extras doesn't carry payment_type (V1_57 only added
-            // it to yacht_extras + offer_extras). Classify by name + flag on
-            // the fly — acceptable for post-booking read path; the cheaper
-            // Nausys direct mapping only matters before booking is placed.
-            paymentType = hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.classify(
+            // Since V9_82 the booking stores the payment type it was made with
+            // (D6, 14.10.2026), so a later classifier change never rewrites a
+            // booked extra. Older rows have none: they keep the historical
+            // on-the-fly classification by name + flag, unchanged.
+            paymentType = reservationExtras.paymentType ?: hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.classify(
                 name = reservationExtras.name,
                 price = reservationExtras.price,
                 payableInBase = reservationExtras.payableAtBase ?: false,
@@ -142,9 +142,14 @@ class YachtExtrasMapper(
         )
     }
 
+    /**
+     * @param optionalOnSite The D6 switch `EXTRAS_ZERO_OPTIONAL_ON_SITE`, read once per price calculation; it only
+     *                       matters for a row without a persisted payment type (see `ExtraPaymentType.zeroPrice`).
+     */
     fun toExtrasPriceDto(
         calcDto: InternalCalcDto,
         currency: CurrencyEnum?,
+        optionalOnSite: Boolean,
     ): ExtrasPriceDto {
         return ExtrasPriceDto(
             id = calcDto.id,
@@ -178,6 +183,8 @@ class YachtExtrasMapper(
                     name = calcDto.name,
                     price = calcDto.getFinalPrice(),
                     payableInBase = calcDto.payableInBase,
+                    obligatory = calcDto.obligatory,
+                    optionalOnSite = optionalOnSite,
                 ),
         )
     }

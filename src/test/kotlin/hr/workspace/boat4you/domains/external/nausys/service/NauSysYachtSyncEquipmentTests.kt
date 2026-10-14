@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.external.nausys.service
 
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalEquipmentType
+import hr.workspace.boat4you.domains.catalouge.enums.ExtrasZeroPriceSwitchFixture
 import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentCatalogueFixture
 import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentLinkResolver
 import hr.workspace.boat4you.domains.catalouge.jpa.EquipmentRepository
@@ -78,6 +79,7 @@ class NauSysYachtSyncEquipmentTests {
             fileSystemService = any(),
             agencyRepository = any(),
             externalSeasonRepository = any(),
+            realPriceSwitches = ExtrasZeroPriceSwitchFixture.switches(),
         )
 
     private fun item(

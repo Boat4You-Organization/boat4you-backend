@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.external.nausys.service
 
+import hr.workspace.boat4you.domains.catalouge.enums.ExtrasZeroPriceSwitchFixture
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
@@ -128,6 +129,7 @@ class NauSysYachtSyncInlandSkipTests {
             fileSystemService = any(),
             agencyRepository = agencies,
             externalSeasonRepository = any(),
+            realPriceSwitches = ExtrasZeroPriceSwitchFixture.switches(),
         )
 
     private fun nausysYacht(

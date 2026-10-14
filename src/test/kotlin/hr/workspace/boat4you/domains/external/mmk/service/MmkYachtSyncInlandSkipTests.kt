@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.external.mmk.service
 
+import hr.workspace.boat4you.domains.catalouge.enums.ExtrasZeroPriceSwitchFixture
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
@@ -131,6 +132,7 @@ class MmkYachtSyncInlandSkipTests {
             yachtTranslationRepository = any(),
             agencyRepository = agencies,
             modelNameNormaliser = any(),
+            realPriceSwitches = ExtrasZeroPriceSwitchFixture.switches(),
         )
 
     private fun mmkYacht(

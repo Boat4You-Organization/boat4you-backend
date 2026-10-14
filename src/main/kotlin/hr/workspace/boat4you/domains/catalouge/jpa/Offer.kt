@@ -186,8 +186,10 @@ open class Offer {
      * (30%)") are one item, the dearest — MMK lists and bills them all, which is an
      * agency set-up error settled with the agency, not passed on to the client.
      *
-     * Optional rows: unchanged — the cheapest per catalogue key, flagged when
-     * dearer variants exist, and hidden behind an obligatory row with that key.
+     * Optional rows: the cheapest per catalogue key, flagged when dearer variants
+     * exist, and hidden behind an obligatory row with that key. Only a priced
+     * variant counts as "the cheapest" while one exists (D6, 14.10.2026): an
+     * unpriced 0 € row must not stand in for the 150 € variant of the same item.
      */
     fun filterDuplicateExtras(): List<Pair<OfferExtra, Boolean>> {
         // Stable order: offerExtras has no @OrderBy, and which row survived a
@@ -217,7 +219,8 @@ open class Offer {
                 .groupBy { it.extrasKey() }
                 .values
                 .map { extras ->
-                    val minPrice = extras.minBy { it.price ?: BigDecimal.ZERO }
+                    val priced = extras.filter { (it.price ?: BigDecimal.ZERO).signum() > 0 }
+                    val minPrice = priced.ifEmpty { extras }.minBy { it.price ?: BigDecimal.ZERO }
                     val hasHigherPrices = extras.any { (it.price ?: BigDecimal.ZERO) > (minPrice.price ?: BigDecimal.ZERO) }
                     minPrice to hasHigherPrices
                 }

@@ -198,6 +198,8 @@ class ReservationFlowMutationService(
             extra.unit = it.unit
             extra.sourceId = it.id
             extra.externalId = it.externalId
+            // Frozen with the booking (V9_82, D6): later classifier changes never relabel a booked extra.
+            extra.paymentType = it.paymentType
             reservationExtraRepository.save(extra)
             reservationFlow.reservationExtras.add(extra)
         }
@@ -217,6 +219,8 @@ class ReservationFlowMutationService(
             extra.unit = it.unit
             extra.sourceId = it.id
             extra.externalId = it.externalId
+            // Frozen with the booking (V9_82, D6): later classifier changes never relabel a booked extra.
+            extra.paymentType = it.paymentType
             reservationExtraRepository.save(extra)
             reservationFlow.reservationExtras.add(extra)
         }

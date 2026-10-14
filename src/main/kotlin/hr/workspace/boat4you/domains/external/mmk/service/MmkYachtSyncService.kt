@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.external.mmk.service
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.capacity.PartnerCapacitySync
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
@@ -79,6 +80,7 @@ class MmkYachtSyncService(
     private val yachtTranslationRepository: YachtTranslationRepository,
     private val agencyRepository: AgencyRepository,
     private val modelNameNormaliser: hr.workspace.boat4you.domains.catalouge.services.ModelNameNormaliser,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -115,6 +117,8 @@ class MmkYachtSyncService(
         val inlandBaseIds = locationQueryingService.getInlandLocationExternalIds(ExternalSystemEnum.MMK.value.toLong())
         // One catalogue + explicit-link snapshot per agency pass; loaded on the first yacht that ships equipment.
         val equipmentLinks = lazy { equipmentLinkResolver.newPass() }
+        // D6 switch, read once per agency pass so every extra of the batch is classified alike.
+        val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
 
         mmkYachts.forEach { mmkYacht ->
             // Track every partner-reported id up front (before shouldSkip) —
@@ -202,7 +206,7 @@ class MmkYachtSyncService(
                 slimEquipment = mmkYacht.equipment?.toSet(),
                 equipmentLinks = equipmentLinks,
             )
-            syncExtras(updatedYacht, filteredProducts)
+            syncExtras(updatedYacht, filteredProducts, optionalOnSite)
             syncReservationOptions(updatedYacht, mmkYacht)
 
             if (mapping == null) {
@@ -630,6 +634,7 @@ class MmkYachtSyncService(
     private fun syncExtras(
         yacht: Yacht,
         filteredProducts: List<Product>,
+        optionalOnSite: Boolean,
     ) {
         val allExtras = extraRepository.findAll()
         val allYachtExtras = yacht.yachtExtras
@@ -658,6 +663,8 @@ class MmkYachtSyncService(
                     name = mmkExtra.name,
                     price = mmkPrice,
                     payableInBase = mmkExtra.payableInBase ?: false,
+                    obligatory = mmkExtra.obligatory == true,
+                    optionalOnSite = optionalOnSite,
                 )
                 if (extraAlreadyOnYacht != null) {
                     // The partner renames items in place (same id): "Transit Log (… cooking gas)" became

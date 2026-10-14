@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.external.mmk.service
 
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalEquipmentType
+import hr.workspace.boat4you.domains.catalouge.enums.ExtrasZeroPriceSwitchFixture
 import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentCatalogueFixture
 import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentLinkResolver
 import hr.workspace.boat4you.domains.catalouge.jpa.Equipment
@@ -84,6 +85,7 @@ class MmkYachtSyncEquipmentTests {
             yachtTranslationRepository = any(),
             agencyRepository = any(),
             modelNameNormaliser = any(),
+            realPriceSwitches = ExtrasZeroPriceSwitchFixture.switches(),
         )
 
     private var rawId = 1L
