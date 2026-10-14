@@ -63,6 +63,7 @@ import java.time.LocalDate
 @RestController
 @RequestMapping("/admin/reservations")
 @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+@Suppress("LongParameterList") // Spring constructor injection of the admin reservation collaborators
 internal class AdminReservationController(
     private val reservationMutationService: ReservationMutationService,
     private val reservationIntegrationService: ReservationIntegrationService,

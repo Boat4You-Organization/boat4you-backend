@@ -129,6 +129,7 @@ object RealPriceSearchFixture {
 
     val SEED: String = seed()
 
+    @Suppress("LongMethod") // one readable table of fixture rows, kept in a single place
     private fun seed(): String =
         with(Seed()) {
             line(
