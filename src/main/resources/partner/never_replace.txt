@@ -25,3 +25,6 @@ mooring fees
 Athena Blu
 Athenian Riviera
 Hermes
+# Italian: "Navigare" opening a sentence is the verb "to sail" (replace.txt "Navigare @proper")
+Navigare a vela in Sardegna
+Navigare tra le isole Eolie

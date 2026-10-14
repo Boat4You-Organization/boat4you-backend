@@ -52,11 +52,52 @@ class PartnerCopySanitizerTest {
                 "Check-in at More Yachting's Pier, in Nikiana" to "Check-in at the base pier in Nikiana",
                 "Parking at The Moorings base" to "Parking at the charter base",
                 "Athenian Yachts' Pier fee" to "The charter base pier fee",
+                // the label form, without a preposition (review 14.10.2026)
+                "Sunsail base fee" to "The charter base fee",
+                "NSS office fee" to "The charter base office fee",
+                "Transfer: Athens Airport - Athenian Yachts base Alimos (1-4 pax)" to "Transfer: Athens Airport - the charter base Alimos (1-4 pax)",
+                "Navigare Yachting pontoon mooring" to "The charter base pontoon mooring",
+                "Parking near NSS Charter office" to "Parking near the charter base office",
+                "Opening hours of the NSS office: 8-20h" to "Opening hours of the charter base office: 8-20h",
+                "SUNSAIL BASE fee" to "The charter base fee",
             )
         cases.forEach { (raw, expected) ->
             assertEquals(expected, s.extraName(raw), "name: $raw")
             assertEquals(expected, s.description(raw), "description: $raw")
         }
+    }
+
+    @Test
+    fun `a confirm note keeps N3 although it ends in a premises noun`() {
+        assertEquals("Transfer (to be confirmed by Boat4You)", s.extraName("Transfer (to be reconfirmed by NSS office)"))
+        assertEquals("Transfer (to be confirmed by Boat4You)", s.description("Transfer (to be confirmed by NSS office)"))
+    }
+
+    @Test
+    fun `partner names in capitals are replaced, ambiguous entries stay case-exact`() {
+        assertEquals("Boat4You check-in pack", s.extraName("SUNSAIL check-in pack"))
+        assertEquals("Boat4You check-in pack", s.description("SUNSAIL check-in pack"))
+        assertEquals("Welcome drink by Boat4You", s.description("Welcome drink by NSS CHARTER"))
+        assertEquals("Boat4You transfer", s.description("DREAM YACHT CHARTER transfer"))
+        listOf("MOORINGS FLEET", "NAVIGARE A VELA").forEach { assertSame(it, s.description(it), it) }
+    }
+
+    @Test
+    fun `Navigare opening a sentence before a lowercase word is the Italian verb, elsewhere it is the partner`() {
+        listOf(
+            "Navigare a vela in Sardegna è un sogno.",
+            "Navigare tra le isole Eolie con questo catamarano.",
+            "Catamarano spazioso. Navigare lungo la costa è facile.",
+            "Il programma:\nNavigare verso Lipari.",
+        ).forEach {
+            assertSame(it, s.description(it), it)
+            assertSame(it, s.extraName(it), it)
+        }
+        assertEquals("Boat4You Carefree surcharge", s.description("Navigare Carefree surcharge"))
+        assertEquals("Prenota con Boat4You.", s.description("Prenota con Navigare."))
+        assertEquals("Fuel by Boat4You", s.description("Fuel by Navigare"))
+        assertEquals("Navigare a vela. Boat4You Carefree incluso.", s.description("Navigare a vela. Navigare Carefree incluso."))
+        assertTrue(s.findings("Navigare a vela in Sardegna").none { it.rule == "N4" })
     }
 
     // ---- descriptions ------------------------------------------------------------------------------------------------
@@ -96,6 +137,39 @@ class PartnerCopySanitizerTest {
         assertEquals("Book the transfer:", s.description("Book the transfer: Tel. +30 210 123 4567"))
         assertEquals("Book the transfer", s.description("Book the transfer +385 21 123 456"))
         assertEquals("Call the base", s.description("Call the base mob: 0915551234"))
+        assertEquals("Write to", s.description("Write to nss.charter.it"))
+        assertEquals("Write to", s.description("Write to NSS.GR"))
+        assertEquals("Book the transfer", s.description("Book the transfer +30-210-1234567"))
+    }
+
+    @Test
+    fun `a missing space after a full stop is not a domain`() {
+        listOf(
+            "Spacious cockpit.It has a large saloon",
+            "Fully equipped with a watermaker.Es gibt viel Platz.",
+            "Fully equipped galley.Me and my crew",
+            "Approx.Info at reception",
+            "Four cabins.De luxe interior",
+            "cabins.De",
+            "Large saloon.it has a TV",
+        ).forEach {
+            assertSame(it, s.description(it), it)
+            assertTrue(s.findings(it).none { f -> f.rule == "CONTACT" }, it)
+        }
+    }
+
+    @Test
+    fun `price lists are not phone numbers`() {
+        listOf(
+            "Extra bed +50/60/70/80 per week",
+            "Price list: +10 20 30 40 50 EUR",
+            "Price list: +100 200 300 400 €",
+            "Supplement +10 20 30 40 50 per day",
+            "Fees 2024: +10/+20/+30/+40",
+        ).forEach {
+            assertSame(it, s.description(it), it)
+            assertSame(it, s.extraName(it), it)
+        }
     }
 
     @Test
@@ -145,6 +219,23 @@ class PartnerCopySanitizerTest {
     fun `html is stripped, single line breaks kept`() {
         assertEquals("Fuel\nWater", s.description("<p>Fuel</p><p>Water</p>"))
         assertEquals("Line one\nLine two", s.description("Line one<br/>Line two"))
+    }
+
+    @Test
+    fun `block-level html becomes line breaks and basic entities are decoded`() {
+        assertEquals(
+            "Air condition\nGenerator\nWatermaker",
+            s.description("<ul><li>Air condition</li><li>Generator</li><li>Watermaker</li></ul>"),
+        )
+        assertEquals("Equipment:\nGenerator\nWatermaker", s.description("Equipment:<ul>\n  <li>Generator</li>\n  <li>Watermaker</li>\n</ul>"))
+        assertEquals("Boat4You fleet\nSecond line", s.description("<strong>Sunsail</strong> fleet<div>Second line</div>"))
+        assertEquals("Title\nText", s.description("<h3>Title</h3><p>Text</p>"))
+        assertEquals("Fuel 50 l", s.description("<table><tr><td>Fuel</td><td>50 l</td></tr></table>"))
+        assertEquals("Built in 2019 & refitted", s.description("Built in 2019 &amp; refitted"))
+        assertEquals("\"Blue\" class, skipper's cabin, length < 12 m, > 4 berths", s.description("&quot;Blue&quot; class, skipper&#39;s cabin, length &lt; 12 m, &gt; 4 berths"))
+        val escaped = "&amp;lt;b&amp;gt; stays text"
+        assertSame(escaped, s.description(escaped), "an escaped entity is never decoded twice")
+        assertEquals("&lt;b> stays text", s.description("&lt;b&gt; stays text"), "&lt; before a letter never becomes a tag")
     }
 
     @Test
@@ -219,6 +310,15 @@ class PartnerCopySanitizerTest {
                 "Tel. +30 210 123 4567, info@nss.example",
                 "<p>Fuel&nbsp;policy</p>  full   to full",
                 "The Company provides fuel. The Company will not be held liable.",
+                "Sunsail base fee",
+                "Transfer: Athens Airport - Athenian Yachts base Alimos (1-4 pax)",
+                "Opening hours of the NSS office: 8-20h",
+                "Navigare a vela in Sardegna. Navigare Carefree incluso.",
+                "SUNSAIL check-in pack",
+                "<ul><li>Air condition</li><li>Generator</li></ul>",
+                "Built in 2019 &amp; refitted, &amp;lt;b&amp;gt;",
+                "Spacious cockpit.It has a large saloon",
+                "Extra bed +50/60/70/80 per week",
             )
     }
 }

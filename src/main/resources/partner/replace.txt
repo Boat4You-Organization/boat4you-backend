@@ -5,6 +5,9 @@
 # Format: one name per line, case-sensitive, whole words, longest first. '#' starts a comment.
 #   "<Name> @model" = replaced only when a model number or a possessive follows ("Moorings 4200" -> "Boat4You 4200",
 #   "Moorings's" -> "Boat4You's"); the bare word stays ("The Moorings Marina" is matched by "The Moorings" instead).
+#   "<Name> @proper" = also an ordinary word of another language: left alone where it opens a sentence and a lowercase
+#   word follows (Italian "Navigare a vela in Sardegna" = "to sail"); replaced everywhere else ("Navigare Carefree").
+#   An unqualified entry also matches its ALL-CAPS form ("SUNSAIL", "NSS CHARTER"); a qualified one is case-exact.
 # Rules (ReplaceListContractTest): every entry is in operators.txt or replace_aliases.txt; no entry is on the operators.txt
 # '!' allow-list, on never_replace.txt or a builder / model first word; no single-word entry equals a yacht name or a
 # location-name token. Bare "Hermes" (11 boats are called Hermes) and bare "Athenian" ("Athenian Riviera") are NOT here:
@@ -23,7 +26,7 @@ More Yachting
 The Moorings
 NSS Charter
 Kiriacoulis
-Navigare
+Navigare @proper
 Moorings @model
 Sunsail
 Istion
