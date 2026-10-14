@@ -18,6 +18,7 @@ import hr.workspace.boat4you.domains.reservation.dto.AdminCreateReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.CreateFictitiousReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.YachtSwapInfoDto
 import hr.workspace.boat4you.domains.reservation.mapper.ReservationMappers
+import hr.workspace.boat4you.domains.reservation.service.PartnerPriceGuard
 import hr.workspace.boat4you.domains.reservation.service.ReservationDocumentService
 import hr.workspace.boat4you.domains.reservation.service.ReservationEmailService
 import hr.workspace.boat4you.domains.reservation.service.ReservationFlowMutationService
@@ -77,6 +78,7 @@ internal class AdminReservationController(
     private val reservationMappers: ReservationMappers,
     private val voucherService: VoucherService,
     private val eventPublisher: ApplicationEventPublisher,
+    private val partnerPriceGuard: PartnerPriceGuard,
 ) {
     private val log = LoggerFactory.getLogger(AdminReservationController::class.java)
 
@@ -383,6 +385,9 @@ internal class AdminReservationController(
         // flow uses — actually hits MMK/NauSys to hold the option on the
         // partner side.
         val externalReservation = reservationIntegrationService.createExternalReservation(flowId)
+        // Partner price guard, alert-only: the admin sets the price, so adminOverride never blocks; it only logs the
+        // partner-vs-snapshot comparison (PARTNER_PRICE_GUARD line) for calibration.
+        partnerPriceGuard.check(flowId, externalReservation, adminOverride = true)
 
         // Step 3: persist the Reservation entity with admin's price override
         // and admin-only notes. Payment phase rows are already in place from
