@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.service
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.common.models.UserDomainEntity
 import hr.workspace.boat4you.common.services.toLanguageEnum
 import org.springframework.context.i18n.LocaleContextHolder
@@ -10,13 +11,17 @@ import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveExcepti
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Extra
 import hr.workspace.boat4you.domains.catalouge.jpa.ExtraRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.PriceCalculationService
+import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.reservation.dto.CreateFictitiousReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.CreateReservationDto
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDto
 import hr.workspace.boat4you.domains.reservation.enums.ReservationFlowStatus
+import hr.workspace.boat4you.domains.reservation.exceptions.OfferNotBookableException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationUserNotExists
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationExtra
@@ -64,6 +69,7 @@ class ReservationFlowMutationService(
     private val reservationMappers: ReservationMappers,
     private val bookingNumberService: BookingNumberService,
     private val voucherService: VoucherService,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -88,7 +94,7 @@ class ReservationFlowMutationService(
         }
 
         if (offer.status != OfferStatus.FREE) {
-            throw IllegalArgumentException("Offer is not available for reservation")
+            throw offerNotBookable(yacht, offer, "status ${offer.status}")
         }
 
         // Re-assert against the live partner busy intervals (Deploy 3): even if the offer
@@ -103,7 +109,7 @@ class ReservationFlowMutationService(
                 LocalDateTime.now(),
             )
         if (hardBlocked) {
-            throw IllegalArgumentException("Offer is not available for reservation")
+            throw offerNotBookable(yacht, offer, "a partner reservation overlaps the week")
         }
 
         if (offer.yacht!!.id != yacht.id) {
@@ -268,6 +274,33 @@ class ReservationFlowMutationService(
         reservationFlowRepository.saveAndFlush(reservationFlow)
 
         return reservationFlow.id!!
+    }
+
+    /**
+     * The "week is gone" rejection. `BOOKING_C1=OFF` (default) keeps today's IllegalArgumentException (500, no alert);
+     * ON gives [OfferNotBookableException] (409 / 3006) with the period and the partner system, so the controller can
+     * alert the admins and queue exactly that period for a partner re-check.
+     */
+    private fun offerNotBookable(
+        yacht: Yacht,
+        offer: Offer,
+        reason: String,
+    ): RuntimeException {
+        if (!realPriceSwitches.bookingC1.isOn) {
+            return IllegalArgumentException("Offer is not available for reservation")
+        }
+        val system =
+            ExternalSystemEnum
+                .fromValue(yacht.agency?.primarySource?.externalSystem?.id)
+                .takeIf { it != ExternalSystemEnum.UNKNOWN }
+        return OfferNotBookableException(
+            offerId = offer.id,
+            yachtId = yacht.id,
+            dateFrom = offer.dateFrom,
+            dateTo = offer.dateTo,
+            externalSystem = system,
+            reason = reason,
+        )
     }
 
     private fun getUser(

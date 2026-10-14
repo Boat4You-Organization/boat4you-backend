@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.PriceCalcDto
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
+import hr.workspace.boat4you.domains.catalouge.enums.ExtrasZeroPriceSwitchFixture
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
@@ -157,6 +158,7 @@ class ReservationExtrasPaymentTypeTest {
         reservationMappers = mock(ReservationMappers::class.java),
         bookingNumberService = mock(BookingNumberService::class.java),
         voucherService = mock(VoucherService::class.java),
+        realPriceSwitches = ExtrasZeroPriceSwitchFixture.switches(),
     )
 
     @Test

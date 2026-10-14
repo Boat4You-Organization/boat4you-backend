@@ -18,6 +18,8 @@ import hr.workspace.boat4you.domains.external.exceptions.ExternalReservationExce
 import hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException
 import hr.workspace.boat4you.domains.invoice.exceptions.InvoiceNotExistException
 import hr.workspace.boat4you.domains.reservation.exceptions.BookingCreationException
+import hr.workspace.boat4you.domains.reservation.exceptions.OfferNotBookableException
+import hr.workspace.boat4you.domains.reservation.exceptions.PartnerPriceChangedException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationFlowNotExists
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationStatusException
@@ -369,6 +371,34 @@ internal class ApiErrorHandler {
                 ApiErrorCodes.BOOKING_CREATION_FAILED.message,
             ),
             HttpStatus.BAD_GATEWAY,
+        )
+    }
+
+    @ExceptionHandler(OfferNotBookableException::class)
+    fun handleOfferNotBookableException(e: OfferNotBookableException): ResponseEntity<ErrorSchema> {
+        // BOOKING_C1: an ordinary rejection (the week is gone), already alerted and queued for a partner re-check by
+        // the booking controller. The offer id is enough for the log; the customer gets the inquiry hint.
+        logger.info("OfferNotBookableException — offerId={}", e.offerId)
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.OFFER_NOT_BOOKABLE.code,
+                ApiErrorCodes.OFFER_NOT_BOOKABLE.message,
+            ),
+            HttpStatus.CONFLICT,
+        )
+    }
+
+    @ExceptionHandler(PartnerPriceChangedException::class)
+    fun handlePartnerPriceChangedException(e: PartnerPriceChangedException): ResponseEntity<ErrorSchema> {
+        // PARTNER_PRICE_GUARD=ENFORCE: the flow was already compensated (partner option released, flow abandoned,
+        // admins alerted). Prices stay in the log only.
+        logger.warn("PartnerPriceChangedException — flowId={} offerId={}", e.reservationFlowId, e.offerId)
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.PARTNER_PRICE_CHANGED.code,
+                ApiErrorCodes.PARTNER_PRICE_CHANGED.message,
+            ),
+            HttpStatus.CONFLICT,
         )
     }
 

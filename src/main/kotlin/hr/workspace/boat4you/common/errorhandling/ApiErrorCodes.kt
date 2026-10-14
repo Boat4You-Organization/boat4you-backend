@@ -60,6 +60,11 @@ enum class ApiErrorCodes(
     // and the flow was compensated (offer freed, flow abandoned). User-facing
     // generic apology; the real cause stays in the backend log.
     BOOKING_CREATION_FAILED(3005, "We're sorry, we couldn't complete your booking. Please try again or contact our support team."),
+    // WS-C (real-price rule, 14.10.2026), both served as 409. 3006: the week was no longer FREE / a partner
+    // reservation overlaps it when the customer pressed Book (BOOKING_C1). 3007: the charter company's price on the
+    // option just created was above the price we showed; the option was released (PARTNER_PRICE_GUARD=ENFORCE).
+    OFFER_NOT_BOOKABLE(3006, "This week is no longer available for online booking – please send an inquiry."),
+    PARTNER_PRICE_CHANGED(3007, "The price for this week has just changed at the charter company – please review."),
     RESOURCE_NOT_FOUND(4004, "Requested resource not found"),
     INVOICE_NOT_EXIST(5001, "Invoice does not exist"),
     // 6xxx codes are partner-integration failures (MMK / NauSys). The
