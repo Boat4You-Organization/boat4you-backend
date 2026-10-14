@@ -24,7 +24,8 @@ import kotlin.test.assertEquals
 
 /**
  * Real-price rule (DESIGN.md WS-A): an admin search keeps the LEGACY predicate and no floor (legacyAvailability), and a
- * request with a sitemap-only parameter (idFrom / idTo / countryCodes) skips the floor (sitemapRequest).
+ * sitemap request (idFrom / idTo / sitemap=true) skips the floor (sitemapRequest); countryCodes alone does not, since
+ * the sister sites send it on every customer listing.
  */
 class YachtControllerLegacyAvailabilityTests {
     @Suppress("UNCHECKED_CAST")
@@ -58,6 +59,7 @@ class YachtControllerLegacyAvailabilityTests {
     private fun search(
         idFrom: Long? = null,
         countryCodes: List<String>? = null,
+        sitemap: Boolean = false,
     ): YachtSearchParamObject {
         controller.getYachts(
             locations = listOf("c-54"),
@@ -94,6 +96,7 @@ class YachtControllerLegacyAvailabilityTests {
             countryCodes = countryCodes,
             idFrom = idFrom,
             idTo = idFrom?.plus(100),
+            sitemap = sitemap,
             page = 0,
             size = 10,
             lang = null,
@@ -110,9 +113,12 @@ class YachtControllerLegacyAvailabilityTests {
     }
 
     @Test
-    fun `sitemap-only parameters mark a sitemap request`() {
+    fun `id range or sitemap=true mark a sitemap request, countryCodes alone does not`() {
         assertEquals(false, search().sitemapRequest)
         assertEquals(true, search(idFrom = 100).sitemapRequest)
-        assertEquals(true, search(countryCodes = listOf("HR")).sitemapRequest)
+        assertEquals(true, search(sitemap = true).sitemapRequest)
+        assertEquals(true, search(countryCodes = listOf("HR"), sitemap = true).sitemapRequest)
+        // A sister-site customer listing sends countryCodes on every call: the floor applies to it.
+        assertEquals(false, search(countryCodes = listOf("HR")).sitemapRequest)
     }
 }

@@ -135,23 +135,22 @@ object SearchAvailabilitySql {
             "AND (er.option_expiration IS NULL OR er.option_expiration > :$P_ZOMBIE_CUTOFF))"
 
     /**
-     * The requested period is taken - on current evidence only: an offer row RESERVED / SERVICE overlapping the
-     * request, or an UNAVAILABLE row with exactly the requested dates that carries evidence (MMK's own status for
-     * that row - ext_status 6 owner / 10 regatta / 11 sleep aboard; NauSys writes text statuses, never these - or a
-     * hide record for exactly those dates). An exact UNAVAILABLE row without evidence (a NauSys row left behind
-     * after a cancelled reservation) does not hide the boat. Twin guard: a non-blocked row with the same dates
-     * (a stale route duplicate) means the period is not taken. `external_system_id IN (1, 2)` only lets the
-     * partner_period_check primary key serve the probe.
+     * The requested period is taken - on occupancy evidence only: an offer row RESERVED / SERVICE overlapping the
+     * request, or an UNAVAILABLE row with exactly the requested dates that carries MMK's own occupancy status for
+     * that row (ext_status 6 owner / 10 regatta / 11 sleep aboard; NauSys writes text statuses, never these). Live
+     * partner reservations are the hull hard block's job. An exact UNAVAILABLE row without that evidence (a NauSys
+     * row left behind after a cancelled reservation) does not hide the boat, and neither does a two-strike hide
+     * record (`mmk_free_week_strike.hidden_on`, `partner_period_check.hidden_on`): it only says the partner no
+     * longer quotes exactly those dates (a withdrawn price list, a check-in day it does not sell), which is not
+     * occupancy - the hidden row itself is UNAVAILABLE and never listed, but a bookable same-length neighbour within
+     * the D1 shift still lists the boat as SHIFTED. Twin guard: a non-blocked row with the same dates (a stale route
+     * duplicate) means the period is not taken.
      */
     private const val TAKEN_TEMPLATE =
         "EXISTS (SELECT 1 FROM offer b WHERE b.yacht_id = {yacht} AND (" +
             "(b.status IN ('RESERVED', 'SERVICE') AND b.date_from < {end} AND b.date_to > {start}) " +
             "OR (b.status = 'UNAVAILABLE' AND b.date_from = {start} AND b.date_to = {end} " +
-            "AND (b.ext_status IN ('6', '10', '11') " +
-            "OR EXISTS (SELECT 1 FROM mmk_free_week_strike k WHERE k.yacht_id = b.yacht_id AND k.date_from = b.date_from " +
-            "AND k.date_to = b.date_to AND k.hidden_on IS NOT NULL) " +
-            "OR EXISTS (SELECT 1 FROM partner_period_check c WHERE c.external_system_id IN (1, 2) AND c.yacht_id = b.yacht_id " +
-            "AND c.date_from = b.date_from AND c.date_to = b.date_to AND c.hidden_on IS NOT NULL)))) " +
+            "AND b.ext_status IN ('6', '10', '11'))) " +
             "AND NOT EXISTS (SELECT 1 FROM offer f WHERE f.yacht_id = b.yacht_id AND f.date_from = b.date_from " +
             "AND f.date_to = b.date_to AND f.status NOT IN ('RESERVED', 'SERVICE', 'UNAVAILABLE')))"
 

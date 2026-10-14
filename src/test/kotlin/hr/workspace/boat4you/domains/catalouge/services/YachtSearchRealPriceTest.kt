@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariDataSource
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.capacity.CapacityFixtures
 import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
+import hr.workspace.boat4you.domains.catalouge.dto.YachtSearchParamObject
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.enums.MatchKind
@@ -185,9 +186,10 @@ class YachtSearchRealPriceTest {
     private fun search(
         r: Request,
         legacyAvailability: Boolean = false,
+        customize: (YachtSearchParamObject) -> YachtSearchParamObject = { it },
     ): Answer {
         clearInvocations(yachtMapper)
-        val params = RealPriceSearchFixture.params(r).copy(legacyAvailability = legacyAvailability)
+        val params = customize(RealPriceSearchFixture.params(r).copy(legacyAvailability = legacyAvailability))
         val page = service.getYachts(params, r.sortBy, LanguageEnum.EN, 0, 100, isAdmin = false)
         val calls = mockingDetails(yachtMapper).invocations.map { it.arguments.toList() }
         assertEquals(page.content.size, calls.size)
@@ -259,25 +261,28 @@ class YachtSearchRealPriceTest {
     // ---- 1, 2, 3, 5, 7: a 7-night Saturday search ----
 
     @Test
-    fun `1-3, 5, 7 - D1 7 nights - exact, shifted within 3 days, never longer or shorter, taken only on evidence`() {
+    fun `1-3, 5, 7 - D1 7 nights - exact, shifted within 3 days, never longer or shorter, taken only on occupancy evidence`() {
         d1()
         listOf("S 7n", "S 7n asc", "S 7n desc", "S 7n did l-1", "S 7n region").forEach { name ->
             val r = request(name)
             val answer = search(r)
-            // 103 (-4 days), 104 (14/21/28 nights), 105 (3/10 nights), 106 (ext 6), 107 (strike), 108 (RESERVED overlap),
-            // 109 (partner_period_check hide), 113 (hull), 130 (placeholder) are absent
-            assertEquals(setOf(101L, 102L, 111L, 112L, 114L, 131L, CUSTOM, OPTION_BOAT), answer.ids.toSet(), name)
+            // 103 (-4 days), 104 (14/21/28 nights), 105 (3/10 nights), 106 (ext 6), 108 (RESERVED overlap), 113 (hull),
+            // 130 (placeholder) are absent; 107 (MMK strike) and 109 (partner_period_check hide) stay: a hide record is
+            // "no longer quoted", not occupancy, so their FREE neighbours list them as SHIFTED
+            assertEquals(setOf(101L, 102L, 107L, 109L, 111L, 112L, 114L, 131L, CUSTOM, OPTION_BOAT), answer.ids.toSet(), name)
             assertParity(r, answer)
         }
         val answer = search(request("S 7n asc"))
         answer.assertCard(101, S, 7, "2100", MatchKind.EXACT)
         answer.assertCard(102, S.minusDays(2), 7, "1600", MatchKind.SHIFTED)
+        answer.assertCard(107, S.minusDays(2), 7, "2300", MatchKind.SHIFTED)
+        answer.assertCard(109, S.plusDays(1), 7, "2000", MatchKind.SHIFTED)
         answer.assertCard(111, S, 7, "2400", MatchKind.EXACT)
         answer.assertCard(112, S, 7, "2500", MatchKind.EXACT)
         answer.assertCard(114, S.plusDays(3), 7, "2700", MatchKind.SHIFTED)
         answer.assertCard(131, S, 7, "300", MatchKind.EXACT)
         assertNull(answer.card(CUSTOM).clientPrice)
-        assertEquals(listOf(131L, 102L, 101L, 111L, 112L, 114L, OPTION_BOAT, CUSTOM), answer.ids)
+        assertEquals(listOf(131L, 102L, 109L, 101L, 107L, 111L, 112L, 114L, OPTION_BOAT, CUSTOM), answer.ids)
     }
 
     @Test
@@ -377,6 +382,14 @@ class YachtSearchRealPriceTest {
         val shard = search(request("sitemap shard"))
         assertTrue(PLACEHOLDER in shard.ids, "Mario 7.10.2026: sitemaps are not reduced")
         assertEquals(29L, shard.count)
+        // A sister-site customer listing sends countryCodes on every call: not a sitemap, the floor applies.
+        listOf("S 7n", "undated").forEach { name ->
+            val sister = search(request(name)) { it.copy(countryCodes = listOf("HR")) }
+            assertFalse(PLACEHOLDER in sister.ids, "$name with countryCodes=HR")
+            assertTrue(131L in sister.ids, "$name with countryCodes=HR")
+        }
+        // A region walk that feeds a sitemap says so explicitly (sitemap=true) and keeps the placeholder.
+        assertTrue(PLACEHOLDER in search(request("undated")) { it.copy(countryCodes = listOf("HR"), sitemap = true) }.ids)
         assertFalse(hasBookableFutureOffer(PLACEHOLDER))
         assertTrue(hasBookableFutureOffer(131L))
         assertTrue(hasBookableFutureOffer(CUSTOM))
@@ -386,7 +399,7 @@ class YachtSearchRealPriceTest {
         val withoutFloor = search(request("S 7n asc"))
         assertTrue(PLACEHOLDER in withoutFloor.ids)
         assertNull(withoutFloor.card(PLACEHOLDER).clientPrice)
-        assertEquals(listOf(131L, 102L, 101L, 111L, 112L, 114L, OPTION_BOAT, PLACEHOLDER, CUSTOM), withoutFloor.ids)
+        assertEquals(listOf(131L, 102L, 109L, 101L, 107L, 111L, 112L, 114L, OPTION_BOAT, PLACEHOLDER, CUSTOM), withoutFloor.ids)
         assertParity(request("S 7n asc"), withoutFloor)
         assertEquals(29L, search(request("undated")).count)
         assertTrue(hasBookableFutureOffer(PLACEHOLDER))

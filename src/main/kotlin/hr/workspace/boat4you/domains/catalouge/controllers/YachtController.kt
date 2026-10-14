@@ -99,7 +99,8 @@ class YachtController(
          */
         @RequestParam(name = "includeUnavailable", defaultValue = "false") includeUnavailable: Boolean,
         /**
-         * Sitemap-only — 2-letter ISO country whitelist (e.g. BS,ES,FR).
+         * 2-letter ISO country whitelist (e.g. BS,ES,FR). Sent by sitemaps AND by customer listings (the sister
+         * sites on every listing call), so it is not a sitemap marker (see `sitemap`).
          * Returns only yachts whose home location ends in one of these
          * codes. Used by /sitemap-yachts so Google indexes only countries
          * we actively promote.
@@ -121,6 +122,12 @@ class YachtController(
          */
         @RequestParam(name = "idFrom", required = false) idFrom: Long? = null,
         @RequestParam(name = "idTo", required = false) idTo: Long? = null,
+        /**
+         * `true` from a sitemap / fleet-directory fetcher that walks a listing without an id range: like `idFrom` /
+         * `idTo`, it exempts the request from the D5 price floor (SEARCH_PRICE_FLOOR), so sitemaps never lose boats.
+         * Customer listings never send it.
+         */
+        @RequestParam(name = "sitemap", defaultValue = "false") sitemap: Boolean = false,
         @RequestParam(name = "page", defaultValue = "0") page: Int,
         @RequestParam(name = "size", defaultValue = "10") size: Int,
         @RequestHeader(name = "Accept-Language", required = false) lang: String? = null,
@@ -187,8 +194,9 @@ class YachtController(
                 idTo = idTo,
                 // Real-price rule (DESIGN.md WS-A): admins keep the LEGACY predicate and no price floor, so the Offers
                 // workspace and the reservation wizard still see placeholder-priced boats. A sitemap request (idFrom /
-                // idTo / countryCodes) skips the floor on its own (YachtSearchParamObject.sitemapRequest).
+                // idTo / sitemap=true) skips the floor on its own (YachtSearchParamObject.sitemapRequest).
                 legacyAvailability = isAdmin,
+                sitemap = sitemap,
                 language = language,
             )
 

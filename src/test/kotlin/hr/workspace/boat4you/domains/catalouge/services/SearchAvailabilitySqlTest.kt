@@ -54,14 +54,14 @@ class SearchAvailabilitySqlTest {
     }
 
     @Test
-    fun `requested period taken - evidence only, twin guard`() {
+    fun `requested period taken - occupancy evidence only, twin guard`() {
         val sql = SearchAvailabilitySql.requestedPeriodTaken()
         assertTrue("b.yacht_id = yacht_search_view.id" in sql, sql)
         assertTrue("(b.status IN ('RESERVED', 'SERVICE') AND b.date_from < :hardBlockEnd AND b.date_to > :hardBlockStart)" in sql, sql)
         assertTrue("b.status = 'UNAVAILABLE' AND b.date_from = :hardBlockStart AND b.date_to = :hardBlockEnd" in sql, sql)
         assertTrue("b.ext_status IN ('6', '10', '11')" in sql, sql)
-        assertTrue("FROM mmk_free_week_strike k" in sql && "k.hidden_on IS NOT NULL" in sql, sql)
-        assertTrue("FROM partner_period_check c" in sql && "c.hidden_on IS NOT NULL" in sql, sql)
+        // A two-strike hide record is "no longer quoted", not occupancy: it never makes the period taken.
+        assertFalse("mmk_free_week_strike" in sql || "partner_period_check" in sql || "hidden_on" in sql, sql)
         assertTrue("f.status NOT IN ('RESERVED', 'SERVICE', 'UNAVAILABLE')" in sql, sql)
         assertFalse("{" in sql, sql)
     }

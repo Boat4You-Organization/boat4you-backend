@@ -89,15 +89,22 @@ data class YachtSearchParamObject(
      * admin Offers workspace and the reservation wizard still see placeholder-priced boats and can fix them.
      */
     val legacyAvailability: Boolean = false,
+    /**
+     * Explicit `sitemap=true` from a sitemap / fleet-directory fetcher that walks a listing without an id range (the
+     * sister sites' region walks). Part of the cache key (data class toString), since it changes the answer.
+     */
+    val sitemap: Boolean = false,
     val language: LanguageEnum,
 ) {
     /**
-     * A sitemap request: one of the sitemap-only parameters (`idFrom`, `idTo`, `countryCodes`) is present. The D5 price
-     * floor is skipped for it (Mario 7.10.2026: never reduce boat URLs; open question in DESIGN.md), so a
-     * placeholder-priced boat keeps its sitemap entry and its inquiry page. Derived, so no caller can forget it.
+     * A sitemap request: an id-range shard (`idFrom` / `idTo`, sent only by the sitemap shard fetchers) or an explicit
+     * `sitemap=true`. The D5 price floor is skipped for it (Mario 7.10.2026: never reduce boat URLs; open question in
+     * DESIGN.md), so a placeholder-priced boat keeps its sitemap entry and its inquiry page. `countryCodes` alone is
+     * NOT a sitemap marker: the sister sites send it on every customer listing and the model-catalogue fleet pages
+     * send it too, and those listings must apply the floor like their own facets do.
      */
     val sitemapRequest: Boolean
-        get() = idFrom != null || idTo != null || !countryCodes.isNullOrEmpty()
+        get() = sitemap || idFrom != null || idTo != null
 
     fun getMinLengthInMeters(): BigDecimal? {
         if (minLength == null) {

@@ -165,7 +165,8 @@ object RealPriceSearchFixture {
             yacht(106)
             offer(106, S, 7, "2000", "UNAVAILABLE", "6")
             offer(106, S.plusDays(2), 7, "2200")
-            // 107: exact UNAVAILABLE without a partner status, but hidden by the MMK two-strike record
+            // 107: exact UNAVAILABLE hidden by the MMK two-strike record (not occupancy) - the FREE Thu row 2 days
+            // earlier keeps the boat listed as SHIFTED
             yacht(107)
             offer(107, S, 7, "2000", "UNAVAILABLE", "0")
             offer(107, S.minusDays(2), 7, "2300")
@@ -173,7 +174,8 @@ object RealPriceSearchFixture {
             yacht(108)
             offer(108, S.minusDays(2), 7, "1800", "RESERVED", "1")
             offer(108, S.plusDays(2), 7, "1900")
-            // 109: exact NauSys UNAVAILABLE row with a partner_period_check hide record
+            // 109: exact NauSys UNAVAILABLE row with a partner_period_check hide record (not occupancy) - the FREE
+            // row 1 day later keeps the boat listed as SHIFTED
             yacht(109)
             offer(109, S, 7, "2000", "UNAVAILABLE", "RESERVED")
             offer(109, S.plusDays(1), 7, "2000")
