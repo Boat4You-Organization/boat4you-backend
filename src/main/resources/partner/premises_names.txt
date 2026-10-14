@@ -1,0 +1,15 @@
+# R01 rule P1: partner names that are rewritten ONLY inside a premises phrase ("at the Athenian's Pier",
+# "processed through Hermes's base", "at the Dream Yacht Charter pontoon") to neutral wording ("the charter base pier"):
+# Boat4You has no pier or base, so "Boat4You's Pier" would be a false claim (owner flag F5). Every replace.txt entry is a
+# premises name too (PartnerCopySanitizer adds them). A name here alone is never replaced outside such a phrase:
+# "Hermes" is a boat name (11 boats), "Athenian Riviera" a place.
+Dream Yacht Charter
+Ionian Catamarans
+More Yachting
+The Moorings
+Athenian
+Moorings
+Navigare
+Sunsail
+Hermes
+NSS

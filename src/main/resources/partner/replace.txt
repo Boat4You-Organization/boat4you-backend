@@ -1,0 +1,31 @@
+# R01 (owner rule 14.10.2026, "Di pise NSS ili SUNSAIL stavi BOAT4YOU"): the CURATED list of partner names that customer
+# copy shows as "Boat4You" (PartnerCopySanitizer, rules N3/N4). Never generated from the agency table (DESIGN D4): agency
+# brands are ordinary words ("Cruising", "Marina", "Lagoon", "Split"), so a literal replacement would write "BVI Boat4You Tax".
+#
+# Format: one name per line, case-sensitive, whole words, longest first. '#' starts a comment.
+#   "<Name> @model" = replaced only when a model number or a possessive follows ("Moorings 4200" -> "Boat4You 4200",
+#   "Moorings's" -> "Boat4You's"); the bare word stays ("The Moorings Marina" is matched by "The Moorings" instead).
+# Rules (ReplaceListContractTest): every entry is in operators.txt or replace_aliases.txt; no entry is on the operators.txt
+# '!' allow-list, on never_replace.txt or a builder / model first word; no single-word entry equals a yacht name or a
+# location-name token. Bare "Hermes" (11 boats are called Hermes) and bare "Athenian" ("Athenian Riviera") are NOT here:
+# they live in premises_names.txt and are only rewritten inside a premises phrase (P1).
+# V9_83 froze this list as replace.v9_83.txt: grow it here (Kotlin applies it at sync and read time); an applied migration
+# is never edited.
+Dream Yacht Charter
+Navigare Yachting
+Ionian Catamarans
+Athenian Yachts
+Hermes Yachting
+Rhodes Yachting
+Active Cruises
+Kavas Yachting
+More Yachting
+The Moorings
+NSS Charter
+Kiriacoulis
+Navigare
+Moorings @model
+Sunsail
+Istion
+Pitter
+NSS
