@@ -3,12 +3,17 @@ package hr.workspace.boat4you.domains.external.mmk.service
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.StaleMmkOfferCombo
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
+import hr.workspace.boat4you.domains.external.evidence.PeriodCheck
+import hr.workspace.boat4you.domains.external.evidence.PeriodCheckPriority
+import hr.workspace.boat4you.domains.external.evidence.PeriodCheckResult
 import hr.workspace.boat4you.domains.external.mmk.client.MmkRetryableClient
 import hr.workspace.boat4you.domains.external.mmk.model.MmkDateTimeWrapper
 import org.openapitools.client.mmk.model.Flexibility
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -28,6 +33,9 @@ import java.util.concurrent.atomic.AtomicInteger
  * A returned offer flips the row to its true status/price via the regular upsert
  * ([MmkYachtOfferSyncService.syncOffers]); an empty response means the partner genuinely does
  * not sell that week — the row stays UNAVAILABLE, which is correct.
+ *
+ * Every decided answer (and every call failure, as UNKNOWN) is also recorded in `partner_period_check` (MMK,
+ * priority 4 = stale UNAVAILABLE) for the real-price evidence (DESIGN.md WS-B); nothing else changes.
  */
 @Service
 class MmkStaleOfferReverifyService(
@@ -35,6 +43,7 @@ class MmkStaleOfferReverifyService(
     private val mmkRetryableClient: MmkRetryableClient,
     private val mmkYachtOfferSyncService: MmkYachtOfferSyncService,
     private val mmkFreeOfferReverifyService: MmkFreeOfferReverifyService,
+    private val periodChecks: PartnerPeriodCheckStore,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -45,6 +54,7 @@ class MmkStaleOfferReverifyService(
         // itself throws at MMK.
         private const val WORKER_COUNT = 8
         private const val CALL_PACING_MS = 150L
+
         // A yacht whose calls keep failing (e.g. "Illegal access" agency) is abandoned after
         // this many consecutive errors so one broken agency can't stall the whole run.
         private const val MAX_CONSECUTIVE_ERRORS_PER_YACHT = 3
@@ -111,33 +121,34 @@ class MmkStaleOfferReverifyService(
         failed: AtomicInteger,
         totalCombos: Int,
     ) {
+        val checks = mutableListOf<PeriodCheck>()
+        try {
+            reverifyWeeks(yachtWeeks, checks, processed, reactivated, failed, totalCombos)
+        } finally {
+            // Bookkeeping only: a failed write never changes what the reverify did.
+            runCatching { periodChecks.recordCheckedBatch(ExternalSystemEnum.MMK, checks, LocalDate.now()) }
+                .onFailure { log.warn("MMK stale-offer reverify: period-check bookkeeping for yacht=${yachtWeeks.first().yachtId} failed: ${it.message}") }
+        }
+    }
+
+    // the yacht's weeks, the bookkeeping sink and the run's shared counters; any partner failure is a failed call
+    @Suppress("LongParameterList", "TooGenericExceptionCaught")
+    private fun reverifyWeeks(
+        yachtWeeks: List<StaleMmkOfferCombo>,
+        checks: MutableList<PeriodCheck>,
+        processed: AtomicInteger,
+        reactivated: AtomicInteger,
+        failed: AtomicInteger,
+        totalCombos: Int,
+    ) {
         var consecutiveErrors = 0
         for (combo in yachtWeeks) {
             try {
-                val response =
-                    mmkRetryableClient.getOffers(
-                        dateFrom =
-                            MmkDateTimeWrapper(
-                                LocalDateTime.of(combo.dateFrom, LocalTime.MIN)
-                                    .format(MmkDateTimeWrapper.READ_FORMATTER),
-                            ),
-                        dateTo =
-                            MmkDateTimeWrapper(
-                                LocalDateTime.of(combo.dateTo, LocalTime.MIN)
-                                    .format(MmkDateTimeWrapper.READ_FORMATTER),
-                            ),
-                        flexibility = Flexibility._1,
-                        yachtId = listOf(combo.externalYachtId),
-                        showOptions = true,
-                    )
+                val response = ask(combo)
                 consecutiveErrors = 0
-                if (response.isNotEmpty()) {
-                    mmkYachtOfferSyncService.syncOffers(response)
-                    // MMK sells the week again: whatever the free-offer reverifier recorded about it is void.
-                    mmkFreeOfferReverifyService.clearStrike(combo.yachtId, combo.dateFrom, combo.dateTo)
-                    reactivated.incrementAndGet()
-                }
+                if (heal(combo, response, checks)) reactivated.incrementAndGet()
             } catch (e: Exception) {
+                checks += check(combo, PeriodCheckResult.UNKNOWN)
                 failed.incrementAndGet()
                 consecutiveErrors++
                 log.warn(
@@ -160,4 +171,46 @@ class MmkStaleOfferReverifyService(
             Thread.sleep(CALL_PACING_MS)
         }
     }
+
+    /** One exact-date call (throws on a call failure). */
+    private fun ask(combo: StaleMmkOfferCombo): List<org.openapitools.client.mmk.model.Offer> =
+        mmkRetryableClient.getOffers(
+            dateFrom =
+                MmkDateTimeWrapper(
+                    LocalDateTime
+                        .of(combo.dateFrom, LocalTime.MIN)
+                        .format(MmkDateTimeWrapper.READ_FORMATTER),
+                ),
+            dateTo =
+                MmkDateTimeWrapper(
+                    LocalDateTime
+                        .of(combo.dateTo, LocalTime.MIN)
+                        .format(MmkDateTimeWrapper.READ_FORMATTER),
+                ),
+            flexibility = Flexibility._1,
+            yachtId = listOf(combo.externalYachtId),
+            showOptions = true,
+        )
+
+    /** A quote heals the week through the regular upsert; returns true when MMK sells it again. */
+    private fun heal(
+        combo: StaleMmkOfferCombo,
+        response: List<org.openapitools.client.mmk.model.Offer>,
+        checks: MutableList<PeriodCheck>,
+    ): Boolean {
+        if (response.isEmpty()) {
+            checks += check(combo, PeriodCheckResult.EMPTY)
+            return false
+        }
+        checks += check(combo, MmkQuotes.result(response, combo.dateFrom, combo.dateTo))
+        mmkYachtOfferSyncService.syncOffers(response)
+        // MMK sells the week again: whatever the free-offer reverifier recorded about it is void.
+        mmkFreeOfferReverifyService.clearStrike(combo.yachtId, combo.dateFrom, combo.dateTo)
+        return true
+    }
+
+    private fun check(
+        combo: StaleMmkOfferCombo,
+        result: PeriodCheckResult,
+    ) = PeriodCheck(combo.yachtId, combo.dateFrom, combo.dateTo, PeriodCheckPriority.OFF_GRID_OR_STALE_UNAVAILABLE, result)
 }

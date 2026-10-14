@@ -1,10 +1,14 @@
 package hr.workspace.boat4you.domains.external.mmk
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.StaleMmkOfferCombo
+import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
+import hr.workspace.boat4you.domains.external.evidence.ReverifyRunStore
 import hr.workspace.boat4you.domains.external.mmk.client.MmkRetryableClient
 import hr.workspace.boat4you.domains.external.mmk.model.MmkDateTimeWrapper
 import hr.workspace.boat4you.domains.external.mmk.service.MmkFreeOfferReverifyService
+import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferSyncService
 import hr.workspace.boat4you.domains.external.service.YachtSyncMutex
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -14,6 +18,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import org.openapitools.client.mmk.model.Offer
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.RowMapper
@@ -71,7 +76,7 @@ class MmkFreeOfferReverifyServiceTests {
             val from = (inv.arguments[0] as MmkDateTimeWrapper).value!!.toLocalDate()
             val to = (inv.arguments[1] as MmkDateTimeWrapper).value!!.toLocalDate()
             calls.merge("$ext|$from|$to", 1, Int::plus)
-            if (ext / 1000 in failing) throw IllegalStateException("MMK 503")
+            if (ext / 1000 in failing) error("MMK 503")
             val weekQuoted = to == from.plusDays(7) && from in (quoted[ext / 1000] ?: emptySet())
             val periodQuoted = (from to to) in (quotedPeriods[ext / 1000] ?: emptySet())
             if (weekQuoted || periodQuoted) listOf(mock(Offer::class.java)) else emptyList<Offer>()
@@ -80,7 +85,7 @@ class MmkFreeOfferReverifyServiceTests {
         mock(OfferRepository::class.java) { inv ->
             when (inv.method.name) {
                 "findShownFreeMmkCombos" -> combos
-                "markPeriodUnavailable" -> {
+                "markMmkPeriodUnavailable" -> {
                     if (flipResult > 0) {
                         flips += inv.getArgument<Long>(0) to inv.getArgument<LocalDate>(1)
                         flipPeriods += Triple(inv.getArgument<Long>(0), inv.getArgument<LocalDate>(1), inv.getArgument<LocalDate>(2))
@@ -93,7 +98,8 @@ class MmkFreeOfferReverifyServiceTests {
     private val mutex =
         mock(YachtSyncMutex::class.java) { inv ->
             if (inv.method.name == "runExclusiveYachtWrite") {
-                (inv.getArgument<() -> Unit>(1)).invoke(); true
+                (inv.getArgument<() -> Unit>(1)).invoke()
+                true
             } else {
                 null
             }
@@ -110,24 +116,43 @@ class MmkFreeOfferReverifyServiceTests {
                 sql.startsWith("INSERT INTO mmk_free_week_strike") -> {
                     // ON CONFLICT: an open strike stays, a hidden one restarts the cycle
                     val a = inv.arguments.drop(1)
-                    strikes.compute("${a[0]}|${a[1]}|${a[2]}") { _, old -> if (old == null || old.second != null) (a[3] as LocalDate) to null else old }; 1
+                    strikes.compute("${a[0]}|${a[1]}|${a[2]}") { _, old -> if (old == null || old.second != null) (a[3] as LocalDate) to null else old }
+                    1
                 }
                 sql.startsWith("UPDATE mmk_free_week_strike") -> {
                     val a = inv.arguments.drop(1)
                     val k = "${a[2]}|${a[3]}|${a[4]}"
-                    strikes[k] = strikes[k]!!.first to (a[0] as LocalDate); 1
+                    strikes[k] = strikes[k]!!.first to (a[0] as LocalDate)
+                    1
                 }
                 sql.startsWith("DELETE FROM mmk_free_week_strike") -> {
                     val a = inv.arguments.drop(1)
-                    strikes.remove("${a[0]}|${a[1]}|${a[2]}"); 1
+                    strikes.remove("${a[0]}|${a[1]}|${a[2]}")
+                    1
                 }
                 else -> if (inv.arguments.getOrNull(1) is RowMapper<*>) emptyList<Any>() else 0
             }
         }
-    private val service = MmkFreeOfferReverifyService(offers, client, mutex, jdbc)
+
+    // MMK_OPTION_VERIFY at its default (OFF): these are the regression tests of today's behaviour.
+    private val switches = mock(RealPriceSwitches::class.java).also { `when`(it.mmkOptionVerify).thenReturn(RealPriceSwitches.MmkOptionVerifyMode.OFF) }
+    private val service =
+        MmkFreeOfferReverifyService(
+            offers,
+            client,
+            mutex,
+            jdbc,
+            mock(MmkYachtOfferSyncService::class.java),
+            mock(PartnerPeriodCheckStore::class.java),
+            mock(ReverifyRunStore::class.java),
+            switches,
+        )
 
     /** Fleet padding so the "too few decided seasons" breaker does not fire in single-yacht scenarios. */
-    private fun healthyFleet(from: Long = 100, count: Int = 60): List<StaleMmkOfferCombo> =
+    private fun healthyFleet(
+        from: Long = 100,
+        count: Int = 60,
+    ): List<StaleMmkOfferCombo> =
         (from until from + count).flatMap { y ->
             quoted[y] = setOf(LocalDate.of(2027, 1, 2), LocalDate.of(2027, 1, 30), LocalDate.of(2027, 2, 27))
             season(y, 9, agency = 900 + y)
