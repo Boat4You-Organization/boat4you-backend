@@ -70,15 +70,16 @@ class PublicReservationController(
         val reservationFlowId =
             try {
                 reservationFlowMutationService.createReservationFlow(createReservationDto)
+            } catch (e: OfferNotBookableException) {
+                // BOOKING_C1: a week we showed as bookable is gone (409 / 3006). An ordinary rejection, but one the
+                // admins must hear about; exactly that period is queued for a partner re-check.
+                offerNotBookableFollowUp.handle(createReservationDto, e)
+                throw e
             } catch (e: Exception) {
                 // Our own exceptions and IllegalArgument are ordinary rejections (offer gone, agency inactive, bad
                 // voucher). Anything else is a defect that loses the booking before a flow row even exists - the
                 // other half of 19.9.2026 (a 264-char partner extra name as the extras key), which left no trace.
-                // The one exception (BOOKING_C1): a week we showed as bookable is gone (409 / 3006) - tell the admins
-                // and queue exactly that period for a partner re-check.
-                if (e is OfferNotBookableException) {
-                    offerNotBookableFollowUp.handle(createReservationDto, e)
-                } else if (e !is IllegalArgumentException && !e.javaClass.name.startsWith("hr.workspace.boat4you.")) {
+                if (e !is IllegalArgumentException && !e.javaClass.name.startsWith("hr.workspace.boat4you.")) {
                     runCatching { bookingFailureAlertService.alertRejectedRequest(createReservationDto, e) }
                         .onFailure { log.error("Booking failure alert failed for offer {}", createReservationDto.offerId, it) }
                 }
@@ -175,12 +176,7 @@ class PublicReservationController(
 
             // Tell a human while the customer is still reachable - the flow row holds who it was. On 19.9.2026 eight
             // failed attempts went unnoticed until the customer wrote to us. Best-effort, never masks the failure.
-            val partnerRejection =
-                e is hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException ||
-                    e is hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException ||
-                    e is hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException ||
-                    e is PartnerPriceChangedException
-            runCatching { bookingFailureAlertService.alertFailedFlow(reservationFlowId, e, partnerRejection) }
+            runCatching { bookingFailureAlertService.alertFailedFlow(reservationFlowId, e, isPartnerRejection(e)) }
                 .onFailure { log.error("Booking failure alert failed for flow {}", reservationFlowId, it) }
 
             // Already-clean domain exceptions (partner option/reservation error,
@@ -202,6 +198,17 @@ class PublicReservationController(
             }
         }
     }
+
+    /** The partner said no (or, PARTNER_PRICE_GUARD, quoted a higher price): the alert says so, not "our defect". */
+    private fun isPartnerRejection(e: Exception): Boolean =
+        when (e) {
+            is hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException,
+            is hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException,
+            is hr.workspace.boat4you.domains.external.exceptions.ExternalReservationException,
+            is PartnerPriceChangedException,
+            -> true
+            else -> false
+        }
 
     /**
      * Preview of payment phases for an offer the customer hasn't committed to

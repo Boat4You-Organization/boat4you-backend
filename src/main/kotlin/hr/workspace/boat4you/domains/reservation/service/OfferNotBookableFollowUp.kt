@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.reservation.service
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheckPriority
+import hr.workspace.boat4you.domains.external.evidence.PeriodKey
 import hr.workspace.boat4you.domains.reservation.dto.CreateReservationDto
 import hr.workspace.boat4you.domains.reservation.exceptions.OfferNotBookableException
 import org.slf4j.Logger
@@ -36,15 +37,14 @@ class OfferNotBookableFollowUp(
     }
 
     private fun queueRecheck(rejection: OfferNotBookableException) {
-        val system = rejection.externalSystem
-        val yachtId = rejection.yachtId
-        val from = rejection.dateFrom
-        val to = rejection.dateTo
-        if (system == null || system == ExternalSystemEnum.UNKNOWN || yachtId == null || from == null || to == null) {
+        val system = rejection.externalSystem?.takeIf { it != ExternalSystemEnum.UNKNOWN }
+        val period =
+            rejection.yachtId?.let { y -> rejection.dateFrom?.let { f -> rejection.dateTo?.let { t -> PeriodKey(y, f, t) } } }
+        if (system == null || period == null) {
             log.info("Offer {} not bookable; no partner period to re-check", rejection.offerId)
-            return
+        } else {
+            partnerPeriodCheckStore.upsertPending(system, period.yachtId, period.dateFrom, period.dateTo, PeriodCheckPriority.ON_DEMAND_OR_BOOKING)
+            log.info("Offer {} not bookable; {} period {} queued for a re-check", rejection.offerId, system, period)
         }
-        partnerPeriodCheckStore.upsertPending(system, yachtId, from, to, PeriodCheckPriority.ON_DEMAND_OR_BOOKING)
-        log.info("Offer {} not bookable; {} period {}..{} of yacht {} queued for a re-check", rejection.offerId, system, from, to, yachtId)
     }
 }

@@ -5,6 +5,7 @@ import hr.workspace.boat4you.common.config.RealPriceSwitches.PartnerPriceGuardMo
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheckPriority
+import hr.workspace.boat4you.domains.external.evidence.PeriodKey
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.exceptions.PartnerPriceChangedException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlowRepository
@@ -64,7 +65,11 @@ class PartnerPriceGuard(
         val skipExternalSystem: Boolean,
         val extTotalPrice: BigDecimal?,
         val extClientPrice: BigDecimal?,
-    )
+    ) {
+        /** The exact period of the offer, when it is fully known. */
+        val period: PeriodKey?
+            get() = yachtId?.let { y -> dateFrom?.let { f -> dateTo?.let { t -> PeriodKey(y, f, t) } } }
+    }
 
     enum class Outcome { NOT_COMPARED, LOWER, WITHIN, ABOVE }
 
@@ -78,6 +83,10 @@ class PartnerPriceGuard(
         val alertOnlyReason: String? = null,
         val note: String? = null,
     ) {
+        /** ABOVE the tolerance and none of the alert-only cases: ENFORCE blocks the booking. */
+        val enforceable: Boolean
+            get() = outcome == Outcome.ABOVE && alertOnlyReason == null
+
         /** The cross-check formula disagrees with the primary one by more than the tolerance (calibration signal). */
         val crossCheckMismatch: Boolean
             get() =
@@ -87,8 +96,8 @@ class PartnerPriceGuard(
 
     /**
      * Runs the check for [reservationFlowId] against the createOption [wrapper]. Returns null when the switch is OFF
-     * (no read at all), otherwise the verdict it logged. Throws [PartnerPriceChangedException] only in ENFORCE, only
-     * for an enforceable ABOVE.
+     * (no read at all) or the check could not run, otherwise the verdict it logged. Throws
+     * [PartnerPriceChangedException] only in ENFORCE, only for an enforceable ABOVE.
      */
     fun check(
         reservationFlowId: Long,
@@ -96,40 +105,36 @@ class PartnerPriceGuard(
         adminOverride: Boolean = false,
     ): Verdict? {
         val mode = runCatching { realPriceSwitches.partnerPriceGuard }.getOrDefault(PartnerPriceGuardMode.OFF)
-        if (mode == PartnerPriceGuardMode.OFF) return null
-
-        val facts =
-            try {
-                readTx.execute { loadFacts(reservationFlowId) }
-            } catch (e: Exception) {
-                log.warn("PARTNER_PRICE_GUARD flow={} not checked: facts could not be loaded", reservationFlowId, e)
-                return null
-            } ?: run {
-                log.warn("PARTNER_PRICE_GUARD flow={} not checked: flow not found", reservationFlowId)
-                return null
+        val checked = if (mode == PartnerPriceGuardMode.OFF) null else verdictFor(reservationFlowId, wrapper, adminOverride)
+        if (checked != null) {
+            val (facts, verdict) = checked
+            report(mode, facts, wrapper, verdict)
+            if (mode == PartnerPriceGuardMode.ENFORCE && verdict.enforceable) {
+                queueRecheck(facts)
+                throw PartnerPriceChangedException(
+                    reservationFlowId = reservationFlowId,
+                    offerId = facts.offerId,
+                    partnerNet = verdict.partnerNet!!,
+                    snapshotNet = verdict.snapshotNet!!,
+                    currency = wrapper.currency,
+                )
             }
-
-        val verdict =
-            try {
-                evaluate(facts, wrapper, adminOverride)
-            } catch (e: Exception) {
-                log.warn("PARTNER_PRICE_GUARD flow={} not checked: evaluation failed", reservationFlowId, e)
-                return null
-            }
-        report(mode, facts, wrapper, verdict)
-
-        if (mode == PartnerPriceGuardMode.ENFORCE && verdict.outcome == Outcome.ABOVE && verdict.alertOnlyReason == null) {
-            queueRecheck(facts)
-            throw PartnerPriceChangedException(
-                reservationFlowId = reservationFlowId,
-                offerId = facts.offerId,
-                partnerNet = verdict.partnerNet!!,
-                snapshotNet = verdict.snapshotNet!!,
-                currency = wrapper.currency,
-            )
         }
-        return verdict
+        return checked?.second
     }
+
+    /** Facts and verdict, or null (logged) when the flow is gone or anything in the check itself fails. */
+    private fun verdictFor(
+        reservationFlowId: Long,
+        wrapper: ReservationResponseWrapper,
+        adminOverride: Boolean,
+    ): Pair<BookingFacts, Verdict>? =
+        runCatching {
+            val facts = readTx.execute { loadFacts(reservationFlowId) }
+            if (facts == null) log.warn("PARTNER_PRICE_GUARD flow={} not checked: flow not found", reservationFlowId)
+            facts?.let { it to evaluate(it, wrapper, adminOverride) }
+        }.onFailure { log.warn("PARTNER_PRICE_GUARD flow={} not checked: the check failed", reservationFlowId, it) }
+            .getOrNull()
 
     private fun loadFacts(reservationFlowId: Long): BookingFacts? {
         val flow = reservationFlowRepository.findById(reservationFlowId).orElse(null) ?: return null
@@ -185,13 +190,19 @@ class PartnerPriceGuard(
 
     /** The partner just quoted this exact period at another price: let the reverifiers ask it again soon. */
     private fun queueRecheck(facts: BookingFacts) {
-        val system = facts.system ?: return
-        val yachtId = facts.yachtId ?: return
-        val from = facts.dateFrom ?: return
-        val to = facts.dateTo ?: return
-        runCatching {
-            partnerPeriodCheckStore.upsertPending(system, yachtId, from, to, PeriodCheckPriority.ON_DEMAND_OR_BOOKING)
-        }.onFailure { log.warn("PARTNER_PRICE_GUARD flow={} re-check not queued", facts.reservationFlowId, it) }
+        val system = facts.system
+        val period = facts.period
+        if (system != null && period != null) {
+            runCatching {
+                partnerPeriodCheckStore.upsertPending(
+                    system,
+                    period.yachtId,
+                    period.dateFrom,
+                    period.dateTo,
+                    PeriodCheckPriority.ON_DEMAND_OR_BOOKING,
+                )
+            }.onFailure { log.warn("PARTNER_PRICE_GUARD flow={} re-check not queued", facts.reservationFlowId, it) }
+        }
     }
 
     companion object {
@@ -211,33 +222,51 @@ class PartnerPriceGuard(
             facts: BookingFacts,
             wrapper: ReservationResponseWrapper,
             adminOverride: Boolean = false,
+        ): Verdict = notComparable(facts, wrapper) ?: compare(facts, wrapper, adminOverride)
+
+        private fun notComparable(
+            facts: BookingFacts,
+            wrapper: ReservationResponseWrapper,
+        ): Verdict? {
+            val synthetic = facts.skipExternalSystem || wrapper.externalId == null || wrapper.externalStatus == SKIP_OPTION_STATUS
+            val discount = wrapper.discount
+            return when {
+                synthetic -> Verdict(Outcome.NOT_COMPARED, alertOnlyReason = ALERT_ONLY_SYNTHETIC, note = "no partner price")
+                !wrapper.currency.trim().equals(EUR, ignoreCase = true) ->
+                    Verdict(Outcome.NOT_COMPARED, alertOnlyReason = ALERT_ONLY_CURRENCY)
+                facts.system != ExternalSystemEnum.MMK && facts.system != ExternalSystemEnum.NAUSYS ->
+                    Verdict(Outcome.NOT_COMPARED, note = "unknown partner system")
+                facts.system == ExternalSystemEnum.MMK && (discount.signum() < 0 || discount > HUNDRED) ->
+                    Verdict(Outcome.NOT_COMPARED, note = "MMK discount $discount is not a percentage")
+                else -> null
+            }
+        }
+
+        /** (partnerNet, snapshot, crossCheck) for an MMK or NauSys wrapper in EUR. */
+        private fun figures(
+            facts: BookingFacts,
+            wrapper: ReservationResponseWrapper,
+        ): Triple<BigDecimal, BigDecimal?, BigDecimal> =
+            if (facts.system == ExternalSystemEnum.MMK) {
+                val net = wrapper.basePrice * (BigDecimal.ONE - wrapper.discount.divide(HUNDRED))
+                val withBooking =
+                    wrapper.extras
+                        .orEmpty()
+                        .filter { it.payableInBase != true }
+                        .mapNotNull { it.price }
+                        .fold(BigDecimal.ZERO, BigDecimal::add)
+                Triple(net, facts.extTotalPrice, wrapper.clientPrice - withBooking)
+            } else {
+                Triple(wrapper.clientPrice, facts.extClientPrice, wrapper.basePrice - wrapper.discount)
+            }
+
+        private fun compare(
+            facts: BookingFacts,
+            wrapper: ReservationResponseWrapper,
+            adminOverride: Boolean,
         ): Verdict {
-            if (facts.skipExternalSystem || wrapper.externalId == null || wrapper.externalStatus == SKIP_OPTION_STATUS) {
-                return Verdict(Outcome.NOT_COMPARED, alertOnlyReason = ALERT_ONLY_SYNTHETIC, note = "no partner price")
-            }
-            if (!wrapper.currency.trim().equals(EUR, ignoreCase = true)) {
-                return Verdict(Outcome.NOT_COMPARED, alertOnlyReason = ALERT_ONLY_CURRENCY)
-            }
-            val (partnerNet, snapshot, crossCheck) =
-                when (facts.system) {
-                    ExternalSystemEnum.MMK -> {
-                        val discount = wrapper.discount
-                        if (discount.signum() < 0 || discount > HUNDRED) {
-                            return Verdict(Outcome.NOT_COMPARED, note = "MMK discount $discount is not a percentage")
-                        }
-                        val net = wrapper.basePrice * (BigDecimal.ONE - discount.divide(HUNDRED))
-                        val withBooking =
-                            wrapper.extras.orEmpty()
-                                .filter { it.payableInBase != true }
-                                .mapNotNull { it.price }
-                                .fold(BigDecimal.ZERO, BigDecimal::add)
-                        Triple(net, facts.extTotalPrice, wrapper.clientPrice - withBooking)
-                    }
-                    ExternalSystemEnum.NAUSYS ->
-                        Triple(wrapper.clientPrice, facts.extClientPrice, wrapper.basePrice - wrapper.discount)
-                    else -> return Verdict(Outcome.NOT_COMPARED, note = "unknown partner system")
-                }
-            val partner = partnerNet.setScale(MONEY_SCALE, RoundingMode.HALF_UP)
+            val (net, snapshot, crossCheck) = figures(facts, wrapper)
+            val partner = net.setScale(MONEY_SCALE, RoundingMode.HALF_UP)
             val cross = crossCheck.setScale(MONEY_SCALE, RoundingMode.HALF_UP)
             if (snapshot == null || snapshot.signum() <= 0) {
                 return Verdict(Outcome.NOT_COMPARED, partnerNet = partner, crossCheckNet = cross, note = "no offer snapshot")
