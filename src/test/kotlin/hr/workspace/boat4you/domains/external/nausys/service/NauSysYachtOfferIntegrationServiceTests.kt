@@ -1,13 +1,17 @@
 package hr.workspace.boat4you.domains.external.nausys.service
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
+import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ReservationOption
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.external.config.SyncConfigurationProperties
+import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
+import hr.workspace.boat4you.domains.external.evidence.ReverifyRunStore
 import hr.workspace.boat4you.domains.external.exceptions.NauSysRateLimitedException
 import hr.workspace.boat4you.domains.external.model.ReservationOptionsGroup
 import hr.workspace.boat4you.domains.external.model.SyncInterval
@@ -22,6 +26,7 @@ import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.anyBoolean
 import org.mockito.ArgumentMatchers.anyList
 import org.mockito.ArgumentMatchers.anyLong
+import org.mockito.ArgumentMatchers.isNull
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
@@ -30,6 +35,7 @@ import org.mockito.Mockito.`when`
 import org.openapitools.client.nausys.model.RestFreeYacht
 import org.openapitools.client.nausys.model.RestFreeYachtList
 import org.openapitools.client.nausys.model.RestFreeYachtsRequest
+import org.springframework.transaction.PlatformTransactionManager
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDate
@@ -56,6 +62,14 @@ class NauSysYachtOfferIntegrationServiceTests {
     private val syncService: NauSysYachtOfferSyncService = mock(NauSysYachtOfferSyncService::class.java)
     private val client: NauSysRetryableClient = mock(NauSysRetryableClient::class.java)
     private val queue: NausysOfferSyncRetryQueue = mock(NausysOfferSyncRetryQueue::class.java)
+    private val switches: RealPriceSwitches =
+        mock(RealPriceSwitches::class.java).also {
+            `when`(it.nausysD3Mode).thenReturn(RealPriceSwitches.NauSysD3Mode.LEGACY)
+            `when`(it.nausysReverify).thenReturn(RealPriceSwitches.NauSysReverifyMode.OFF)
+        }
+    private val runStore: ReverifyRunStore = mock(ReverifyRunStore::class.java)
+    private val offerRepository: OfferRepository = mock(OfferRepository::class.java)
+    private val periodChecks: PartnerPeriodCheckStore = mock(PartnerPeriodCheckStore::class.java)
 
     private val service =
         NauSysYachtOfferIntegrationService(
@@ -68,6 +82,11 @@ class NauSysYachtOfferIntegrationServiceTests {
             mock(SyncConfigurationProperties::class.java),
             client,
             queue,
+            switches,
+            runStore,
+            offerRepository,
+            periodChecks,
+            mock(PlatformTransactionManager::class.java),
         )
 
     private val agency = Agency().apply { id = 7 }
@@ -177,7 +196,7 @@ class NauSysYachtOfferIntegrationServiceTests {
 
         assertEquals(3, calls.get(), "every interval must be attempted")
         val from: ArgumentCaptor<LocalDate> = ArgumentCaptor.forClass(LocalDate::class.java)
-        verify(syncService, times(2)).syncOffers(any(), any(), anyList(), from.captureK(), any(), anyBoolean())
+        verify(syncService, times(2)).syncOffers(any(), any(), anyList(), from.captureK(), any(), anyBoolean(), isNull())
         assertEquals(listOf(intervals[0].start, intervals[2].start), from.allValues)
 
         val queuedFrom: ArgumentCaptor<LocalDate> = ArgumentCaptor.forClass(LocalDate::class.java)
@@ -203,7 +222,7 @@ class NauSysYachtOfferIntegrationServiceTests {
 
         service.drainRetryQueue()
 
-        verify(syncService, times(1)).syncOffers(any(), any(), anyList(), any(), any(), anyBoolean())
+        verify(syncService, times(1)).syncOffers(any(), any(), anyList(), any(), any(), anyBoolean(), isNull())
         verify(queue, times(1)).markSuccess(okRow)
         verify(queue, times(1)).markFailure(any(), any())
         verify(queue, never()).markSuccess(failingRow)

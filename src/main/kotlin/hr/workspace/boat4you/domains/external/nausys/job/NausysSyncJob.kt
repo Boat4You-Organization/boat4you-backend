@@ -1,9 +1,11 @@
 package hr.workspace.boat4you.domains.external.nausys.job
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches.NauSysReverifyMode
 import hr.workspace.boat4you.domains.external.enums.MethodCacheEnum
 import hr.workspace.boat4you.domains.external.nausys.config.NauSysRateLimitStats
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysAvailabilityIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysCatalogueIntegrationService
+import hr.workspace.boat4you.domains.external.nausys.service.NauSysFreeOfferReverifyService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysOfferSyncRunSummary
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationService
@@ -39,10 +41,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  10:40 / 16:40 near-term 12-week offer refresh (Mario 5.9.2026: search is served
  *  from the DB, weekly ranges no longer warm partners live) — waits ≤30 min on
  *  the gate, then chains the retry-queue drain.
+ *  17:30 free-offer reverify (real-price B2, switch NAUSYS_REVERIFY, OFF = one log
+ *  line) — waits ≤30 min on the gate; hard deadline 19:50 (tick + 2 h 20 min).
  *
  * [nausysBusy] is the in-JVM sequencing gate: ShedLock only stops two nodes
  * from running the SAME job, not two different NauSys jobs on this node.
  */
+@Suppress("TooManyFunctions") // one method per scheduled NauSys slot plus the shared gate helpers
 @Profile("data-sync")
 @Component
 class NausysSyncJob(
@@ -53,6 +58,7 @@ class NausysSyncJob(
     private val serviceCallCacheService: ServiceCallCacheService,
     private val rateLimitStats: NauSysRateLimitStats,
     private val nauSysYachtOfferIntegrationServiceAsync: NauSysYachtOfferIntegrationServiceAsync,
+    private val nauSysFreeOfferReverifyService: NauSysFreeOfferReverifyService,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -77,6 +83,12 @@ class NausysSyncJob(
     /** Clock for the near-term horizon; overridable in tests. */
     internal var today: () -> LocalDate = { LocalDate.now() }
 
+    // How long the free-offer reverify waits for the gate (counts against its hard deadline).
+    internal var reverifyGateWaitMaxMs: Long = 30 * 60_000
+
+    /** Wall clock (epoch ms) of the reverify's cron tick; overridable in tests. */
+    internal var nowMillis: () -> Long = System::currentTimeMillis
+
     companion object {
         /**
          * A STARTED marker younger than this with no newer FINISHED marker = a night still running.
@@ -87,6 +99,12 @@ class NausysSyncJob(
 
         /** Near-term refresh horizon: the 12 weeks customers actually book in (Mario 5.9.2026). */
         const val NEAR_TERM_HORIZON_DAYS = 84L
+
+        /**
+         * Hard deadline of the 17:30 free-offer reverify, from the cron tick and including the gate wait: 19:50 UTC,
+         * 40 min before its PT3H lock expires (room for a 429 chain or a 60 s read timeout).
+         */
+        val REVERIFY_DEADLINE: Duration = Duration.ofMinutes(140)
     }
 
     /**
@@ -316,6 +334,36 @@ class NausysSyncJob(
                 "NauSYS near-term offer refresh (<= $horizonEnd): ${summary?.toLogLine() ?: "aborted"} " +
                     "took=${System.currentTimeMillis() - startTime} ms 429s=${delta.tooManyRequests} gaveUp=${delta.exhausted}",
             )
+        }
+    }
+
+    /**
+     * NauSys free-offer reverify (real-price DESIGN.md B2): re-asks NauSys about weakly evidenced periods and writes a
+     * status only on partner evidence for exactly those dates (see [NauSysFreeOfferReverifyService]). 17:30 UTC, after
+     * the 16:40 near-term refresh (~17:08) and before availability 22:20 / nightly 23:00. Shares the in-JVM gate
+     * (waits ≤30 min); the hard deadline is the cron tick + 2 h 20 min INCLUDING that wait. NAUSYS_REVERIFY=OFF: one
+     * log line, nothing else (no gate, no call).
+     */
+    @Scheduled(cron = "0 30 17 * * ?")
+    @SchedulerLock(name = "nausysFreeOfferReverify", lockAtMostFor = "PT3H")
+    fun runFreeOfferReverify() {
+        val tick = nowMillis()
+        if (nauSysFreeOfferReverifyService.mode() == NauSysReverifyMode.OFF) {
+            log.info("NauSys free-offer reverify skipped: NAUSYS_REVERIFY=OFF")
+            return
+        }
+        val deadline = tick + REVERIFY_DEADLINE.toMillis()
+        if (!acquireGate("free-offer reverify", reverifyGateWaitMaxMs)) {
+            return
+        }
+        val before = rateLimitStats.snapshot()
+        try {
+            nauSysFreeOfferReverifyService.reverify(deadline, today())
+        } catch (e: Exception) {
+            log.error("NauSys free-offer reverify failed", e)
+        } finally {
+            nausysBusy.set(false)
+            logRateLimitSummary("free-offer reverify", before)
         }
     }
 

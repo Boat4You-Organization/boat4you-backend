@@ -6,6 +6,8 @@ import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservation
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalReservationRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
+import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.evidence.PeriodCheckPriority
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMappingRepository
 import org.slf4j.Logger
@@ -66,6 +68,15 @@ class ExternalAvailabilityReconcileService(
         // next availability sync resurrected the row. Matches the read-time cutoff in
         // findOptionsByYachtIdsAndPeriod so display and purge agree on when an echo is dead.
         val graceCutoff = LocalDateTime.now().minusHours(OPTION_ECHO_GRACE_HOURS)
+        // Real-price B2 hook: the OPTION offers these lapsed NauSys holds overlap are queued for a partner re-check
+        // (partner_period_check, priority 2) before the mirror rows go - nothing else would ever ask again whether the
+        // partner still holds them. Bookkeeping only, never an offer write.
+        val optionPeriodsQueued =
+            offerRepository.queueNauSysOptionsUnderExpiringHolds(
+                ExternalSystemEnum.NAUSYS.value.toLong(),
+                graceCutoff,
+                PeriodCheckPriority.STALE_OPTION,
+            )
         val optionsRemoved =
             externalReservationRepository.deleteExpiredOptions(ExternalReservationStatus.OPTION, graceCutoff)
         // Zombie RESERVATION rows: an expired option hold that was stored under RESERVATION status
@@ -85,6 +96,9 @@ class ExternalAvailabilityReconcileService(
                     "stale RESERVATION rows with an expired option hold, $syntheticRemoved unbacked synthetic " +
                     "OPTION offers, $mappingsRemoved orphan reservation mappings",
             )
+        }
+        if (optionPeriodsQueued > 0) {
+            log.info("Purge mirror: $optionPeriodsQueued NauSys OPTION periods under a lapsed hold queued for a partner re-check")
         }
     }
 

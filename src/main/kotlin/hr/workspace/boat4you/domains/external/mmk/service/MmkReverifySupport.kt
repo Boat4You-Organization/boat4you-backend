@@ -129,6 +129,8 @@ internal class PeriodCheckBuffer(
     private val store: PartnerPeriodCheckStore,
     private val today: LocalDate,
     private val batchSize: Int = DEFAULT_BATCH,
+    /** The partner the rows belong to (the NauSys reverifier shares this buffer). */
+    private val sys: ExternalSystemEnum = ExternalSystemEnum.MMK,
 ) {
     private val pending = ArrayList<PeriodCheck>()
 
@@ -149,8 +151,8 @@ internal class PeriodCheckBuffer(
 
     private fun write(batch: List<PeriodCheck>) {
         if (batch.isEmpty()) return
-        runCatching { store.recordCheckedBatch(ExternalSystemEnum.MMK, batch, today) }
-            .onFailure { supportLog.warn("MMK period-check bookkeeping: {} rows not written: {}", batch.size, it.message) }
+        runCatching { store.recordCheckedBatch(sys, batch, today) }
+            .onFailure { supportLog.warn("{} period-check bookkeeping: {} rows not written: {}", sys, batch.size, it.message) }
     }
 
     private companion object {
