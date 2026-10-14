@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.controllers
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentAliases
 import hr.workspace.boat4you.domains.catalouge.services.OfferQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtQueryingService
@@ -18,7 +19,9 @@ import org.mockito.Mockito.`when`
 import org.springframework.data.domain.PageImpl
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.context.SecurityContextHolder
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -26,6 +29,9 @@ import kotlin.test.assertEquals
  * D1 (Mario, 5.9.2026): the search endpoint fires the live partner warm only for
  * non-weekly ranges; weekly ranges (7/14/21/28 d, any start day) are served from the
  * DB grid without touching NauSys or MMK. The per-yacht warms are not covered here.
+ *
+ * B3 (`NAUSYS_WARM_LONG_RANGES=ON`): the NauSys grid only stores Sat→Sat 7 nights, so every other future range in
+ * 3..28 days reaches ExternalSyncService (which then decides per partner); Sat→Sat 7 nights stays DB-only.
  */
 class YachtControllerWarmPolicyTests {
     // Mockito matchers return null; Kotlin inserts a null-check when a platform value meets a
@@ -35,6 +41,9 @@ class YachtControllerWarmPolicyTests {
 
     private val yachtQueryingService: YachtQueryingService = mock(YachtQueryingService::class.java)
     private val externalSyncService: ExternalSyncService = mock(ExternalSyncService::class.java)
+    private var longRanges = RealPriceSwitches.OnOff.OFF
+    private val switches: RealPriceSwitches =
+        mock(RealPriceSwitches::class.java) { inv -> if (inv.method.name == "getNausysWarmLongRanges") longRanges else null }
 
     private val controller =
         YachtController(
@@ -44,6 +53,7 @@ class YachtControllerWarmPolicyTests {
             mock(UserRepository::class.java),
             mock(YachtTwinCanonicalService::class.java),
             mock(EquipmentAliases::class.java),
+            switches,
         )
 
     private val saturday = LocalDate.of(2027, 6, 5)
@@ -148,5 +158,51 @@ class YachtControllerWarmPolicyTests {
         assertEquals(HttpStatus.BAD_REQUEST, search(saturday, saturday.plusDays(29)).statusCode)
         verifyNoWarm()
         verify(yachtQueryingService, never()).getYachts(any(), any(), any(), anyInt(), anyInt(), anyBoolean())
+    }
+
+    // B3 cases use dates relative to today, so they never drift into the past.
+    private val futureSaturday = LocalDate.now().plusMonths(6).with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY))
+    private val futureWednesday = futureSaturday.plusDays(4)
+
+    @Test
+    fun `switch ON - Sat to Sat 7 nights still never warms`() {
+        longRanges = RealPriceSwitches.OnOff.ON
+        assertEquals(HttpStatus.OK, search(futureSaturday, futureSaturday.plusWeeks(1)).statusCode)
+        verifyNoWarm()
+    }
+
+    @Test
+    fun `switch ON - 14, 21, 28 night Saturdays and a Wednesday week reach the per-partner warm`() {
+        longRanges = RealPriceSwitches.OnOff.ON
+        val ranges =
+            listOf(
+                futureSaturday to futureSaturday.plusWeeks(2),
+                futureSaturday to futureSaturday.plusWeeks(3),
+                futureSaturday to futureSaturday.plusWeeks(4),
+                futureWednesday to futureWednesday.plusWeeks(1),
+                futureSaturday to futureSaturday.plusDays(10),
+            )
+        ranges.forEach { (from, to) -> assertEquals(HttpStatus.OK, search(from, to).statusCode, "$from → $to") }
+        ranges.forEach { (from, to) -> verify(externalSyncService, times(1)).syncYachtOffers(from, to, locations) }
+    }
+
+    @Test
+    fun `switch ON - a past range never warms`() {
+        longRanges = RealPriceSwitches.OnOff.ON
+        val pastWednesday = LocalDate.now().minusDays(20).with(TemporalAdjusters.nextOrSame(DayOfWeek.WEDNESDAY))
+        search(pastWednesday, pastWednesday.plusWeeks(1))
+        search(pastWednesday, pastWednesday.plusDays(10))
+        verifyNoWarm()
+    }
+
+    @Test
+    fun `switch OFF - the same weekly ranges stay DB-only (today)`() {
+        longRanges = RealPriceSwitches.OnOff.OFF
+        search(futureSaturday, futureSaturday.plusWeeks(2))
+        search(futureWednesday, futureWednesday.plusWeeks(1))
+        search(futureSaturday, futureSaturday.plusWeeks(1))
+        verifyNoWarm()
+        search(futureSaturday, futureSaturday.plusDays(10))
+        verify(externalSyncService, times(1)).syncYachtOffers(futureSaturday, futureSaturday.plusDays(10), locations)
     }
 }

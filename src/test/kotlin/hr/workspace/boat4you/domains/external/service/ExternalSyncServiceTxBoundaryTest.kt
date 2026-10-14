@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.external.service
 
 import com.zaxxer.hikari.HikariDataSource
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencySource
@@ -62,6 +63,8 @@ import kotlin.test.assertTrue
 @TestPropertySource(properties = ["spring.flyway.enabled=false", "spring.jpa.hibernate.ddl-auto=none"])
 @Import(ExternalSyncService::class, YachtSyncMutex::class)
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
+// Search-warm collaborators (B3); the per-yacht warm under test never uses them.
+@MockitoBean(types = [RealPriceSwitches::class, LiveSearchWarmBudget::class, PartnerSearchWarmMarkers::class])
 class ExternalSyncServiceTxBoundaryTest {
     companion object {
         @Container

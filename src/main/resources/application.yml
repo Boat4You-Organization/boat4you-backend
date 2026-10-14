@@ -192,6 +192,9 @@ application:
       # cusma3 (scheduler) 1 — set via NAUSYS_MAX_CONCURRENT. See NauSysRestClientConfig.
       max-concurrent: ${NAUSYS_MAX_CONCURRENT:2}
       gate-wait-ms: ${NAUSYS_GATE_WAIT_MS:20000}
+      # Per-JVM daily cap of live search warms (freeYachtsSearch) while NAUSYS_WARM_LONG_RANGES=ON;
+      # over the cap a warm is parked in nausys_search_sync_retry for the scheduler. See LiveSearchWarmBudget.
+      live-warm-daily-cap: ${NAUSYS_LIVE_WARM_DAILY_CAP:1200}
     mmk:
       # Per-request MMK wire trace (MmkRestClientConfig). Off by default: it was 59 % of the
       # scheduler journal and the POST body carries the client's name. Flip for incidents only.
