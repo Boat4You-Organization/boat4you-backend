@@ -8,27 +8,14 @@ server:
   # nginx TLS terminator and rate limiter (F1-049, prod review 2026-05-07).
   address: 127.0.0.1
 application:
-  # PILOT (23.6.2026): canonicalize cross-source duplicates only for the
-  # "La Vita E Bella" twin group (6047 NauSys / 7576 MMK / 9431 MMK) so we can
-  # verify boat4you + sister + booking before catalog-wide rollout. To roll out
-  # to all ~934 twin groups: empty `pilot-yacht-ids` (and add the yacht twin-key
-  # index first — see migration note). Set `enabled: false` to revert instantly.
+  # Twin detail resolver OFF (re-audit R09 step 0, 14.10.2026). The 23.6. pilot (6047/7576/9431 margin-first + manual
+  # group [481, 13163] coverage-first) disagreed with the yacht_listing_twin matview: /boat/...-6047 (in the sitemap)
+  # 308'd to -7576, whose canonical named -6047 again - a redirect/canonical loop. With the resolver off every twin page
+  # answers 200 and the listing twin table (V9_69/V9_70, incl. the manual pair 481/13163) names the canonical copy.
+  # Do NOT add `pilot-yacht-ids: []` here: an EMPTY pilot list with enabled=true canonicalises EVERY twin group
+  # (TwinCanonicalProperties). The lists come from application.yml (both empty).
   twin-canonical:
-    enabled: true
-    pilot-yacht-ids:
-      - 6047
-      - 7576
-      - 9431
-    # Hand-verified cross-source twin groups the matcher can't pair (same
-    # physical marina mapped to different location_ids by NauSys vs MMK).
-    # [481 (Angelina/NauSys, Marina Baotic loc 57), 13163 (Ultra Sailing/MMK,
-    # Marina Baotic loc 1749)] = Fountaine Pajot Saona 47 "Desafinado", 2020,
-    # 13.94m. Coverage-first canonical -> 13163 (45 wks incl. the Mar-Jun
-    # high-season block) vs 481's 29 wks. Bypasses the pilot gate.
-    # Mirror every group as a pair in yacht_twin_manual_pair (V9_70): the listings
-    # and sitemaps then show one copy and the other names it as its canonical.
-    manual-groups:
-      - [481, 13163]
+    enabled: false
   external:
     sync:
       offer-max-years: 1

@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.controllers
 
 import hr.workspace.boat4you.common.config.RealPriceSwitches
+import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.catalouge.dto.OfferDto
 import hr.workspace.boat4you.domains.catalouge.dto.PriceCalcDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtAvailabilityDto
@@ -15,6 +16,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentAliases
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
 import hr.workspace.boat4you.domains.catalouge.services.OfferQueryingService
+import hr.workspace.boat4you.domains.catalouge.services.SearchSort
 import hr.workspace.boat4you.domains.catalouge.services.YachtQueryingService
 import hr.workspace.boat4you.domains.catalouge.services.YachtTwinCanonicalService
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
@@ -134,6 +136,12 @@ class YachtController(
         @RequestParam(name = "size", defaultValue = "10") size: Int,
         @RequestHeader(name = "Accept-Language", required = false) lang: String? = null,
     ): ResponseEntity<PagedModel<YachtSearchResponseDto>> {
+        // Re-audit R12 (14.10.2026): sortBy, page and size are part of the yachtSearchListCache key. A negative page used to
+        // reach Pageable.withPage and answer 500; junk sortBy values and sizes outside 1..100 order and cap exactly like a
+        // known value, but each one was its own cold full listing query. Normalised here, before the key is built.
+        if (page < 0) throw ParameterValidationException(mapOf("page" to "Page must be 0 or greater"))
+        val sort = SearchSort.normalize(sortBy)
+        val pageSize = size.coerceIn(1, YachtQueryingService.MAX_PAGE_SIZE)
         val user =
             getAuthenticatedUserId()
                 .takeIf { it != ANONYMOUS_USER_ID }
@@ -256,10 +264,10 @@ class YachtController(
             PagedModel(
                 yachtQueryingService.getYachts(
                     searchParams,
-                    sortBy,
+                    sort,
                     language,
                     page,
-                    size,
+                    pageSize,
                     isAdmin,
                 ),
             ),

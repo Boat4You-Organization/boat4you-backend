@@ -104,7 +104,8 @@ class YachtQueryingService(
     private val liveOptionLookup: LiveOptionLookup,
 ) {
     companion object {
-        private const val MAX_PAGE_SIZE = 100
+        /** Page cap of the listing; the controller clamps `size` to it before the cache key is built (R12). */
+        internal const val MAX_PAGE_SIZE = 100
 
         /** A standard charter week (Sat→Sat). Multi-week covering-sum pricing only kicks in for
          *  requests LONGER than one week — a 7-night request has a single covering offer. */
@@ -550,11 +551,11 @@ class YachtQueryingService(
         val lengthGroup: List<Order> = if (datedSearch) listOf(cb.asc(choiceGroup(cb, chosenKeyExpr))) else emptyList()
         val primaryOrders: List<Order> =
             when (sortBy) {
-                "asc" -> {
+                SearchSort.ASC -> {
                     lengthGroup + cb.asc(totalPriceExpr)
                 }
 
-                "desc" -> {
+                SearchSort.DESC -> {
                     // A yacht without a price (weekly mode: no bookable week; default path: no positive
                     // offer) is NULL; Postgres puts NULLs FIRST on DESC, so map them below every real total.
                     if (weeklyMode) {
@@ -564,11 +565,11 @@ class YachtQueryingService(
                     }
                 }
 
-                "lowestPrepayment" -> {
+                SearchSort.LOWEST_PREPAYMENT -> {
                     listOf(cb.asc(cb.min(root.get<BigDecimal>("lowestPrepayment"))))
                 }
 
-                "discount" -> {
+                SearchSort.DISCOUNT -> {
                     // Deals/promo pages: biggest saving vs partner list price first.
                     // Ordered by the client/list ratio of the SAME searched-week
                     // expressions the card displays, so the ordering matches the
@@ -589,7 +590,7 @@ class YachtQueryingService(
                     lengthGroup + listOf(cb.asc(savingRatio), cb.asc(totalPriceExpr))
                 }
 
-                "lengthAsc" -> {
+                SearchSort.LENGTH_ASC -> {
                     // Yachts without length land at the end — COALESCE maps NULL to a
                     // large value so ascending order pushes them to the bottom. Postgres'
                     // default ASC already does this; the COALESCE makes it explicit and
@@ -598,7 +599,7 @@ class YachtQueryingService(
                     listOf(cb.asc(cb.coalesce(cb.min(root.get<BigDecimal>("length")), cb.literal(BigDecimal.valueOf(9999)))))
                 }
 
-                "lengthDesc" -> {
+                SearchSort.LENGTH_DESC -> {
                     // Default Postgres DESC puts NULLs first, which surfaces yachts
                     // with no length as the "longest" — wrong. Map NULL to -1 so they
                     // fall to the bottom while real lengths still sort largest-first.
@@ -613,14 +614,14 @@ class YachtQueryingService(
                     listOf(cb.desc(recommendedBoost)) + lengthGroup + cb.asc(totalPriceExpr)
                 }
 
-                "id" -> {
+                SearchSort.ID -> {
                     // Stable catalogue order for the yacht sitemap shards (audit B03): a price-ordered
                     // listing moves boats between shards as prices change, so shards cached an hour
                     // apart listed some boats twice and others never. Only the id (appended below).
                     emptyList()
                 }
 
-                "idDesc" -> {
+                SearchSort.ID_DESC -> {
                     // The highest id first (size=1: the upper end of the id-range shards).
                     listOf(cb.desc(root.get<Long>("id")))
                 }
