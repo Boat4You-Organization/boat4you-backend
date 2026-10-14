@@ -52,6 +52,10 @@ class AiChatToolExecutor(
         val COUNTRY_CODE = Regex("^[A-Z]{2}$")
         val LOCATION = Regex("""^[\p{L}\p{M}\d ,.'\x{2019}()-]{2,60}$""")
         val VESSEL_TYPES = VesselType.entries.map { it.name }.toSet()
+
+        /** Same nights window as the public search (YachtController guard): 3 to 28 nights. */
+        const val MIN_NIGHTS = 3
+        const val MAX_NIGHTS = 28
     }
 
     /** A gulet by the API's vesselType / modelName (GuletRules), for the search rows and the boat page alike. */
@@ -81,8 +85,8 @@ class AiChatToolExecutor(
         val days = runCatching {
             ChronoUnit.DAYS.between(LocalDate.parse(startDate), LocalDate.parse(endDate)).toInt()
         }.getOrDefault(0)
-        if (days !in 1..28) {
-            return ToolOutcome("""{"error":"invalid date range — use YYYY-MM-DD, 1 to 28 days"}""")
+        if (days !in MIN_NIGHTS..MAX_NIGHTS) {
+            return ToolOutcome("""{"error":"invalid date range — use YYYY-MM-DD, $MIN_NIGHTS to $MAX_NIGHTS nights"}""")
         }
 
         // "Split" must search the Split REGION, not all of Croatia (Mario 20.7.2026:
@@ -122,14 +126,10 @@ class AiChatToolExecutor(
         var taken = 0
         for (y in content) {
             if (taken >= limit) break
-            // Headline convention: prices are shown as the TOTAL for the
-            // period (per-day clientPriceEur x days), never per-day.
-            val perDay = y.path("clientPriceEur").decimalValue()
-            if (perDay <= BigDecimal.ZERO) continue
-            val total = perDay.multiply(BigDecimal(days)).setScale(0, RoundingMode.HALF_UP).toInt()
+            val offer = pricedOffer(y, days, startDate, endDate) ?: continue
+            val total = offer.total
             if (maxTotalPriceEur in 1 until total) continue
             if (minTotalPriceEur > 0 && total < minTotalPriceEur) continue
-
             val slug = y.path("slug").asText()
             val label = listOf(y.path("modelName").asText(""), y.path("name").asText(""))
                 .filter { it.isNotBlank() }.joinToString(" ")
@@ -138,6 +138,10 @@ class AiChatToolExecutor(
                 objectMapper.createObjectNode().apply {
                     put("yacht", label)
                     put("totalPriceEur", total)
+                    put("startDate", offer.from)
+                    put("endDate", offer.to)
+                    put("nights", offer.nights)
+                    put("dates", offer.dates)
                     // Partner figures only when known (> 0) - an absent key, never a 0 the model would repeat.
                     putPositive("cabins", y.path("cabins"))
                     putPositive("berths", y.path("berths"))
@@ -148,7 +152,7 @@ class AiChatToolExecutor(
                     if (isGulet(y)) put("charter", GULET_CHARTER)
                     val amenities = y.path("amenityKeys").mapNotNull { it.asText(null) }
                     if (amenities.isNotEmpty()) put("topAmenities", amenities.joinToString(","))
-                    put("url", "https://www.boat4you.com/boat/$slug?startDate=$startDate&endDate=$endDate&currency=EUR")
+                    put("url", "https://www.boat4you.com/boat/$slug?startDate=${offer.from}&endDate=${offer.to}&currency=EUR")
                 },
             )
             cards.add(
@@ -157,15 +161,16 @@ class AiChatToolExecutor(
                     put("slug", slug)
                     put("imageId", y.path("mainImageId").asLong(0))
                     put("totalPriceEur", total)
-                    put("days", days)
+                    put("days", offer.nights)
                     putPositive("cabins", y.path("cabins"))
                     putPositive("berths", y.path("berths"))
                     putPositive("wc", y.path("wc"))
                     putPositive("maxPersons", y.path("maxPersons"))
                     put("year", y.path("buildYear").asInt(0))
                     put("location", y.path("location").path("name").asText(""))
-                    put("startDate", startDate)
-                    put("endDate", endDate)
+                    put("startDate", offer.from)
+                    put("endDate", offer.to)
+                    put("dates", offer.dates)
                 },
             )
             taken++
@@ -192,6 +197,35 @@ class AiChatToolExecutor(
         }
         return ToolOutcome(objectMapper.writeValueAsString(result), if (taken > 0) cards else null)
     }
+
+    /** The period total of one search row and the window it is for; [dates] = "exact" | "nearby". */
+    internal data class PricedOffer(val total: Int, val nights: Int, val from: String, val to: String, val dates: String)
+
+    /**
+     * Headline convention: prices are shown as the TOTAL for the period, never per-day. clientPriceEur is per day of
+     * the offer the card shows and numberOfDays that offer's nights (a tiled long charter carries the requested
+     * nights): the web card's own per-day x numberOfDays, so the chat never quotes a 14-night offer at 7 nights.
+     * The card and its link carry the offer's own window, "nearby" when it is not the requested one. Missing fields
+     * fall back to the requested period; null for a row without a positive price.
+     */
+    internal fun pricedOffer(
+        y: JsonNode,
+        days: Int,
+        startDate: String,
+        endDate: String,
+    ): PricedOffer? {
+        val perDay = y.path("clientPriceEur").decimalValue()
+        if (perDay <= BigDecimal.ZERO) return null
+        val nights = y.path("numberOfDays").asInt(0).takeIf { it > 0 } ?: days
+        val total = perDay.multiply(BigDecimal(nights)).setScale(0, RoundingMode.HALF_UP).toInt()
+        val from = isoDate(y.path("offerDateFrom")) ?: startDate
+        val to = isoDate(y.path("offerDateTo")) ?: endDate
+        return PricedOffer(total, nights, from, to, if (from == startDate && to == endDate) "exact" else "nearby")
+    }
+
+    /** A search row's ISO date (yyyy-MM-dd), or null when it is missing or not a date. */
+    private fun isoDate(node: JsonNode): String? =
+        node.asText("").takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it).toString() }.getOrNull() }
 
     private data class ResolvedPlace(val did: String, val name: String, val type: String)
 
@@ -372,7 +406,9 @@ class AiChatToolExecutor(
                 "(charters typically run Saturday to Saturday). Returns real boats with binding " +
                 "total prices in EUR for the period; they are also shown to the user as cards. " +
                 "The result's searchedArea tells you which area was actually searched — if it " +
-                "differs from what the visitor asked, say so honestly.",
+                "differs from what the visitor asked, say so honestly. Each boat's startDate/endDate/nights " +
+                "are the dates its price is for: when its dates field is \"nearby\", tell the visitor " +
+                "the boat is offered for those nearby dates, not the ones they asked for.",
         ) {
             it.putObject("countryCode").put("type", "string")
                 .put("description", "ISO-2 country, e.g. HR, GR, IT, FR, ES, TR, BS (Bahamas), SC (Seychelles)")
@@ -383,7 +419,7 @@ class AiChatToolExecutor(
                         "Trogir, Lefkas). ALWAYS pass it when they mention a place more specific than a " +
                         "country — results are then limited to that area instead of the whole country.",
                 )
-            it.putObject("startDate").put("type", "string").put("description", "YYYY-MM-DD")
+            it.putObject("startDate").put("type", "string").put("description", "YYYY-MM-DD; the charter lasts $MIN_NIGHTS to $MAX_NIGHTS nights")
             it.putObject("endDate").put("type", "string").put("description", "YYYY-MM-DD")
             it.putObject("vesselType").put("type", "string")
                 .put("description", "Optional: SAILING_YACHT, CATAMARAN, MOTOR_YACHT, MOTORBOAT, GULET, MOTORSAILER, POWER_CATAMARAN, LUXURY_MOTOR_YACHT, MINI_CRUISER")
