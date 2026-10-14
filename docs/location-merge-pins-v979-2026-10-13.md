@@ -8,6 +8,46 @@ Marina Split) jedno ime i upisuje parove u `location_same_place`. boat4you-web l
 (`src/utils/static/curatedSeoSlug.ts`), koja izmjena link-blokova (`landingNav.ts` / `catalogueHubs.ts`) i koje brisanje teksta
 s imenom agencije moraju biti LIVE **prije** migracije — sve četiri stvari u jednom web deployu.
 
+**Stanje 14.10.2026 ~13:50 UTC: sve četiri točke su LIVE** (boat4you-web `6cd2ba92f` + `646392ce8`, u HTML-u
+`dpl=646392ce85e7`). Provjereno na živom sajtu: `marina zadar (ex. tankerkomerc)` CAT → 308 `marina zadar`, `palairos` SAIL →
+308 `marina paleros`, `lavrion - olympic marine` SAIL → 308 `olympic marina`, `marina di olbia yachting services` CAT → 308
+`olbia`, `marina di golfo aranci` CAT → 200 index, `lavrion main port` CAT → 200 index, `olbia` CAT → 200 index (canonical
+isti), `/seo-content/en/catamaran-charter-mare-fun-charter-marina.html` → 404; u repou `landingNav.ts` `entry.dids.some(…)`,
+alias `'marina di golfo aranci': 'golfo-aranci'`. Preduvjet za V9_79 je time ispunjen.
+
+## Dopuna 14.10.2026 (Mario: „odradi sve to", „Naples i Mergellina su ista marina", „Tromsø i Eidkjosen stavi pod jedno")
+
+Migracija je dopunjena prije ikakvog deploya (V9_79 nije primijenjena nigdje; ista verzija, cusma2 je primjenjuje out-of-order
+iza V9_82). Sada **55 mjesta, 117 redova u guardu, 73 reda se mijenjaju, 68 parova** (64 od 13.10. + 4 nova).
+
+- **Naples = Mergellina** je već u V9_79 od 13.10.: 209 „Naples", 1118 „Marina Molo Luise", 1301 „Mergelina e Porto di
+  Sannazaro" i 2099 dobivaju ime „Porto di Mergellina" (grad 209/2099 „Naples"), puna mreža s 2007; lista pokazuje jedan red
+  „Porto di Mergellina" `l-2007,l-2099,l-209,l-1118,l-1301`. Ništa novo.
+- **Tromsø (novo mjesto):** MMK 1218 „Tromsø Eidkjosen" (grad „Kvaløysletta - Tromsø", MMK-ov, ostaje) → ime „Tromsø"; parovi
+  396 ↔ 1218 (8,7 km) i 624 ↔ 1218 (9,9 km) uz V9_78 par 396 ↔ 624. Svaki did (`l-396`, `l-624`, `l-1218`) u tražilici vraća
+  sva tri reda (danas `l-1218` vraća samo sebe), lista jedan red „Tromsø" `l-624,l-396,l-1218` (danas „Tromsø Eidkjosen"
+  `l-1218,l-624,l-396`). Facts isti (Norveška nije promovirana, a mjesto je po imenu već bilo jedno). Blizanci: 0 novih.
+  - **Landing:** u živim `sitemap-categories.xml` (2.907 URL-ova) i `sitemap-locations.xml` (531) 14.10. **nema nijednog URL-a
+    s „tromsø"/„tromso"/„eidkjosen"**. Danas: `tromsø eidkjosen` → 200 **noindex** (canonical na sebe), `tromsø` → 308 na
+    `tromsø eidkjosen`, `tromso` → 404 noindex. Nakon migracije `tromsø` postaje landing (ime reda liste), `tromsø eidkjosen` →
+    404 (nije indeksiran, nije u sitemapu). **Pin nije potreban.** Autocomplete „eidkjosen" više ništa ne nalazi.
+- **NauSys 225 „Marina di Olbia Yachting Services"** (0 aktivnih brodova, 7 redova brodova, 250 m od 609) → ime „Marina di
+  Olbia", grad „Olbia"; parovi 225 ↔ 609 i 225 ↔ 222 (puna mreža s 222 ↔ 609). Lista: jedan red **„Marina di Olbia"**
+  `l-609,l-222,l-225` (više ne ime servisne tvrtke); parovi su zapisani tako da red ostaje MMK 609 (onaj s brodovima). Pin
+  „Olbia" (`dids ['l-222','l-609','l-225']`, alias `'Marina di Olbia Yachting Services'`) je u ovom dokumentu (točka 1) i u
+  b4y `src/config/landing-identity.config.ts` (`6cd2ba92f`, live) — staro pisanje i dalje 308 → `olbia` (9 indeksiranih CAT
+  URL-ova); bez pina bi nakon dopune dalo 404 (ime više ne postoji u katalogu).
+- **„trogir" u autocompleteu:** NauSys redovi 57 (Marina Baotić) i 55 (Marina Agana) dobivaju grad **„Trogir"** umjesto grada
+  MMK blizanca (MMK redovi zadržavaju „Seget Donji" / „Marina"). Provjereno izrazom `search_filed` iz `R__1_07` na Docker PG18:
+  `?name=trogir` nalazi 55 „Marina Agana" i 57 „Marina Baotić" (originalni V9_79: nijedan). U listi su to redovi `l-57` i `l-55`
+  (MMK blizanci nemaju „trogir" u imenu/gradu); tražilica ih po imenu + paru proširuje na `57,1749` i `55,993`. Grupiranje je
+  isto: lista (733 marina reda), tražilica (`findSamePlaceMarinaIds` za svih 2.036 id-eva) i facts (`MarinaPlaces.placeIds`)
+  identični s gradom „Trogir" i s gradom blizanca — sva četiri reda imaju koordinate, a pravila gledaju grad samo bez koordinata.
+  Posljedica: kartice (`display_name`) „Marina Baotić | Trogir" za NauSys brodove i „Marina Baotić | Seget Donji" za MMK (Agana
+  „| Trogir" / „| Marina"). Bez web učinka (landing čita ime, ne grad); sestre koje grad traže po `?name=trogir` opet nalaze
+  Baotić i Aganu.
+- Netaknuto (Mario): #25 Mykonos, MMK 1375 Placencia, NauSys 233 Milazzo i B parovi (#6, 17, 26, 47, 57).
+
 ## Kako je provjereno (13.10.2026, samo čitanje)
 
 - Prod redovi (cusma4, `BEGIN READ ONLY`): svih 2.036 `location` + mappingi + regije + `location_same_place`; svih 113 redova
@@ -169,7 +209,7 @@ se briše u istom commitu (`git rm`); prije pina bi indeksirani landing ostao be
 | Olympic Marine | `olympic marina` 18 (CAT, SAIL) | 200 `l-710` | 200 `l-139,l-710` | **404** | 200 `l-139,l-710` (isti URL) |
 | | `lavrion - olympic marine` 9 (SAIL) | 200 `l-139` | 308 → `olympic marina` | **404** | 308 → `olympic marina` |
 | Marina di Olbia | `olbia` 18 (CAT, SAIL) | 200 `l-222` | 200 `l-222,l-225,l-609` | **404** | 200 `l-222,l-225,l-609` (isti URL) |
-| | `marina di olbia yachting services` 9 (CAT) | 200 `l-225,l-609` | 308 → `olbia` | 200 `l-222,l-225,l-609` | 308 → `olbia` |
+| | `marina di olbia yachting services` 9 (CAT) | 200 `l-225,l-609` | 308 → `olbia` | **404** (dopuna 14.10.: 225 → „Marina di Olbia") | 308 → `olbia` |
 | #9 Lavrion | `lavrion main port` 18 (CAT, SAIL) | 200 `l-1069,l-150` (pin) | 200 + `l-2022` | 200 bez `l-2022` | 200 `l-1069,l-150,l-2022` |
 | E ACI Marina Split | `aci marina split` 36 | 200 `l-69` | isto | 200 `l-1755,l-69` | 200 `l-1755,l-69` (bez pina) |
 | ostalih 14 (MMK ime ostaje) | 189 | 200 `l-<MMK>` | isto | 200 + NauSys red | isto (bez pina) |
@@ -206,7 +246,8 @@ Pin nije potreban za SEO (nisu u sitemapu, danas noindex ili 308 na noindex): `n
 `kotor`, `riposto`, `cannes`, `igy vieux-port de cannes`, `port of denia`, `real club nautico dènia`, `port olimpic`,
 `corbieres port`, `gumbet limani`, `luka baška voda`, `luka kaštel stari`, `marina stobreč`, `marina molo luise`,
 `mergelina e porto di sannazaro`, `port of kavala`, `trget (near pula)`, `nea peramos`, `yacht classic hotel`,
-`bodrum/turgutreis/d-marin`, `lavrion marina` (pokriva pin Lavrion).
+`bodrum/turgutreis/d-marin`, `lavrion marina` (pokriva pin Lavrion), `tromsø eidkjosen` (dopuna 14.10.; danas 200 noindex,
+`tromsø` 308 na njega — nakon migracije `tromsø` je landing).
 
 Opcionalno, jedini koji danas 308 vodi na indeksirani landing:
 
@@ -232,20 +273,18 @@ Opcionalno, jedini koji danas 308 vodi na indeksirani landing:
 
 ## Zatečeno / za Marija
 
-- **#25 Tourlos Marina NIJE u V9_79.** NauSys 158 „Mykonos" je danas po imenu dio indeksiranog landinga „Port of Mykonos"
+- **#25 Tourlos Marina NIJE u V9_79** (Mario 14.10.: ostaje netaknut). NauSys 158 „Mykonos" je danas po imenu dio indeksiranog landinga „Port of Mykonos"
   (`l-158,l-1912`, 18 URL-ova: CATAMARAN + odredišni). Preimenovan u „Tourlos Marina", Port of Mykonos ostaje s 9 brodova
   (3 katamarana, prag 10) → 18 URL-ova pada u noindex, a Tourlos Marina dobiva 11 brodova (CAT 8 → 19). Pitanje za Marija:
   spojiti ipak (Port of Mykonos gubi 18 indeksiranih URL-ova) ili ostaviti. Ako DA: jedno mjesto više u migraciji (158 →
   „Tourlos Marina", grad „Tourlos"; par 158/1561), bez web pina (`tourlos marina` ostaje isti URL).
 - **Sestrinski sajtovi traže mjesto po imenu grada** (`resolveDestinationDid` → `/public/locations?name=`, ime + grad). Kad
-  NauSys ime izgubi grad/otok, red ispada iz te pretrage: „Trogir" gubi Marinu Baotić (57 + 1749, ~306 brodova) i Agana (55),
-  „Ibiza" 399, „Naples" Pozzuoli 257, „Corsica"/„Sicily"/„Mallorca"/„Athens"/„Corfu"/„Tivat"/„Santorini" po nekoliko brodova.
-  Regije se razrješavaju prije marina, pa to vrijedi samo za imena bez regije — najviše za **Trogir** (CC/CY/EY itinerari iz
-  Trogira). Prijedlog za sestre: `SEARCH_ALIASES` `'trogir': ['Trogir', 'Seget']`. Na boat4you itinerar-CTA „Trogir" prelazi s
-  Baotića na ACI Marinu Trogir, „Ajaccio" na lanac (Korzika → Francuska).
-- **NauSys 225 „Marina di Olbia Yachting Services"** (0 aktivnih brodova) je već danas po imenu jedan red s 609; najduže ime
-  i dalje imenuje red liste i facts („Marina di Olbia Yachting Services"). Ako i 225 treba „Marina di Olbia", to je jedan
-  dodatni red (Mariov DA).
+  NauSys ime izgubi grad/otok, red ispada iz te pretrage: „Ibiza" 399, „Naples" Pozzuoli 257,
+  „Corsica"/„Sicily"/„Mallorca"/„Athens"/„Corfu"/„Tivat"/„Santorini" po nekoliko brodova. **Trogir je riješen dopunom 14.10.**
+  (57 i 55 nose grad „Trogir", pa `?name=trogir` i dalje nalazi Baotić i Aganu; `SEARCH_ALIASES` za sestre nije potreban).
+  Regije se razrješavaju prije marina, pa to vrijedi samo za imena bez regije. Na boat4you itinerar-CTA „Ajaccio" prelazi na
+  lanac (Korzika → Francuska).
+- ~~NauSys 225 „Marina di Olbia Yachting Services"~~ — riješeno dopunom 14.10. (225 → „Marina di Olbia", par s 609 i 222).
 - **MMK 1375 „Placencia"** (~5 km južno od Robert's Grove): tamo nema baziranog broda, ali je mjesto preuzimanja za **3 broda
   Robert's Grove** (MMK 1302): 346 budućih bookabilnih ponuda (prod 13.10. 17:23 UTC). Danas ga lista po imenu spaja s Robert's
   Grove (`l-265,l-1375,l-1302`); nakon #51 ta preuzimanja idu u zaseban red liste „Placencia", a red Robert's Grove je
@@ -255,14 +294,12 @@ Opcionalno, jedini koji danas 308 vodi na indeksirani landing:
   mjestu Poseidon Marina samo zato što je „milazzo" unutar „Marina Poseidon, Milazzo"; nakon #34 je zasebno mjesto (1,3 km od
   Poseidona). Nema indeksiranog landinga. Mario: par 233 ↔ Poseidon ili ostaviti. Ako 212 „Marina Santa Maria Maggiore,
   Milazzo" (danas bez brodova i ponuda) jednom dobije podatke, 233 se po imenu spaja s njim.
-- **boat4you autocomplete „trogir"** (`search_filed` = ime + grad, regija „Trogir" ne postoji): nakon migracije više ne nalazi
-  Marinu Baotić (57 + 1749, ~306 brodova) ni Marinu Agana (55 + 993) — NauSys imena su nosila „Trogir", gradovi MMK blizanaca
-  su „Seget Donji" / „Marina". Ostaju ACI Marina Trogir, SCT Marina Trogir i ostali. Opcije za Marija: prihvatiti, ili 57 (i
-  55) dobiva grad „Trogir" (kartice bi tada imale dva različita grada za istu marinu). Manji gubici: `naples` (Pozzuoli 16),
-  `tivat`, `santorini`, `kefalonia` po 1–2 broda.
+- **boat4you autocomplete „trogir"** — riješeno dopunom 14.10.: 57 i 55 dobivaju grad „Trogir" (vidi „Dopuna 14.10.2026";
+  kartice imaju dva grada za istu marinu: NauSys „Trogir", MMK „Seget Donji" / „Marina"). Manji gubici ostaju: `naples`
+  (Pozzuoli 16), `tivat`, `santorini`, `kefalonia` po 1–2 broda; `eidkjosen` (Tromsø 1218).
 - **Povučeni brodovi (308):** 22 retka `yacht_successor` pokazuju na primjerak koji postaje blizanac; idući izračun (07:55)
   ih prebacuje na prikazani primjerak istog broda (svih 22 i dalje prolazi pravilo nasljednika, nijedan ne gubi 308).
 - Tekst s imenom agencije: vidi „OBAVEZNO" točka 4 (briše se u istom web commitu kao pinovi).
 - `location_region` nema jedinstveni ključ; ACI Marina Split (69) ima regiju 5 dvaput (MMK + NauSys sink). Nije dirano.
-- Rendering grupa u listi (Lavrion 3, Baška Voda 3, Mergellina 5 redova) treba backend kod iz istog paketa
+- Rendering grupa u listi (Lavrion 3, Baška Voda 3, Mergellina 5, Marina di Olbia 3, Tromsø 3 reda) treba backend kod iz istog paketa
   (`mergeDualSourceMarinas` spaja grupu); stari jar prikazuje grupu kao 2–3 reda istog imena (tražilica je i tada ispravna).

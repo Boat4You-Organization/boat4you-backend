@@ -1,5 +1,7 @@
--- V9_79 (13.10.2026): one name per marina for the near-duplicate pairs Mario approved (docs/location-near-duplicates-review-2026-10-13.md,
--- Mario 13.10.2026: "A sve da", "C može", plus Olympic Marine, Marina di Olbia and ACI Marina Split). Same recipe as V9_77 / V9_78:
+-- V9_79 (13.10.2026, amended 14.10.2026 before any deploy): one name per marina for the near-duplicate pairs Mario approved
+-- (docs/location-near-duplicates-review-2026-10-13.md, Mario 13.10.2026: "A sve da", "C može", plus Olympic Marine, Marina di Olbia
+-- and ACI Marina Split; 14.10.2026: "odradi sve to", "Tromsø i Eidkjosen stavi pod jedno" - Tromsø joins, NauSys 225 becomes
+-- "Marina di Olbia", the NauSys rows of Marina Baotić / Marina Agana keep "Trogir" as city). Same recipe as V9_77 / V9_78:
 -- read those headers for what the MMK / NauSys syncs do with a location row. In short: names are written only when blank (first
 -- creation), NauSys never writes city, MMK overwrites city with its own on every run but only on the rows it maps, lat / lon are
 -- filled only when NULL, regions are add-only (LocationRegionOverrides pins none of these rows), display_name is a generated
@@ -14,11 +16,12 @@
 -- curated texts (public/seo-content/*/catamaran-charter-<agency>.html; never before the pins: today they are an indexed landing's text).
 --
 -- What it does, per place (unit): every row of the place takes ONE name; a NauSys row also takes its MMK twin's town as city (MMK
--- keeps writing its own); the rows go into location_same_place (V9_67), so the search's l- resolution, the location list and the
+-- keeps writing its own; 57 and 55 take "Trogir" instead, see Autocomplete below); the rows go into location_same_place (V9_67), so
+-- the search's l- resolution, the location list and the
 -- charter facts treat them as one place. Rename, never merge: no row is deleted, no offer / yacht / mapping is repointed, every
 -- `did=l-<id>` keeps working, and the backup below undoes it.
 --   #  cc  final name                          rows renamed (today's name)
---   1  HR  Marina Baotić                       57 "Trogir, Yachtclub Seget (Marina Baotić)"
+--   1  HR  Marina Baotić                       57 "Trogir, Yachtclub Seget (Marina Baotić)" (city "Trogir"; MMK 1749 stays "Seget Donji")
 --   2  HR  D-Marin Marina Mandalina            49 "Marina Mandalina, Sibenik"
 --   3  IT  Marina Portorosa                    245 "Sicily, Portorosa"
 --   4  HR  Marina Zadar                        27 "Marina Zadar (ex. Tankerkomerc)"                (indexed URLs 308, Mario)
@@ -31,7 +34,7 @@
 --  12  TR  Netsel Marmaris Marina              185 "Marmaris, Netsel Marina"
 --  13  HR  Port of Split / West Harbour        521 "Split, West Coast (Zapadna obala)"
 --  14  GR  Marina Paleros                      135 "Palairos"                                       (indexed URLs 308, Mario)
---  15  HR  Marina Agana                        55 "Marina, Marina Agana (near Trogir)"
+--  15  HR  Marina Agana                        55 "Marina, Marina Agana (near Trogir)" (city "Trogir"; MMK 993 stays "Marina")
 --  16  PF  Marina de Uturoa                    359 "Polynesia, Raiatea"
 --  18  FR  Hyeres Port Saint Pierre            MMK 1975 "Hyeres"
 --  19  TR  Yacht Classic Hotel Marina          205 "Fethiye, Yacht Classic Hotel Marina"; MMK 1252 "Yacht Classic Hotel"
@@ -77,39 +80,55 @@
 --   E  GR  Olympic Marine (the marina's own name, olympicmarine.gr)   139 "Lavrion - Olympic Marine" + MMK 710 "Olympic Marina";
 --                                              139 also takes 710's coordinates (NauSys put it on the Lavrion town port, 1.9 km north)
 --   E  IT  Marina di Olbia                     222 "Olbia" (pairs with MMK 609; 222 takes 609's coordinates, NauSys put it on the town
---                                              port 1.7 km west). MMK 1208 "Molo Brin" stays apart (Mario B #17). NauSys 225 "Marina di
---                                              Olbia Yachting Services" (0 active boats) is already one place with 609 by name and stays
---                                              as it is (its name still labels the list row; Mario's call).
+--                                              port 1.7 km west); NauSys 225 "Marina di Olbia Yachting Services" (0 active boats,
+--                                              250 m from 609, already one place with 609 by name) takes "Marina di Olbia" and city
+--                                              "Olbia" (14.10.2026) -> group 222 / 225 / 609, so the list row is no longer labelled with
+--                                              the service company's name. MMK 1208 "Molo Brin" stays apart (Mario B #17).
 --   E  HR  ACI Marina Split                    MMK 1755 "Split" (1 boat, no region): paired with 69 (ACI Marina Split, MMK 9 + NauSys
 --                                              56), takes 69's coordinates and region 5 Split (Mario: "Split je pod Split, stavi ACI Split").
 --                                              NauSys 67 "Trajektna luka Split" stays apart (Mario B #57).
+--   E  NO  Tromsø                              MMK 1218 "Tromsø Eidkjosen" (city "Kvaløysletta - Tromsø", MMK's, stays) joins V9_78's
+--                                              396 / 624 "Tromsø" (8.7 / 9.9 km; Mario 14.10.2026 "Tromsø i Eidkjosen stavi pod jedno")
+--                                              -> group 396 / 624 / 1218. The list already showed the three as one row by name
+--                                              ("Tromsø Eidkjosen", l-1218,l-396,l-624); now it is "Tromsø" and a 1218 did resolves all
+--                                              three in the search too. No indexed landing (sitemaps 14.10.2026: no Tromsø URL).
 -- Not in this migration: #25 Tourlos Marina (NauSys 158 "Mykonos" + MMK 1561). 158 sits in the indexed "Port of Mykonos" landing by
 -- name today; renamed, Port of Mykonos keeps 9 boats (3 catamarans) and its 18 indexed URLs fall to noindex - waits for Mario.
 -- B (#6, 17, 26, 47, 57) and the third rows Zea 1554, Kavala 932, Marmaris 1395 (Mario: "ne znam") are not touched.
 --
--- Side effects of the one name (review 13.10.2026, prod read only):
+-- Side effects of the one name (review 13.10.2026, re-checked 14.10.2026, prod read only):
 --   - yacht_listing_twin (V9_69 / V9_70) pairs two copies of a boat by the base NAME (base_key). With one name per place the MMK and
---     NauSys copies of 131 boats at these places become twins: the next refresh (YachtSearchViewRefresher, <= 10 min) hides the
+--     NauSys copies of 123 boats at these places become twins: the next refresh (YachtSearchViewRefresher, <= 10 min) hides the
 --     second copy from the undated search, the landings' fleet counts, the sitemaps and the charter facts (audit B17, one card per
---     boat; 557 -> 688 twins on 13.10.). None leaves a place: every copy shown sits in the same place. Biggest: Mandalina 26,
+--     boat; 557 -> 688 twins on 13.10., 556 -> 679 on 14.10.; Tromsø and 225 add none). None leaves a place: every copy shown sits
+--     in the same place. Biggest (13.10.): Mandalina 26,
 --     Portorosa 18, Marina Zadar 14, Olympic Marine 12, Sant Antoni 9, Paleros 8, Pollença 7.
 --   - YachtSuccessorComputeService (same twin table + base_key): 22 retired boats' 308 targets move to the copy the listings show
 --     (same boat, other channel; all 22 still pass the successor rule) on the next 07:55 run.
 --   - Charter facts: NauSys 233 "Milazzo" (pick-up of 1 Portorosa boat) is in the Poseidon Marina place today only because "milazzo"
 --     sits inside "Marina Poseidon, Milazzo"; after #34 it is a place of its own (no indexed landing).
---   - Autocomplete (search_filed = name + city): "trogir" no longer finds Marina Baotić (57 / 1749) or Marina Agana (55 / 993) - the
---     NauSys names carried "Trogir", the MMK twins' towns are Seget Donji / Marina; no "Trogir" region exists. Mario's call.
+--   - Autocomplete (search_filed = name + city): the NauSys names of Marina Baotić (57) and Marina Agana (55) carried "Trogir", the
+--     MMK twins' towns are Seget Donji / Marina and no "Trogir" region exists, so the one name alone would lose both for "trogir"
+--     (and the sister sites' town lookup). 57 and 55 therefore take the city "Trogir", not the twin's town (Mario 14.10.2026):
+--     "trogir" finds both places, the MMK rows keep MMK's city. The list, the search and the facts pair these rows by name and
+--     coordinates (all four have them), never by city, so nothing else moves; the card label (display_name) of a NauSys boat there
+--     reads "Marina Baotić | Trogir", of an MMK boat "Marina Baotić | Seget Donji" (Agana: "| Trogir" / "| Marina").
+--     "eidkjosen" no longer finds 1218 (its name becomes "Tromsø"; no indexed landing).
 --
 -- Groups: LocationRepository.findSamePlaceMarinaIds pairs rows by the same name (country, <= 50 km) plus the anchor's OWN
--- location_same_place rows - not transitive. Every group gets a full mesh of pairs, so each member did resolves the whole group even
--- without the name rule. The location list (LocationQueryingService.mergeDualSourceMarinas) joins a curated pair that touches a
--- merged row into one row since the code shipped with this migration (same jar); an older jar shows a group as two or three rows.
+-- location_same_place rows - not transitive. Every group (Lavrion 3, Baška Voda 3, Mergellina 5, Marina di Olbia 3, Tromsø 3 rows)
+-- gets a full mesh of pairs, so each member did resolves the whole group even without the name rule. The location list
+-- (LocationQueryingService.mergeDualSourceMarinas) joins a curated pair that touches a merged row into one row since the code shipped
+-- with this migration (same jar); an older jar shows a group as two or three rows. The list reads the pairs oldest first, then by
+-- (location_id, same_as_location_id), and keeps the row of the first pair: Olbia's pairs are written so that 609 (the MMK row with
+-- the boats) stays, as V9_78's pair keeps 624 for Tromsø and 2007 for Mergellina.
 --
--- Guards (as V9_78): each place is applied only when ALL its rows still carry the 13.10.2026 production data - id, country, today's
--- name (or the final one), the partner mapping, an MMK row's city, the coordinates being corrected - and a renamed NauSys row has no
--- MMK mapping (MMK would rewrite its city). A place whose data moved is skipped whole; a database where these ids are other rows (local
--- dev) changes nothing; a second run changes nothing. Backup: ops_location_near_dup_backup_20261013 (every row of every place,
--- before the fix, with its regions).
+-- Guards (as V9_78): each place is applied only when ALL its rows still carry the production data of 13.10.2026 (re-verified
+-- 14.10.2026 13:45 UTC: all 117 rows of the 55 places pass with the literal values below, names byte-exact, no pair present yet) -
+-- id, country, today's name (or the final one), the partner mapping, an MMK row's city, the coordinates being corrected - and a NauSys
+-- row that takes a city has no MMK mapping (MMK would rewrite its city). A place whose data moved is skipped whole and silently; a
+-- database where these ids are other rows (local dev) changes nothing; a second run changes nothing. Backup:
+-- ops_location_near_dup_backup_20261013 (every row of every place, before the fix, with its regions).
 -- The catalogue syncs write location rows; give up fast instead of waiting on a sync transaction - a timeout rolls the migration
 -- back and the API's systemd restart tries again (deploy outside the sync windows, DEPLOY_NOTES).
 SET LOCAL lock_timeout = '5s';
@@ -141,7 +160,7 @@ CREATE TEMP TABLE v9_79_pair (
 
 INSERT INTO v9_79_row (unit, id, sys, base, cc, names, city, new_name, new_city, lat_now, lon_now, new_lat, new_lon, region_id)
 VALUES
-('p01', 57, 2, 101164, 'HR', ARRAY ['Trogir, Yachtclub Seget (Marina Baotić)', 'Marina Baotić'], NULL, 'Marina Baotić', 'Seget Donji', NULL, NULL, NULL, NULL, NULL),
+('p01', 57, 2, 101164, 'HR', ARRAY ['Trogir, Yachtclub Seget (Marina Baotić)', 'Marina Baotić'], NULL, 'Marina Baotić', 'Trogir', NULL, NULL, NULL, NULL, NULL),
 ('p01', 1749, 1, 288201290000100000, 'HR', ARRAY ['Marina Baotić'], 'Seget Donji', 'Marina Baotić', NULL, NULL, NULL, NULL, NULL, NULL),
 ('p02', 49, 2, 66, 'HR', ARRAY ['Marina Mandalina, Sibenik', 'D-Marin Marina Mandalina'], NULL, 'D-Marin Marina Mandalina', 'Šibenik', NULL, NULL, NULL, NULL, NULL),
 ('p02', 1813, 1, 251, 'HR', ARRAY ['D-Marin Marina Mandalina'], 'Šibenik', 'D-Marin Marina Mandalina', NULL, NULL, NULL, NULL, NULL, NULL),
@@ -168,7 +187,7 @@ VALUES
 ('p13', 1693, 1, 6463919540000100000, 'HR', ARRAY ['Port of Split / West Harbour'], 'Split', 'Port of Split / West Harbour', NULL, NULL, NULL, NULL, NULL, NULL),
 ('p14', 135, 2, 832589, 'GR', ARRAY ['Palairos', 'Marina Paleros'], NULL, 'Marina Paleros', 'Palairos', NULL, NULL, NULL, NULL, NULL),
 ('p14', 828, 1, 395874570000100000, 'GR', ARRAY ['Marina Paleros'], 'Palairos', 'Marina Paleros', NULL, NULL, NULL, NULL, NULL, NULL),
-('p15', 55, 2, 63, 'HR', ARRAY ['Marina, Marina Agana (near Trogir)', 'Marina Agana'], NULL, 'Marina Agana', 'Marina', NULL, NULL, NULL, NULL, NULL),
+('p15', 55, 2, 63, 'HR', ARRAY ['Marina, Marina Agana (near Trogir)', 'Marina Agana'], NULL, 'Marina Agana', 'Trogir', NULL, NULL, NULL, NULL, NULL),
 ('p15', 993, 1, 18221310000100000, 'HR', ARRAY ['Marina Agana'], 'Marina', 'Marina Agana', NULL, NULL, NULL, NULL, NULL, NULL),
 ('p16', 359, 2, 482516, 'PF', ARRAY ['Polynesia, Raiatea', 'Marina de Uturoa'], NULL, 'Marina de Uturoa', 'Raiatea', NULL, NULL, NULL, NULL, NULL),
 ('p16', 1979, 1, 64, 'PF', ARRAY ['Marina de Uturoa'], 'Raiatea', 'Marina de Uturoa', NULL, NULL, NULL, NULL, NULL, NULL),
@@ -252,8 +271,12 @@ VALUES
 ('aci_split', 1755, 1, 32326420000100000, 'HR', ARRAY ['Split', 'ACI Marina Split'], 'Split', 'ACI Marina Split', NULL, 43.503771, 16.441621, 43.5024, 16.4295, 5),
 ('olbia', 222, 2, 517915, 'IT', ARRAY ['Olbia', 'Marina di Olbia'], NULL, 'Marina di Olbia', 'Olbia', 40.92269, 9.50867, 40.91588, 9.526216, NULL),
 ('olbia', 609, 1, 210, 'IT', ARRAY ['Marina di Olbia'], 'Olbia', 'Marina di Olbia', NULL, NULL, NULL, NULL, NULL, NULL),
+('olbia', 225, 2, 7855435, 'IT', ARRAY ['Marina di Olbia Yachting Services', 'Marina di Olbia'], NULL, 'Marina di Olbia', 'Olbia', NULL, NULL, NULL, NULL, NULL),
 ('olympic', 139, 2, 1002560, 'GR', ARRAY ['Lavrion - Olympic Marine', 'Olympic Marine'], NULL, 'Olympic Marine', 'Lavrion', 37.7123, 24.056, 37.69547, 24.06044, NULL),
-('olympic', 710, 1, 484655120000100000, 'GR', ARRAY ['Olympic Marina', 'Olympic Marine'], 'Lavrion', 'Olympic Marine', NULL, NULL, NULL, NULL, NULL, NULL);
+('olympic', 710, 1, 484655120000100000, 'GR', ARRAY ['Olympic Marina', 'Olympic Marine'], 'Lavrion', 'Olympic Marine', NULL, NULL, NULL, NULL, NULL, NULL),
+('tromso', 396, 2, 482455, 'NO', ARRAY ['Tromsø'], NULL, 'Tromsø', NULL, NULL, NULL, NULL, NULL, NULL),
+('tromso', 624, 1, 183988270000100000, 'NO', ARRAY ['Tromsø'], 'Tromsø', 'Tromsø', NULL, NULL, NULL, NULL, NULL, NULL),
+('tromso', 1218, 1, 5458738350000100000, 'NO', ARRAY ['Tromsø Eidkjosen', 'Tromsø'], 'Kvaløysletta - Tromsø', 'Tromsø', NULL, NULL, NULL, NULL, NULL, NULL);
 
 INSERT INTO v9_79_pair (unit, a_id, b_id, note)
 VALUES
@@ -320,9 +343,13 @@ VALUES
 ('p58', 317, 619, 'Oia Port (Oia): NauSys base 72462131 and MMK base 3406806320000100000 rows, 21 m apart (Mario 13.10.2026, V9_79)'),
 ('aci_split', 1755, 69, 'ACI Marina Split (Split): MMK base 32326420000100000 and MMK base 9 / NauSys base 56 rows, 989 m apart; the MMK base "Split" (1 boat) is ACI Marina Split (Mario 13.10.2026, V9_79)'),
 ('olbia', 222, 609, 'Marina di Olbia (Olbia): NauSys base 517915 and MMK base 210 rows, 1.7 km apart; the NauSys row had the town port coordinates (Mario 13.10.2026, V9_79)'),
-('olympic', 139, 710, 'Olympic Marine (Lavrion): NauSys base 1002560 and MMK base 484655120000100000 rows, 1.9 km apart; the NauSys row had the town port coordinates (Mario 13.10.2026, V9_79)');
+('olbia', 225, 222, 'Marina di Olbia (Olbia): NauSys base 7855435 and NauSys base 517915 rows, 250 m apart (222 on 609''s coordinates); one place of 3 rows (222, 225, 609) (Mario 14.10.2026, V9_79)'),
+('olbia', 225, 609, 'Marina di Olbia (Olbia): NauSys base 7855435 and MMK base 210 rows, 250 m apart; one place of 3 rows (222, 225, 609) (Mario 14.10.2026, V9_79)'),
+('olympic', 139, 710, 'Olympic Marine (Lavrion): NauSys base 1002560 and MMK base 484655120000100000 rows, 1.9 km apart; the NauSys row had the town port coordinates (Mario 13.10.2026, V9_79)'),
+('tromso', 396, 1218, 'Tromsø (Tromsø): NauSys base 482455 and MMK base 5458738350000100000 (Eidkjosen) rows, 8.7 km apart; one place of 3 rows (396, 624, 1218) (Mario 14.10.2026, V9_79)'),
+('tromso', 624, 1218, 'Tromsø (Tromsø): MMK base 183988270000100000 and MMK base 5458738350000100000 (Eidkjosen) rows, 9.9 km apart; one place of 3 rows (396, 624, 1218) (Mario 14.10.2026, V9_79)');
 
--- a row still carries the 13.10.2026 production data
+-- a row still carries the production data (13.10.2026, re-verified 14.10.2026)
 CREATE TEMP VIEW v9_79_row_ok AS
 SELECT r.*
 FROM v9_79_row r
@@ -415,12 +442,14 @@ DROP VIEW v9_79_row_ok;
 
 -- Check after deploy (read only):
 --   SELECT b.id, b.name AS before, l.name, l.city, l.lat, l.lon FROM ops_location_near_dup_backup_20261013 b
---     JOIN location l ON l.id = b.id ORDER BY b.id;                                    -> 113 rows, final names
---   SELECT count(*) FROM location_same_place WHERE note LIKE '%V9_79)';                 -> 64
+--     JOIN location l ON l.id = b.id ORDER BY b.id;                                    -> 117 rows, final names
+--   SELECT count(*) FROM location_same_place WHERE note LIKE '%, V9_79)';               -> 68 (64 of 13.10., 4 of 14.10.)
 --   SELECT * FROM location_region WHERE location_id = 1755;                             -> region 5
---   SELECT count(*) FROM yacht_listing_twin;          -> about 131 more than before (557 -> 688 on 13.10.), after the next refresh
+--   SELECT count(*) FROM yacht_listing_twin;          -> about 123 more than before (556 -> 679 on 14.10.), after the next refresh
 --   GET https://api.boat4you.com/public/locations?name=mergellina -> ONE "Porto di Mergellina" row,
---     id "l-2007,l-2099,l-209,l-1118,l-1301" (after the jar restart; the list cache keeps 10 h)
+--     id "l-2007,l-2099,l-209,l-1118,l-1301" (after the jar restart; the list cache keeps 10 h); ?name=troms -> ONE "Tromsø"
+--     "l-624,l-396,l-1218"; ?name=olbia -> "Marina di Olbia" "l-609,l-222,l-225"; ?name=trogir -> also "Marina Baotić" (l-57)
+--     and "Marina Agana" (l-55)
 --   https://www.boat4you.com/search?destinations=marina%20zadar%20(ex.%20tankerkomerc)&boatTypes=CATAMARAN -> 308 to
 --     destinations=marina%20zadar (needs the web pin)
 --
@@ -429,4 +458,4 @@ DROP VIEW v9_79_row_ok;
 --   FROM ops_location_near_dup_backup_20261013 b WHERE b.id = l.id;
 --   DELETE FROM location_region lr USING ops_location_near_dup_backup_20261013 b
 --    WHERE lr.location_id = b.id AND b.id = 1755 AND lr.region_id = 5 AND b.region_ids IS NULL;
---   DELETE FROM location_same_place WHERE note LIKE '%(Mario 13.10.2026, V9_79)';
+--   DELETE FROM location_same_place WHERE note LIKE '%, V9_79)';
