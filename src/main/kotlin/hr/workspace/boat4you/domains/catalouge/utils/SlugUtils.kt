@@ -21,11 +21,13 @@ object SlugUtils {
                 modelTrimmed.lowercase().startsWith("${manuTrimmed.lowercase()} ") ||
                 modelTrimmed.equals(manuTrimmed, ignoreCase = true)
 
+        // R31 (re-audit 29.9.2026): a name that only repeats the model adds nothing to the URL either -
+        // `gulet-gulet-18992` -> `gulet-18992`. Old slugs still resolve by the trailing id and 308 to this one.
         val rawParts =
             listOfNotNull(
                 manufacturerName.takeUnless { modelHasManuPrefix },
                 modelName,
-                yachtName,
+                yachtName.takeUnless { YachtLabel.nameRepeatsModel(modelName, it) },
             ).filter { it.isNotBlank() }
 
         val slugPart =

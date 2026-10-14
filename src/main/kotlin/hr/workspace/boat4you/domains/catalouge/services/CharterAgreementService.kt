@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import com.openhtmltopdf.pdfboxout.PdfRendererBuilder
 import hr.workspace.boat4you.domains.catalouge.jpa.Country
+import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.service.BankTransferFeeShare
@@ -106,25 +107,7 @@ class CharterAgreementService(
         val clientCity = user.city?.takeIf { it.isNotBlank() } ?: EM_DASH
         val clientCountry = user.country?.takeIf { it.isNotBlank() } ?: EM_DASH
 
-        // Yacht — Mario rule: Manufacturer + Model + Name. Partner model names
-        // often already START with the manufacturer ("Fountaine Pajot Lucia
-        // 40", "Lagoon 42") — joining blindly printed the brand twice
-        // (found on 100184/2026, 14.8.2026), so the manufacturer prefix is
-        // skipped when the model carries it.
-        val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
-        val yachtModelName = yacht.model?.name?.takeIf { it.isNotBlank() }
-        val yachtName = yacht.name?.takeIf { it.isNotBlank() }
-        // Doubling shows up two ways: the model repeats the full manufacturer
-        // ("Fountaine Pajot Lucia 40") or just its brand word ("Bali 4.2" vs
-        // "Bali Catamarans") — compare first words so both collapse.
-        val manufacturerPrefix = yachtManufacturer?.takeIf { m ->
-            val modelFirstWord = yachtModelName?.trim()?.split(Regex("\\s+"))?.firstOrNull()
-            val manufacturerFirstWord = m.trim().split(Regex("\\s+")).firstOrNull()
-            modelFirstWord == null || !modelFirstWord.equals(manufacturerFirstWord, ignoreCase = true)
-        }
-        val yachtFullLabel = listOfNotNull(manufacturerPrefix, yachtModelName, yachtName)
-            .joinToString(" ")
-            .ifBlank { yachtName ?: EM_DASH }
+        val yachtFullLabel = vesselLabel(yacht)
 
         val yachtYearBuilt = yacht.buildYear?.toString() ?: EM_DASH
         val yachtLengthMeters = yacht.length?.toPlainString() ?: EM_DASH
@@ -439,6 +422,33 @@ class CharterAgreementService(
     }
 
     companion object {
+        /**
+         * The vessel as the contract names it — Mario rule: Manufacturer + Model + Name. Partner model names
+         * often already START with the manufacturer ("Fountaine Pajot Lucia 40", "Lagoon 42") — joining blindly
+         * printed the brand twice (found on 100184/2026, 14.8.2026), so the manufacturer prefix is skipped when
+         * the model carries it.
+         *
+         * The name is the partner's own (`partner_name`, R02 flag F11): this is a legal identification of the
+         * vessel, and the Operator party already names the agency - the public name ("Boat4You 424/4/4 Premium",
+         * plain "Boat4You") would misidentify the boat and make Boat4You look like its operator.
+         */
+        internal fun vesselLabel(yacht: Yacht): String {
+            val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
+            val yachtModelName = yacht.model?.name?.takeIf { it.isNotBlank() }
+            val yachtName = (yacht.partnerName ?: yacht.name)?.takeIf { it.isNotBlank() }
+            // Doubling shows up two ways: the model repeats the full manufacturer
+            // ("Fountaine Pajot Lucia 40") or just its brand word ("Bali 4.2" vs
+            // "Bali Catamarans") — compare first words so both collapse.
+            val manufacturerPrefix = yachtManufacturer?.takeIf { m ->
+                val modelFirstWord = yachtModelName?.trim()?.split(Regex("\\s+"))?.firstOrNull()
+                val manufacturerFirstWord = m.trim().split(Regex("\\s+")).firstOrNull()
+                modelFirstWord == null || !modelFirstWord.equals(manufacturerFirstWord, ignoreCase = true)
+            }
+            return listOfNotNull(manufacturerPrefix, yachtModelName, yachtName)
+                .joinToString(" ")
+                .ifBlank { yachtName ?: EM_DASH }
+        }
+
         private const val TEMPLATE_NAME = "contract/charterAgreement"
         private const val BASE_URI = "classpath:/templates/contract/"
         private const val EM_DASH = "—"

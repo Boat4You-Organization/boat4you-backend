@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.job
 
+import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
@@ -84,7 +85,7 @@ class TripChatAutomationJob(
     )
 
     private fun itineraryPost(reservation: Reservation): String {
-        val yacht = reservation.reservationFlow?.yacht?.name?.takeIf { it.isNotBlank() } ?: "your yacht"
+        val yacht = yachtLabel(reservation)
         val marina = reservation.locationFrom?.name?.takeIf { it.isNotBlank() }?.let { " from $it" } ?: ""
         val date = reservation.dateFrom?.toLocalDate()?.format(DATE_FORMAT) ?: "soon"
         return "Hello crew! 👋 $yacht sets sail on $date$marina — two weeks to go. " +
@@ -94,7 +95,7 @@ class TripChatAutomationJob(
     }
 
     private fun readyPost(reservation: Reservation): String {
-        val yacht = reservation.reservationFlow?.yacht?.name?.takeIf { it.isNotBlank() } ?: "your yacht"
+        val yacht = yachtLabel(reservation)
         val marina = reservation.locationFrom?.name?.takeIf { it.isNotBlank() }?.let { " at $it" } ?: ""
         return "Tomorrow's the day! ⛵ Check-in for $yacht$marina. A passport for every guest and the skipper's " +
             "licence are the two things the base will ask for — everything else is sunshine. " +
@@ -102,7 +103,7 @@ class TripChatAutomationJob(
     }
 
     private fun albumReadyPost(reservation: Reservation): String {
-        val yacht = reservation.reservationFlow?.yacht?.name?.takeIf { it.isNotBlank() } ?: "your yacht"
+        val yacht = yachtLabel(reservation)
         val deadline = reservation.dateTo?.toLocalDate()?.plusDays(PHOTO_RETENTION_DAYS)?.format(DATE_FORMAT)
         val deadlineNote = deadline?.let {
             " Please download them by $it — after that we permanently remove all trip photos from our system (GDPR)."
@@ -110,6 +111,9 @@ class TripChatAutomationJob(
         return "📸 Your $yacht photos are ready! Open the Chat tab of this trip, scroll to the album and tap " +
             "“Download all photos” to keep the whole week.$deadlineNote Thank you for sailing with Boat4You 💙"
     }
+
+    // R02 flag F11: the public name; the model label when the boat is named after its agency (public name "Boat4You").
+    private fun yachtLabel(reservation: Reservation): String = reservation.reservationFlow?.yacht?.let { YachtNamePolicy.tripName(it.name, it.model?.name) } ?: "your yacht"
 
     companion object {
         private const val ITINERARY_DAYS_AHEAD = 14L

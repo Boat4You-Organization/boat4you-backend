@@ -41,6 +41,14 @@ open class Yacht {
     @Column(name = "name", nullable = false)
     open var name: String? = null
 
+    /**
+     * Raw partner yacht name (MMK / NauSys), V9_85. INTERNAL only - never mapped into a public DTO. [name] is the public
+     * name (YachtNamePolicy, R02); null = the policy never changed this row, so [name] is the raw name. Twin and
+     * successor matching read `COALESCE(partner_name, name)`; the charter agreement names the vessel with it (F11).
+     */
+    @Column(name = "partner_name", columnDefinition = "TEXT")
+    open var partnerName: String? = null
+
     @ManyToOne(fetch = FetchType.LAZY)
     @OnDelete(action = OnDeleteAction.SET_NULL)
     @JoinColumn(name = "agency_id")

@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.reservation.service
 import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
 import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
+import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.reservation.dto.TripDto
 import hr.workspace.boat4you.domains.reservation.dto.TripMarinaDto
 import hr.workspace.boat4you.domains.reservation.dto.TripYachtDto
@@ -74,14 +75,15 @@ class TripQueryService(
             dateTo = reservation.dateTo!!,
             ownerFirstName = flow.name?.takeIf { it.isNotBlank() },
             yacht = TripYachtDto(
-                name = yacht.name ?: "",
+                // R02 flag F11: the public name; the model label for a boat named after its agency ("Boat4You").
+                name = YachtNamePolicy.tripName(yacht.name, yacht.model?.name) ?: "",
                 // Model names usually already carry the manufacturer prefix
                 // ("Lagoon 450 F") — don't render "Lagoon Lagoon 450 F".
                 fullLabel = run {
                     val manufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
                     val model = yacht.model?.name?.takeIf { it.isNotBlank() }
                     val prefix = if (manufacturer != null && model?.startsWith(manufacturer, ignoreCase = true) != true) manufacturer else null
-                    listOfNotNull(prefix, model, yacht.name?.takeIf { it.isNotBlank() })
+                    listOfNotNull(prefix, model, yacht.name?.takeIf { it.isNotBlank() && !YachtNamePolicy.isBrandOnly(it) })
                         .joinToString(" ")
                         .ifBlank { yacht.name ?: "" }
                 },

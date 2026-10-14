@@ -147,6 +147,7 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
         SELECT r FROM Reservation r
         JOIN FETCH r.reservationFlow rf
         JOIN FETCH rf.yacht y
+        LEFT JOIN FETCH y.model
         WHERE r.sysStatus = :status
         AND r.dateTo >= :startTime AND r.dateTo < :endTime
     """,
@@ -159,13 +160,15 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
 
     fun findByReservationFlow(reservationFlow: ReservationFlow): Reservation?
 
-    /** Like [findConfirmedStartingBetween] but also fetches the marina —
+    /** Like [findConfirmedStartingBetween] but also fetches the marina and the model (the trip
+     *  texts name the model for a boat named after its agency, R02 F11) —
      *  used by jobs that build message texts OUTSIDE a transaction. */
     @Query(
         """
         SELECT r FROM Reservation r
         JOIN FETCH r.reservationFlow rf
         JOIN FETCH rf.yacht y
+        LEFT JOIN FETCH y.model
         LEFT JOIN FETCH r.locationFrom
         WHERE r.sysStatus = :status
         AND r.dateFrom >= :startTime AND r.dateFrom < :endTime

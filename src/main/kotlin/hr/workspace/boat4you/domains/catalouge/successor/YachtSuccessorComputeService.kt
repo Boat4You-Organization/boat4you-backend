@@ -173,7 +173,8 @@ class YachtSuccessorComputeService(
                        y.length,
                        -- the registration's digits ("EL-PIRAEUS-13270" -> 13270) when there are 4+ (MMK certificate)
                        CASE WHEN length(r.digits) >= 4 AND r.digits !~ '^0+$' THEN r.digits END AS reg,
-                       regexp_replace(lower(btrim(y.name)), '[^[:alnum:]]', '', 'g') AS name_key,
+                       -- the raw partner name (R02: yacht.name is the public name, "Boat4You 41.3 Premium")
+                       regexp_replace(lower(btrim(COALESCE(y.partner_name, y.name))), '[^[:alnum:]]', '', 'g') AS name_key,
                        regexp_replace(lower(split_part(btrim(m.name), ' ', 1)), '[^[:alnum:]]', '', 'g') AS model_word,
                        substring(m.name from '[0-9]+') AS model_number,
                        regexp_replace(lower(m.name), '[^[:alnum:]]', '', 'g') AS model_key,
@@ -207,7 +208,8 @@ class YachtSuccessorComputeService(
                 FROM listing b
                 WHERE length(b.name_key) >= 2
                   AND b.name_key ~ '[a-z]'
-                  AND b.name_key NOT IN (b.model_key, b.full_model_key, 'noname', 'unnamed', 'tba', 'tbd', 'new', 'yacht', 'boat')
+                  AND b.name_key NOT IN (b.model_key, b.full_model_key, 'noname', 'unnamed', 'tba', 'tbd', 'new', 'yacht', 'boat',
+                                         'boat4you')
                   AND NOT EXISTS (SELECT 1 FROM fleet f
                                   WHERE f.country_code = b.country_code AND f.name_key = b.name_key AND f.build_year = b.build_year)
             ),

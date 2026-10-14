@@ -199,6 +199,29 @@ class YachtSuccessorComputeServiceTest {
     }
 
     @Test
+    fun `R02 - matched on the raw partner name, never on the public name Boat4You`() {
+        // two boats named after their (different) agencies: both read "Boat4You" since V9_87, two different boats
+        yacht(300, "Boat4You", active = false)
+        partnerName(300, "Rhodes Yachting")
+        yacht(301, "Boat4You", active = true, agency = BROKER)
+        partnerName(301, "Active Cruises")
+        // the raw names agree: one boat, whatever the public name of each copy (302 renamed, 303 not yet re-synced)
+        yacht(302, "Boat4You Aurora", active = false)
+        partnerName(302, "Sunsail Aurora")
+        yacht(303, "Sunsail Aurora", active = true, agency = BROKER)
+        // "boat4you" itself is a placeholder, never a boat name
+        yacht(304, "Boat4You", active = false, model = LAGOON_46, length = 13.99)
+        yacht(305, "Boat4You", active = true, agency = BROKER, model = LAGOON_46, length = 13.99)
+
+        successors() shouldBe mapOf(302L to 303L)
+    }
+
+    private fun partnerName(
+        id: Long,
+        raw: String,
+    ) = jdbc.update("UPDATE yacht SET partner_name = ? WHERE id = ?", raw, id)
+
+    @Test
     fun `never another build year or another country`() {
         yacht(10, "Zoa", active = false)
         yacht(11, "Zoa", active = true, agency = BROKER, year = 2019)

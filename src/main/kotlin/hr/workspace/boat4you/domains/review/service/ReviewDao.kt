@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.review.service
 
+import hr.workspace.boat4you.domains.catalouge.utils.YachtLabel
 import hr.workspace.boat4you.domains.review.ReviewKind
 import hr.workspace.boat4you.domains.review.ReviewStatus
 import hr.workspace.boat4you.domains.review.dto.ReviewValuesDto
@@ -94,7 +95,8 @@ object ReviewLabels {
     ): String {
         val mf = manufacturer?.trim()?.takeIf { it.isNotBlank() }
         val md = model?.trim()?.takeIf { it.isNotBlank() }
-        val nm = name?.trim()?.takeIf { it.isNotBlank() }
+        // R31 (owner flag F13): a name that only repeats the model is left out ("Gulet", not "Gulet Gulet")
+        val nm = name?.trim()?.takeIf { it.isNotBlank() && !YachtLabel.nameRepeatsModel(md, it) }
         val manufacturerPart = mf?.takeUnless { md != null && md.startsWith(it, ignoreCase = true) }
         return listOfNotNull(manufacturerPart, md, nm).joinToString(" ").ifBlank { "—" }
     }

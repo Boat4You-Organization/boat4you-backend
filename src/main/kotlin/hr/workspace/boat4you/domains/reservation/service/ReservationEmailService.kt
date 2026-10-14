@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.CharterAgreementService
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
+import hr.workspace.boat4you.domains.catalouge.utils.YachtLabel
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDto
 import hr.workspace.boat4you.domains.reservation.enums.PaymentType
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
@@ -88,10 +89,7 @@ class ReservationEmailService(
         val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModel = yacht.model?.name
         val yachtName = yacht.name
-        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModel, yachtName)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { yachtName ?: "—" }
+        val yachtFullLabel = emailYachtLabel(yachtManufacturer, yachtModel, yachtName)
 
         val currencySymbol = Currency.getInstance(reservation.currency).getSymbol(Locale.getDefault()).toString()
 
@@ -332,10 +330,7 @@ class ReservationEmailService(
         val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModelName = yacht.model?.name
         val yachtName = yacht.name
-        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModelName, yachtName)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { yachtName ?: "—" }
+        val yachtFullLabel = emailYachtLabel(yachtManufacturer, yachtModelName, yachtName)
 
         val currencySymbol =
             Currency
@@ -568,10 +563,7 @@ class ReservationEmailService(
         val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModel = yacht.model?.name
         val yachtName = yacht.name
-        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModel, yachtName)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { yachtName ?: "—" }
+        val yachtFullLabel = emailYachtLabel(yachtManufacturer, yachtModel, yachtName)
 
         val pickupDateHour = "${reservation.dateFrom!!.format(dateFormatter)}<br/>${reservation.dateFrom!!.format(hourFormatter)}"
         val dropOffDateHourPeriod =
@@ -717,10 +709,7 @@ class ReservationEmailService(
         val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModel = yacht.model?.name
         val yachtName = yacht.name
-        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModel, yachtName)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { yachtName ?: "—" }
+        val yachtFullLabel = emailYachtLabel(yachtManufacturer, yachtModel, yachtName)
 
         val pickupDateHour = "${reservation.dateFrom!!.format(dateFormatter)}<br/>${reservation.dateFrom!!.format(hourFormatter)}"
         val dropOffDateHourPeriod =
@@ -834,10 +823,7 @@ class ReservationEmailService(
         val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModel = yacht.model?.name
         val yachtName = yacht.name
-        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModel, yachtName)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { yachtName ?: "—" }
+        val yachtFullLabel = emailYachtLabel(yachtManufacturer, yachtModel, yachtName)
 
         val pickupDateHour = "${reservation.dateFrom!!.format(dateFormatter)}<br/>${reservation.dateFrom!!.format(hourFormatter)}"
         val dropOffDateHourPeriod =
@@ -925,10 +911,7 @@ class ReservationEmailService(
         val yachtManufacturer = yacht.model?.manufacturer?.name?.takeIf { it.isNotBlank() }
         val yachtModel = yacht.model?.name
         val yachtName = yacht.name
-        val yachtFullLabel = listOfNotNull(yachtManufacturer, yachtModel, yachtName)
-            .filter { it.isNotBlank() }
-            .joinToString(" ")
-            .ifBlank { yachtName ?: "—" }
+        val yachtFullLabel = emailYachtLabel(yachtManufacturer, yachtModel, yachtName)
 
         val pickupDateHour = "${reservation.dateFrom!!.format(dateFormatter)}<br/>${reservation.dateFrom!!.format(hourFormatter)}"
         val dropOffDateHourPeriod =
@@ -1010,8 +993,7 @@ class ReservationEmailService(
         // Same redesigned-shell variables as the cancellation emails.
         val dateFormatter = DateTimeFormatter.ofPattern("dd MMMM yyyy")
         val hourFormatter = DateTimeFormatter.ofPattern("HH:mm")
-        val yachtFullLabel = listOfNotNull(yacht?.model?.manufacturer?.name, yacht?.model?.name, yacht?.name)
-            .filter { it.isNotBlank() }.joinToString(" ").ifBlank { yacht?.name ?: "—" }
+        val yachtFullLabel = emailYachtLabel(yacht?.model?.manufacturer?.name, yacht?.model?.name, yacht?.name)
 
         val variables = mapOf(
             "fullName" to fullName,
@@ -1141,3 +1123,17 @@ class ReservationEmailService(
         }.getOrNull()
     }
 }
+
+/**
+ * The yacht in the reservation e-mails: Manufacturer + Model + Name (Mario rule 3.5.2026), the name left out when it
+ * only repeats the model ("Gulet", not "Gulet Gulet" - R31, owner flag F13). The inquiry e-mail (LOCKED) does not use it.
+ */
+internal fun emailYachtLabel(
+    manufacturer: String?,
+    model: String?,
+    name: String?,
+): String =
+    listOfNotNull(manufacturer, model, name?.takeUnless { YachtLabel.nameRepeatsModel(model, it) })
+        .filter { it.isNotBlank() }
+        .joinToString(" ")
+        .ifBlank { name ?: "—" }
