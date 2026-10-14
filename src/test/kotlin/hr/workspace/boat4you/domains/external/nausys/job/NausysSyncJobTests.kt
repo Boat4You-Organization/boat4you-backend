@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.external.enums.MethodCacheEnum
 import hr.workspace.boat4you.domains.external.nausys.config.NauSysRateLimitStats
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysAvailabilityIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysCatalogueIntegrationService
+import hr.workspace.boat4you.domains.external.nausys.service.NauSysFreeOfferReverifyService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysOfferSyncRunSummary
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtIntegrationService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationService
@@ -40,12 +41,13 @@ class NausysSyncJobTests {
     private val availability: NauSysAvailabilityIntegrationService = mock(NauSysAvailabilityIntegrationService::class.java)
     private val cache: ServiceCallCacheService = mock(ServiceCallCacheService::class.java)
     private val offersAsync: NauSysYachtOfferIntegrationServiceAsync = mock(NauSysYachtOfferIntegrationServiceAsync::class.java)
+    private val reverify: NauSysFreeOfferReverifyService = mock(NauSysFreeOfferReverifyService::class.java)
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> anyK(): T = ArgumentMatchers.any<T>() ?: null as T
 
     private val job =
-        NausysSyncJob(offers, yachts, catalogue, availability, cache, NauSysRateLimitStats(), offersAsync).apply {
+        NausysSyncJob(offers, yachts, catalogue, availability, cache, NauSysRateLimitStats(), offersAsync, reverify).apply {
             availabilityWaitPollMs = 0
             availabilityWaitMaxMs = 0
             gateWaitMaxMs = 0
