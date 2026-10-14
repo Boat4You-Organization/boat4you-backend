@@ -3,7 +3,7 @@
 --   * internal "update manually" notes dropped,
 --   * "(to be (re)confirmed by NSS[ office])" -> "(to be confirmed by Boat4You)" (capital T kept),
 --   * curated partner names (resources/partner/replace.v9_83.txt, a frozen snapshot of replace.txt; unqualified entries
---     also in ALL CAPS, PartnerCopySanitizer.forms) -> Boat4You.
+--     also in ALL CAPS, PartnerCopySanitizer.parseEntries(withCapitals)) -> Boat4You.
 -- Rows that need Kotlin-only rules - premises (P1, possessive, with a preposition or as a label: "Sunsail base fee"),
 -- legal disclaimers (P2), "the Company", contacts, HTML and entities, and an "@proper" name used as an ordinary word
 -- (Italian "Navigare a vela ...") - are SKIPPED: N4 alone would turn "Athenian Yachts' Pier" into "Boat4You' Pier". Every sync rewrites

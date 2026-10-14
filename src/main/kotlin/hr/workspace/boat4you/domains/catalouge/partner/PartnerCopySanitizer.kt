@@ -60,7 +60,11 @@ object PartnerCopySanitizer {
             .map { it.substringBefore('#').trim() }
             .filter { it.isNotEmpty() }
 
-    fun parseEntries(lines: List<String>): List<Entry> =
+    /** The entries of [lines], longest first; [withCapitals] adds the forms N3/N4 match ([capitals]). */
+    fun parseEntries(
+        lines: List<String>,
+        withCapitals: Boolean = false,
+    ): List<Entry> =
         lines
             .map { line ->
                 when {
@@ -69,6 +73,7 @@ object PartnerCopySanitizer {
                     else -> Entry(line, false)
                 }
             }.sortedByDescending { it.name.length }
+            .let { if (withCapitals) capitals(it) else it }
 
     private const val MODEL_QUALIFIER = "@model"
     private const val PROPER_QUALIFIER = "@proper"
@@ -78,7 +83,7 @@ object PartnerCopySanitizer {
      * ("SUNSAIL", "NSS CHARTER"; partners write their name in capitals too). A qualified entry stays case-exact: it is
      * ambiguous in capitals ("NAVIGARE A VELA", "MOORINGS"). V9_83 carries the same forms (ReplaceListContractTest).
      */
-    fun forms(entries: List<Entry>): List<Entry> =
+    private fun capitals(entries: List<Entry>): List<Entry> =
         entries
             .flatMap { e ->
                 val upper = e.name.uppercase()
@@ -86,6 +91,7 @@ object PartnerCopySanitizer {
             }.sortedByDescending { it.name.length }
 
     val replaceEntries: List<Entry> = parseEntries(readLines(REPLACE_RESOURCE))
+    private val replaceForms: List<Entry> = parseEntries(readLines(REPLACE_RESOURCE), withCapitals = true)
 
     /** Premises-only names plus every replace.txt name, each also in capitals (the premises noun makes them safe), longest first. */
     val premisesNames: List<String> =
@@ -103,7 +109,7 @@ object PartnerCopySanitizer {
             Regex.escape(e.name) + if (e.beforeModelOrPossessive) """(?=\s*[0-9]|['’]s\b)""" else ""
         }
 
-    private val replaceAlt = alternation(forms(replaceEntries))
+    private val replaceAlt = alternation(replaceForms)
     private val premisesAlt = premisesNames.joinToString("|") { Regex.escape(it) }
 
     /** Possessive marker: 's, ’s, or a bare apostrophe after a name ending in s ("Ionian Catamarans' pontoon"). */
@@ -367,13 +373,13 @@ object PartnerCopySanitizer {
         text: String,
         m: MatchResult,
     ): Boolean {
-        if (m.value !in properNounOnlyNames) return false
         var i = m.range.first - 1
         while (i >= 0 && (text[i] == ' ' || text[i] == '\t')) i--
-        if (i >= 0 && text[i] !in ".!?:\n") return false
         var j = m.range.last + 1
         while (j < text.length && text[j].isWhitespace()) j++
-        return j > m.range.last + 1 && j < text.length && text[j].isLowerCase()
+        val opensSentence = i < 0 || text[i] in ".!?:\n"
+        val lowercaseWordAfter = j > m.range.last + 1 && j < text.length && text[j].isLowerCase()
+        return m.value in properNounOnlyNames && opensSentence && lowercaseWordAfter
     }
 
     private fun neutralNoun(noun: String): String =

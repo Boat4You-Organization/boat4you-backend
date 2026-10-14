@@ -103,7 +103,7 @@ class ReplaceListContractTest {
         assertTrue(replace.containsAll(snapshot), "replace.v9_83.txt must stay a subset of replace.txt: ${snapshot - replace.toSet()}")
 
         val expected =
-            PartnerCopySanitizer.forms(snapshot).joinToString("|") { e ->
+            PartnerCopySanitizer.parseEntries(PartnerCopySanitizer.readLines(PartnerCopySanitizer.REPLACE_V9_83_RESOURCE), withCapitals = true).joinToString("|") { e ->
                 e.name + if (e.beforeModelOrPossessive) "(?=[[:space:]]*[0-9]|[''’]s\\M)" else ""
             }
         val sql = ClassPathResource(R01MigrationTest.MIGRATION).inputStream.bufferedReader().readText()
