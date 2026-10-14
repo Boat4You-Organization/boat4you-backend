@@ -117,11 +117,16 @@ class RealPriceEvidenceStoresTest {
     }
 
     @Test
-    fun `deleting a yacht cascades to its period checks`() {
+    fun `period checks carry no FK on yacht - a yacht delete never waits on them, retention reaps the rows`() {
+        // No FK on purpose (V9_82 header): an FK would lock yacht during the migration behind an open sync transaction.
+        jdbc.queryForObject(
+            "SELECT count(*) FROM pg_constraint WHERE conrelid = 'partner_period_check'::regclass AND contype = 'f'",
+            Int::class.java,
+        ) shouldBe 0
         jdbc.update("INSERT INTO yacht (id, name) VALUES (99, 'gone')")
         checks.upsertPending(MMK, 99, D1, D2, 3)
         jdbc.update("DELETE FROM yacht WHERE id = 99")
-        count("partner_period_check") shouldBe 0
+        count("partner_period_check") shouldBe 1
     }
 
     // ---- PartnerPeriodCheckStore
