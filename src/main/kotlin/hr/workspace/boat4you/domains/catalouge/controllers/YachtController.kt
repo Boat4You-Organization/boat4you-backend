@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.controllers
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.dto.OfferDto
 import hr.workspace.boat4you.domains.catalouge.dto.PriceCalcDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtAvailabilityDto
@@ -51,6 +52,7 @@ class YachtController(
     private val userRepository: UserRepository,
     private val yachtTwinCanonicalService: YachtTwinCanonicalService,
     private val equipmentAliases: EquipmentAliases,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     @Operation(description = "Fetch all yachts by search criteria")
     @GetMapping
@@ -218,8 +220,11 @@ class YachtController(
         // is resolved live against external_reservations at query time, so a
         // skipped or in-flight warm never yields a false "available for your
         // exact week".
+        // NAUSYS_WARM_LONG_RANGES=ON (DESIGN.md B3): the NauSys grid only stores Sat→Sat 7 nights (+ the agency
+        // minimalDuration), so other weekly ranges warm NauSys again (per partner, capped, in ExternalSyncService);
+        // MMK keeps the rule above. OFF: shouldWarmAny is exactly shouldWarm.
         if (startDate != null && endDate != null && locations != null) {
-            if (SearchWarmPolicy.shouldWarm(startDate, endDate)) {
+            if (SearchWarmPolicy.shouldWarmAny(startDate, endDate, realPriceSwitches.nausysWarmLongRanges.isOn)) {
                 externalSyncService.syncYachtOffers(startDate, endDate, locations)
             }
         }

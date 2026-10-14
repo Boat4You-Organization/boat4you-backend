@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.controllers
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import hr.workspace.boat4you.common.config.RealPriceSwitchesFixture
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
@@ -43,6 +44,7 @@ class YachtControllerSuccessorTests {
                     mock(UserRepository::class.java),
                     twins,
                     mock(EquipmentAliases::class.java),
+                    RealPriceSwitchesFixture.switches(),
                 ),
             ).setControllerAdvice(ApiErrorHandler())
             .build()

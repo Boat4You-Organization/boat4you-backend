@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.controllers
 
+import hr.workspace.boat4you.common.config.RealPriceSwitchesFixture
 import hr.workspace.boat4you.domains.catalouge.dto.YachtSearchParamObject
 import hr.workspace.boat4you.domains.catalouge.equipment.EquipmentAliases
 import hr.workspace.boat4you.domains.catalouge.jpa.EquipmentRepository
@@ -42,6 +43,7 @@ class YachtControllerLegacyAvailabilityTests {
             mock(UserRepository::class.java),
             mock(YachtTwinCanonicalService::class.java),
             EquipmentAliases(mock(EquipmentRepository::class.java) { inv -> if (inv.method.name == "findAllByOrderByIdAsc") emptyList<Any>() else null }),
+            RealPriceSwitchesFixture.switches(),
         )
 
     @BeforeEach

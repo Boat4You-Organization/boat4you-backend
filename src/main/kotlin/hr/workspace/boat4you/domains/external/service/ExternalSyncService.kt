@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.external.service
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.LocationType
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
@@ -9,6 +10,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.exceptions.ExternalSystemException
+import hr.workspace.boat4you.domains.external.exceptions.NauSysRateLimitedException
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferIntegrationService
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferIntegrationServiceAsync
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtOfferIntegrationService
@@ -47,6 +49,9 @@ class ExternalSyncService(
     private val yachtSyncMutex: YachtSyncMutex,
     private val nausysSearchSyncRetryQueue: NausysSearchSyncRetryQueue,
     transactionManager: PlatformTransactionManager,
+    private val realPriceSwitches: RealPriceSwitches,
+    private val liveSearchWarmBudget: LiveSearchWarmBudget,
+    private val partnerSearchWarmMarkers: PartnerSearchWarmMarkers,
 ) {
     private val log = LoggerFactory.getLogger(ExternalSyncService::class.java)
 
@@ -83,6 +88,12 @@ class ExternalSyncService(
         endDate: LocalDate,
         locations: List<String>,
     ) {
+        if (realPriceSwitches.nausysWarmLongRanges.isOn) {
+            syncYachtOffersPerPartner(startDate, endDate, locations)
+            return
+        }
+        // NAUSYS_WARM_LONG_RANGES=OFF: exactly the warm since 5.9.2026. The caller (YachtController) only gets here
+        // for SearchWarmPolicy.shouldWarm ranges, which with the switch OFF is both shouldWarmMmk and shouldWarmNauSys.
         val shouldCall = serviceCallCacheService.shouldCallYachtSearch(startDate, endDate, locations)
         if (!shouldCall) {
             return
@@ -117,6 +128,51 @@ class ExternalSyncService(
     }
 
     /**
+     * `NAUSYS_WARM_LONG_RANGES=ON` (DESIGN.md B3): each partner is warmed only when its own [SearchWarmPolicy] rule
+     * allows it and its own 3 h marker is stale, and each partner writes its own marker, so a NauSys-only range
+     * (e.g. a 14-night Saturday or a Wednesday 7-night) never warms MMK, and an MMK failure never re-warms NauSys.
+     * The live NauSys call goes through [LiveSearchWarmBudget]; a warm over the daily cap or with the circuit open
+     * is parked in nausys_search_sync_retry instead (still marked, so the request path does not re-park it).
+     */
+    private fun syncYachtOffersPerPartner(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        locations: List<String>,
+    ) {
+        val nausysDue =
+            SearchWarmPolicy.shouldWarmNauSys(startDate, endDate, longRanges = true) &&
+                partnerSearchWarmMarkers.isDue(ExternalSystemEnum.NAUSYS, startDate, endDate, locations)
+        val mmkDue =
+            SearchWarmPolicy.shouldWarmMmk(startDate, endDate) &&
+                partnerSearchWarmMarkers.isDue(ExternalSystemEnum.MMK, startDate, endDate, locations)
+        if (!nausysDue && !mmkDue) {
+            return
+        }
+        try {
+            val locationGroups = getLocationGroupsByExternalSystem(locations)
+            if (nausysDue) {
+                warmNauSys(startDate, endDate, locationGroups[ExternalSystemEnum.NAUSYS.value]!!, liveSearchWarmBudget)
+                partnerSearchWarmMarkers.save(ExternalSystemEnum.NAUSYS, startDate, endDate, locations)
+            }
+            if (mmkDue) {
+                val mmkGroup = locationGroups[ExternalSystemEnum.MMK.value]!!
+                mmkYachtOfferIntegrationServiceAsync.syncOffersForDateRangeBlocking(
+                    startDate,
+                    endDate,
+                    mmkGroup.countryCodes,
+                    mmkGroup.regions,
+                    mmkGroup.locations,
+                )
+                partnerSearchWarmMarkers.save(ExternalSystemEnum.MMK, startDate, endDate, locations)
+            }
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            log.error("Failed to sync yacht offers for locations {}: {}", locations, e.message, e)
+        }
+    }
+
+    /**
      * Live NauSys part of the search warm. Mario, 5.9.2026: search is served from the
      * DB and the API node must not retry NauSys itself — 681 of 1,362 warms/day failed
      * with 429/502 and were only logged, while the same quota starved the scheduler. A
@@ -125,17 +181,26 @@ class ExternalSyncService(
      * a real error. In both cases the caller still runs MMK and writes the 3 h marker,
      * so the range is not re-warmed from the request path before the scheduler had
      * its turn (no hammering).
+     *
+     * [budget] is null with `NAUSYS_WARM_LONG_RANGES=OFF` (today: no cap, no circuit). With a budget, a warm the
+     * budget does not allow is parked without a call, and every rate-limit failure is reported to the circuit.
      */
     private fun warmNauSys(
         startDate: LocalDate,
         endDate: LocalDate,
         group: LocationExternalGroup,
+        budget: LiveSearchWarmBudget? = null,
     ) {
         if (group.countries.isNullOrEmpty() && group.regions.isNullOrEmpty() && group.locations.isNullOrEmpty()) {
             // None of the searched `did` tokens maps to a NauSys location (MMK-only
             // marinas/regions): an all-null filter would be a WORLD-WIDE
             // freeYachtsSearch (2000 rows, the heaviest NauSys call) that cannot
             // contain the searched place — and, queued, would be replayed 6×.
+            return
+        }
+        val decision = budget?.tryAcquire() ?: LiveSearchWarmBudget.Decision.CALL
+        if (decision != LiveSearchWarmBudget.Decision.CALL) {
+            park(startDate, endDate, group, LiveSearchWarmBudget.DeferredException(decision))
             return
         }
         try {
@@ -146,17 +211,46 @@ class ExternalSyncService(
                 group.regions,
                 group.locations,
             )
+        } catch (e: NauSysRateLimitedException) {
+            budget?.recordRateLimited()
+            onNauSysWarmFailure(startDate, endDate, group, e)
         } catch (e: Exception) {
-            if (!isTransientNauSysFailure(e)) {
-                log.error("NauSYS search warm $startDate→$endDate failed (not retried): {}", e.message, e)
-                return
-            }
-            try {
-                nausysSearchSyncRetryQueue.enqueue(startDate, endDate, group.countries, group.regions, group.locations, e)
-                log.warn("NauSYS search warm $startDate→$endDate deferred to nausys_search_sync_retry (drained on the scheduler): $e")
-            } catch (queueError: Exception) {
-                log.error("NauSYS search warm $startDate→$endDate failed ($e) and could not be queued for retry", queueError)
-            }
+            onNauSysWarmFailure(startDate, endDate, group, e)
+        }
+    }
+
+    /** Today's failure handling of the live NauSys warm: transient → nausys_search_sync_retry, otherwise logged. */
+    private fun onNauSysWarmFailure(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        group: LocationExternalGroup,
+        e: Exception,
+    ) {
+        if (!isTransientNauSysFailure(e)) {
+            log.error("NauSYS search warm $startDate→$endDate failed (not retried): {}", e.message, e)
+            return
+        }
+        try {
+            nausysSearchSyncRetryQueue.enqueue(startDate, endDate, group.countries, group.regions, group.locations, e)
+            log.warn("NauSYS search warm $startDate→$endDate deferred to nausys_search_sync_retry (drained on the scheduler): $e")
+        } catch (queueError: Exception) {
+            log.error("NauSYS search warm $startDate→$endDate failed ($e) and could not be queued for retry", queueError)
+        }
+    }
+
+    /** Parks a warm the [LiveSearchWarmBudget] did not allow; quiet (the budget logs the cap / circuit once). */
+    private fun park(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        group: LocationExternalGroup,
+        reason: LiveSearchWarmBudget.DeferredException,
+    ) {
+        try {
+            nausysSearchSyncRetryQueue.enqueue(startDate, endDate, group.countries, group.regions, group.locations, reason)
+        } catch (
+            @Suppress("TooGenericExceptionCaught") queueError: Exception,
+        ) {
+            log.error("Live search warm $startDate→$endDate parked (${reason.message}) but could not be queued", queueError)
         }
     }
 
