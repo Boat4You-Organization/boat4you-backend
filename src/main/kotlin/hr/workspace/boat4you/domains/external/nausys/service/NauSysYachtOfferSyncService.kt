@@ -22,6 +22,11 @@ import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
+import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
+import hr.workspace.boat4you.domains.external.evidence.PeriodCheck
+import hr.workspace.boat4you.domains.external.evidence.PeriodCheckPriority
+import hr.workspace.boat4you.domains.external.evidence.PeriodCheckResult
+import hr.workspace.boat4you.domains.external.evidence.ReverifyJobs
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.service.YachtSyncMutex
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
@@ -51,6 +56,7 @@ class NauSysYachtOfferSyncService(
     private val yachtRepository: YachtRepository,
     private val yachtSyncMutex: YachtSyncMutex,
     private val realPriceSwitches: RealPriceSwitches,
+    private val periodChecks: PartnerPeriodCheckStore,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -70,6 +76,17 @@ class NauSysYachtOfferSyncService(
          * status back to FREE and ext_status to the raw NauSys value — no additional cleanup needed.
          */
         const val SYNTHETIC_DISAPPEARANCE_EXT_STATUS = "SYNTHETIC_DISAPPEARANCE"
+
+        /** NauSys' own "under option" status (mapped to OPTION_WAITING): a real partner hold, never flipped by D3. */
+        const val NAUSYS_UNDER_OPTION_EXT_STATUS = "UNDER_OPTION"
+
+        /** D3 per-response breaker: above this share of unpriced yachts in one answer, no strikes (agency escalated). */
+        const val D3_MAX_UNPRICED_SHARE = 0.5
+
+        /** `partner_offer_flip_log.reason` values written by D3 (WRITE). */
+        const val REASON_ROUTE_GONE = "ROUTE_GONE"
+        const val REASON_UNPRICED_TWO_DAY = "UNPRICED_TWO_DAY"
+        const val REASON_LEGACY_NOT_RETURNED = "LEGACY_NOT_RETURNED"
     }
 
     /**
@@ -77,7 +94,16 @@ class NauSysYachtOfferSyncService(
      * (8.7.2026 Hikari exhaustion — see the MMK twin for the full note). A yacht another
      * sync path is writing right now is skipped and heals on the next run; one yacht's
      * failure no longer rolls back the rest of the batch.
+     *
+     * D3 (real-price DESIGN.md B2, `NAUSYS_D3_MODE`): [d3] null = LEGACY, today's disappearance pass unchanged. LOG =
+     * today's writes plus would-flip / would-strike counts per agency and reason in the NAUSYS_D3 run. WRITE = the
+     * pass never marks SYNTHETIC_DISAPPEARANCE again: a stale route variant flips to UNAVAILABLE at once (flip-logged,
+     * guarded), a FREE-unpriced answer is a strike (status unchanged; a later-day second one flips), our mapping gap
+     * leaves the row unchanged, real UNDER_OPTION rows and rows with a reservation_flow are never touched.
+     * In every mode the rows the partner returns as OPTION / OPTION_WAITING are recorded as QUOTED_OPTION evidence
+     * in `partner_period_check` (one batch per answer).
      */
+    @Suppress("LongMethod", "CyclomaticComplexMethod") // the pre-real-price pass, kept in place so LEGACY stays byte-identical
     fun syncOffers(
         agency: Agency,
         nausysOffers: RestFreeYachtList,
@@ -90,6 +116,7 @@ class NauSysYachtOfferSyncService(
         // absence of a 7-day offer means "not 7-day bookable", NOT "no longer free".
         // Flipping would wrongly show genuinely-free weeks as pre-reserved.
         skipDisappearance: Boolean = false,
+        d3: NauSysD3Run? = null,
     ): Int {
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
         val allMappings =
@@ -108,6 +135,17 @@ class NauSysYachtOfferSyncService(
         var disappeared = 0
         // D6 switch, read once per batch so every extra of the batch is classified alike.
         val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
+        // A2 evidence (all D3 modes): periods the partner returned as OPTION / OPTION_WAITING in this answer.
+        val quotedOptions = mutableListOf<PeriodCheck>()
+        // D3 per-response breaker: a reseller losing its pricing must never strike its whole fleet.
+        val unpricedBreaker = d3 != null && unpricedYachtShare(nausysOffers, dateFrom, dateTo) > D3_MAX_UNPRICED_SHARE
+        if (unpricedBreaker) {
+            d3!!.escalate(agency.id!!)
+            log.error(
+                "NauSys D3 [${d3.mode}]: agency ${agency.id} answered more than ${(D3_MAX_UNPRICED_SHARE * 100).toInt()} % of its yachts " +
+                    "FREE without a price for $dateFrom..$dateTo - no unpriced strikes from this answer, escalated for a human decision",
+            )
+        }
 
         nausysOffers.freeYachts?.groupBy { it.yachtId }?.forEach { (yachtId, nausysYachtOffers) ->
             // Defensive: same NPE risk as MmkYachtOfferSyncService — partner may
@@ -132,11 +170,15 @@ class NauSysYachtOfferSyncService(
 
                         val existingYachtOffers = getOffersForYacht(yacht, nausysYachtOffers)
 
+                        // D3: what the answer did for exactly the processed interval (classifies the stale rows below)
+                        val exactResults = mutableListOf<OfferUpdateResult>()
                         if (existingYachtOffers.isEmpty()) {
                             nausysYachtOffers.forEach { nausysOffer ->
-                                if (updateOffer(Offer(), yacht, nausysOffer, allLocationMappings, optionalOnSite) != OfferUpdateResult.UPDATED) {
+                                val result = updateOffer(Offer(), yacht, nausysOffer, allLocationMappings, optionalOnSite)
+                                if (result != OfferUpdateResult.UPDATED) {
                                     skippedCount++
                                 }
+                                noteQuotedOption(systemYachtId, nausysOffer, result, quotedOptions)
                             }
                         } else {
                             nausysYachtOffers.forEach { nausysOffer ->
@@ -170,6 +212,8 @@ class NauSysYachtOfferSyncService(
                                     syncedOffers.add(existingOffer.id!!)
                                 }
                                 if (result != OfferUpdateResult.UPDATED) skippedCount++
+                                noteQuotedOption(systemYachtId, nausysOffer, result, quotedOptions)
+                                if (nausysOffer.periodFrom?.value == dateFrom && nausysOffer.periodTo?.value == dateTo) exactResults += result
                             }
                         }
 
@@ -185,14 +229,25 @@ class NauSysYachtOfferSyncService(
                         // silently vanishing (UNAVAILABLE is filtered out by yacht_search_view).
                         // Skip entirely for the supplemental 7-day min-stay query (see param doc).
                         if (skipDisappearance) return@runExclusiveYachtWrite
-                        existingYachtOffers
-                            .filter { it.dateFrom == dateFrom && it.dateTo == dateTo }
-                            .filter {
-                                !syncedOffers.contains(it.id!!) &&
-                                    it.status != OfferStatus.UNAVAILABLE &&
-                                    it.extStatus != NauSysAvailabilitySyncService.SYNTHETIC_OPTION_EXT_STATUS &&
-                                    it.extStatus != SYNTHETIC_DISAPPEARANCE_EXT_STATUS
-                            }.forEach { offer ->
+                        val stale =
+                            existingYachtOffers
+                                .filter { it.dateFrom == dateFrom && it.dateTo == dateTo }
+                                .filter {
+                                    !syncedOffers.contains(it.id!!) &&
+                                        it.status != OfferStatus.UNAVAILABLE &&
+                                        it.extStatus != NauSysAvailabilitySyncService.SYNTHETIC_OPTION_EXT_STATUS &&
+                                        it.extStatus != SYNTHETIC_DISAPPEARANCE_EXT_STATUS
+                                }
+                        if (d3 != null && stale.isNotEmpty()) {
+                            val reason = d3Reason(exactResults)
+                            if (d3.writes) {
+                                disappeared += d3Write(agency.id!!, systemYachtId, stale, reason, unpricedBreaker, dateFrom, dateTo, d3)
+                                return@runExclusiveYachtWrite
+                            }
+                            // LOG: counted on the state before today's writes below
+                            d3Log(agency.id!!, systemYachtId, stale, reason, unpricedBreaker, dateFrom, dateTo, d3)
+                        }
+                        stale.forEach { offer ->
                                 disappeared++
                                 if (offer.status == OfferStatus.FREE) {
                                     offer.status = OfferStatus.OPTION_WAITING
@@ -223,7 +278,216 @@ class NauSysYachtOfferSyncService(
         if (skippedYachtCount > 0) {
             log.warn("NauSys offer sync for agency ${agency.id}: skipped $skippedYachtCount yachts due to missing Yacht mappings")
         }
+        recordQuotedOptions(quotedOptions)
+        d3?.responseDone()
         return disappeared
+    }
+
+    /** A2 evidence: a row the partner returned as OPTION / OPTION_WAITING and we wrote (all D3 modes). */
+    private fun noteQuotedOption(
+        yachtId: Long,
+        nausysOffer: RestFreeYacht,
+        result: OfferUpdateResult,
+        into: MutableList<PeriodCheck>,
+    ) {
+        if (result != OfferUpdateResult.UPDATED) return
+        val status = OfferStatus.fromNausysValue(nausysOffer.status)
+        if (status != OfferStatus.OPTION && status != OfferStatus.OPTION_WAITING) return
+        val from = nausysOffer.periodFrom?.value ?: return
+        val to = nausysOffer.periodTo?.value ?: return
+        into += PeriodCheck(yachtId, from, to, PeriodCheckPriority.SAMPLE, PeriodCheckResult.QUOTED_OPTION)
+    }
+
+    /** One JDBC batch per answer; bookkeeping never breaks the sync. */
+    private fun recordQuotedOptions(checks: List<PeriodCheck>) {
+        if (checks.isEmpty()) return
+        runCatching { periodChecks.recordCheckedBatch(ExternalSystemEnum.NAUSYS, checks.distinct()) }
+            .onFailure { log.warn("NauSys QUOTED_OPTION bookkeeping: ${checks.size} periods not recorded: ${it.message}") }
+    }
+
+    /**
+     * Share of the yachts in [answer] that came back FREE without a price for exactly [dateFrom]..[dateTo] (the D3
+     * per-response breaker reads the answer alone, before any write).
+     */
+    internal fun unpricedYachtShare(
+        answer: RestFreeYachtList,
+        dateFrom: LocalDate,
+        dateTo: LocalDate,
+    ): Double {
+        val byYacht = answer.freeYachts.orEmpty().groupBy { it.yachtId }
+        if (byYacht.isEmpty()) return 0.0
+        val unpriced =
+            byYacht.values.count { rows ->
+                rows.any { r -> r.periodFrom?.value == dateFrom && r.periodTo?.value == dateTo && isFreeUnpriced(r) }
+            }
+        return unpriced.toDouble() / byYacht.size
+    }
+
+    private fun isFreeUnpriced(r: RestFreeYacht): Boolean {
+        val price = r.price?.clientPrice?.toBigDecimalOrNull()
+        return OfferStatus.fromNausysValue(r.status) == OfferStatus.FREE && (price == null || price <= BigDecimal.ZERO)
+    }
+
+    /** Why the yacht's rows of the interval were not refreshed: our mapping gap first, then route, unpriced, absent. */
+    private fun d3Reason(exactResults: List<OfferUpdateResult>): NauSysD3Run.Reason =
+        when {
+            OfferUpdateResult.SKIPPED_MISSING_LOCATION in exactResults -> NauSysD3Run.Reason.MAPPING_GAP
+            OfferUpdateResult.UPDATED in exactResults -> NauSysD3Run.Reason.ROUTE_GONE
+            OfferUpdateResult.FREE_UNPRICED in exactResults -> NauSysD3Run.Reason.UNPRICED
+            else -> NauSysD3Run.Reason.NOT_RETURNED
+        }
+
+    /** FREE / OPTION rows D3 may decide on (never a real UNDER_OPTION, never our SYNTHETIC markers). */
+    private fun d3Decidable(offer: Offer): Boolean =
+        (offer.status == OfferStatus.FREE || offer.status == OfferStatus.OPTION) && offer.extStatus != NAUSYS_UNDER_OPTION_EXT_STATUS
+
+    /** The rows today's legacy branch flips to UNAVAILABLE that D3 still flips: other non-FREE statuses, guarded. */
+    private fun d3LegacyNonFree(offer: Offer): Boolean =
+        !d3Decidable(offer) &&
+            offer.status != OfferStatus.FREE &&
+            offer.status != OfferStatus.OPTION_WAITING &&
+            offer.extStatus != NAUSYS_UNDER_OPTION_EXT_STATUS
+
+    /**
+     * D3 WRITE for the stale rows of one yacht and interval, inside the yacht's write transaction. Returns the number
+     * of rows whose status changed.
+     */
+    @Suppress("LongParameterList", "LongMethod") // the agency, yacht, rows, evidence, breaker, interval and run
+    private fun d3Write(
+        agencyId: Long,
+        yachtId: Long,
+        stale: List<Offer>,
+        reason: NauSysD3Run.Reason,
+        unpricedBreaker: Boolean,
+        dateFrom: LocalDate,
+        dateTo: LocalDate,
+        d3: NauSysD3Run,
+    ): Int {
+        d3.count(agencyId, reason, stale.size)
+        if (reason == NauSysD3Run.Reason.MAPPING_GAP) {
+            // OUR bug, not partner evidence: nothing changes, the counter (unknown) and the per-agency WARN line report it.
+            d3.tally.unknown.addAndGet(stale.size)
+            log.debug("NauSys D3: yacht=$yachtId $dateFrom..$dateTo ${stale.size} rows left unchanged (location mapping gap)")
+            return 0
+        }
+        var changed = 0
+        // Other non-FREE statuses keep today's UNAVAILABLE transition, guarded (no booking in progress).
+        stale.filter(::d3LegacyNonFree).forEach { offer ->
+            if (!offerRepository.existsReservationFlowForOffer(offer.id!!)) {
+                offer.status = OfferStatus.UNAVAILABLE
+                offerRepository.save(offer)
+                changed++
+            }
+        }
+        val decidable = stale.filter(::d3Decidable)
+        if (decidable.isEmpty()) return changed
+        when (reason) {
+            NauSysD3Run.Reason.ROUTE_GONE -> {
+                // Positive evidence for these dates: the partner quoted the yacht on another route. Flip at once.
+                val flipped = decidable.sumOf { flipRow(it, REASON_ROUTE_GONE, null, d3) }
+                changed += hidden(yachtId, dateFrom, dateTo, flipped, d3)
+            }
+            NauSysD3Run.Reason.UNPRICED -> {
+                if (unpricedBreaker) return changed
+                val firstEmptyOn =
+                    periodChecks.recordFirstStrike(
+                        ExternalSystemEnum.NAUSYS,
+                        yachtId,
+                        dateFrom,
+                        dateTo,
+                        PeriodCheckPriority.ON_DEMAND_OR_BOOKING,
+                        PeriodCheckResult.UNPRICED,
+                        d3.today,
+                    )
+                d3.tally.empty.incrementAndGet()
+                if (!firstEmptyOn.isBefore(d3.today)) {
+                    d3.tally.firstStrikes.incrementAndGet()
+                } else {
+                    val flipped = decidable.sumOf { flipRow(it, REASON_UNPRICED_TWO_DAY, firstEmptyOn, d3) }
+                    if (flipped == 0) periodChecks.clearStrike(ExternalSystemEnum.NAUSYS, yachtId, dateFrom, dateTo)
+                    changed += hidden(yachtId, dateFrom, dateTo, flipped, d3)
+                }
+            }
+            NauSysD3Run.Reason.NOT_RETURNED -> {
+                // A first strike for the reverifier (P3), which confirms with an exact single-yacht call; no status change.
+                val firstEmptyOn =
+                    periodChecks.recordFirstStrike(
+                        ExternalSystemEnum.NAUSYS,
+                        yachtId,
+                        dateFrom,
+                        dateTo,
+                        PeriodCheckPriority.ON_DEMAND_OR_BOOKING,
+                        PeriodCheckResult.EMPTY,
+                        d3.today,
+                    )
+                if (!firstEmptyOn.isBefore(d3.today)) d3.tally.firstStrikes.incrementAndGet()
+            }
+            NauSysD3Run.Reason.MAPPING_GAP -> {}
+        }
+        return changed
+    }
+
+    private fun flipRow(
+        offer: Offer,
+        reason: String,
+        firstEmptyOn: LocalDate?,
+        d3: NauSysD3Run,
+    ): Int =
+        offerRepository.markNauSysPeriodUnavailable(
+            offer.yacht!!.id!!,
+            offer.dateFrom!!,
+            offer.dateTo!!,
+            offer.id,
+            false,
+            d3.runId,
+            ReverifyJobs.NAUSYS_D3,
+            reason,
+            firstEmptyOn,
+            d3.today,
+        )
+
+    private fun hidden(
+        yachtId: Long,
+        dateFrom: LocalDate,
+        dateTo: LocalDate,
+        flipped: Int,
+        d3: NauSysD3Run,
+    ): Int {
+        if (flipped > 0) {
+            periodChecks.markHidden(ExternalSystemEnum.NAUSYS, yachtId, dateFrom, dateTo, flipped, d3.today)
+            d3.tally.hiddenPeriods.incrementAndGet()
+            d3.tally.hiddenRows.addAndGet(flipped)
+        }
+        return flipped
+    }
+
+    /** D3 LOG: what WRITE would do with the stale rows, counted before today's legacy writes run. */
+    @Suppress("LongParameterList") // the agency, yacht, rows, evidence, breaker, interval and run
+    private fun d3Log(
+        agencyId: Long,
+        yachtId: Long,
+        stale: List<Offer>,
+        reason: NauSysD3Run.Reason,
+        unpricedBreaker: Boolean,
+        dateFrom: LocalDate,
+        dateTo: LocalDate,
+        d3: NauSysD3Run,
+    ) {
+        d3.count(agencyId, reason, stale.size)
+        val decidable = stale.filter(::d3Decidable)
+        when (reason) {
+            NauSysD3Run.Reason.MAPPING_GAP -> d3.tally.unknown.addAndGet(stale.size)
+            NauSysD3Run.Reason.ROUTE_GONE ->
+                d3.tally.wouldFlipRows.addAndGet(
+                    decidable.sumOf { offerRepository.countNauSysPeriodFlippable(yachtId, dateFrom, dateTo, it.id, false) },
+                )
+            NauSysD3Run.Reason.UNPRICED ->
+                if (!unpricedBreaker && decidable.isNotEmpty()) {
+                    d3.tally.empty.incrementAndGet()
+                    d3.tally.firstStrikes.incrementAndGet()
+                }
+            NauSysD3Run.Reason.NOT_RETURNED -> if (decidable.isNotEmpty()) d3.tally.firstStrikes.incrementAndGet()
+        }
     }
 
     /**
