@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.external.exceptions.ExternalOptionException
 import hr.workspace.boat4you.domains.reservation.dto.CreateReservationDto
 import hr.workspace.boat4you.domains.reservation.exceptions.BookingCreationException
+import hr.workspace.boat4you.domains.reservation.exceptions.OfferNotBookableException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlow
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlowRepository
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
@@ -145,5 +146,30 @@ class BookingFailureAlertServiceTests {
         subject() shouldContain "Stelina"
         body() shouldContain "ana@example.com"
         body() shouldContain "no flow was created"
+    }
+
+    @Test
+    fun `a week that is no longer bookable (409 3006) has its own wording, not our system failure`() {
+        val dto =
+            CreateReservationDto(
+                yachtId = 9020,
+                offerId = 595995,
+                email = "ana@example.com",
+                name = "Ana",
+                surname = "Anić",
+                phoneNumber = "+385981112223",
+                specialRequest = null,
+                selectedExtras = null,
+            )
+        val rejection =
+            OfferNotBookableException(595995, 9020, week.dateFrom, week.dateTo, null, "status RESERVED")
+
+        service.alertRejectedRequest(dto, rejection)
+
+        subject() shouldContain "Termin više nije slobodan"
+        subject() shouldNotContain "NIJE prošla"
+        body() shouldContain "termin više nije slobodan za online rezervaciju (409/3006) – javite kupcu alternativu"
+        body() shouldNotContain "NAŠEG sustava"
+        body() shouldContain "OfferNotBookableException"
     }
 }

@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.reservation.dto.CreateReservationDto
+import hr.workspace.boat4you.domains.reservation.exceptions.OfferNotBookableException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationFlowRepository
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import org.slf4j.LoggerFactory
@@ -24,9 +25,10 @@ import java.util.concurrent.ConcurrentHashMap
  * in 14 minutes and we only found out because he wrote to us. A failed booking is the most expensive event on the
  * platform and we already know who it was - this makes sure a human sees it while the customer is still reachable.
  *
- * Two kinds, told apart in the subject: a SYSTEM failure (ours - the 19.9. class) and a PARTNER rejection (the yacht
- * was not available at the partner after all). The second is not an incident, but at this booking volume a customer
- * who just tried to pay for a week is a lead worth an alternative offer the same hour.
+ * Three kinds, told apart in the subject: a SYSTEM failure (ours - the 19.9. class), a PARTNER rejection (the yacht
+ * was not available at the partner after all) and a NOT_BOOKABLE week (BOOKING_C1, 409 / 3006: our own data already
+ * says the week is gone). The last two are not incidents, but at this booking volume a customer who just tried to pay
+ * for a week is a lead worth an alternative offer the same hour.
  *
  * Best-effort by contract: callers wrap it in runCatching and it must never change the HTTP outcome of the booking.
  * No Reply-To on purpose: the body carries internal diagnostics, a quoted reply must not reach the customer.
@@ -65,7 +67,7 @@ class BookingFailureAlertService(
             price = flow.calculatedTotalPrice,
             reference = "flow $reservationFlowId",
             cause = cause,
-            partnerRejection = partnerRejection,
+            kind = if (partnerRejection) AlertKind.PARTNER else AlertKind.SYSTEM,
         )
     }
 
@@ -85,7 +87,7 @@ class BookingFailureAlertService(
             price = null,
             reference = "offer ${dto.offerId}, yacht ${dto.yachtId} (no flow was created)",
             cause = cause,
-            partnerRejection = false,
+            kind = if (cause is OfferNotBookableException) AlertKind.NOT_BOOKABLE else AlertKind.SYSTEM,
         )
     }
 
@@ -98,7 +100,7 @@ class BookingFailureAlertService(
         price: BigDecimal?,
         reference: String,
         cause: Throwable,
-        partnerRejection: Boolean,
+        kind: AlertKind,
     ) {
         val now = Instant.now()
         // Blank e-mail or unknown offer must not collapse unrelated customers into one "null|null" key.
@@ -142,13 +144,7 @@ class BookingFailureAlertService(
 
         val body =
             buildString {
-                appendLine(
-                    if (partnerRejection) {
-                        "Kupac je pokušao rezervirati online, ali je PARTNER odbio termin (najčešće: brod više nije slobodan)."
-                    } else {
-                        "Kupac je pokušao rezervirati online i dobio je grešku NAŠEG sustava."
-                    },
-                )
+                appendLine(kind.headline)
                 appendLine()
                 appendLine("Kupac:    $customerLabel")
                 appendLine("E-mail:   ${email?.takeIf { it.isNotBlank() } ?: "-"}")
@@ -160,17 +156,12 @@ class BookingFailureAlertService(
                 appendLine()
                 appendLine("Uzrok:    ${root::class.simpleName}: ${scrub(root.message)}")
                 appendLine()
-                if (partnerRejection) {
-                    appendLine("Kupcu je prikazana isprika. Vrijedi mu se javiti s alternativom dok je još zainteresiran.")
-                } else {
-                    appendLine("Kupcu piše da je naš tim obaviješten i da ćemo mu se javiti - javite mu se.")
-                    appendLine("Ako je opcija kod partnera već bila kreirana, sustav ju je pokušao otkazati, a ponudu je vratio na slobodno.")
-                }
+                kind.advice.forEach { appendLine(it) }
                 appendLine("Ponovljeni pokušaji istog kupca za isti termin ne šalju novi mail idućih ${THROTTLE.toMinutes()} min.")
                 append("NE odgovarati s Reply (ovaj mail ima interne podatke) - kupcu pisati novim mailom. Log: journalctl -u boat4you")
             }
 
-        val prefix = if (partnerRejection) "ℹ️ Partner odbio rezervaciju" else "🚨 Rezervacija NIJE prošla"
+        val prefix = kind.subjectPrefix
         emailService.sendEmail(
             recipients = recipients,
             subject = "$prefix: $customerLabel, $yachtLabel, $period".replace(LINE_BREAKS, " ").take(MAX_SUBJECT_CHARS),
@@ -198,6 +189,35 @@ class BookingFailureAlertService(
             ?.take(MAX_CAUSE_CHARS)
             ?.ifBlank { "-" }
             ?: "-"
+
+    /** The three alert kinds: subject prefix, first body line and the advice lines for the admin (Croatian, as all admin mails). */
+    private enum class AlertKind(
+        val subjectPrefix: String,
+        val headline: String,
+        val advice: List<String>,
+    ) {
+        SYSTEM(
+            "🚨 Rezervacija NIJE prošla",
+            "Kupac je pokušao rezervirati online i dobio je grešku NAŠEG sustava.",
+            listOf(
+                "Kupcu piše da je naš tim obaviješten i da ćemo mu se javiti - javite mu se.",
+                "Ako je opcija kod partnera već bila kreirana, sustav ju je pokušao otkazati, a ponudu je vratio na slobodno.",
+            ),
+        ),
+        PARTNER(
+            "ℹ️ Partner odbio rezervaciju",
+            "Kupac je pokušao rezervirati online, ali je PARTNER odbio termin (najčešće: brod više nije slobodan).",
+            listOf("Kupcu je prikazana isprika. Vrijedi mu se javiti s alternativom dok je još zainteresiran."),
+        ),
+        NOT_BOOKABLE(
+            "ℹ️ Termin više nije slobodan",
+            "Kupac je pokušao rezervirati online, ali termin više nije slobodan za online rezervaciju (409/3006) – javite kupcu alternativu.",
+            listOf(
+                "Rezervacija nije ni započeta: opcija kod partnera nije kreirana. Sustav termin stavlja u red za ponovnu provjeru kod partnera (kad je partner poznat).",
+                "Vrijedi se kupcu javiti s alternativom dok je još zainteresiran.",
+            ),
+        ),
+    }
 
     companion object {
         const val TEMPLATE = "email/adminBookingFailed"
