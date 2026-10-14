@@ -435,6 +435,7 @@ class NauSysYachtOfferIntegrationService(
      * EMPTY (no row for these dates), UNPRICED (only FREE rows without a price), ROUTE_GONE (quoted, but none of the
      * shown routes among the quoted ones, all quoted locations mapped), or null = no negative evidence.
      */
+    @Suppress("ReturnCount") // one return per kind of answer
     private fun onDemandResult(
         exact: List<RestFreeYacht>,
         shownRoutes: List<Pair<Long, Long>>,

@@ -78,6 +78,7 @@ class NauSysFreeOfferReverifyServiceTests {
     private val rateLimited = ConcurrentHashMap.newKeySet<Long>()
     private val requests = CopyOnWriteArrayList<RestFreeYachtsRequest>()
 
+    @Suppress("LongParameterList")
     private fun row(
         yacht: Long,
         from: LocalDate,
@@ -277,7 +278,17 @@ class NauSysFreeOfferReverifyServiceTests {
 
     private val service =
         NauSysFreeOfferReverifyService(
-            offers, client, NauSysAuthProvider("u", "p"), offerSync, mappings, systems, mutex, periodChecks, runStore, switches, limits,
+            offers,
+            client,
+            NauSysAuthProvider("u", "p"),
+            offerSync,
+            mappings,
+            systems,
+            mutex,
+            periodChecks,
+            runStore,
+            switches,
+            limits,
         ).apply {
             sleeper = { sleeps += it }
             clock = { now }

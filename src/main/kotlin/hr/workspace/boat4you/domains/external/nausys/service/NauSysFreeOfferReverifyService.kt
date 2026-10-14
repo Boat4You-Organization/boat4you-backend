@@ -205,6 +205,7 @@ class NauSysFreeOfferReverifyService(
      * Runs once. [deadlineMillis] = the hard stop (epoch ms) checked before every partner call and step-0 flip;
      * [today] = the run date of strikes and bookkeeping.
      */
+    @Suppress("ReturnCount") // OFF and "already running" end the call before a run row exists
     fun reverify(
         deadlineMillis: Long,
         today: LocalDate = LocalDate.now(),
@@ -251,8 +252,19 @@ class NauSysFreeOfferReverifyService(
         )
         val c = tally.snapshot()
         return RunResult(
-            tally.runId, mode, c.calls, c.quoted, c.empty, c.unknown, c.upserts, c.firstStrikes, c.hiddenPeriods, c.hiddenRows,
-            c.wouldFlipRows, aborted ?: ctx.stopReason, ctx.escalated.toSet(),
+            tally.runId,
+            mode,
+            c.calls,
+            c.quoted,
+            c.empty,
+            c.unknown,
+            c.upserts,
+            c.firstStrikes,
+            c.hiddenPeriods,
+            c.hiddenRows,
+            c.wouldFlipRows,
+            aborted ?: ctx.stopReason,
+            ctx.escalated.toSet(),
         )
     }
 
@@ -322,8 +334,16 @@ class NauSysFreeOfferReverifyService(
                 yachtSyncMutex.runExclusiveYachtWrite(p.yachtId) {
                     val flipped =
                         offerRepository.markNauSysPeriodUnavailable(
-                            p.yachtId, p.dateFrom, p.dateTo, null, true, ctx.tally.runId, ReverifyJobs.NAUSYS_REVERIFY,
-                            REASON_STEP0_OCCUPANCY, null, ctx.today,
+                            p.yachtId,
+                            p.dateFrom,
+                            p.dateTo,
+                            null,
+                            true,
+                            ctx.tally.runId,
+                            ReverifyJobs.NAUSYS_REVERIFY,
+                            REASON_STEP0_OCCUPANCY,
+                            null,
+                            ctx.today,
                         )
                     if (hidden(ctx, p.yachtId, p.dateFrom, p.dateTo, flipped)) flippedPeriods++
                 }
@@ -433,39 +453,14 @@ class NauSysFreeOfferReverifyService(
         for (g in groups) {
             if (!mayCall(ctx, budget)) break
             s.attempted++
-            val answer = ask(ctx, g.periods.map { it.externalYachtId }, g.dateFrom, g.dateTo)
-            val rows = answer.rows
+            val rows = ask(ctx, g.periods.map { it.externalYachtId }, g.dateFrom, g.dateTo).rows
             if (rows == null) {
                 s.unknown++
                 g.periods.forEach { record(ctx, it, PeriodCheckResult.UNKNOWN) }
-                continue
+            } else {
+                s.decided++
+                readGroup(ctx, s, g, rows)
             }
-            s.decided++
-            val upsert = mutableListOf<RestFreeYacht>()
-            val emptyFlags = mutableListOf<Pair<Period, Boolean>>()
-            for (p in g.periods) {
-                val reading = read(ctx, p, rows)
-                if (!p.minStay) emptyFlags += p to (reading.verdict == Verdict.EMPTY || reading.verdict == Verdict.UNPRICED)
-                when {
-                    reading.verdict == Verdict.QUOTED -> {
-                        quoted(ctx, p, reading)
-                        upsert += reading.quotedRows
-                    }
-                    p.flippable -> s.toConfirm += p // the multi-yacht answer is not evidence enough to strike
-                    else -> {
-                        // P2b / P6: evidence only. A quote (any route) is upserted with the partner's status.
-                        record(ctx, p, reading.result)
-                        if (reading.quotedRows.isNotEmpty()) {
-                            ctx.tally.quoted.incrementAndGet()
-                            upsert += reading.quotedRows
-                        } else {
-                            ctx.tally.empty.incrementAndGet()
-                        }
-                    }
-                }
-            }
-            upsertRows(ctx, upsert)
-            breakerCounts(s, g, emptyFlags)
         }
         log.info(
             "NauSys free-offer reverify step 1: ${s.attempted} groups asked, ${s.decided} decided, ${s.unknown} unknown; " +
@@ -473,6 +468,47 @@ class NauSysFreeOfferReverifyService(
                 "${s.toConfirm.size} periods to confirm",
         )
         return s
+    }
+
+    /** One decided group answer: clean quotes upserted, flippable doubts queued for step 2, evidence-only recorded. */
+    private fun readGroup(
+        ctx: Ctx,
+        s: Step1,
+        g: Group,
+        rows: List<RestFreeYacht>,
+    ) {
+        val upsert = mutableListOf<RestFreeYacht>()
+        val emptyFlags = mutableListOf<Pair<Period, Boolean>>()
+        for (p in g.periods) {
+            val reading = read(ctx, p, rows)
+            if (!p.minStay) emptyFlags += p to (reading.verdict == Verdict.EMPTY || reading.verdict == Verdict.UNPRICED)
+            when {
+                reading.verdict == Verdict.QUOTED -> {
+                    quoted(ctx, p, reading)
+                    upsert += reading.quotedRows
+                }
+                p.flippable -> s.toConfirm += p // the multi-yacht answer is not evidence enough to strike
+                else -> evidenceOnly(ctx, p, reading, upsert)
+            }
+        }
+        upsertRows(ctx, upsert)
+        breakerCounts(s, g, emptyFlags)
+    }
+
+    /** P2b / P6: a quote (any route) is upserted with the partner's own status; an empty answer is only recorded. */
+    private fun evidenceOnly(
+        ctx: Ctx,
+        p: Period,
+        reading: Reading,
+        upsert: MutableList<RestFreeYacht>,
+    ) {
+        record(ctx, p, reading.result)
+        if (reading.quotedRows.isNotEmpty()) {
+            ctx.tally.quoted.incrementAndGet()
+            upsert += reading.quotedRows
+        } else {
+            ctx.tally.empty.incrementAndGet()
+        }
     }
 
     private fun breakerCounts(
@@ -572,8 +608,16 @@ class NauSysFreeOfferReverifyService(
                 val flipped =
                     targets.sumOf { offerId ->
                         offerRepository.markNauSysPeriodUnavailable(
-                            p.yachtId, p.dateFrom, p.dateTo, offerId, false, ctx.tally.runId, ReverifyJobs.NAUSYS_REVERIFY,
-                            reason, firstEmptyOn, ctx.today,
+                            p.yachtId,
+                            p.dateFrom,
+                            p.dateTo,
+                            offerId,
+                            false,
+                            ctx.tally.runId,
+                            ReverifyJobs.NAUSYS_REVERIFY,
+                            reason,
+                            firstEmptyOn,
+                            ctx.today,
                         )
                     }
                 if (!hidden(ctx, p.yachtId, p.dateFrom, p.dateTo, flipped)) {
@@ -605,6 +649,7 @@ class NauSysFreeOfferReverifyService(
      * only FREE rows without a price = UNPRICED; otherwise QUOTED, or ROUTE_GONE when a route we show is not among the
      * quoted ones (only when every quoted location is mapped: a mapping gap is ours, not evidence).
      */
+    @Suppress("ReturnCount") // one return per verdict, in the order the evidence is read
     private fun read(
         ctx: Ctx,
         p: Period,
@@ -676,12 +721,8 @@ class NauSysFreeOfferReverifyService(
         ctx: Ctx,
         budget: Int,
     ): Boolean {
-        if (ctx.stopReason != null) return false
-        if (clock() >= ctx.deadline) {
-            ctx.stopReason = "hard deadline reached, the rest runs tomorrow"
-            return false
-        }
-        return ctx.tally.calls.get() < budget
+        if (ctx.stopReason == null && clock() >= ctx.deadline) ctx.stopReason = "hard deadline reached, the rest runs tomorrow"
+        return ctx.stopReason == null && ctx.tally.calls.get() < budget
     }
 
     @Suppress("TooGenericExceptionCaught") // any partner failure is UNKNOWN, never evidence
@@ -707,7 +748,10 @@ class NauSysFreeOfferReverifyService(
             ctx.rateLimitsInARow = 0
             if (response.status != NAUSYS_OK) {
                 ctx.tally.unknown.incrementAndGet()
-                log.warn("NauSys free-offer reverify: $dateFrom..$dateTo (${externalYachtIds.size} yachts) answered status=${response.status} errorCode=${response.errorCode} - unknown")
+                log.warn(
+                    "NauSys free-offer reverify: $dateFrom..$dateTo (${externalYachtIds.size} yachts) answered " +
+                        "status=${response.status} errorCode=${response.errorCode} - unknown",
+                )
                 Answer(null)
             } else {
                 Answer(response.freeYachts.orEmpty())

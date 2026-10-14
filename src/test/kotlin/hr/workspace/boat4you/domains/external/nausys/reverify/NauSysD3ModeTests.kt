@@ -62,10 +62,11 @@ class NauSysD3ModeTests {
     private val loc10 = Location().apply { id = 10 }
     private val loc11 = Location().apply { id = 11 }
 
-    private fun yacht(id: Long) = Yacht().apply {
-        this.id = id
-        this.agency = this@NauSysD3ModeTests.agency
-    }
+    private fun yacht(id: Long) =
+        Yacht().apply {
+            this.id = id
+            this.agency = this@NauSysD3ModeTests.agency
+        }
 
     private val yachts = (55L..58L).associateWith(::yacht)
 
@@ -81,16 +82,17 @@ class NauSysD3ModeTests {
         status: OfferStatus = OfferStatus.FREE,
         ext: String? = "FREE",
         route: Location = loc10,
-    ) = Offer().apply {
-        this.id = id
-        this.yacht = yachts.getValue(yacht)
-        dateFrom = from
-        dateTo = to
-        this.status = status
-        extStatus = ext
-        locationFrom = route
-        locationTo = route
-    }.also { o -> stored[yacht] = stored[yacht].orEmpty() + o }
+    ) = Offer()
+        .apply {
+            this.id = id
+            this.yacht = yachts.getValue(yacht)
+            dateFrom = from
+            dateTo = to
+            this.status = status
+            extStatus = ext
+            locationFrom = route
+            locationTo = route
+        }.also { o -> stored[yacht] = stored[yacht].orEmpty() + o }
 
     private fun row(
         yacht: Long = 55,

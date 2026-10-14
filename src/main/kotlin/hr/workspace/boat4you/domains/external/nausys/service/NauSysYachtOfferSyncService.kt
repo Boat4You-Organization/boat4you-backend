@@ -44,6 +44,7 @@ import kotlin.collections.all
 import kotlin.collections.maxOfOrNull
 import kotlin.collections.minOfOrNull
 
+@Suppress("LargeClass") // the D3 helpers sit next to the disappearance pass they replace (LEGACY stays byte-identical)
 @Service
 class NauSysYachtOfferSyncService(
     private val externalMappingService: ExternalMappingService,
@@ -103,7 +104,7 @@ class NauSysYachtOfferSyncService(
      * In every mode the rows the partner returns as OPTION / OPTION_WAITING are recorded as QUOTED_OPTION evidence
      * in `partner_period_check` (one batch per answer).
      */
-    @Suppress("LongMethod", "CyclomaticComplexMethod") // the pre-real-price pass, kept in place so LEGACY stays byte-identical
+    @Suppress("LongMethod", "CyclomaticComplexMethod", "LongParameterList") // the pre-real-price pass, kept in place so LEGACY stays byte-identical
     fun syncOffers(
         agency: Agency,
         nausysOffers: RestFreeYachtList,
@@ -248,20 +249,20 @@ class NauSysYachtOfferSyncService(
                             d3Log(agency.id!!, systemYachtId, stale, reason, unpricedBreaker, dateFrom, dateTo, d3)
                         }
                         stale.forEach { offer ->
-                                disappeared++
-                                if (offer.status == OfferStatus.FREE) {
-                                    offer.status = OfferStatus.OPTION_WAITING
-                                    offer.extStatus = SYNTHETIC_DISAPPEARANCE_EXT_STATUS
-                                    log.info(
-                                        "Marked offer ${offer.id} (yacht ${offer.yacht?.id}) as SYNTHETIC_DISAPPEARANCE " +
-                                            "for $dateFrom-$dateTo (in response, but no offer for this week)",
-                                    )
-                                } else {
-                                    // Preserve legacy UNAVAILABLE transition for non-FREE statuses
-                                    offer.status = OfferStatus.UNAVAILABLE
-                                }
-                                offerRepository.save(offer)
+                            disappeared++
+                            if (offer.status == OfferStatus.FREE) {
+                                offer.status = OfferStatus.OPTION_WAITING
+                                offer.extStatus = SYNTHETIC_DISAPPEARANCE_EXT_STATUS
+                                log.info(
+                                    "Marked offer ${offer.id} (yacht ${offer.yacht?.id}) as SYNTHETIC_DISAPPEARANCE " +
+                                        "for $dateFrom-$dateTo (in response, but no offer for this week)",
+                                )
+                            } else {
+                                // Preserve legacy UNAVAILABLE transition for non-FREE statuses
+                                offer.status = OfferStatus.UNAVAILABLE
                             }
+                            offerRepository.save(offer)
+                        }
                     }
                 if (!ran) skippedLockedCount++
             } catch (e: Exception) {
@@ -290,12 +291,13 @@ class NauSysYachtOfferSyncService(
         result: OfferUpdateResult,
         into: MutableList<PeriodCheck>,
     ) {
-        if (result != OfferUpdateResult.UPDATED) return
         val status = OfferStatus.fromNausysValue(nausysOffer.status)
-        if (status != OfferStatus.OPTION && status != OfferStatus.OPTION_WAITING) return
-        val from = nausysOffer.periodFrom?.value ?: return
-        val to = nausysOffer.periodTo?.value ?: return
-        into += PeriodCheck(yachtId, from, to, PeriodCheckPriority.SAMPLE, PeriodCheckResult.QUOTED_OPTION)
+        val quotedOption = result == OfferUpdateResult.UPDATED && (status == OfferStatus.OPTION || status == OfferStatus.OPTION_WAITING)
+        val from = nausysOffer.periodFrom?.value
+        val to = nausysOffer.periodTo?.value
+        if (quotedOption && from != null && to != null) {
+            into += PeriodCheck(yachtId, from, to, PeriodCheckPriority.SAMPLE, PeriodCheckResult.QUOTED_OPTION)
+        }
     }
 
     /** One JDBC batch per answer; bookkeeping never breaks the sync. */
@@ -338,8 +340,7 @@ class NauSysYachtOfferSyncService(
         }
 
     /** FREE / OPTION rows D3 may decide on (never a real UNDER_OPTION, never our SYNTHETIC markers). */
-    private fun d3Decidable(offer: Offer): Boolean =
-        (offer.status == OfferStatus.FREE || offer.status == OfferStatus.OPTION) && offer.extStatus != NAUSYS_UNDER_OPTION_EXT_STATUS
+    private fun d3Decidable(offer: Offer): Boolean = (offer.status == OfferStatus.FREE || offer.status == OfferStatus.OPTION) && offer.extStatus != NAUSYS_UNDER_OPTION_EXT_STATUS
 
     /** The rows today's legacy branch flips to UNAVAILABLE that D3 still flips: other non-FREE statuses, guarded. */
     private fun d3LegacyNonFree(offer: Offer): Boolean =
@@ -352,7 +353,7 @@ class NauSysYachtOfferSyncService(
      * D3 WRITE for the stale rows of one yacht and interval, inside the yacht's write transaction. Returns the number
      * of rows whose status changed.
      */
-    @Suppress("LongParameterList", "LongMethod") // the agency, yacht, rows, evidence, breaker, interval and run
+    @Suppress("LongParameterList", "LongMethod", "ReturnCount") // the agency, yacht, rows, evidence, breaker, interval and run
     private fun d3Write(
         agencyId: Long,
         yachtId: Long,

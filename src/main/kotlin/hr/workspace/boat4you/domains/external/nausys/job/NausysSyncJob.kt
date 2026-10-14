@@ -47,6 +47,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * [nausysBusy] is the in-JVM sequencing gate: ShedLock only stops two nodes
  * from running the SAME job, not two different NauSys jobs on this node.
  */
+@Suppress("TooManyFunctions") // one method per scheduled NauSys slot plus the shared gate helpers
 @Profile("data-sync")
 @Component
 class NausysSyncJob(
