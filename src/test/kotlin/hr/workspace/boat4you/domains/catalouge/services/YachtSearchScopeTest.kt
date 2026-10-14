@@ -233,9 +233,10 @@ class YachtSearchScopeTest {
                 regions,
                 countries,
                 PassThroughHeavyQueries,
+                SearchSwitchesTestSupport.defaults(),
             )
         // No cache: every call runs the scans (the cache is YachtDistributionCacheTests' subject).
-        distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager())
+        distribution = YachtDistributionService(entityManager, locations, countries, regions, PassThroughHeavyQueries, NoOpCacheManager(), SearchSwitchesTestSupport.defaults())
     }
 
     @AfterAll

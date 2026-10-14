@@ -100,6 +100,7 @@ class YachtDistributionCacheTests {
                 mock(RegionRepository::class.java),
                 runner,
                 JCacheCacheManager(jcache).apply { afterPropertiesSet() },
+                SearchSwitchesTestSupport.defaults(),
             )
     }
 

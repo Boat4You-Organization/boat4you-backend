@@ -71,6 +71,12 @@ class YachtMapper(
         offerCharter: OfferCharterDto? = null,
         /** Coordinates of the page's pickup / drop-off locations by location id (one lookup per page, the caller's). */
         locationCoordinates: Map<Long, LocationCoordinates> = emptyMap(),
+        /**
+         * A2 (SEARCH_DEMOTE_STALE_OPTIONS=false, DESIGN.md WS-A path 1): return the stored OPTION / OPTION_WAITING even
+         * without a live hold. The caller sets it for DATED listings only (an undated card never carries an option
+         * badge); [isOption] (the expiry stamp) stays gated by a live hold either way. Default false = today.
+         */
+        keepStoredOption: Boolean = false,
     ): YachtSearchResponseDto {
         val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName).withCoordinates(locationCoordinates)
         // One-way charter: surface drop-off as separate DTO only when
@@ -97,7 +103,7 @@ class YachtMapper(
                         (
                             resolved == hr.workspace.boat4you.domains.catalouge.enums.OfferStatus.OPTION ||
                                 resolved == hr.workspace.boat4you.domains.catalouge.enums.OfferStatus.OPTION_WAITING
-                        ) && !isOption
+                        ) && !isOption && !keepStoredOption
                     if (stale) hr.workspace.boat4you.domains.catalouge.enums.OfferStatus.FREE else resolved
                 }
 

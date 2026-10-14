@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.common.cache.FacetDistributionExpiry
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.dto.YachtDistributionDto
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.SailTypeEnum
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutionException
@@ -51,6 +53,7 @@ class YachtDistributionService(
     private val regionRepository: RegionRepository,
     private val heavyQueries: HeavyQueryRunner,
     private val cacheManager: CacheManager,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     private val facetCache: Cache by lazy {
         cacheManager.getCache(FACET_CACHE) ?: error("$FACET_CACHE is not configured (CacheConfig)")
@@ -133,6 +136,9 @@ class YachtDistributionService(
                 minPriceWeekly,
                 maxPriceWeekly,
             )
+        // Real-price switches (DESIGN.md WS-A): one snapshot per request; its SEARCH_* values are part of the key, so an
+        // entry computed under one predicate / floor is never served under another.
+        val switches = realPriceSwitches.snapshot()
         val prefix =
             if (startDate == null && endDate == null && numericFilters.all { it == null }) {
                 FacetDistributionExpiry.LANDING_KEY_PREFIX
@@ -166,6 +172,7 @@ class YachtDistributionService(
                     maxPriceWeekly,
                     manufacturerIds,
                     modelIds,
+                    switches.searchKey,
                 ).toString()
         return cachedOnce(key) {
             heavyQueries.read(HeavyQuery.DISTRIBUTION) {
@@ -188,6 +195,7 @@ class YachtDistributionService(
                     minEnginePower = minEnginePower, maxEnginePower = maxEnginePower,
                     minPriceWeekly = minPriceWeekly, maxPriceWeekly = maxPriceWeekly,
                     manufacturerIds = manufacturerIds, modelIds = modelIds,
+                    mode = SearchAvailabilitySql.Mode.of(switches),
                 )
                 // Lower bound is hardcoded at €500 (raw `client_price` < that is mostly
                 // per-day rows still present in some agency data). Upper bound expands
@@ -321,6 +329,8 @@ class YachtDistributionService(
         val maxPriceWeekly: BigDecimal? = null,
         val manufacturerIds: List<Long>? = null,
         val modelIds: List<Long>? = null,
+        /** The real-price rule of this request (SEARCH_PREDICATE / SEARCH_PRICE_FLOOR), the listing's own. */
+        val mode: SearchAvailabilitySql.Mode = SearchAvailabilitySql.Mode.LEGACY,
     )
 
     /** The `did` filter split by granularity: region/marina ids expand into
@@ -436,31 +446,7 @@ class YachtDistributionService(
                 if (ctx.startDate == null && ctx.endDate == null) parts.add(" AND ${DestinationScopeSql.basedHere(hasMarinas, hasDidCountries)}")
             }
         }
-        if (ctx.startDate != null && ctx.endDate != null) {
-            // Slot window [date_from, date_to) overlaps padded request
-            // [startMinus, endPlus). NULL date_from = custom yacht ⇒ always kept.
-            parts.add(" AND (date_from IS NULL OR (date_from < :endPlus AND date_to > :startMinus))")
-            // Live hard-block: drop yachts firmly reserved/serviced over the RAW
-            // requested period. OPTION stays visible. Vacuously true for customs.
-            parts.add(
-                " AND NOT EXISTS (" +
-                    "SELECT 1 FROM external_reservations er " +
-                    "WHERE er.yacht_id = yacht_search_view.id " +
-                    "AND er.status IN ('RESERVATION', 'SERVICE') " +
-                    "AND er.date_from < :hardBlockEnd AND er.date_to > :hardBlockStart)",
-            )
-        } else if (ctx.startDate != null) {
-            // Open-ended start: slot's window must reach on/after the padded start.
-            parts.add(" AND (date_from IS NULL OR date_to > :startMinus)")
-        } else if (ctx.endDate != null) {
-            // Open-ended end: slot's window must start on/before the padded end.
-            parts.add(" AND (date_from IS NULL OR date_from < :endPlus)")
-        } else {
-            // Undated: bookable offers only (starting today or later), like the search (audit B12), one card per
-            // physical boat (audit B17, yacht_listing_twin).
-            parts.add(" AND (date_from IS NULL OR date_from >= CURRENT_DATE)")
-            parts.add(" AND NOT EXISTS (SELECT 1 FROM yacht_listing_twin t WHERE t.yacht_id = yacht_search_view.id)")
-        }
+        parts.addAll(dateClauses(ctx))
         if (!ctx.regionCountryCodes.isNullOrEmpty()) {
             // A region search lists only boats in the region's own country (search: deriveRegionCountryCodes), so
             // MMK's sea-wide "Ionian" does not count Italian boats in a Greek landing's chips.
@@ -497,6 +483,99 @@ class YachtDistributionService(
         if (!ctx.manufacturerIds.isNullOrEmpty()) parts.add(" AND manufacturer_id IN (:manufacturerIds)")
         if (!ctx.modelIds.isNullOrEmpty()) parts.add(" AND model_id IN (:modelIds)")
         return parts.joinToString("")
+    }
+
+    /**
+     * The date part of [whereClause] (each clause with its leading " AND "): the D5 floor, then the dated window and
+     * hard block (LEGACY: padded overlap, request-window block; D1: the listing's d1DatedPredicates), the open-ended
+     * windows, or the undated bookable / one-card-per-boat rule.
+     */
+    private fun dateClauses(ctx: FilterContext): List<String> {
+        val clauses = mutableListOf<String>()
+        if (ctx.mode.floor) {
+            // D5: no placeholder-priced row (below 300 EUR a week) in any branch; custom yachts always count.
+            clauses.add(" AND ${SearchAvailabilitySql.FLOOR_CLAUSE}")
+        }
+        if (ctx.startDate != null && ctx.endDate != null && ctx.mode.d1) {
+            // D1 (the listing's d1DatedPredicates): the searched length within +-3 days or a tiling by priced weeks
+            // that pass these same row filters, the hull hard block with the zombie escape, and the requested period
+            // taken on evidence.
+            d1Dated(ctx).clauses.forEach { clauses.add(" AND $it") }
+        } else if (ctx.startDate != null && ctx.endDate != null) {
+            // Slot window [date_from, date_to) overlaps padded request
+            // [startMinus, endPlus). NULL date_from = custom yacht ⇒ always kept.
+            clauses.add(" AND (date_from IS NULL OR (date_from < :endPlus AND date_to > :startMinus))")
+            // Live hard-block: drop yachts firmly reserved/serviced over the RAW
+            // requested period. OPTION stays visible. Vacuously true for customs.
+            clauses.add(
+                " AND NOT EXISTS (" +
+                    "SELECT 1 FROM external_reservations er " +
+                    "WHERE er.yacht_id = yacht_search_view.id " +
+                    "AND er.status IN ('RESERVATION', 'SERVICE') " +
+                    "AND er.date_from < :hardBlockEnd AND er.date_to > :hardBlockStart)",
+            )
+        } else if (ctx.startDate != null) {
+            // Open-ended start: slot's window must reach on/after the padded start.
+            clauses.add(" AND (date_from IS NULL OR date_to > :startMinus)")
+        } else if (ctx.endDate != null) {
+            // Open-ended end: slot's window must start on/before the padded end.
+            clauses.add(" AND (date_from IS NULL OR date_from < :endPlus)")
+        } else {
+            // Undated: bookable offers only (starting today or later), like the search (audit B12), one card per
+            // physical boat (audit B17, yacht_listing_twin).
+            clauses.add(" AND (date_from IS NULL OR date_from >= CURRENT_DATE)")
+            clauses.add(" AND NOT EXISTS (SELECT 1 FROM yacht_listing_twin t WHERE t.yacht_id = yacht_search_view.id)")
+        }
+        return clauses
+    }
+
+    /** The parameters of [dateClauses]. */
+    private fun bindDates(
+        q: jakarta.persistence.Query,
+        ctx: FilterContext,
+    ) {
+        if (ctx.mode.floor) q.setParameter(SearchAvailabilitySql.P_FLOOR, SearchAvailabilitySql.MIN_WEEK_PRICE_PER_DAY)
+        // Honest interval-overlap bind, matching buildYachtSearchPredicates:
+        // padded window for the slot overlap, RAW window for the live hard-block.
+        if (ctx.startDate != null && ctx.endDate != null && ctx.mode.d1) {
+            d1Dated(ctx).params.forEach { (name, value) -> q.setParameter(name, value) }
+        } else if (ctx.startDate != null && ctx.endDate != null) {
+            q.setParameter("startMinus", ctx.startDate.minusDays(NEARBY_WINDOW_DAYS))
+            q.setParameter("endPlus", ctx.endDate.plusDays(NEARBY_WINDOW_DAYS))
+            q.setParameter("hardBlockStart", ctx.startDate)
+            q.setParameter("hardBlockEnd", ctx.endDate)
+        } else if (ctx.startDate != null) {
+            q.setParameter("startMinus", ctx.startDate.minusDays(NEARBY_WINDOW_DAYS))
+        } else if (ctx.endDate != null) {
+            q.setParameter("endPlus", ctx.endDate.plusDays(NEARBY_WINDOW_DAYS))
+        }
+    }
+
+    /** The D1 dated clauses and parameters of [ctx] (both dates set). */
+    private fun d1Dated(ctx: FilterContext): SearchAvailabilitySql.Dated =
+        SearchAvailabilitySql.d1Dated(ctx.startDate!!, ctx.endDate!!, rowVaryingClauses(ctx), LocalDateTime.now())
+
+    /**
+     * The filters of [whereClause] that vary per matview row (offer status, pickup, region country, charter type,
+     * price), for the D1 tiled-ids subquery - the twin of YachtQueryingService.rowVaryingPredicates. Unqualified, so
+     * inside `FROM yacht_search_view t` they read `t`.
+     */
+    private fun rowVaryingClauses(ctx: FilterContext): List<String> {
+        val clauses = mutableListOf("offer_status <> 'UNAVAILABLE'")
+        val hasMarinas = !ctx.marinaIds.isNullOrEmpty()
+        val hasDidCountries = !ctx.didCountryCodes.isNullOrEmpty()
+        when {
+            ctx.marinaIds == null && ctx.didCountryCodes == null -> {}
+            !hasMarinas && !hasDidCountries -> clauses.add("FALSE")
+            else -> clauses.add(DestinationScopeSql.pickup(hasMarinas, hasDidCountries))
+        }
+        if (!ctx.regionCountryCodes.isNullOrEmpty()) clauses.add("country_code IN (:regionCountryCodes)")
+        if (!ctx.charterTypeNames.isNullOrEmpty()) {
+            clauses.add(GuletRules.charterTypeSql(ctx.charterTypeNames.map { CharterType.valueOf(it) }, "charterTypeNames"))
+        }
+        if (ctx.minPriceWeekly != null) clauses.add("client_price >= :minPriceDaily")
+        if (ctx.maxPriceWeekly != null) clauses.add("client_price <= :maxPriceDaily")
+        return clauses
     }
 
     /** Logarithmically-binned histogram on weekly prices. 50 bins covering
@@ -569,18 +648,7 @@ class YachtDistributionService(
         if (!ctx.marinaIds.isNullOrEmpty()) q.setParameter("marinaIds", ctx.marinaIds)
         if (!ctx.didCountryCodes.isNullOrEmpty()) q.setParameter("didCountryCodes", ctx.didCountryCodes)
         if (!ctx.regionCountryCodes.isNullOrEmpty()) q.setParameter("regionCountryCodes", ctx.regionCountryCodes)
-        // Honest interval-overlap bind, matching buildYachtSearchPredicates:
-        // padded window for the slot overlap, RAW window for the live hard-block.
-        if (ctx.startDate != null && ctx.endDate != null) {
-            q.setParameter("startMinus", ctx.startDate.minusDays(NEARBY_WINDOW_DAYS))
-            q.setParameter("endPlus", ctx.endDate.plusDays(NEARBY_WINDOW_DAYS))
-            q.setParameter("hardBlockStart", ctx.startDate)
-            q.setParameter("hardBlockEnd", ctx.endDate)
-        } else if (ctx.startDate != null) {
-            q.setParameter("startMinus", ctx.startDate.minusDays(NEARBY_WINDOW_DAYS))
-        } else if (ctx.endDate != null) {
-            q.setParameter("endPlus", ctx.endDate.plusDays(NEARBY_WINDOW_DAYS))
-        }
+        bindDates(q, ctx)
         if (!ctx.vesselTypeNames.isNullOrEmpty()) {
             q.setParameter("vesselTypeNames", ctx.vesselTypeNames)
         }

@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
 import hr.workspace.boat4you.domains.catalouge.dto.CustomYachtDetailsResponse
@@ -99,6 +100,7 @@ class YachtQueryingService(
     private val regionRepository: RegionRepository,
     private val countryRepository: CountryRepository,
     private val heavyQueries: HeavyQueryRunner,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     companion object {
         private const val MAX_PAGE_SIZE = 100
@@ -122,9 +124,10 @@ class YachtQueryingService(
          * placeholder (Valencia 26.9.2026: whole grids of "10 EUR" weeks, 1.49 EUR a day), never a real price: it is
          * not a weekly "from" price candidate, not a dated card's price (the card says "price on request"), not a
          * week of a multi-week tiling and not the undated default path's price. The charter facts use the same floor
-         * (CharterFactsMath.MIN_WEEK_PRICE). Compared per day, the matview's unit.
+         * (CharterFactsMath.MIN_WEEK_PRICE). Compared per day, the matview's unit. Defined once, in
+         * [SearchAvailabilitySql.MIN_WEEK_PRICE_PER_DAY] (the D5 search floor uses the same value).
          */
-        private val MIN_WEEK_PRICE_PER_DAY: BigDecimal = BigDecimal(300).divide(BigDecimal(WEEK_NIGHTS), 10, java.math.RoundingMode.HALF_UP)
+        private val MIN_WEEK_PRICE_PER_DAY: BigDecimal = SearchAvailabilitySql.MIN_WEEK_PRICE_PER_DAY
 
         /**
          * [offerChoiceKey] tiers, best first: the exact searched period; the searched length at the nearest start;
@@ -145,6 +148,11 @@ class YachtQueryingService(
         private const val KEY_TOTAL_FORMAT = "FM000000000000.00"
         private const val KEY_TOTAL_PARSE = "000000000000.00"
         private const val NO_DATE = "00000000"
+
+        /** Parts of a D1 tile week key (client total | list total | commission total), 1-based for split_part. */
+        private const val TILE_KEY_CLIENT = 1
+        private const val TILE_KEY_LIST = 2
+        private const val TILE_KEY_COMMISSION = 3
 
         /**
          * Honest "shifted week" reach (Deploy 4). A published offer slot
@@ -228,6 +236,10 @@ class YachtQueryingService(
     // `isAdmin` is computed in the controller via the same SYSTEM_ADMIN authority
     // the mapper checks. Admin search volume is tiny, so no CPU cost to skipping.
     //
+    // Real-price switches (DESIGN.md WS-A): the key carries the SEARCH_* switch values
+    // (RealPriceSwitches.searchCacheKey), so an entry computed under one predicate / floor / option
+    // rule is never served under another; the search below reads the same snapshot once.
+    //
     // 1.10.2026 (Codex audit F2): a miss runs through HeavyQueryGuard — at most
     // `application.heavy-queries.search-list.max-concurrent` listings at once, the rest
     // 503 + Retry-After, in the guard's own read-only transaction with a statement
@@ -238,7 +250,7 @@ class YachtQueryingService(
     // timeouts, never shed with a public burst.
     @Cacheable(
         cacheNames = ["yachtSearchListCache"],
-        key = "{#searchParams, #sortBy, #language, #page, #size}.toString()",
+        key = "{#searchParams, #sortBy, #language, #page, #size, @realPriceSwitches.searchCacheKey()}.toString()",
         condition = "!#isAdmin",
     )
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
@@ -250,7 +262,8 @@ class YachtQueryingService(
         size: Int,
         isAdmin: Boolean,
     ): PageImpl<YachtSearchResponseDto> {
-        val search = { searchYachts(searchParams, sortBy, language, page, size, isAdmin) }
+        val switches = realPriceSwitches.snapshot()
+        val search = { searchYachts(searchParams, sortBy, language, page, size, isAdmin, switches) }
         return if (isAdmin) heavyQueries.readUngated(HeavyQuery.SEARCH_LIST, search) else heavyQueries.read(HeavyQuery.SEARCH_LIST, search)
     }
 
@@ -261,7 +274,9 @@ class YachtQueryingService(
         page: Int,
         size: Int,
         isAdmin: Boolean,
+        switches: RealPriceSwitches.Snapshot,
     ): PageImpl<YachtSearchResponseDto> {
+        val mode = SearchAvailabilitySql.Mode.of(switches, searchParams.legacyAvailability, searchParams.sitemapRequest)
         val cb = entityManager.criteriaBuilder
         val cq = cb.createQuery(YachtSearchSelectResult::class.java)
         val root = cq.from(YachtSearchView::class.java)
@@ -318,18 +333,11 @@ class YachtQueryingService(
         val clientPath = root.get<BigDecimal>("clientPrice")
         val dateFromPath = root.get<LocalDate>("dateFrom")
         val dateToPath = root.get<LocalDate>("dateTo")
-        val coveringClientTotalExpr =
-            coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)
-                ?: cb.nullLiteral(BigDecimal::class.java)
-        val coveringListTotalExpr =
-            coveringPeriodTotal(cb, root.get("listPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)
-                ?: cb.nullLiteral(BigDecimal::class.java)
-        val coveringCommissionTotalExpr =
-            coveringPeriodTotal(cb, root.get("brokerCommission"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)
-                ?: cb.nullLiteral(BigDecimal::class.java)
-        val coveringNightsExpr =
-            coveringPeriodNights(cb, daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)
-                ?: cb.nullLiteral(Int::class.javaObjectType)
+        // D1 (SEARCH_PREDICATE=D1): see coveringColumns.
+        val d1Dated = mode.d1 && requestedNights != null
+        val tileWeekStarts: List<LocalDate> =
+            if (d1Dated) SearchAvailabilitySql.weekStarts(searchParams.startDate!!, requestedNights!!) else emptyList()
+        val covering = coveringColumns(cb, root, searchParams, tileWeekStarts, d1Dated)
 
         // Undated listing priced per WEEK (priceBasis=week, sent by the web's undated landings,
         // 25.9.2026): without dates the default MIN(per-day) and MIN(days) come from different
@@ -359,7 +367,7 @@ class YachtQueryingService(
         val datedSearch = searchParams.startDate != null && searchParams.endDate != null
         val chosenKeyExpr: Expression<String> =
             when {
-                datedSearch -> cb.least(offerChoiceKey(cb, root, searchParams.startDate!!, searchParams.endDate!!, requestedNights!!))
+                datedSearch -> cb.least(offerChoiceKey(cb, root, searchParams.startDate!!, searchParams.endDate!!, tileWeekStarts))
                 weeklyMode -> cb.least(weeklyWeekKey(cb, root))
                 else -> cb.nullLiteral(String::class.java)
             }
@@ -431,10 +439,10 @@ class YachtQueryingService(
             // which is enough for the badge to show a sensible alternative.
             exactOrEarliest(cb, root.get<LocalDate>("dateFrom"), searchParams.startDate),
             exactOrEarliest(cb, root.get<LocalDate>("dateTo"), searchParams.endDate),
-            coveringClientTotalExpr,
-            coveringListTotalExpr,
-            coveringCommissionTotalExpr,
-            coveringNightsExpr,
+            covering.clientTotal,
+            covering.listTotal,
+            covering.commissionTotal,
+            covering.nights,
             chosenKeyExpr,
         )
 
@@ -444,6 +452,7 @@ class YachtQueryingService(
                 cb,
                 root,
                 searchParams,
+                mode,
             )
 
         cq.where(*predicates.toTypedArray())
@@ -483,7 +492,9 @@ class YachtQueryingService(
                 // The chosen offer's total — the figure the card shows — or the multi-week covering sum when the
                 // weekly offers tile a longer request and no exact-period offer exists (applyCoveringPeriodPrice).
                 val chosenTotal = chosenOfferTotal(cb, chosenKeyExpr)
-                if (requestedNights!! > WEEK_NIGHTS) {
+                if (d1Dated) {
+                    d1SortTotal(cb, root, tileWeekStarts, chosenKeyExpr, chosenTotal)
+                } else if (requestedNights!! > WEEK_NIGHTS) {
                     val coveringTotal =
                         coveringPeriodTotal(cb, root.get("clientPrice"), daysPath, dateFromPath, dateToPath, searchParams.startDate, searchParams.endDate, clientPath)!!
                     val coveringNights =
@@ -698,8 +709,12 @@ class YachtQueryingService(
                     requestedNights,
                     searchParams.startDate,
                     searchParams.endDate,
-                )
+                    d1Dated,
+                ).also { view -> if (d1Dated) checkD1CardLength(view, requestedNights!!) }
             }
+        // A2 (SEARCH_DEMOTE_STALE_OPTIONS=false): a dated card keeps its stored OPTION / OPTION_WAITING; undated cards
+        // never carry an option badge (no live-hold lookup without dates).
+        val keepStoredOption = datedSearch && !switches.demoteStaleOptions
 
         // Admin-only: Bareboat / Skippered / Crewed of the offer each card shows (Offers workspace pill, Mario
         // 9.10.2026). Two indexed lookups per page, skipped entirely for customer searches.
@@ -744,10 +759,11 @@ class YachtQueryingService(
                     pageFactsByYachtId[view.id]?.capacity,
                     offerChartersByYachtId[view.id],
                     locationCoordinates,
+                    keepStoredOption = keepStoredOption,
                 )
             }
 
-        val total = getYachtSearchTotalCount(searchParams)
+        val total = getYachtSearchTotalCount(searchParams, mode)
 
         return PageImpl(searchResponseDtos, pageable, total)
     }
@@ -1255,19 +1271,32 @@ class YachtQueryingService(
         root: Root<YachtSearchView>,
         start: LocalDate,
         end: LocalDate,
-        nights: Int,
+        /** D1 tiled search: the week starts of the tiling (empty otherwise, = today's tiers). */
+        tileWeekStarts: List<LocalDate> = emptyList(),
     ): Expression<String> {
+        val nights = java.time.temporal.ChronoUnit.DAYS.between(start, end).toInt()
         val dateFrom = root.get<LocalDate>("dateFrom")
         val dateTo = root.get<LocalDate>("dateTo")
         val days = root.get<Int>("numberOfDays")
         val client = root.get<BigDecimal>("clientPrice")
-        val tier =
+        val exactOrBetter =
             cb.selectCase<String>()
                 // no price, 0 EUR or a placeholder below the floor (a "10 EUR" week): never the card's price
                 .`when`(cb.or(cb.isNull(client), cb.lessThan(client, MIN_WEEK_PRICE_PER_DAY)), CHOICE_NO_PRICE)
                 // custom (admin-managed) yachts have no offer dates: their weekly low price, any week
                 .`when`(cb.isNull(dateFrom), CHOICE_SAME_LENGTH)
                 .`when`(cb.and(cb.equal(dateFrom, start), cb.equal(dateTo, end)), CHOICE_EXACT)
+        // D1 tiling: a week of the tiling ranks as the searched length at its own distance, so week 0 (distance 0)
+        // beats any shifted row (distance >= 1) and the card is then rewritten to the tiled period
+        // (applyCoveringPeriodPrice); an exact row still wins. The WHERE clause already guarantees full tiling.
+        val withTiles =
+            if (tileWeekStarts.isEmpty()) {
+                exactOrBetter
+            } else {
+                exactOrBetter.`when`(cb.and(cb.equal(days, WEEK_NIGHTS), dateFrom.`in`(tileWeekStarts)), CHOICE_SAME_LENGTH)
+            }
+        val tier =
+            withTiles
                 .`when`(cb.equal(days, nights), CHOICE_SAME_LENGTH)
                 .`when`(cb.and(cb.lessThanOrEqualTo(dateFrom, start), cb.greaterThanOrEqualTo(dateTo, end)), CHOICE_COVERS)
                 .otherwise(CHOICE_OTHER)
@@ -1501,6 +1530,156 @@ class YachtQueryingService(
         cb.greaterThanOrEqualTo(client, MIN_WEEK_PRICE_PER_DAY),
     )
 
+    /** The four multi-week covering columns of the listing's multiselect (see [coveringColumns]). */
+    private class CoveringColumns(
+        val clientTotal: Expression<BigDecimal>,
+        val listTotal: Expression<BigDecimal>,
+        val commissionTotal: Expression<BigDecimal>,
+        val nights: Expression<Int>,
+    )
+
+    /**
+     * Multi-week covering sums (see coveringPeriodTotal); null-literal placeholders for a dateless search so the
+     * multiselect arity stays fixed - the Kotlin side only trusts these when a dated multi-week request fully tiles
+     * (coveringNights == requestedNights). D1 (DESIGN.md WS-A): a dated search lists the searched length only; a
+     * whole-weeks request may also be tiled by real partner weeks ([tileWeekStarts], empty otherwise), priced by one
+     * MIN key per week ([tiledPeriodTotal]), never a SUM over every matview row; other D1 searches have no tiling.
+     */
+    private fun coveringColumns(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        searchParams: YachtSearchParamObject,
+        tileWeekStarts: List<LocalDate>,
+        d1Dated: Boolean,
+    ): CoveringColumns {
+        if (tileWeekStarts.isNotEmpty()) {
+            return CoveringColumns(
+                tiledPeriodTotal(cb, root, tileWeekStarts, TILE_KEY_CLIENT),
+                tiledPeriodTotal(cb, root, tileWeekStarts, TILE_KEY_LIST),
+                tiledPeriodTotal(cb, root, tileWeekStarts, TILE_KEY_COMMISSION),
+                tiledPeriodNights(cb, root, tileWeekStarts),
+            )
+        }
+        val days = root.get<Int>("numberOfDays")
+        val client = root.get<BigDecimal>("clientPrice")
+        val from = root.get<LocalDate>("dateFrom")
+        val to = root.get<LocalDate>("dateTo")
+        val start = searchParams.startDate.takeUnless { d1Dated }
+        val end = searchParams.endDate.takeUnless { d1Dated }
+        val noTotal = cb.nullLiteral(BigDecimal::class.java)
+        return CoveringColumns(
+            coveringPeriodTotal(cb, root.get("clientPrice"), days, from, to, start, end, client) ?: noTotal,
+            coveringPeriodTotal(cb, root.get("listPrice"), days, from, to, start, end, client) ?: noTotal,
+            coveringPeriodTotal(cb, root.get("brokerCommission"), days, from, to, start, end, client) ?: noTotal,
+            coveringPeriodNights(cb, days, from, to, start, end, client) ?: cb.nullLiteral(Int::class.javaObjectType),
+        )
+    }
+
+    /**
+     * D1 price-sort total: the tiled period total when the weeks tile the request and the chosen row is not the exact
+     * period - the very test [applyCoveringPeriodPrice] uses, so the order follows the price the card shows - else the
+     * chosen offer's total.
+     */
+    private fun d1SortTotal(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        tileWeekStarts: List<LocalDate>,
+        chosenKey: Expression<String>,
+        chosenTotal: Expression<BigDecimal>,
+    ): Expression<BigDecimal> {
+        if (tileWeekStarts.isEmpty()) return chosenTotal
+        return cb
+            .selectCase<BigDecimal>()
+            .`when`(
+                cb.and(
+                    cb.equal(tiledPeriodNights(cb, root, tileWeekStarts), cb.literal(tileWeekStarts.size * WEEK_NIGHTS)),
+                    cb.notEqual(cb.substring(chosenKey, 1, 1), cb.literal(CHOICE_EXACT)),
+                ),
+                tiledPeriodTotal(cb, root, tileWeekStarts, TILE_KEY_CLIENT),
+            ).otherwise(chosenTotal)
+    }
+
+    /**
+     * D1 tiling (DESIGN.md WS-A), one key per week: MIN over the yacht's priced weeks of the tiling that start on
+     * [weekStart] of "client total|list total|commission total" (the fixed-width [totalKey] of [offerChoiceKey]). The
+     * cheapest row of the week supplies all three figures, and duplicate rows of one week (one per charter type, route
+     * twins) never add up. NULL when the yacht has no such row in the group. Only rows the WHERE clause kept are
+     * aggregated, i.e. rows that pass the page's own filters - the same rows the tiled-ids subquery counted.
+     */
+    private fun tileWeekKey(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        weekStart: LocalDate,
+    ): Expression<String> {
+        val days = root.get<Int>("numberOfDays")
+        val client = root.get<BigDecimal>("clientPrice")
+        val isTile =
+            cb.and(
+                cb.equal(days, WEEK_NIGHTS),
+                cb.equal(root.get<LocalDate>("dateFrom"), weekStart),
+                cb.greaterThanOrEqualTo(client, MIN_WEEK_PRICE_PER_DAY),
+            )
+        val key =
+            concat(
+                cb,
+                totalKey(cb, client, days),
+                cb.literal("|"),
+                cb.coalesce(totalKey(cb, root.get("listPrice"), days), ""),
+                cb.literal("|"),
+                cb.coalesce(totalKey(cb, root.get("brokerCommission"), days), ""),
+            )
+        return cb.least(cb.selectCase<String>().`when`(isTile, key).otherwise(cb.nullLiteral(String::class.java)))
+    }
+
+    /**
+     * D1 tiled period total: the sum over the weeks of part [part] ([TILE_KEY_CLIENT] / [TILE_KEY_LIST] /
+     * [TILE_KEY_COMMISSION]) of each week's key. A missing week (or a missing list / commission figure) makes it NULL.
+     */
+    private fun tiledPeriodTotal(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        weekStarts: List<LocalDate>,
+        part: Int,
+    ): Expression<BigDecimal> =
+        weekStarts
+            .map { weekStart ->
+                val figure = cb.function("split_part", String::class.java, tileWeekKey(cb, root, weekStart), cb.literal("|"), cb.literal(part))
+                cb.function("to_number", BigDecimal::class.java, cb.nullif(figure, ""), cb.literal(KEY_TOTAL_PARSE))
+            }.reduce { acc, week -> cb.sum(acc, week) }
+
+    /** D1 tiled period nights: the requested nights when every week of the tiling has a key, else 0. */
+    private fun tiledPeriodNights(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        weekStarts: List<LocalDate>,
+    ): Expression<Int> =
+        cb
+            .selectCase<Int>()
+            .`when`(cb.and(*weekStarts.map { cb.isNotNull(tileWeekKey(cb, root, it)) }.toTypedArray()), weekStarts.size * WEEK_NIGHTS)
+            .otherwise(0)
+
+    /**
+     * D1 invariant (DESIGN.md WS-A): after [applyChosenOffer] and [applyCoveringPeriodPrice] a dated card with offer
+     * dates always shows the searched length. Never expected; logged so a broken tiling cannot hide.
+     */
+    private fun checkD1CardLength(
+        view: YachtSearchSelectResult,
+        requestedNights: Int,
+    ) {
+        val days = view.numberOfDays ?: return
+        if (view.offerDateFrom != null && days != requestedNights) {
+            log.error(
+                "D1 search card of yacht {} shows {} nights for a {}-night search (offer {} - {}, key {})",
+                view.id,
+                days,
+                requestedNights,
+                view.offerDateFrom,
+                view.offerDateTo,
+                view.chosenOfferKey,
+            )
+        }
+    }
+
     /**
      * Replace a search row's single-week per-day price with the multi-week period price when the
      * requested window is fully tiled by the weekly offers inside it (coveringNights == requested)
@@ -1517,11 +1696,17 @@ class YachtQueryingService(
         requestedNights: Int?,
         start: LocalDate?,
         end: LocalDate?,
+        /**
+         * D1: rewrite unless the chosen row is the exact period - the same test as the SQL price sort. LEGACY keeps
+         * today's `numberOfDays != requested`, which disagrees with the sort when the chosen row is a shifted N-night row.
+         */
+        d1: Boolean = false,
     ): YachtSearchSelectResult {
         if (requestedNights == null || requestedNights <= WEEK_NIGHTS) return view
         val coveringNights = view.coveringNights ?: return view
         val coveringTotal = view.coveringClientTotal ?: return view
-        if (coveringNights != requestedNights || view.numberOfDays == requestedNights) return view
+        val chosenIsExact = if (d1) view.chosenOfferKey?.startsWith(CHOICE_EXACT) == true else view.numberOfDays == requestedNights
+        if (coveringNights != requestedNights || chosenIsExact) return view
         val nights = requestedNights.toBigDecimal()
         fun perDay(total: BigDecimal?): BigDecimal? = total?.divide(nights, 10, java.math.RoundingMode.HALF_UP)
         return view.copy(
@@ -1677,7 +1862,17 @@ class YachtQueryingService(
         )
     }
 
-    fun getYachtSearchTotalCount(searchParams: YachtSearchParamObject): Long {
+    fun getYachtSearchTotalCount(searchParams: YachtSearchParamObject): Long =
+        getYachtSearchTotalCount(
+            searchParams,
+            SearchAvailabilitySql.Mode.of(realPriceSwitches.snapshot(), searchParams.legacyAvailability, searchParams.sitemapRequest),
+        )
+
+    /** The count of [searchYachts] under the page's own [mode] (one switch snapshot per request). */
+    private fun getYachtSearchTotalCount(
+        searchParams: YachtSearchParamObject,
+        mode: SearchAvailabilitySql.Mode,
+    ): Long {
         val cb = entityManager.criteriaBuilder
         val cq = cb.createQuery(Long::class.java)
         val root = cq.from(YachtSearchView::class.java)
@@ -1696,6 +1891,7 @@ class YachtQueryingService(
                 cb,
                 root,
                 searchParams,
+                mode,
             )
 
         cq.where(*predicates.toTypedArray())
@@ -1740,6 +1936,7 @@ class YachtQueryingService(
         cb: CriteriaBuilder,
         root: Root<YachtSearchView>,
         searchParams: YachtSearchParamObject,
+        mode: SearchAvailabilitySql.Mode,
     ): List<Predicate> {
         val predicates = mutableListOf<Predicate>()
 
@@ -1774,24 +1971,23 @@ class YachtQueryingService(
         // dated search keeps every pickup: for the searched dates a one-way is a real option. The facets, the relax
         // suggestions (DestinationScopeSql) and the charter facts apply the same rule, so the H2, the type chips and
         // the facts tile count the same boats.
-        val did = resolveSearchDidScope(searchParams.locationIds)
-        val didPredicates = mutableListOf<Predicate>()
-        if (did.marinaIds.isNotEmpty()) {
-            didPredicates.add(root.get<Long>("locationFrom").`in`(did.marinaIds))
-        }
-        if (did.countryCodes.isNotEmpty()) {
-            didPredicates.add(root.get<String>("countryCode").`in`(did.countryCodes))
-        }
-        val undatedSearch = searchParams.startDate == null && searchParams.endDate == null
-        when {
-            didPredicates.isNotEmpty() && undatedSearch ->
-                predicates.add(cb.and(cb.or(*didPredicates.toTypedArray()), basedHere(cq, cb, root, did)))
-            didPredicates.isNotEmpty() -> predicates.add(cb.or(*didPredicates.toTypedArray()))
-            // An asked-for destination that resolves to nothing restricts to nothing — see
-            // [resolveSearchDidScope] (16.9.2026 cusma2 load incident). `cb.disjunction()` is
-            // Hibernate's always-false `1 <> 1`, not an empty junction, so it really is emitted.
-            did.matchesNothing -> predicates.add(cb.disjunction())
-        }
+        // Country scope. An explicit countryCodes whitelist (sitemap) wins; otherwise derive
+        // it from any REGION ids in `did` so a region search only returns yachts in that
+        // region's OWN country. Fixes cross-country partner regions: MMK's "Ionian" spans the
+        // whole sea (Greek + Italian + Albanian coast), so a Greece > Ionian search used to
+        // surface Taranto/Brindisi boats. Filters on the dedicated indexed country_code
+        // column (pickup side, matching the old right(location_full_name, 2) semantics);
+        // null-country regions contribute nothing so the filter quietly no-ops.
+        val scope =
+            RowScope(
+                did = resolveSearchDidScope(searchParams.locationIds),
+                countryCodes =
+                    (searchParams.countryCodes?.takeIf { it.isNotEmpty() } ?: deriveRegionCountryCodes(searchParams.locationIds))
+                        .map { it.uppercase() },
+            )
+        // The filters that vary per matview ROW (pickup, offer status, charter type, country, price): the D1 tiled-ids
+        // subquery applies the same ones to its own rows, so "tiled" means "tiled by rows this page can list".
+        predicates.addAll(rowVaryingPredicates(cq, cb, root, searchParams, scope))
 
         if (!searchParams.yachtIds.isNullOrEmpty()) {
             predicates.add(
@@ -1800,24 +1996,6 @@ class YachtQueryingService(
         }
         searchParams.idFrom?.let { predicates.add(cb.greaterThanOrEqualTo(root.get("id"), it)) }
         searchParams.idTo?.let { predicates.add(cb.lessThan(root.get("id"), it)) }
-
-        // Offer-availability filter — hide `UNAVAILABLE=4` rows (owner weeks,
-        // regattas, bookings that the agency already took outside our system)
-        // from every caller UNLESS the admin "replacement flow" explicitly
-        // asks for them. The view used to hard-code this filter; it's moved
-        // here so the admin wizard can bypass it.
-        if (!searchParams.includeUnavailable) {
-            // offer_status is varchar (STRING enum) since V1_90 — compare against
-            // the enum value, not the legacy ordinal `4`.
-            predicates.add(cb.notEqual(root.get<OfferStatus>("offerStatus"), OfferStatus.UNAVAILABLE))
-        }
-
-        if (!searchParams.charterTypes.isNullOrEmpty()) {
-            // A gulet is never bareboat (GuletRules.charterTypeSql, the native twin for the facets / relax counts):
-            // BAREBOAT never matches a gulet, CREWED matches every gulet, whatever the partner tagged.
-            val asked = cb.and(root.get<CharterType>("charterType").`in`(searchParams.charterTypes), cb.not(isGuletBareboatRow(cb, root)))
-            predicates.add(if (CharterType.CREWED in searchParams.charterTypes) cb.or(asked, isGuletRow(cb, root)) else asked)
-        }
 
         if (!searchParams.vesselTypes.isNullOrEmpty()) {
             predicates.add(root.get<VesselType>("vesselType").`in`(searchParams.vesselTypes))
@@ -1828,21 +2006,6 @@ class YachtQueryingService(
             // YachtSearchView carries `agency_id` as a direct column, no join
             // needed.
             predicates.add(root.get<Long>("agencyId").`in`(searchParams.agencyIds))
-        }
-
-        // Country scope. An explicit countryCodes whitelist (sitemap) wins; otherwise derive
-        // it from any REGION ids in `did` so a region search only returns yachts in that
-        // region's OWN country. Fixes cross-country partner regions: MMK's "Ionian" spans the
-        // whole sea (Greek + Italian + Albanian coast), so a Greece > Ionian search used to
-        // surface Taranto/Brindisi boats. Filters on the dedicated indexed country_code
-        // column (pickup side, matching the old right(location_full_name, 2) semantics);
-        // null-country regions contribute nothing so the filter quietly no-ops.
-        val effectiveCountryCodes =
-            searchParams.countryCodes?.takeIf { it.isNotEmpty() }
-                ?: deriveRegionCountryCodes(searchParams.locationIds)
-        if (effectiveCountryCodes.isNotEmpty()) {
-            val codeUpper = effectiveCountryCodes.map { it.uppercase() }
-            predicates.add(root.get<String>("countryCode").`in`(codeUpper))
         }
 
         if (!searchParams.manufacturers.isNullOrEmpty()) {
@@ -1907,30 +2070,6 @@ class YachtQueryingService(
             predicates.add(cb.lessThanOrEqualTo(root.get("length"), searchParams.getMaxLengthInMeters()))
         }
 
-        if (searchParams.minPrice != null && searchParams.maxPrice != null) {
-            predicates.add(
-                cb.between(
-                    root.get("clientPrice"),
-                    searchParams.getMinPriceInEur(exchangeRateCalculationService),
-                    searchParams.getMaxPriceInEur(exchangeRateCalculationService),
-                ),
-            )
-        } else if (searchParams.minPrice != null) {
-            predicates.add(
-                cb.greaterThanOrEqualTo(
-                    root.get("clientPrice"),
-                    searchParams.getMinPriceInEur(exchangeRateCalculationService),
-                ),
-            )
-        } else if (searchParams.maxPrice != null) {
-            predicates.add(
-                cb.lessThanOrEqualTo(
-                    root.get("clientPrice"),
-                    searchParams.getMaxPriceInEur(exchangeRateCalculationService),
-                ),
-            )
-        }
-
         // TRUE interval logic (Deploy 4, replaces the old ±DATE_FLEX_DAYS start
         // clamp). A published slot qualifies if its OWN window overlaps
         // [from - N, to + N] — judged on the slot's real dateFrom/dateTo, never
@@ -1955,10 +2094,18 @@ class YachtQueryingService(
         // They have no external_reservations rows, so the NOT EXISTS is
         // vacuously true and never drops them.
         val isCustomYacht = cb.isNull(root.get<LocalDate>("dateFrom"))
+        // D5 (SEARCH_PRICE_FLOOR=ON): a row below 300 EUR a week is a partner placeholder, never a price - in every
+        // branch, inside the non-custom arm (a custom yacht has no offer dates and always shows). Not for admins nor
+        // sitemap requests (SearchAvailabilitySql.Mode).
+        if (mode.floor) {
+            predicates.add(cb.or(isCustomYacht, cb.greaterThanOrEqualTo(root.get<BigDecimal>("clientPrice"), MIN_WEEK_PRICE_PER_DAY)))
+        }
         if (searchParams.startDate != null && searchParams.endDate != null) {
-            if (!searchParams.startDate.isBefore(searchParams.endDate)) {
-                throw IllegalArgumentException("Starting date must be before end date")
-            }
+            require(searchParams.startDate.isBefore(searchParams.endDate)) { "Starting date must be before end date" }
+        }
+        if (searchParams.startDate != null && searchParams.endDate != null && mode.d1) {
+            predicates.addAll(d1DatedPredicates(cq, cb, root, searchParams, scope))
+        } else if (searchParams.startDate != null && searchParams.endDate != null) {
             val paddedFrom = searchParams.startDate.minusDays(NEARBY_WINDOW_DAYS)
             val paddedTo = searchParams.endDate.plusDays(NEARBY_WINDOW_DAYS)
             // Slot window [dateFrom, dateTo) overlaps padded request [paddedFrom, paddedTo).
@@ -1973,7 +2120,7 @@ class YachtQueryingService(
                     isCustomYacht,
                     cb.not(
                         cb.exists(
-                            buildHardBlockOverlapSubquery(cq, cb, root, searchParams.startDate, searchParams.endDate),
+                            buildHardBlockOverlapSubquery(cq, cb, root, searchParams.startDate..searchParams.endDate),
                         ),
                     ),
                 ),
@@ -2077,6 +2224,172 @@ class YachtQueryingService(
         return predicates
     }
 
+    /** The destination and country scope of one search, resolved once (repository lookups). */
+    private class RowScope(
+        val did: SearchDidScope,
+        /** Upper-case ISO codes: the sitemap whitelist, else the own countries of the `r-` regions in `did`. */
+        val countryCodes: List<String>,
+    )
+
+    /**
+     * The search filters that vary per matview ROW of a yacht - pickup (`did`), the UNAVAILABLE pre-filter, charter
+     * types (gulet rules), the pickup country, the price - for [root], the page's own root or the D1 tiled-ids
+     * subquery's. Everything else (cabins, length, vessel type, agency, ids, amenities ...) is constant per yacht. The
+     * tiled-ids subquery exists in dated searches only, so it always gets the dated (pickup-only) destination match.
+     */
+    private fun rowVaryingPredicates(
+        cq: CriteriaQuery<*>,
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        searchParams: YachtSearchParamObject,
+        scope: RowScope,
+    ): List<Predicate> {
+        val undated = searchParams.startDate == null && searchParams.endDate == null
+        val predicates = mutableListOf<Predicate>()
+        val did = scope.did
+        val didPredicates = mutableListOf<Predicate>()
+        if (did.marinaIds.isNotEmpty()) {
+            didPredicates.add(root.get<Long>("locationFrom").`in`(did.marinaIds))
+        }
+        if (did.countryCodes.isNotEmpty()) {
+            didPredicates.add(root.get<String>("countryCode").`in`(did.countryCodes))
+        }
+        when {
+            didPredicates.isNotEmpty() && undated ->
+                predicates.add(cb.and(cb.or(*didPredicates.toTypedArray()), basedHere(cq, cb, root, did)))
+            didPredicates.isNotEmpty() -> predicates.add(cb.or(*didPredicates.toTypedArray()))
+            // An asked-for destination that resolves to nothing restricts to nothing — see
+            // [resolveSearchDidScope] (16.9.2026 cusma2 load incident). `cb.disjunction()` is
+            // Hibernate's always-false `1 <> 1`, not an empty junction, so it really is emitted.
+            did.matchesNothing -> predicates.add(cb.disjunction())
+        }
+
+        // Offer-availability filter — hide `UNAVAILABLE=4` rows (owner weeks,
+        // regattas, bookings that the agency already took outside our system)
+        // from every caller UNLESS the admin "replacement flow" explicitly
+        // asks for them. The view used to hard-code this filter; it's moved
+        // here so the admin wizard can bypass it.
+        if (!searchParams.includeUnavailable) {
+            // offer_status is varchar (STRING enum) since V1_90 — compare against
+            // the enum value, not the legacy ordinal `4`.
+            predicates.add(cb.notEqual(root.get<OfferStatus>("offerStatus"), OfferStatus.UNAVAILABLE))
+        }
+
+        if (!searchParams.charterTypes.isNullOrEmpty()) {
+            // A gulet is never bareboat (GuletRules.charterTypeSql, the native twin for the facets / relax counts):
+            // BAREBOAT never matches a gulet, CREWED matches every gulet, whatever the partner tagged.
+            val asked = cb.and(root.get<CharterType>("charterType").`in`(searchParams.charterTypes), cb.not(isGuletBareboatRow(cb, root)))
+            predicates.add(if (CharterType.CREWED in searchParams.charterTypes) cb.or(asked, isGuletRow(cb, root)) else asked)
+        }
+
+        if (scope.countryCodes.isNotEmpty()) {
+            predicates.add(root.get<String>("countryCode").`in`(scope.countryCodes))
+        }
+
+        pricePredicate(cb, root, searchParams)?.let { predicates.add(it) }
+        return predicates
+    }
+
+    /** The min / max price filter (per day, EUR) on one matview row; null without a price filter. */
+    private fun pricePredicate(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        searchParams: YachtSearchParamObject,
+    ): Predicate? {
+        val client = root.get<BigDecimal>("clientPrice")
+        return when {
+            searchParams.minPrice != null && searchParams.maxPrice != null ->
+                cb.between(
+                    client,
+                    searchParams.getMinPriceInEur(exchangeRateCalculationService),
+                    searchParams.getMaxPriceInEur(exchangeRateCalculationService),
+                )
+            searchParams.minPrice != null -> cb.greaterThanOrEqualTo(client, searchParams.getMinPriceInEur(exchangeRateCalculationService))
+            searchParams.maxPrice != null -> cb.lessThanOrEqualTo(client, searchParams.getMaxPriceInEur(exchangeRateCalculationService))
+            else -> null
+        }
+    }
+
+    /**
+     * D1 variant B (SEARCH_PREDICATE=D1, DESIGN.md WS-A) for a dated search of N nights:
+     *  - a row qualifies when it has exactly N nights and starts at most s = min(3, N - 1) days from the searched
+     *    start (the exact period is the 0-shift case) - never a longer or shorter block;
+     *  - a whole-weeks request (N > 7, N % 7 == 0) also lists a yacht whose priced weeks, passing the page's own
+     *    row filters, cover every week: the tiled-ids subquery is uncorrelated and applies [rowVaryingPredicates] to
+     *    its own root, so "id IN tiled" is "this yacht's listable rows tile the period";
+     *  - the live hard block is judged on the hull of the request and the row's own window (a +3 row that runs into
+     *    a partner reservation is not listed);
+     *  - the requested period is taken - on evidence only (SearchAvailabilitySql.requestedPeriodTakenPositional).
+     */
+    private fun d1DatedPredicates(
+        cq: CriteriaQuery<*>,
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        searchParams: YachtSearchParamObject,
+        scope: RowScope,
+    ): List<Predicate> {
+        val start = searchParams.startDate!!
+        val end = searchParams.endDate!!
+        val nights = java.time.temporal.ChronoUnit.DAYS.between(start, end).toInt()
+        val shift = SearchAvailabilitySql.shiftDays(nights).toLong()
+        val dateFrom = root.get<LocalDate>("dateFrom")
+        val days = root.get<Int>("numberOfDays")
+        val isCustomYacht = cb.isNull(dateFrom)
+        val sameLength = cb.and(cb.equal(days, nights), cb.between(dateFrom, start.minusDays(shift), start.plusDays(shift)))
+        val weekStarts = SearchAvailabilitySql.weekStarts(start, nights)
+        val rows =
+            if (weekStarts.isEmpty()) {
+                sameLength
+            } else {
+                val tiled = cq.subquery(Long::class.java)
+                val t = tiled.from(YachtSearchView::class.java)
+                val tileFilters =
+                    listOf(
+                        cb.equal(t.get<Int>("numberOfDays"), WEEK_NIGHTS),
+                        t.get<LocalDate>("dateFrom").`in`(weekStarts),
+                        cb.greaterThanOrEqualTo(t.get<BigDecimal>("clientPrice"), MIN_WEEK_PRICE_PER_DAY),
+                    ) + rowVaryingPredicates(cq, cb, t, searchParams, scope)
+                tiled
+                    .select(t.get("id"))
+                    .where(*tileFilters.toTypedArray())
+                    .groupBy(t.get<Long>("id"))
+                    .having(cb.equal(cb.countDistinct(t.get<LocalDate>("dateFrom")), weekStarts.size.toLong()))
+                val tileRow =
+                    cb.and(
+                        cb.equal(days, WEEK_NIGHTS),
+                        dateFrom.`in`(weekStarts),
+                        cb.greaterThanOrEqualTo(root.get<BigDecimal>("clientPrice"), MIN_WEEK_PRICE_PER_DAY),
+                        root.get<Long>("id").`in`(tiled),
+                    )
+                cb.or(sameLength, tileRow)
+            }
+        return listOf(
+            cb.or(isCustomYacht, rows),
+            cb.or(isCustomYacht, cb.not(cb.exists(buildHardBlockOverlapSubquery(cq, cb, root, start..end, hull = true)))),
+            cb.not(requestedPeriodTaken(cb, root, start, end)),
+        )
+    }
+
+    /** The native evidence clause of [SearchAvailabilitySql] on this root, through Hibernate's `sql()` expression. */
+    private fun requestedPeriodTaken(
+        cb: CriteriaBuilder,
+        root: Root<YachtSearchView>,
+        start: LocalDate,
+        end: LocalDate,
+    ): Predicate {
+        val taken = SearchAvailabilitySql.requestedPeriodTakenPositional()
+        val args: Array<Expression<*>> =
+            taken.args
+                .map { name ->
+                    when (name) {
+                        "yacht" -> root.get<Long>("id")
+                        "start" -> cb.literal(start)
+                        else -> cb.literal(end)
+                    }
+                }.toTypedArray()
+        return cb.isTrue((cb as HibernateCriteriaBuilder).sql(taken.pattern, Boolean::class.javaObjectType, *args))
+    }
+
     /**
      * Correlated subquery: does this yacht have ANY hard-block reservation
      * (status RESERVATION or SERVICE) whose REAL window overlaps the searched
@@ -2096,18 +2409,43 @@ class YachtQueryingService(
         cq: CriteriaQuery<*>,
         cb: CriteriaBuilder,
         root: Root<YachtSearchView>,
-        start: LocalDate,
-        end: LocalDate,
+        /** The searched period [start, end). */
+        request: ClosedRange<LocalDate>,
+        /**
+         * D1: judge the HULL of the request and the row's own window, `[LEAST(start, row.from), GREATEST(end, row.to))`
+         * (SearchAvailabilitySql.hullHardBlock). LEGACY (false) keeps the request window.
+         */
+        hull: Boolean = false,
     ): jakarta.persistence.criteria.Subquery<Long> {
+        val start = request.start
+        val end = request.endInclusive
         val sub = cq.subquery(Long::class.java)
         val er = sub.from(ExternalReservation::class.java)
         val statusPath = er.get<ExternalReservationStatus>("status")
         val optionExpirationPath = er.get<LocalDateTime>("optionExpiration")
+        val window =
+            if (hull) {
+                listOf(
+                    cb.lessThan(
+                        er.get<LocalDate>("dateFrom"),
+                        cb.function("greatest", LocalDate::class.java, cb.literal(end), root.get<LocalDate>("dateTo")),
+                    ),
+                    cb.greaterThan(
+                        er.get<LocalDate>("dateTo"),
+                        cb.function("least", LocalDate::class.java, cb.literal(start), root.get<LocalDate>("dateFrom")),
+                    ),
+                )
+            } else {
+                listOf(
+                    cb.lessThan(er.get<LocalDate>("dateFrom"), end),
+                    cb.greaterThan(er.get<LocalDate>("dateTo"), start),
+                )
+            }
         sub.select(cb.literal(1L)).where(
             cb.equal(er.get<Yacht>("yacht").get<Long>("id"), root.get<Long>("id")),
             statusPath.`in`(ExternalReservationStatus.RESERVATION, ExternalReservationStatus.SERVICE),
-            cb.lessThan(er.get<LocalDate>("dateFrom"), end),
-            cb.greaterThan(er.get<LocalDate>("dateTo"), start),
+            window[0],
+            window[1],
             // Option-honesty (2026-06-27): a row carrying a NON-NULL, already-past
             // optionExpiration is an expired hold the partner has freed — it must not
             // hard-block, even if mis-statused as RESERVATION ("zombie"). A genuine
@@ -2417,14 +2755,29 @@ class YachtQueryingService(
      * Same test as the undated branch of [buildYachtSearchPredicates] - a search-view row starting today or later,
      * not UNAVAILABLE (CUSTOM boats have no dates and always count) - so the boat page and the listings never
      * disagree about whether the boat is offered. The view lags the offer table by one refresh (<= 10 min).
+     *
+     * D5 (SEARCH_PRICE_FLOOR=ON): a placeholder-priced boat (only rows below 300 EUR a week) has no bookable offer -
+     * the page shows the inquiry form (D7). The floor sits inside the non-custom arm, so a custom yacht without a low
+     * price still counts.
      */
-    private fun hasBookableFutureOffer(id: Long): Boolean =
-        entityManager
+    private fun hasBookableFutureOffer(id: Long): Boolean {
+        if (!realPriceSwitches.searchPriceFloor.isOn) {
+            return entityManager
+                .createNativeQuery(
+                    "SELECT EXISTS (SELECT 1 FROM yacht_search_view v WHERE v.id = :id " +
+                        "AND (v.date_from IS NULL OR (v.date_from >= CURRENT_DATE AND v.offer_status <> 'UNAVAILABLE')))",
+                ).setParameter("id", id)
+                .singleResult as Boolean
+        }
+        return entityManager
             .createNativeQuery(
                 "SELECT EXISTS (SELECT 1 FROM yacht_search_view v WHERE v.id = :id " +
-                    "AND (v.date_from IS NULL OR (v.date_from >= CURRENT_DATE AND v.offer_status <> 'UNAVAILABLE')))",
+                    "AND (v.date_from IS NULL OR (v.date_from >= CURRENT_DATE AND v.offer_status <> 'UNAVAILABLE' " +
+                    "AND v.client_price >= :${SearchAvailabilitySql.P_FLOOR})))",
             ).setParameter("id", id)
+            .setParameter(SearchAvailabilitySql.P_FLOOR, SearchAvailabilitySql.MIN_WEEK_PRICE_PER_DAY)
             .singleResult as Boolean
+    }
 
     /**
      * The slug of the copy the listings show when [id] is a second listing of the same boat (yacht_listing_twin,

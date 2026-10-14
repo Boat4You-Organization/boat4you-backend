@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.mapper
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.dto.OfferDto
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalReservationStatus
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Component
 class OfferMapper(
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
     private val yachtExtrasMapper: YachtExtrasMapper,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     fun toDto(
         offer: Offer,
@@ -41,10 +43,14 @@ class OfferMapper(
             // active past the stated deadline (Vernicos/MMK MY ANGEL). RESERVED ->
             // RESERVATION, SERVICE stays SERVICE (both hard-blocked on the FE),
             // OPTION_EXPIRED / CANCELLED / INFO -> FREE.
+            //
+            // A2 (SEARCH_DEMOTE_STALE_OPTIONS=false, DESIGN.md WS-A path 1): the stored OPTION / OPTION_WAITING is
+            // shown as it is (pre-reserved, inquiry) once the reverifiers keep it honest with partner evidence. The
+            // default (true) is today's demotion.
             status =
                 offer.status?.let { s ->
                     val collapsed = s.toCustomerStatus()
-                    if (collapsed == ExternalReservationStatus.OPTION && !hasLiveOption) {
+                    if (collapsed == ExternalReservationStatus.OPTION && !hasLiveOption && realPriceSwitches.demoteStaleOptions) {
                         ExternalReservationStatus.FREE
                     } else {
                         collapsed

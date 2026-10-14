@@ -185,6 +185,10 @@ class YachtController(
                 weeklyPrice = priceBasis.equals("week", ignoreCase = true),
                 idFrom = idFrom,
                 idTo = idTo,
+                // Real-price rule (DESIGN.md WS-A): admins keep the LEGACY predicate and no price floor, so the Offers
+                // workspace and the reservation wizard still see placeholder-priced boats. A sitemap request (idFrom /
+                // idTo / countryCodes) skips the floor on its own (YachtSearchParamObject.sitemapRequest).
+                legacyAvailability = isAdmin,
                 language = language,
             )
 
