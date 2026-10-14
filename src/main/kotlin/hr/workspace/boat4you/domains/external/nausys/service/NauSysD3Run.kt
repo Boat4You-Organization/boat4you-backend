@@ -48,7 +48,22 @@ class NauSysD3Run internal constructor(
 
     val runId: Long get() = tally.runId
 
-    val writes: Boolean get() = mode == NauSysD3Mode.WRITE
+    /** Set when the switch left WRITE during this pass (rollback by switch): no D3 writes from then on. */
+    @Volatile
+    private var downgradedTo: NauSysD3Mode? = null
+
+    val writes: Boolean get() = mode == NauSysD3Mode.WRITE && downgradedTo == null
+
+    /**
+     * Rollback by switch inside a running pass: [current] = `NAUSYS_D3_MODE` now (60 s cached). Once a WRITE pass sees
+     * anything else it stops writing for the rest of the pass and runs like LOG (today's writes plus counts, which is
+     * what LEGACY writes too). Never upgrades a pass.
+     */
+    internal fun recheck(current: NauSysD3Mode) {
+        if (mode != NauSysD3Mode.WRITE || current == NauSysD3Mode.WRITE || downgradedTo != null) return
+        downgradedTo = current
+        d3Log.warn("NauSys D3: NAUSYS_D3_MODE is $current now - run $runId stops its D3 writes, the rest of this pass runs today's disappearance pass")
+    }
 
     internal fun count(
         agencyId: Long,

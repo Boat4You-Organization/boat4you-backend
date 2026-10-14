@@ -229,6 +229,61 @@ class RealPriceEvidenceStoresTest {
     }
 
     @Test
+    fun `a strike on a period hidden earlier closes the hide record and starts a new two-day cycle`() {
+        checks.recordFirstStrike(NAUSYS, 1, D1, D2, 3, PeriodCheckResult.EMPTY, DAY1) shouldBe DAY1
+        checks.markHidden(NAUSYS, 1, D1, D2, 2, DAY2)
+        // a later partner quote shows the period again without anyone closing the strike; one negative answer later:
+        checks.recordFirstStrike(NAUSYS, 1, D1, D2, 3, PeriodCheckResult.UNPRICED, DAY3) shouldBe DAY3
+        checks.find(NAUSYS, 1, D1, D2)!!.run {
+            firstEmptyOn shouldBe DAY3
+            hiddenOn shouldBe null
+            hiddenRows shouldBe 0
+            lastResult shouldBe PeriodCheckResult.UNPRICED
+        }
+        // the cycle goes on as usual: an open strike is never moved
+        checks.recordFirstStrike(NAUSYS, 1, D1, D2, 3, PeriodCheckResult.EMPTY, DAY3.plusDays(1)) shouldBe DAY3
+
+        // the batch variant resets the same way
+        checks.markHidden(NAUSYS, 1, D1, D2, 1, DAY3.plusDays(1))
+        checks.recordFirstStrikeBatch(NAUSYS, listOf(PeriodCheck(1, D1, D2, 3, PeriodCheckResult.EMPTY)), DAY3.plusDays(2))
+        checks.find(NAUSYS, 1, D1, D2)!!.run {
+            firstEmptyOn shouldBe DAY3.plusDays(2)
+            hiddenOn shouldBe null
+        }
+    }
+
+    @Test
+    fun `closeStrikesOnQuoteBatch closes open strikes and hide records only, priority and bookkeeping stay`() {
+        checks.recordFirstStrike(NAUSYS, 1, D1, D2, 3, PeriodCheckResult.EMPTY, DAY1)
+        checks.recordFirstStrike(NAUSYS, 2, D1, D2, 3, PeriodCheckResult.EMPTY, DAY1)
+        checks.markHidden(NAUSYS, 2, D1, D2, 2, DAY2)
+        checks.recordChecked(NAUSYS, 3, D1, D2, 2, PeriodCheckResult.QUOTED_OPTION, today = DAY1) // no strike
+        checks.recordFirstStrike(MMK, 1, D1, D2, 3, PeriodCheckResult.EMPTY, DAY1) // other partner
+        val xminBefore = jdbc.queryForObject("SELECT xmin::text FROM partner_period_check WHERE yacht_id = 3", String::class.java)
+
+        checks.closeStrikesOnQuoteBatch(
+            NAUSYS,
+            listOf(PeriodKey(1, D1, D2), PeriodKey(2, D1, D2), PeriodKey(3, D1, D2), PeriodKey(9, D1, D2), PeriodKey(1, D1, D2)),
+        )
+
+        checks.find(NAUSYS, 1, D1, D2)!!.run {
+            firstEmptyOn shouldBe null
+            priority shouldBe 3
+            lastResult shouldBe PeriodCheckResult.EMPTY
+        }
+        checks.find(NAUSYS, 2, D1, D2)!!.run {
+            firstEmptyOn shouldBe null
+            hiddenOn shouldBe null
+            hiddenRows shouldBe 0
+        }
+        // a row without a strike or hide is not rewritten, a missing one is not created
+        jdbc.queryForObject("SELECT xmin::text FROM partner_period_check WHERE yacht_id = 3", String::class.java) shouldBe xminBefore
+        checks.find(NAUSYS, 9, D1, D2) shouldBe null
+        checks.find(MMK, 1, D1, D2)!!.firstEmptyOn shouldBe DAY1
+        checks.closeStrikesOnQuoteBatch(NAUSYS, emptyList())
+    }
+
+    @Test
     fun `a strike needs a negative decided answer`() {
         shouldThrow<IllegalArgumentException> { checks.recordFirstStrike(NAUSYS, 1, D1, D2, 3, PeriodCheckResult.QUOTED_FREE, DAY1) }
         shouldThrow<IllegalArgumentException> { checks.recordFirstStrike(NAUSYS, 1, D1, D2, 3, PeriodCheckResult.UNKNOWN, DAY1) }

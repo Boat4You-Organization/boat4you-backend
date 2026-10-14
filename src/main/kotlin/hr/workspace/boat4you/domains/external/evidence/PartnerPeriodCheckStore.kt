@@ -121,7 +121,9 @@ class PartnerPeriodCheckStore(
 
     /**
      * Records a negative answer (EMPTY / UNPRICED / ROUTE_GONE / MINSTAY) as a strike: `first_empty_on = today` only
-     * when no strike is open (an open strike is never moved), plus the [recordChecked] bookkeeping.
+     * when no strike is open (an open strike is never moved), plus the [recordChecked] bookkeeping. A row that carries
+     * a hide record (`hidden_on`) belongs to an earlier cycle: the period is shown again, so the hide record is closed
+     * and this answer is a first strike.
      *
      * @return the row's `first_empty_on` after the write: `today` for a first strike, an earlier day when this answer
      *   is the second strike (the caller then decides on a hide).
@@ -178,6 +180,23 @@ class PartnerPeriodCheckStore(
     ) {
         if (periods.isEmpty()) return
         jdbcTemplate.batchUpdate(CLEAR_STRIKE_SQL, periods.map { clearArgs(sys, it, priority) }, CLEAR_TYPES)
+    }
+
+    /**
+     * Positive partner evidence outside the reverifier (the nightly / near-term grid, a warm): the partner quoted
+     * exactly these periods again, so an open strike and a stale hide record are closed. Only rows that carry one are
+     * touched (no write for the common case), the priority stays.
+     */
+    fun closeStrikesOnQuoteBatch(
+        sys: ExternalSystemEnum,
+        periods: List<PeriodKey>,
+    ) {
+        if (periods.isEmpty()) return
+        jdbcTemplate.batchUpdate(
+            CLOSE_ON_QUOTE_SQL,
+            periods.distinct().map { arrayOf<Any>(sys.value, it.yachtId, it.dateFrom, it.dateTo) },
+            intArrayOf(Types.SMALLINT, Types.BIGINT, Types.DATE, Types.DATE),
+        )
     }
 
     /** Records that exactly these dates were hidden today ([hiddenRows] offer rows flipped). */
@@ -307,12 +326,21 @@ class PartnerPeriodCheckStore(
                 "last_checked_on, last_result, first_empty_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
                 "$ON_CONFLICT $LEAST_PRIORITY, last_checked_on = EXCLUDED.last_checked_on, " +
                 "last_result = EXCLUDED.last_result, " +
-                "first_empty_on = COALESCE(partner_period_check.first_empty_on, EXCLUDED.first_empty_on)"
+                // A row with hidden_on set belongs to an earlier hide: the period is shown again (a later partner quote
+                // restored it), so this answer starts a new two-day cycle, like the MMK strike table does.
+                "first_empty_on = CASE WHEN partner_period_check.hidden_on IS NOT NULL THEN EXCLUDED.first_empty_on " +
+                "ELSE COALESCE(partner_period_check.first_empty_on, EXCLUDED.first_empty_on) END, " +
+                "hidden_on = NULL, hidden_rows = 0"
 
         private const val CLEAR_STRIKE_SQL =
             "UPDATE partner_period_check SET first_empty_on = NULL, hidden_on = NULL, hidden_rows = 0, " +
                 "priority = COALESCE(CAST(? AS SMALLINT), priority) " +
                 "WHERE external_system_id = ? AND yacht_id = ? AND date_from = ? AND date_to = ?"
+
+        private const val CLOSE_ON_QUOTE_SQL =
+            "UPDATE partner_period_check SET first_empty_on = NULL, hidden_on = NULL, hidden_rows = 0 " +
+                "WHERE external_system_id = ? AND yacht_id = ? AND date_from = ? AND date_to = ? " +
+                "AND (first_empty_on IS NOT NULL OR hidden_on IS NOT NULL)"
 
         private const val UPSERT_PENDING_SQL =
             "INSERT INTO partner_period_check (external_system_id, yacht_id, date_from, date_to, priority) " +

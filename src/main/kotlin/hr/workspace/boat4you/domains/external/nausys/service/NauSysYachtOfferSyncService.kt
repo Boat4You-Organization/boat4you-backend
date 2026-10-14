@@ -1,6 +1,8 @@
 package hr.workspace.boat4you.domains.external.nausys.service
 
 import hr.workspace.boat4you.common.config.RealPriceSwitches
+import hr.workspace.boat4you.common.config.RealPriceSwitches.NauSysD3Mode
+import hr.workspace.boat4you.common.config.RealPriceSwitches.NauSysReverifyMode
 import hr.workspace.boat4you.common.services.PriceCalculations
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalEquipmentType
@@ -26,6 +28,7 @@ import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheck
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheckPriority
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheckResult
+import hr.workspace.boat4you.domains.external.evidence.PeriodKey
 import hr.workspace.boat4you.domains.external.evidence.ReverifyJobs
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.service.YachtSyncMutex
@@ -88,6 +91,9 @@ class NauSysYachtOfferSyncService(
         const val REASON_ROUTE_GONE = "ROUTE_GONE"
         const val REASON_UNPRICED_TWO_DAY = "UNPRICED_TWO_DAY"
         const val REASON_LEGACY_NOT_RETURNED = "LEGACY_NOT_RETURNED"
+
+        /** Partner statuses that count as a quote of the period (strike closing). */
+        private val QUOTE_STATUSES = setOf(OfferStatus.FREE, OfferStatus.OPTION, OfferStatus.OPTION_WAITING)
     }
 
     /**
@@ -100,9 +106,15 @@ class NauSysYachtOfferSyncService(
      * today's writes plus would-flip / would-strike counts per agency and reason in the NAUSYS_D3 run. WRITE = the
      * pass never marks SYNTHETIC_DISAPPEARANCE again: a stale route variant flips to UNAVAILABLE at once (flip-logged,
      * guarded), a FREE-unpriced answer is a strike (status unchanged; a later-day second one flips), our mapping gap
-     * leaves the row unchanged, real UNDER_OPTION rows and rows with a reservation_flow are never touched.
-     * In every mode the rows the partner returns as OPTION / OPTION_WAITING are recorded as QUOTED_OPTION evidence
-     * in `partner_period_check` (one batch per answer).
+     * leaves the row unchanged, real UNDER_OPTION rows and rows with a reservation_flow are never touched. The reason is
+     * decided per stale row: a row whose own route came back FREE without a price is UNPRICED (strike, breaker), only a
+     * route absent from the answer while another route of the dates was refreshed is ROUTE_GONE. A WRITE pass re-reads
+     * the switch on every answer and stops writing once it is no longer WRITE (rollback by switch).
+     *
+     * Evidence bookkeeping (only while D3 is not LEGACY or `NAUSYS_REVERIFY` is not OFF; the default switches write
+     * nothing new): the rows the partner returns as OPTION / OPTION_WAITING are recorded as QUOTED_OPTION, and a period
+     * the partner quotes again (priced FREE / OPTION / OPTION_WAITING, every shown row of the dates refreshed) closes
+     * its open strike and hide record - one batch each per answer.
      */
     @Suppress("LongMethod", "CyclomaticComplexMethod", "LongParameterList") // the pre-real-price pass, kept in place so LEGACY stays byte-identical
     fun syncOffers(
@@ -119,6 +131,8 @@ class NauSysYachtOfferSyncService(
         skipDisappearance: Boolean = false,
         d3: NauSysD3Run? = null,
     ): Int {
+        // Rollback by switch: a WRITE pass stops writing as soon as NAUSYS_D3_MODE is no longer WRITE.
+        d3?.recheck(realPriceSwitches.nausysD3Mode)
         val externalSystem = externalSystemService.findById(ExternalSystemEnum.NAUSYS.value.toLong())
         val allMappings =
             externalMappingService.getCachedAllMappingsByTypeAndExtendedType(
@@ -136,8 +150,9 @@ class NauSysYachtOfferSyncService(
         var disappeared = 0
         // D6 switch, read once per batch so every extra of the batch is classified alike.
         val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
-        // A2 evidence (all D3 modes): periods the partner returned as OPTION / OPTION_WAITING in this answer.
+        // A2 evidence: periods the partner returned as OPTION / OPTION_WAITING in this answer; periods quoted again.
         val quotedOptions = mutableListOf<PeriodCheck>()
+        val requoted = mutableListOf<PeriodKey>()
         // D3 per-response breaker: a reseller losing its pricing must never strike its whole fleet.
         val unpricedBreaker = d3 != null && unpricedYachtShare(nausysOffers, dateFrom, dateTo) > D3_MAX_UNPRICED_SHARE
         if (unpricedBreaker && d3!!.escalate(agency.id!!)) {
@@ -172,6 +187,11 @@ class NauSysYachtOfferSyncService(
 
                         // D3: what the answer did for exactly the processed interval (classifies the stale rows below)
                         val exactResults = mutableListOf<OfferUpdateResult>()
+                        // existing rows of the interval whose own route came back FREE without a price (D3 per-row reason)
+                        val unpricedRowIds = mutableSetOf<Long>()
+                        // existing rows the answer refreshed, and the periods it quoted (strike closing)
+                        val refreshedIds = mutableSetOf<Long>()
+                        val quotedPeriods = mutableSetOf<Pair<LocalDate, LocalDate>>()
                         if (existingYachtOffers.isEmpty()) {
                             nausysYachtOffers.forEach { nausysOffer ->
                                 val result = updateOffer(Offer(), yacht, nausysOffer, allLocationMappings, optionalOnSite)
@@ -179,6 +199,7 @@ class NauSysYachtOfferSyncService(
                                     skippedCount++
                                 }
                                 noteQuotedOption(systemYachtId, nausysOffer, result, quotedOptions)
+                                noteQuote(null, nausysOffer, result, refreshedIds, quotedPeriods)
                             }
                         } else {
                             nausysYachtOffers.forEach { nausysOffer ->
@@ -213,9 +234,14 @@ class NauSysYachtOfferSyncService(
                                 }
                                 if (result != OfferUpdateResult.UPDATED) skippedCount++
                                 noteQuotedOption(systemYachtId, nausysOffer, result, quotedOptions)
-                                if (nausysOffer.periodFrom?.value == dateFrom && nausysOffer.periodTo?.value == dateTo) exactResults += result
+                                noteQuote(existingOffer, nausysOffer, result, refreshedIds, quotedPeriods)
+                                if (nausysOffer.periodFrom?.value == dateFrom && nausysOffer.periodTo?.value == dateTo) {
+                                    exactResults += result
+                                    if (existingOffer != null && result == OfferUpdateResult.FREE_UNPRICED) unpricedRowIds += existingOffer.id!!
+                                }
                             }
                         }
+                        requoted += requotedPeriods(systemYachtId, quotedPeriods, existingYachtOffers, refreshedIds)
 
                         // Handle offers that existed for this exact (dateFrom, dateTo) but were not refreshed
                         // by the current response (yacht was in response but didn't return an offer for this week).
@@ -239,13 +265,20 @@ class NauSysYachtOfferSyncService(
                                         it.extStatus != SYNTHETIC_DISAPPEARANCE_EXT_STATUS
                                 }
                         if (d3 != null && stale.isNotEmpty()) {
-                            val reason = d3Reason(exactResults)
+                            // per row; strikes before flips, so a flip's hide record never restarts today's strike
+                            val byReason =
+                                stale
+                                    .groupBy { d3RowReason(it, exactResults, unpricedRowIds) }
+                                    .entries
+                                    .sortedBy { it.key == NauSysD3Run.Reason.ROUTE_GONE }
                             if (d3.writes) {
-                                disappeared += d3Write(agency.id!!, systemYachtId, stale, reason, unpricedBreaker, dateFrom, dateTo, d3)
+                                byReason.forEach { (reason, rows) ->
+                                    disappeared += d3Write(agency.id!!, systemYachtId, rows, reason, unpricedBreaker, dateFrom, dateTo, d3)
+                                }
                                 return@runExclusiveYachtWrite
                             }
                             // LOG: counted on the state before today's writes below
-                            d3Log(agency.id!!, systemYachtId, stale, reason, unpricedBreaker, dateFrom, dateTo, d3)
+                            byReason.forEach { (reason, rows) -> d3Log(agency.id!!, systemYachtId, rows, reason, unpricedBreaker, dateFrom, dateTo, d3) }
                         }
                         stale.forEach { offer ->
                             disappeared++
@@ -278,12 +311,15 @@ class NauSysYachtOfferSyncService(
         if (skippedYachtCount > 0) {
             log.warn("NauSys offer sync for agency ${agency.id}: skipped $skippedYachtCount yachts due to missing Yacht mappings")
         }
-        recordQuotedOptions(quotedOptions)
+        if (d3 != null || realPriceSwitches.nausysReverify != NauSysReverifyMode.OFF) {
+            recordQuotedOptions(quotedOptions)
+            closeStrikesOnQuote(requoted)
+        }
         d3?.responseDone()
         return disappeared
     }
 
-    /** A2 evidence: a row the partner returned as OPTION / OPTION_WAITING and we wrote (all D3 modes). */
+    /** A2 evidence: a row the partner returned as OPTION / OPTION_WAITING and we wrote (recorded outside the defaults). */
     private fun noteQuotedOption(
         yachtId: Long,
         nausysOffer: RestFreeYacht,
@@ -304,6 +340,50 @@ class NauSysYachtOfferSyncService(
         if (checks.isEmpty()) return
         runCatching { periodChecks.recordCheckedBatch(ExternalSystemEnum.NAUSYS, checks.distinct()) }
             .onFailure { log.warn("NauSys QUOTED_OPTION bookkeeping: ${checks.size} periods not recorded: ${it.message}") }
+    }
+
+    /**
+     * Strike-closing evidence of one partner row: the existing row it refreshed, and its period when the partner quoted
+     * it (priced FREE, OPTION or OPTION_WAITING) and we wrote it.
+     */
+    private fun noteQuote(
+        existingOffer: Offer?,
+        nausysOffer: RestFreeYacht,
+        result: OfferUpdateResult,
+        refreshedIds: MutableSet<Long>,
+        quotedPeriods: MutableSet<Pair<LocalDate, LocalDate>>,
+    ) {
+        if (result != OfferUpdateResult.UPDATED) return
+        existingOffer?.id?.let { refreshedIds += it }
+        val from = nausysOffer.periodFrom?.value
+        val to = nausysOffer.periodTo?.value
+        if (OfferStatus.fromNausysValue(nausysOffer.status) in QUOTE_STATUSES && from != null && to != null) quotedPeriods += from to to
+    }
+
+    /**
+     * The quoted periods whose every shown row (FREE / OPTION / OPTION_WAITING, not SYNTHETIC_OPTION) of exactly those
+     * dates this answer refreshed: positive partner evidence that closes an open strike. A shown row the answer left
+     * stale (a route gone, a route unpriced, our marker) keeps the period's strike open for the reverifier.
+     */
+    private fun requotedPeriods(
+        yachtId: Long,
+        quotedPeriods: Set<Pair<LocalDate, LocalDate>>,
+        existing: List<Offer>,
+        refreshedIds: Set<Long>,
+    ): List<PeriodKey> =
+        quotedPeriods
+            .filter { (from, to) ->
+                existing.none { o ->
+                    o.dateFrom == from && o.dateTo == to && o.id !in refreshedIds && o.status in QUOTE_STATUSES &&
+                        o.extStatus != NauSysAvailabilitySyncService.SYNTHETIC_OPTION_EXT_STATUS
+                }
+            }.map { (from, to) -> PeriodKey(yachtId, from, to) }
+
+    /** One JDBC batch per answer (only rows with an open strike or hide are written); never breaks the sync. */
+    private fun closeStrikesOnQuote(periods: List<PeriodKey>) {
+        if (periods.isEmpty()) return
+        runCatching { periodChecks.closeStrikesOnQuoteBatch(ExternalSystemEnum.NAUSYS, periods) }
+            .onFailure { log.warn("NauSys strike closing on quote: ${periods.size} periods not recorded: ${it.message}") }
     }
 
     /**
@@ -328,6 +408,21 @@ class NauSysYachtOfferSyncService(
         val price = r.price?.clientPrice?.toBigDecimalOrNull()
         return OfferStatus.fromNausysValue(r.status) == OfferStatus.FREE && (price == null || price <= BigDecimal.ZERO)
     }
+
+    /**
+     * Why one stale row of the interval was not refreshed: our mapping gap first (we cannot tell which route an
+     * unmapped row was), then the row's own route answered FREE without a price, then the yacht-level reason.
+     */
+    private fun d3RowReason(
+        offer: Offer,
+        exactResults: List<OfferUpdateResult>,
+        unpricedRowIds: Set<Long>,
+    ): NauSysD3Run.Reason =
+        when {
+            OfferUpdateResult.SKIPPED_MISSING_LOCATION in exactResults -> NauSysD3Run.Reason.MAPPING_GAP
+            offer.id in unpricedRowIds -> NauSysD3Run.Reason.UNPRICED
+            else -> d3Reason(exactResults)
+        }
 
     /** Why the yacht's rows of the interval were not refreshed: our mapping gap first, then route, unpriced, absent. */
     private fun d3Reason(exactResults: List<OfferUpdateResult>): NauSysD3Run.Reason =
@@ -493,6 +588,9 @@ class NauSysYachtOfferSyncService(
     /**
      * Transaction unit = ONE YACHT under the advisory write lock — same rationale as
      * [syncOffers]. A yacht another sync is writing right now is skipped.
+     *
+     * Outside the default switches (`NAUSYS_REVERIFY` not OFF or `NAUSYS_D3_MODE` not LEGACY) a period the partner
+     * quotes again here closes its open strike and hide record, exactly like [syncOffers] (one batch per call).
      */
     fun syncOffersForAsync(nausysAllOffers: List<RestFreeYacht>) {
         val yachtExternalIds = nausysAllOffers.map { it.yachtId!! }.toList()
@@ -520,6 +618,7 @@ class NauSysYachtOfferSyncService(
         var skippedLockedCount = 0
         // D6 switch, read once per batch so every extra of the batch is classified alike.
         val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
+        val requoted = mutableListOf<PeriodKey>()
         nausysAllOffers.groupBy { it.yachtId }?.forEach { (nausysYachtId, nausysOffers) ->
             val mapping = allYachtMappings.find { it.externalId == nausysYachtId!! } ?: return@forEach
             val systemYachtId =
@@ -533,23 +632,11 @@ class NauSysYachtOfferSyncService(
                         val yacht = yachtRepository.findById(systemYachtId).orElse(null) ?: return@runExclusiveYachtWrite
 
                         val existingYachtOffers = getOffersForYacht(yacht, nausysOffers)
+                        val refreshedIds = mutableSetOf<Long>()
+                        val quotedPeriods = mutableSetOf<Pair<LocalDate, LocalDate>>()
 
                         nausysOffers.forEach { nausysOffer ->
-                            // Route-aware pairing — same fix as the scheduled path above:
-                            // the natural key is (yacht, week, product, ROUTE); week-only
-                            // matching pairs both route variants of a week with the same
-                            // row and the update collides with its sibling's key.
-                            val pairFromId =
-                                allLocationMappings.find { m -> m.externalId == nausysOffer.locationFromId?.toLong() }?.systemId
-                            val pairToId =
-                                allLocationMappings.find { m -> m.externalId == nausysOffer.locationToId?.toLong() }?.systemId
-                            val existingOffer =
-                                existingYachtOffers.find {
-                                    it.dateFrom == nausysOffer.periodFrom!!.value!! &&
-                                        it.dateTo == nausysOffer.periodTo!!.value!! &&
-                                        it.locationFrom?.id == pairFromId &&
-                                        it.locationTo?.id == pairToId
-                                }
+                            val existingOffer = asyncRoutePair(existingYachtOffers, nausysOffer, allLocationMappings)
                             val result =
                                 if (existingOffer == null) {
                                     updateOffer(Offer(), yacht, nausysOffer, allLocationMappings, optionalOnSite)
@@ -557,7 +644,9 @@ class NauSysYachtOfferSyncService(
                                     updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings, optionalOnSite)
                                 }
                             if (result != OfferUpdateResult.UPDATED) skippedCount++
+                            noteQuote(existingOffer, nausysOffer, result, refreshedIds, quotedPeriods)
                         }
+                        requoted += requotedPeriods(systemYachtId, quotedPeriods, existingYachtOffers, refreshedIds)
                     }
                 if (!ran) skippedLockedCount++
             } catch (e: Exception) {
@@ -570,6 +659,31 @@ class NauSysYachtOfferSyncService(
         }
         if (skippedCount > 0) {
             log.warn("NauSys async offer sync: skipped $skippedCount offers due to missing Location mappings")
+        }
+        if (requoted.isNotEmpty() && evidenceSwitchesOn()) closeStrikesOnQuote(requoted)
+    }
+
+    /** True when a NauSys evidence switch is away from its default (`NAUSYS_REVERIFY` OFF, `NAUSYS_D3_MODE` LEGACY). */
+    private fun evidenceSwitchesOn(): Boolean =
+        realPriceSwitches.nausysReverify != NauSysReverifyMode.OFF || realPriceSwitches.nausysD3Mode != NauSysD3Mode.LEGACY
+
+    /**
+     * Route-aware pairing of [syncOffersForAsync] — same fix as the scheduled path: the natural key is (yacht, week,
+     * product, ROUTE); week-only matching pairs both route variants of a week with the same row and the update
+     * collides with its sibling's key.
+     */
+    private fun asyncRoutePair(
+        existingYachtOffers: List<Offer>,
+        nausysOffer: RestFreeYacht,
+        allLocationMappings: List<ExternalMapping>,
+    ): Offer? {
+        val pairFromId = allLocationMappings.find { m -> m.externalId == nausysOffer.locationFromId?.toLong() }?.systemId
+        val pairToId = allLocationMappings.find { m -> m.externalId == nausysOffer.locationToId?.toLong() }?.systemId
+        return existingYachtOffers.find {
+            it.dateFrom == nausysOffer.periodFrom!!.value!! &&
+                it.dateTo == nausysOffer.periodTo!!.value!! &&
+                it.locationFrom?.id == pairFromId &&
+                it.locationTo?.id == pairToId
         }
     }
 

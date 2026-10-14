@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.external.nausys.reverify
 
 import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.common.config.RealPriceSwitches.NauSysD3Mode
+import hr.workspace.boat4you.common.config.RealPriceSwitches.NauSysReverifyMode
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalEquipmentRepository
@@ -20,6 +21,7 @@ import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheck
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheckPriority
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheckResult
+import hr.workspace.boat4you.domains.external.evidence.PeriodKey
 import hr.workspace.boat4you.domains.external.evidence.ReverifyCounters
 import hr.workspace.boat4you.domains.external.evidence.ReverifyJobs
 import hr.workspace.boat4you.domains.external.evidence.ReverifyRunMode
@@ -160,9 +162,21 @@ class NauSysD3ModeTests {
                     hidden += inv.arguments.toList()
                     null
                 }
+                "closeStrikesOnQuoteBatch" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    val periods = inv.arguments[1] as List<PeriodKey>
+                    closed += periods
+                    periods.forEach { strikes.remove(it.yachtId) }
+                    null
+                }
+                "clearStrike" -> {
+                    strikes.remove(inv.getArgument<Long>(1))
+                    1
+                }
                 else -> null
             }
         }
+    private val closed = CopyOnWriteArrayList<PeriodKey>()
 
     private val finished = CopyOnWriteArrayList<List<Any?>>()
     private val runStore =
@@ -184,6 +198,21 @@ class NauSysD3ModeTests {
             `when`(m.getCachedAllMappingsByType("Location", nausys)).thenReturn(
                 listOf(ExternalMapping(900L, 10L, "Location", nausys, null), ExternalMapping(901L, 11L, "Location", nausys, null)),
             )
+            `when`(m.findAllByTypeAndExternalSystemAndExternalIdIn("Yacht", 2, listOf(ext(55))))
+                .thenReturn(listOf(ExternalMapping(ext(55), 55L, "Yacht", nausys, "Yacht-AgencyId-7")))
+        }
+
+    // the switches as the sync reads them (default = today's behaviour)
+    private var reverifySwitch = NauSysReverifyMode.OFF
+    private var d3Switch = NauSysD3Mode.LEGACY
+    private val switches =
+        mock(RealPriceSwitches::class.java) { inv ->
+            when (inv.method.name) {
+                "getExtrasZeroOptionalOnSite" -> RealPriceSwitches.OnOff.OFF
+                "getNausysReverify" -> reverifySwitch
+                "getNausysD3Mode" -> d3Switch
+                else -> null
+            }
         }
 
     private val service =
@@ -198,7 +227,10 @@ class NauSysD3ModeTests {
             mock(ExtraRepository::class.java),
             mock(OfferExtraRepository::class.java),
             mock(ExternalEquipmentRepository::class.java),
-            mock(YachtRepository::class.java).also { r -> yachts.forEach { (id, y) -> `when`(r.findById(id)).thenReturn(Optional.of(y)) } },
+            mock(YachtRepository::class.java).also { r ->
+                yachts.forEach { (id, y) -> `when`(r.findById(id)).thenReturn(Optional.of(y)) }
+                `when`(r.findByExternalIdsAndExternalSystemId(listOf(ext(55)), 2L)).thenReturn(listOf(yachts.getValue(55)))
+            },
             mock(YachtSyncMutex::class.java) { inv ->
                 if (inv.method.name == "runExclusiveYachtWrite") {
                     @Suppress("UNCHECKED_CAST")
@@ -208,14 +240,17 @@ class NauSysD3ModeTests {
                     null
                 }
             },
-            mock(RealPriceSwitches::class.java).also { `when`(it.extrasZeroOptionalOnSite).thenReturn(RealPriceSwitches.OnOff.OFF) },
+            switches,
             periodChecks,
         )
 
     private fun run(
         mode: NauSysD3Mode,
         today: LocalDate = day1,
-    ): NauSysD3Run? = NauSysD3Run.open(runStore, mode, today)
+    ): NauSysD3Run? {
+        d3Switch = mode
+        return NauSysD3Run.open(runStore, mode, today)
+    }
 
     private fun sync(
         d3: NauSysD3Run?,
@@ -270,6 +305,9 @@ class NauSysD3ModeTests {
         legacyScenarioTrace(null) shouldBe preRealPriceTrace
         marks.shouldBeEmpty()
         strikeCalls.shouldBeEmpty()
+        // default switches: no evidence bookkeeping either
+        checked.shouldBeEmpty()
+        closed.shouldBeEmpty()
     }
 
     @Test
@@ -401,13 +439,19 @@ class NauSysD3ModeTests {
         marks.shouldBeEmpty()
     }
 
-    // ---- evidence in every mode
+    // ---- evidence outside the default switches
 
     @Test
-    fun `every mode records the rows the partner returns under option as QUOTED_OPTION evidence`() {
-        listOf<NauSysD3Mode?>(null, NauSysD3Mode.LOG, NauSysD3Mode.WRITE).forEach { mode ->
+    fun `LOG, WRITE and LEGACY under a running reverifier record the rows the partner returns under option as QUOTED_OPTION`() {
+        listOf<Pair<NauSysD3Mode?, NauSysReverifyMode>>(
+            null to NauSysReverifyMode.LOG,
+            null to NauSysReverifyMode.WRITE,
+            NauSysD3Mode.LOG to NauSysReverifyMode.OFF,
+            NauSysD3Mode.WRITE to NauSysReverifyMode.OFF,
+        ).forEach { (mode, reverify) ->
             checked.clear()
             stored.clear()
+            reverifySwitch = reverify
             offer(1, yacht = 55, status = OfferStatus.OPTION_WAITING, ext = "UNDER_OPTION")
 
             sync(mode?.let { run(it) }, row(55, status = "UNDER_OPTION"), row(56, status = "OPTION"))
@@ -416,6 +460,128 @@ class NauSysD3ModeTests {
                 listOf(55L to PeriodCheckResult.QUOTED_OPTION, 56L to PeriodCheckResult.QUOTED_OPTION)
             checked.all { it.dateFrom == from && it.dateTo == to } shouldBe true
         }
+    }
+
+    @Test
+    fun `default switches (LEGACY, reverifier OFF) write no evidence - no QUOTED_OPTION, no strike closing`() {
+        offer(1, yacht = 55, status = OfferStatus.OPTION_WAITING, ext = "UNDER_OPTION")
+        offer(2, yacht = 56)
+
+        sync(null, row(55, status = "UNDER_OPTION"), row(56))
+
+        checked.shouldBeEmpty()
+        closed.shouldBeEmpty()
+    }
+
+    // ---- strikes closed by a later quote (no single-answer flip on a stale strike)
+
+    @Test
+    fun `WRITE - a priced quote closes the open strike, so the next unpriced answer is a first strike, not a flip`() {
+        val week = offer(1, yacht = 55)
+        offer(9, yacht = 57)
+        offer(10, yacht = 58)
+        val day3 = day2.plusDays(1)
+
+        sync(run(NauSysD3Mode.WRITE, day1), row(55, price = null), row(57), row(58)) // strike day 1
+        sync(run(NauSysD3Mode.WRITE, day2), row(55), row(57), row(58)) // priced quote day 2
+        closed.filter { it.yachtId == 55L } shouldContainExactly listOf(PeriodKey(55, from, to))
+        sync(run(NauSysD3Mode.WRITE, day3), row(55, price = null), row(57), row(58)) // one negative answer day 3
+
+        marks.shouldBeEmpty()
+        strikeCalls.map { it[6] } shouldContainExactly listOf(day1, day3)
+        week.status shouldBe OfferStatus.FREE
+    }
+
+    @Test
+    fun `a quote that leaves a shown route of the dates stale keeps the period's strike open`() {
+        offer(2, yacht = 56, route = loc10)
+        offer(3, yacht = 56, route = loc11)
+        reverifySwitch = NauSysReverifyMode.LOG
+
+        sync(null, row(56, loc = 901)) // LEGACY pass: 2 is left stale (marker), 3 refreshed
+
+        closed.filter { it.yachtId == 56L }.shouldBeEmpty()
+
+        stored.clear()
+        offer(4, yacht = 56, route = loc11)
+        sync(null, row(56, loc = 901))
+        closed.single() shouldBe PeriodKey(56, from, to)
+    }
+
+    @Test
+    fun `the warm path closes the strike of a period it quotes again outside the default switches only`() {
+        offer(1, yacht = 55)
+
+        service.syncOffersForAsync(listOf(row(55)))
+        closed.shouldBeEmpty()
+
+        reverifySwitch = NauSysReverifyMode.WRITE
+        service.syncOffersForAsync(listOf(row(55)))
+        closed.single() shouldBe PeriodKey(55, from, to)
+    }
+
+    // ---- per-row reason
+
+    @Test
+    fun `WRITE - one route refreshed and one route unpriced in the same answer gives a strike on day 1, no flip of the unpriced route`() {
+        val unpricedRoute = offer(2, yacht = 56, route = loc10)
+        offer(3, yacht = 56, route = loc11)
+        offer(4, yacht = 57)
+        offer(5, yacht = 58)
+        val d3 = run(NauSysD3Mode.WRITE, day1)!!
+
+        sync(d3, row(56, price = null, loc = 900), row(56, loc = 901), row(57), row(58))
+        d3.finish("nightly")
+
+        marks.shouldBeEmpty()
+        strikeCalls.single().subList(1, 2) shouldBe listOf(56L)
+        strikeCalls.single()[5] shouldBe PeriodCheckResult.UNPRICED
+        d3.rowsFor(7, NauSysD3Run.Reason.UNPRICED) shouldBe 1
+        d3.rowsFor(7, NauSysD3Run.Reason.ROUTE_GONE) shouldBe 0
+        unpricedRoute.status shouldBe OfferStatus.FREE
+
+        // day 2: the same answer again flips only the unpriced route, as UNPRICED_TWO_DAY
+        sync(run(NauSysD3Mode.WRITE, day2), row(56, price = null, loc = 900), row(56, loc = 901), row(57), row(58))
+        marks.single() shouldBe listOf(56L, from, to, 2L, false, 41L, ReverifyJobs.NAUSYS_D3, "UNPRICED_TWO_DAY", day1, day2)
+    }
+
+    @Test
+    fun `WRITE - the unpriced route of a yacht honours the per-response breaker`() {
+        offer(2, yacht = 56, route = loc10)
+        offer(3, yacht = 56, route = loc11)
+        offer(4, yacht = 55)
+        offer(5, yacht = 57)
+        val d3 = run(NauSysD3Mode.WRITE)!!
+
+        // 3 of 4 yachts unpriced -> breaker; 56 has a refreshed route and an unpriced one
+        sync(d3, row(55, price = null), row(56, price = null, loc = 900), row(56, loc = 901), row(57, price = null), row(58))
+
+        marks.shouldBeEmpty()
+        strikeCalls.shouldBeEmpty()
+    }
+
+    // ---- rollback by switch inside a pass
+
+    @Test
+    fun `a WRITE pass stops writing once NAUSYS_D3_MODE leaves WRITE, the rest of the pass is today's pass`() {
+        val first = offer(2, yacht = 56, route = loc10)
+        offer(3, yacht = 56, route = loc11)
+        val d3 = run(NauSysD3Mode.WRITE)!!
+
+        sync(d3, row(56, loc = 901))
+        marks.size shouldBe 1
+        first.status shouldBe OfferStatus.FREE // flipped by the SQL, not the entity
+
+        d3Switch = NauSysD3Mode.LEGACY
+        stored.clear()
+        val second = offer(5, yacht = 57, route = loc10)
+        offer(6, yacht = 57, route = loc11)
+        sync(d3, row(57, loc = 901))
+
+        marks.size shouldBe 1 // no D3 write after the switch
+        d3.writes shouldBe false
+        second.status shouldBe OfferStatus.OPTION_WAITING // today's marker
+        second.extStatus shouldBe NauSysYachtOfferSyncService.SYNTHETIC_DISAPPEARANCE_EXT_STATUS
     }
 
     @Test
