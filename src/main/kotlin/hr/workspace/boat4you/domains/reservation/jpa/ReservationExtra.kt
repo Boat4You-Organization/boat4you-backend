@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.jpa
 
+import hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import hr.workspace.boat4you.domains.catalouge.jpa.Extra
 import jakarta.persistence.Column
@@ -67,4 +68,13 @@ open class ReservationExtra {
 
     @Column(name = "external_id")
     open var externalId: Long? = null
+
+    /**
+     * The payment type the extra was booked with (V9_82, D6 14.10.2026), copied from the price calculation, so a
+     * later classifier change never rewrites a booked extra. NULL on rows booked before V9_82: the read path then
+     * classifies them as it always did (YachtExtrasMapper.toExtrasPriceDto).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_type", length = 31)
+    open var paymentType: ExtraPaymentType? = null
 }

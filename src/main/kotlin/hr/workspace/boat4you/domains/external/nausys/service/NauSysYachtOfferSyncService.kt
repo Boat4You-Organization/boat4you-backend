@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.external.nausys.service
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.common.services.PriceCalculations
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.ExternalEquipmentType
@@ -49,6 +50,7 @@ class NauSysYachtOfferSyncService(
     private val externalEquipmentRepository: ExternalEquipmentRepository,
     private val yachtRepository: YachtRepository,
     private val yachtSyncMutex: YachtSyncMutex,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -104,6 +106,8 @@ class NauSysYachtOfferSyncService(
         var skippedLockedCount = 0
         // Disappearance flips made in this call; returned so the run summary can report "removed".
         var disappeared = 0
+        // D6 switch, read once per batch so every extra of the batch is classified alike.
+        val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
 
         nausysOffers.freeYachts?.groupBy { it.yachtId }?.forEach { (yachtId, nausysYachtOffers) ->
             // Defensive: same NPE risk as MmkYachtOfferSyncService — partner may
@@ -130,7 +134,7 @@ class NauSysYachtOfferSyncService(
 
                         if (existingYachtOffers.isEmpty()) {
                             nausysYachtOffers.forEach { nausysOffer ->
-                                if (updateOffer(Offer(), yacht, nausysOffer, allLocationMappings) != OfferUpdateResult.UPDATED) {
+                                if (updateOffer(Offer(), yacht, nausysOffer, allLocationMappings, optionalOnSite) != OfferUpdateResult.UPDATED) {
                                     skippedCount++
                                 }
                             }
@@ -154,9 +158,9 @@ class NauSysYachtOfferSyncService(
                                     }
                                 val result =
                                     if (existingOffer == null) {
-                                        updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)
+                                        updateOffer(Offer(), yacht, nausysOffer, allLocationMappings, optionalOnSite)
                                     } else {
-                                        updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings)
+                                        updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings, optionalOnSite)
                                     }
                                 // Keep the existing row "alive" (exempt from the disappearance sweep) when the
                                 // partner refreshed it OR we skipped for OUR mapping gap. A FREE-but-unpriced
@@ -250,6 +254,8 @@ class NauSysYachtOfferSyncService(
 
         var skippedCount = 0
         var skippedLockedCount = 0
+        // D6 switch, read once per batch so every extra of the batch is classified alike.
+        val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
         nausysAllOffers.groupBy { it.yachtId }?.forEach { (nausysYachtId, nausysOffers) ->
             val mapping = allYachtMappings.find { it.externalId == nausysYachtId!! } ?: return@forEach
             val systemYachtId =
@@ -282,9 +288,9 @@ class NauSysYachtOfferSyncService(
                                 }
                             val result =
                                 if (existingOffer == null) {
-                                    updateOffer(Offer(), yacht, nausysOffer, allLocationMappings)
+                                    updateOffer(Offer(), yacht, nausysOffer, allLocationMappings, optionalOnSite)
                                 } else {
-                                    updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings)
+                                    updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings, optionalOnSite)
                                 }
                             if (result != OfferUpdateResult.UPDATED) skippedCount++
                         }
@@ -340,6 +346,7 @@ class NauSysYachtOfferSyncService(
         yacht: Yacht,
         nausysOffer: RestFreeYacht,
         allLocationMappings: List<ExternalMapping>,
+        optionalOnSite: Boolean,
     ): OfferUpdateResult {
         // A bookable (FREE) offer must carry a real price. NauSys occasionally returns a
         // free yacht with clientPrice null/0 — no price-list entry for that period, or a
@@ -430,7 +437,7 @@ class NauSysYachtOfferSyncService(
 
         offerRepository.save(offer)
 
-        handleExtras(offer, nausysOffer)
+        handleExtras(offer, nausysOffer, optionalOnSite)
 
         // Partner payment plan = source of truth for installment timing.
         // Re-enabled 1.5.2026 — see MmkYachtOfferSyncService for the full note.
@@ -449,6 +456,7 @@ class NauSysYachtOfferSyncService(
     private fun handleExtras(
         offer: Offer,
         nausysOffer: RestFreeYacht,
+        optionalOnSite: Boolean,
     ) {
         val allExtras = extraRepository.findAll()
         val allExternalEquipment =
@@ -549,6 +557,8 @@ class NauSysYachtOfferSyncService(
                 hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
                     calculationType = nausysExtra.calculationType?.value,
                     price = addPrice,
+                    obligatory = false,
+                    optionalOnSite = optionalOnSite,
                 )
             if (equipmentAlreadyOnOffer != null) {
                 equipmentAlreadyOnOffer.extras = boat4youEquipmentMatch

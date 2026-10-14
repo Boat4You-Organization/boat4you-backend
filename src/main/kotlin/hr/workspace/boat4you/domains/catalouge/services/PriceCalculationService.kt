@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.common.services.PriceCalculations
 import hr.workspace.boat4you.domains.catalouge.dto.ExtrasPriceDto
 import hr.workspace.boat4you.domains.catalouge.dto.InternalCalcDto
@@ -31,6 +32,7 @@ class PriceCalculationService(
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
     private val externalBaseRepository: ExternalBaseRepository,
     private val nauSysObligatoryExtrasService: NauSysObligatoryExtrasService,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this::class.java.name)
 
@@ -119,6 +121,8 @@ class PriceCalculationService(
         }
 
         val flattenedExtras: Collection<InternalCalcDto> = flattenedList
+        // D6 switch, read once per calculation; only rows without a synced paymentType use it.
+        val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
         val selectedExtrasAtBase =
             flattenedExtras
                 .filter { !it.foldedIntoOurPayment() }
@@ -190,11 +194,11 @@ class PriceCalculationService(
                 ),
             selectedExtrasAtBase =
                 selectedExtrasAtBase.map {
-                    yachtExtrasMapper.toExtrasPriceDto(it, currency)
+                    yachtExtrasMapper.toExtrasPriceDto(it, currency, optionalOnSite)
                 },
             selectedExtrasInPrice =
                 selectedExtrasInPrice.map {
-                    yachtExtrasMapper.toExtrasPriceDto(it, currency)
+                    yachtExtrasMapper.toExtrasPriceDto(it, currency, optionalOnSite)
                 },
             inquire = potentiallyIncorrectCalc,
             securityDeposit = yacht.deposit,
@@ -277,7 +281,14 @@ class PriceCalculationService(
                     extrasId = ye?.extras?.id,
                     externalId = ye?.externalId,
                     isStartingPrice = null,
-                    paymentType = ExtraPaymentType.fromNausysCalculationType(o.calculationType, o.totalPrice),
+                    // Promoted to obligatory by the partner: an unpriced one is INCLUDED whatever the D6 switch says.
+                    paymentType =
+                        ExtraPaymentType.fromNausysCalculationType(
+                            o.calculationType,
+                            o.totalPrice,
+                            obligatory = true,
+                            optionalOnSite = false,
+                        ),
                 )
             }
         if (promoted.isEmpty()) return base

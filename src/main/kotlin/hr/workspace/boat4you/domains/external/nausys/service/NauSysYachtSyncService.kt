@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.external.nausys.service
 
+import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.capacity.PartnerCapacitySync
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
@@ -76,6 +77,7 @@ class NauSysYachtSyncService(
     private val fileSystemService: FileSystemService,
     private val agencyRepository: AgencyRepository,
     private val externalSeasonRepository: ExternalSeasonRepository,
+    private val realPriceSwitches: RealPriceSwitches,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -100,6 +102,8 @@ class NauSysYachtSyncService(
         val inlandBaseIds = locationQueryingService.getInlandLocationExternalIds(ExternalSystemEnum.NAUSYS.value.toLong())
         // One catalogue + explicit-link snapshot per agency pass; loaded on the first yacht that ships equipment.
         val equipmentLinks = lazy { equipmentLinkResolver.newPass() }
+        // D6 switch, read once per agency pass so every extra of the batch is classified alike.
+        val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
 
         nausysResponse.yachts?.forEach { nausysYacht ->
             val mapping = allMappings.find { mapping -> mapping.externalId == nausysYacht.id!!.toLong() }
@@ -167,7 +171,7 @@ class NauSysYachtSyncService(
             syncPictures(nausysYacht.pictures, isNewEntity, updatedYacht)
             yacht.mainImageId = getMainImage(updatedYacht)?.id
             syncEquipment(updatedYacht, nausysYacht, equipmentLinks)
-            syncExtras(updatedYacht, nausysYacht)
+            syncExtras(updatedYacht, nausysYacht, optionalOnSite)
             syncReservationOptions(updatedYacht, nausysYacht.checkInPeriods)
 
             yachtRepository.saveAndFlush(updatedYacht)
@@ -528,6 +532,7 @@ class NauSysYachtSyncService(
     private fun syncExtras(
         yacht: Yacht,
         nausysYacht: RestYacht,
+        optionalOnSite: Boolean,
     ) {
         if (nausysYacht.seasonSpecificData.isNullOrEmpty()) {
             return
@@ -564,9 +569,14 @@ class NauSysYachtSyncService(
 
                 val nausysEqPrice = if (nausysEquipment.amountIsPercentage != true) nausysEquipment.amount?.toBigDecimal() else BigDecimal.ZERO
                 val nausysEqPayable = nausysEquipment.calculationType == "SEPARATE_PAYMENT"
+                // Equipment rows are optional (obligatory = false below); a percentage amount is stored as 0 and is
+                // classified by calculationType, not as a free item (D6).
                 val nausysEqPaymentType = hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
                     calculationType = nausysEquipment.calculationType,
                     price = nausysEqPrice,
+                    obligatory = false,
+                    optionalOnSite = optionalOnSite,
+                    isPercentage = nausysEquipment.amountIsPercentage == true,
                 )
                 if (equipmentAlreadyOnYacht != null) {
                     equipmentAlreadyOnYacht.extras = boat4youMatch
@@ -623,9 +633,13 @@ class NauSysYachtSyncService(
 
                 val nausysSvcPrice = if (nausysService.amountIsPercentage != true) nausysService.amount?.toBigDecimal() else BigDecimal.ZERO
                 val nausysSvcPayable = nausysService.calculationType == "SEPARATE_PAYMENT"
+                // A percentage amount is stored as 0 and is classified by calculationType, not as a free item (D6).
                 val nausysSvcPaymentType = hr.workspace.boat4you.domains.catalouge.enums.ExtraPaymentType.fromNausysCalculationType(
                     calculationType = nausysService.calculationType,
                     price = nausysSvcPrice,
+                    obligatory = nausysService.obligatory == true,
+                    optionalOnSite = optionalOnSite,
+                    isPercentage = nausysService.amountIsPercentage == true,
                 )
                 if (equipmentAlreadyOnYacht != null) {
                     equipmentAlreadyOnYacht.extras = boat4youMatch
