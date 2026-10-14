@@ -77,6 +77,8 @@ class NauSysFreeOfferReverifyServiceTests {
     private var callDelayMs = 0L
     private val rateLimited = ConcurrentHashMap.newKeySet<Long>()
     private val requests = CopyOnWriteArrayList<RestFreeYachtsRequest>()
+    private var onRequest: () -> Unit = {}
+    private var failAll = false
 
     @Suppress("LongParameterList")
     private fun row(
@@ -111,6 +113,8 @@ class NauSysFreeOfferReverifyServiceTests {
             if (inv.method.name != "getFreeYachts") return@mock null
             val req = inv.arguments[0] as RestFreeYachtsRequest
             requests += req
+            onRequest()
+            if (failAll) throw org.springframework.web.client.ResourceAccessException("read timed out")
             val from = req.periodFrom.value!!
             val to = req.periodTo.value!!
             val yachts = req.yachts.orEmpty()
@@ -366,6 +370,108 @@ class NauSysFreeOfferReverifyServiceTests {
         val m = marks.single()
         m shouldBe listOf(102L, week(0), week(0).plusDays(7), null, false, 77L, ReverifyJobs.NAUSYS_REVERIFY, "TWO_STRIKE_EMPTY", day1, day2)
         hiddenCalls.single().subList(1, 5) shouldBe listOf(102L, week(0), week(0).plusDays(7), 2)
+    }
+
+    @Test
+    fun `rollback by switch - NAUSYS_REVERIFY OFF during the run stops it before the next call`() {
+        baseline()
+        cand(102, week(0), NauSysVerifyClass.P1, shown = "1020:10>10")
+        onRequest = { if (requests.size == 5) mode = NauSysReverifyMode.OFF }
+
+        val r = service.reverify(farDeadline, day1)
+
+        requests.size shouldBe 5
+        r.aborted.shouldNotBeNull() shouldContain "switched to OFF"
+        strikeCalls.shouldBeEmpty()
+        upserts.size shouldBe 5 // the answers read before the switch was re-read were still written
+    }
+
+    @Test
+    fun `rollback by switch - NAUSYS_REVERIFY LOG during the run stops flips and upserts, the probes go on`() {
+        baseline()
+        cand(102, week(0), NauSysVerifyClass.P1, shown = "1020:10>10")
+        service.reverify(farDeadline, day1) // first strike
+        upserts.clear()
+        requests.clear()
+        // day 2: the switch goes to LOG during the 30th of 60 group calls, long before the confirmation
+        onRequest = { if (requests.size == 30) mode = NauSysReverifyMode.LOG }
+
+        val r = service.reverify(farDeadline, day2)
+
+        r.aborted.shouldBeNull()
+        callsFor(102).last().yachts shouldBe listOf(ext(102)) // the confirmation still ran
+        marks.shouldBeEmpty()
+        counts.single()[0] shouldBe 102L // the flip is only counted
+        r.wouldFlipRows shouldBe 2
+        upserts.size shouldBe 30 // the groups read before the switch was re-read upserted, none after
+    }
+
+    @Test
+    fun `step 0 re-reads the switch before every flip`() {
+        (2..4).forEach { w ->
+            occupied +=
+                object : NauSysPeriod {
+                    override val yachtId = 5L + w
+                    override val agencyId = 1L
+                    override val dateFrom = week(w)
+                    override val dateTo = week(w + 1)
+                }
+        }
+        var reads = 0
+        val flipping =
+            mock(RealPriceSwitches::class.java) { inv ->
+                if (inv.method.name == "getNausysReverify") {
+                    reads++
+                    if (reads <= 2) NauSysReverifyMode.WRITE else NauSysReverifyMode.LOG
+                } else {
+                    null
+                }
+            }
+        val svc =
+            NauSysFreeOfferReverifyService(offers, client, NauSysAuthProvider("u", "p"), offerSync, mappings, systems, mutex, periodChecks, runStore, flipping, limits)
+                .apply { clock = { now } }
+
+        svc.reverify(farDeadline, day1)
+
+        marks.size shouldBe 1 // the first period flipped, then the switch read LOG
+        counts.size shouldBe 2
+    }
+
+    @Test
+    fun `early circuit - 25 unknown group answers in a row stop step 1 long before its budget, no strikes`() {
+        baseline(agencies = 1..20, weeks = 10)
+        failAll = true
+
+        val r = service.reverify(farDeadline, day1)
+
+        requests.size shouldBe NauSysFreeOfferReverifyService.UNKNOWN_IN_A_ROW_STOP
+        r.aborted.shouldNotBeNull() shouldContain "in a row"
+        strikeCalls.shouldBeEmpty()
+        marks.shouldBeEmpty()
+    }
+
+    @Test
+    fun `early circuit - more than 10 % of the first 100 groups unknown stops step 1`() {
+        baseline(agencies = 1..20, weeks = 10)
+        // every 5th group fails (20 %), never 25 in a row
+        val failing = mock(NauSysRetryableClient::class.java) { inv ->
+            if (inv.method.name != "getFreeYachts") return@mock null
+            val req = inv.arguments[0] as RestFreeYachtsRequest
+            requests += req
+            if (requests.size % 5 == 0) throw org.springframework.web.client.ResourceAccessException("read timed out")
+            val from = req.periodFrom.value!!
+            val to = req.periodTo.value!!
+            RestFreeYachtList(status = "OK", freeYachts = req.yachts.orEmpty().flatMap { answers[Key(it, from, to)].orEmpty() })
+        }
+        val svc =
+            NauSysFreeOfferReverifyService(offers, failing, NauSysAuthProvider("u", "p"), offerSync, mappings, systems, mutex, periodChecks, runStore, switches, limits)
+                .apply { clock = { now } }
+
+        val r = svc.reverify(farDeadline, day1)
+
+        requests.size shouldBe NauSysFreeOfferReverifyService.EARLY_UNKNOWN_MIN_GROUPS
+        r.aborted.shouldNotBeNull() shouldContain "of the first 100 group calls unknown"
+        strikeCalls.shouldBeEmpty()
     }
 
     @Test

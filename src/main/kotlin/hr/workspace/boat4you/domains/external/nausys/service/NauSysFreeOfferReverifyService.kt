@@ -57,8 +57,13 @@ import java.util.concurrent.atomic.AtomicReference
  *    baseline (grid-sample) groups empty = abort; an agency with >= 5 baseline groups more than half empty is
  *    escalated (run row + digest + ERROR line) and gets no strikes.
  *  - NauSys 429 rule (5.9.2026): single-threaded through the client's concurrency gate and retry interceptor, no own
- *    retries; 3 rate limits in a row = sleep 5 min, 10 in a run = stop. At most `maxCallsPerRun` calls, and never a
- *    call after the hard deadline the job passes in (cron tick + 2 h 20 min, gate wait included).
+ *    retries; 3 rate limits in a row = sleep 5 min, 10 in a run = stop. At most `maxCallsPerRun` asks (one ask is one
+ *    `getFreeYachts`; the client's @Retryable may spend up to 3 HTTP attempts on a non-429 failure), and never a call
+ *    after the hard deadline the job passes in (cron tick + 2 h 20 min, gate wait included).
+ *  - Early circuit in step 1: [UNKNOWN_IN_A_ROW_STOP] unknown groups in a row, or more than [MAX_UNKNOWN_SHARE] of at
+ *    least [EARLY_UNKNOWN_MIN_GROUPS] groups unknown, stops the run before the budget is spent (no strikes).
+ *  - Rollback by switch: `NAUSYS_REVERIFY` is re-read (60 s cached) before every call and step-0 flip; OFF stops the
+ *    run, LOG stops its writes (probes and strikes go on, flips and upserts are only counted).
  *  - LOG: probes, bookkeeping and strikes; no upsert and no flip (would-upserts and would-flips counted). OFF: nothing.
  * Every decided probe is recorded in `partner_period_check` (NauSys, batched), the run in `reverify_run`
  * (NAUSYS_REVERIFY); an INFO heartbeat every [HEARTBEAT] and one `NauSys free-offer reverify end` line.
@@ -88,6 +93,12 @@ class NauSysFreeOfferReverifyService(
         const val MIN_AGENCY_GROUPS_FOR_CAP = 5
         const val RATE_LIMITS_IN_A_ROW_PAUSE = 3
         const val RATE_LIMITS_PER_RUN_STOP = 10
+
+        /** Step 1 early circuit: this many unknown group answers in a row stop the run. */
+        const val UNKNOWN_IN_A_ROW_STOP = 25
+
+        /** Step 1 early circuit: from this many asked groups on, an unknown share above [MAX_UNKNOWN_SHARE] stops it. */
+        const val EARLY_UNKNOWN_MIN_GROUPS = 100
         val RATE_LIMIT_PAUSE: Duration = Duration.ofMinutes(5)
         val HEARTBEAT: Duration = Duration.ofMinutes(2)
 
@@ -164,7 +175,7 @@ class NauSysFreeOfferReverifyService(
     /** Per-run state (the run is single-threaded; the heartbeat thread only reads). */
     private class Ctx(
         val today: LocalDate,
-        val mode: NauSysReverifyMode,
+        @Volatile var mode: NauSysReverifyMode,
         val tally: RunTally,
         val checks: PeriodCheckBuffer,
         val deadline: Long,
@@ -322,10 +333,9 @@ class NauSysFreeOfferReverifyService(
         if (periods.isEmpty()) return
         var flippedPeriods = 0
         for (p in periods) {
-            if (clock() >= ctx.deadline) {
-                ctx.stopReason = "hard deadline reached in step 0"
-                return
-            }
+            if (clock() >= ctx.deadline) ctx.stopReason = "hard deadline reached in step 0"
+            if (ctx.stopReason == null) recheckSwitch(ctx)
+            if (ctx.stopReason != null) return
             if (!ctx.writes) {
                 ctx.tally.wouldFlipRows.addAndGet(offerRepository.countNauSysPeriodFlippable(p.yachtId, p.dateFrom, p.dateTo, null, true))
                 continue
@@ -422,6 +432,7 @@ class NauSysFreeOfferReverifyService(
         var attempted = 0
         var decided = 0
         var unknown = 0
+        var unknownInARow = 0
         var baselineDecided = 0
         var baselineEmpty = 0
         var allDecided = 0
@@ -456,10 +467,16 @@ class NauSysFreeOfferReverifyService(
             val rows = ask(ctx, g.periods.map { it.externalYachtId }, g.dateFrom, g.dateTo).rows
             if (rows == null) {
                 s.unknown++
+                s.unknownInARow++
                 g.periods.forEach { record(ctx, it, PeriodCheckResult.UNKNOWN) }
             } else {
                 s.decided++
+                s.unknownInARow = 0
                 readGroup(ctx, s, g, rows)
+            }
+            earlyCircuit(s)?.let {
+                if (ctx.stopReason == null) ctx.stopReason = it
+                log.error("NauSys free-offer reverify: $it")
             }
         }
         log.info(
@@ -533,6 +550,15 @@ class NauSysFreeOfferReverifyService(
             s.agencyEmpty.merge(g.agencyId, 1, Int::plus)
         }
     }
+
+    /** Step 1 early circuit: a degraded partner stops the run before the step-1 budget is spent. */
+    private fun earlyCircuit(s: Step1): String? =
+        when {
+            s.unknownInARow >= UNKNOWN_IN_A_ROW_STOP -> "${s.unknownInARow} unknown group answers in a row - partner degraded, stopped early"
+            s.attempted >= EARLY_UNKNOWN_MIN_GROUPS && s.unknown.toDouble() / s.attempted > MAX_UNKNOWN_SHARE ->
+                "${s.unknown} of the first ${s.attempted} group calls unknown - partner degraded, stopped early"
+            else -> null
+        }
 
     private fun abortReason(s: Step1): String? {
         val decided = if (s.useBaseline) s.baselineDecided else s.allDecided
@@ -716,13 +742,32 @@ class NauSysFreeOfferReverifyService(
 
     // ---- calls
 
-    /** Budget, deadline and the 429 stop, checked before every call. */
+    /** Budget, deadline, the switch and the 429 stop, checked before every call. */
     private fun mayCall(
         ctx: Ctx,
         budget: Int,
     ): Boolean {
         if (ctx.stopReason == null && clock() >= ctx.deadline) ctx.stopReason = "hard deadline reached, the rest runs tomorrow"
+        if (ctx.stopReason == null) recheckSwitch(ctx)
         return ctx.stopReason == null && ctx.tally.calls.get() < budget
+    }
+
+    /**
+     * Rollback by switch inside a running run (`NAUSYS_REVERIFY`, 60 s cached): OFF stops the run, LOG stops its
+     * writes (the rest of the run probes, records and counts). Never upgrades a run.
+     */
+    private fun recheckSwitch(ctx: Ctx) {
+        val now = switches.nausysReverify
+        when {
+            now == NauSysReverifyMode.OFF -> {
+                ctx.stopReason = "NAUSYS_REVERIFY switched to OFF during the run - stopped"
+                log.warn("NauSys free-offer reverify: ${ctx.stopReason}")
+            }
+            ctx.writes && now != NauSysReverifyMode.WRITE -> {
+                ctx.mode = now
+                log.warn("NauSys free-offer reverify: NAUSYS_REVERIFY switched to $now during the run - no more flips or upserts in run ${ctx.tally.runId}")
+            }
+        }
     }
 
     @Suppress("TooGenericExceptionCaught") // any partner failure is UNKNOWN, never evidence
