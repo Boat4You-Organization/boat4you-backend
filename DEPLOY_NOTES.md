@@ -1,6 +1,8 @@
 # Backend deploy notes
 
-## 2026-10-13/14 — V9_79 bliske duple marine: jedno ime + par za 55 mjesta (Mariov pregled 58 parova + dopuna 14.10.: Tromsø, Olbia 225, grad „Trogir") + lista spaja grupe — ⏳ NIJE DEPLOYANO (web preduvjet ✅ LIVE 14.10. `646392ce8`; backend jar s main-a: cusma2 primjenjuje V9_79 **out-of-order** iza 9.82 → gate → cusma3)
+## 2026-10-13/14 — V9_79 bliske duple marine: jedno ime + par za 55 mjesta (Mariov pregled 58 parova + dopuna 14.10.: Tromsø, Olbia 225, grad „Trogir") + lista spaja grupe — ✅ cusma2 14.10.2026 14:16:36 UTC (`5d22a4b`, jar md5 `dab8fdd6…`, V9_79 **[out of order]** za 0,098 s, start 13,0 s, API 200; preflight „will apply: 9.79“); web preduvjet ✅ LIVE 13:51 UTC `646392ce8`; ⏳ cusma3 isti jar iza gatea (15:16–16:10 ili 21:05–22:10 UTC)
+
+**Live 14.10.2026:** prod nakon: 117 redova backupa, 68 V9_79 parova (`location_same_place` 87), npr. 57 „Marina Baotić | Trogir“, 1755 „ACI Marina Split“, 139/710 „Olympic Marine“, 222/225/609 „Marina di Olbia“, 209/2099 „Porto di Mergellina“, 1218 „Tromsø“. API: `trogir` → Baotić + Agana; `tromso` → `l-624,l-396,l-1218`; `mergellina` → 5 redova jedan; `aci marina split` → `l-69,l-1755`. Landinzi (16 proba): status, canonical, robots isti prije i poslije; 308: Zadar (ex.), palairos, lavrion - olympic marine, marina di olbia yachting services. `yacht_listing_twin` 556 prije refresha (očekivano ~679 nakon).
 
 Mario 13.10. na `docs/location-near-duplicates-review-2026-10-13.md`: „A sve da" (uz D: #4 Marina Zadar + 308, #36 MMK red s imenom agencije → „Marina di Golfo Aranci" + 308, #14 „Palairos" 308 → „Marina Paleros", #9 spojiti), „B tako je" (#6, 17, 26, 47, 57 ne), „C može" (#22, 38, 50), Olympic Marine „sigurno da, spoji", Olbia „JE, SPOJI", „Split je pod Split, stavi ACI Split"; Zea 1554 / Kavala 932 / Marmaris 1395 „ne znam" → ne dirati.
 
