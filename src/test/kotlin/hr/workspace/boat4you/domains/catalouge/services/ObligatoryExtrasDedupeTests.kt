@@ -88,13 +88,14 @@ class ObligatoryExtrasDedupeTests {
 
     @Test
     fun `an unpriced optional variant never beats a priced one of the same item`() {
-        // D6 (14.10.2026): a 0 EUR Skipper row next to the 150 EUR one must not show the item as free / on request.
+        // D6 (14.10.2026, EXTRAS_ZERO_OPTIONAL_ON_SITE=ON): a 0 EUR Skipper row next to the 150 EUR one must not show
+        // the item as free / on request.
         val o =
             offer(
                 row("Skipper", "0", obligatory = false, extrasId = 1),
                 row("Skipper", "150", obligatory = false, extrasId = 1),
             )
-        val skipper = o.filterDuplicateExtras().single()
+        val skipper = o.filterDuplicateExtras(pricedFirst = true).single()
         assertEquals(BigDecimal("150"), skipper.first.price)
         assertFalse(skipper.second, "no dearer priced variant")
         // With two priced variants the cheapest priced one is shown and flagged, the 0 EUR row is ignored.
@@ -103,12 +104,25 @@ class ObligatoryExtrasDedupeTests {
                 row("SUP", "0", obligatory = false, extrasId = 9),
                 row("SUP", "200", obligatory = false, extrasId = 9),
                 row("SUP", "150", obligatory = false, extrasId = 9),
-            ).filterDuplicateExtras().single()
+            ).filterDuplicateExtras(pricedFirst = true).single()
         assertEquals(BigDecimal("150"), three.first.price)
         assertTrue(three.second, "dearer SUP variant exists")
         // Only unpriced variants: one of them is still listed, as before.
         val free = offer(row("Wifi", "0", obligatory = false, extrasId = 4), row("Wifi", "0.00", obligatory = false, extrasId = 4))
-        assertEquals(BigDecimal.ZERO.compareTo(free.filterDuplicateExtras().single().first.price), 0)
+        assertEquals(BigDecimal.ZERO.compareTo(free.filterDuplicateExtras(pricedFirst = true).single().first.price), 0)
+    }
+
+    @Test
+    fun `switch off keeps today's choice of the unpriced optional variant`() {
+        // EXTRAS_ZERO_OPTIONAL_ON_SITE=OFF (the default) = today: the cheapest row wins, the 0 EUR one included.
+        val o =
+            offer(
+                row("Skipper", "0", obligatory = false, extrasId = 1),
+                row("Skipper", "150", obligatory = false, extrasId = 1),
+            )
+        val skipper = o.filterDuplicateExtras().single()
+        assertEquals(0, BigDecimal.ZERO.compareTo(skipper.first.price))
+        assertTrue(skipper.second, "dearer skipper variant exists")
     }
 
     @Test

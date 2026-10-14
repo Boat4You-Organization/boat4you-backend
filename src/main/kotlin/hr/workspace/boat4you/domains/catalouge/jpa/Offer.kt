@@ -187,11 +187,13 @@ open class Offer {
      * agency set-up error settled with the agency, not passed on to the client.
      *
      * Optional rows: the cheapest per catalogue key, flagged when dearer variants
-     * exist, and hidden behind an obligatory row with that key. Only a priced
-     * variant counts as "the cheapest" while one exists (D6, 14.10.2026): an
-     * unpriced 0 € row must not stand in for the 150 € variant of the same item.
+     * exist, and hidden behind an obligatory row with that key. With [pricedFirst]
+     * (D6, 14.10.2026, EXTRAS_ZERO_OPTIONAL_ON_SITE=ON) only a priced variant
+     * counts as "the cheapest" while one exists: an unpriced 0 € row must not
+     * stand in for the 150 € variant of the same item. Off (the default) keeps
+     * today's choice, the 0 € row.
      */
-    fun filterDuplicateExtras(): List<Pair<OfferExtra, Boolean>> {
+    fun filterDuplicateExtras(pricedFirst: Boolean = false): List<Pair<OfferExtra, Boolean>> {
         // Stable order: offerExtras has no @OrderBy, and which row survived a
         // collapse used to depend on load order.
         val (obligatoryRows, optionalRows) =
@@ -219,8 +221,9 @@ open class Offer {
                 .groupBy { it.extrasKey() }
                 .values
                 .map { extras ->
-                    val priced = extras.filter { (it.price ?: BigDecimal.ZERO).signum() > 0 }
-                    val minPrice = priced.ifEmpty { extras }.minBy { it.price ?: BigDecimal.ZERO }
+                    val candidates =
+                        if (pricedFirst) extras.filter { (it.price ?: BigDecimal.ZERO).signum() > 0 }.ifEmpty { extras } else extras
+                    val minPrice = candidates.minBy { it.price ?: BigDecimal.ZERO }
                     val hasHigherPrices = extras.any { (it.price ?: BigDecimal.ZERO) > (minPrice.price ?: BigDecimal.ZERO) }
                     minPrice to hasHigherPrices
                 }

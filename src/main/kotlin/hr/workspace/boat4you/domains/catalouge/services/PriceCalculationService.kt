@@ -57,7 +57,9 @@ class PriceCalculationService(
                 emptyList()
             }
         val yachtExtras = yachtExtraRepository.findAllByYacht(yacht)
-        val offerExtras = offer.filterDuplicateExtras()
+        // D6 switch, read once per calculation: the duplicate-extras choice and the unsynced-paymentType fallback.
+        val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
+        val offerExtras = offer.filterDuplicateExtras(pricedFirst = optionalOnSite)
         // Wrong-period siblings of an obligatory row the partner attached to THIS
         // offer ("Comfort Pack 2/3 weeks" on a one-week charter) — never listed,
         // never charged. See ExtrasVariantResolver.
@@ -121,8 +123,6 @@ class PriceCalculationService(
         }
 
         val flattenedExtras: Collection<InternalCalcDto> = flattenedList
-        // D6 switch, read once per calculation; only rows without a synced paymentType use it.
-        val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
         val selectedExtrasAtBase =
             flattenedExtras
                 .filter { !it.foldedIntoOurPayment() }

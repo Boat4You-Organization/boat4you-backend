@@ -23,7 +23,7 @@ class OfferMapper(
         hasLiveOption: Boolean = false,
     ): OfferDto {
         val pricePerDayEur = offer.pricePerDayEur()
-        val filteredOfferExtras = offer.filterDuplicateExtras()
+        val filteredOfferExtras = offer.filterDuplicateExtras(pricedFirst = realPriceSwitches.extrasZeroOptionalOnSite.isOn)
         return OfferDto(
             id = offer.id,
             dateFrom = offer.dateFrom,
