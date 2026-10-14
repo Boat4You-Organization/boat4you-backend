@@ -359,7 +359,10 @@ class NausysSyncJob(
         val before = rateLimitStats.snapshot()
         try {
             nauSysFreeOfferReverifyService.reverify(deadline, today())
-        } catch (e: Exception) {
+        } catch (
+            // A scheduled slot must never throw: log it, release the gate, and let the next tick run.
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
             log.error("NauSys free-offer reverify failed", e)
         } finally {
             nausysBusy.set(false)
