@@ -103,7 +103,7 @@ class ReplaceListContractTest {
         assertTrue(replace.containsAll(snapshot), "replace.v9_83.txt must stay a subset of replace.txt: ${snapshot - replace.toSet()}")
 
         val expected =
-            snapshot.joinToString("|") { e ->
+            PartnerCopySanitizer.forms(snapshot).joinToString("|") { e ->
                 e.name + if (e.beforeModelOrPossessive) "(?=[[:space:]]*[0-9]|[''’]s\\M)" else ""
             }
         val sql = ClassPathResource(R01MigrationTest.MIGRATION).inputStream.bufferedReader().readText()
@@ -111,5 +111,11 @@ class ReplaceListContractTest {
         val n4 = Regex("""'\\m\((.*?)\)\\M', 'Boat4You'""").find(sql)?.groupValues?.get(1)
         assertEquals(expected, n3, "N3 alternation in V9_83")
         assertEquals(expected, n4, "N4 alternation in V9_83")
+
+        // the rows V9_83 leaves to Kotlin because an "@proper" entry is used as an ordinary word name exactly those entries
+        val proper = snapshot.filter { it.properNounOnly }.joinToString("|") { it.name }
+        val wordRe = Regex("""word_re constant text := '\(\^\|\[\.!\?:\\n\]\)\[ \\t\]\*\((.*?)\)\[""").find(sql)?.groupValues?.get(1)
+        assertTrue(proper.isNotEmpty())
+        assertEquals(proper, wordRe, "word_re in V9_83")
     }
 }

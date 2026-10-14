@@ -1,6 +1,7 @@
 # FROZEN snapshot of replace.txt used by V9_83__r01_partner_extras_descriptions.sql (14.10.2026). Never edit: the
 # migration's N3/N4 alternation is generated from these lines (ReplaceListContractTest checks that it is equal and that
-# every line is still in replace.txt). Same format as replace.txt.
+# every line is still in replace.txt). Same format as replace.txt. (Revised once BEFORE V9_83 was applied anywhere,
+# 14.10.2026: "Navigare" became "Navigare @proper" - Italian "Navigare a vela ..." - and the ALL-CAPS forms were added.)
 Dream Yacht Charter
 Navigare Yachting
 Ionian Catamarans
@@ -13,7 +14,7 @@ More Yachting
 The Moorings
 NSS Charter
 Kiriacoulis
-Navigare
+Navigare @proper
 Moorings @model
 Sunsail
 Istion

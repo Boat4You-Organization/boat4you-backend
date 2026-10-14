@@ -13,6 +13,7 @@ import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.DriverManager
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -62,7 +63,9 @@ class R01MigrationTest {
                 "Skipper  for   the week (to update manually)",
                 "Sunsail 424 delivered by Sunsail\nreturn to Sunsail",
                 "Rhodes Yachting and Active Cruises and Kavas Yachting",
-                "Opening hours of the NSS office: 8-20h",
+                "SUNSAIL check-in pack by NSS",
+                "Prenota con Navigare Carefree",
+                "Transfer (to be reconfirmed by NSS office)",
             )
 
         /** Rows the SQL leaves to the sync (Kotlin-only rules), although they name a partner. */
@@ -81,6 +84,17 @@ class R01MigrationTest {
                 "NSS transfer +30 210 1234567",
                 "<b>NSS</b> transfer",
                 "Menu www.navigare.example (Navigare)",
+                // premises as a label, without a preposition (Kotlin P1 -> "the charter base ...")
+                "Opening hours of the NSS office: 8-20h",
+                "Sunsail base fee",
+                "Parking near NSS Charter office",
+                "Transfer: Athens Airport - Athenian Yachts base Alimos (1-4 pax)",
+                "Navigare Yachting pontoon mooring",
+                // entities (Kotlin decodes them)
+                "Sunsail &amp; NSS",
+                // "Navigare" as the Italian verb, next to the partner
+                "Navigare a vela in Sardegna (Navigare Carefree)",
+                "Catamarano. Navigare lungo la costa con NSS",
             )
 
         /** Rows no rule touches. */
@@ -196,6 +210,32 @@ class R01MigrationTest {
             assertEquals(PartnerCopySanitizer.description(raw), sqlResult, raw)
         }
         assertEquals(null, jdbc.queryForObject("SELECT public.r01_partner_copy_v1('(to update manually)')", String::class.java))
+    }
+
+    @Test
+    fun `a sync holding a row lock makes it skip the cleaning without failing, and a by-hand re-run does it`() {
+        val jdbc = database("r01_locked")
+        val cleaned = insert(jdbc, 1, CLEANED.take(2))
+        val locked = cleaned.keys.first()
+
+        // its own connection, outside the pool Flyway uses
+        val holder = DriverManager.getConnection(postgres.jdbcUrl.replace("/boat4you_db", "/r01_locked"), postgres.username, postgres.password)
+        try {
+            holder.autoCommit = false
+            holder.createStatement().use { it.execute("SELECT 1 FROM yacht_extras WHERE id = $locked FOR UPDATE") }
+
+            assertEquals(1, migrate(jdbc).migrationsExecuted, "the migration succeeds (the API would start)")
+            assertEquals(cleaned, descriptions(jdbc).filterValues { it != null }.mapValues { it.value!! }, "nothing changed")
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM _r01_v9_83_done", Int::class.java), "no marker")
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM _r01_yacht_extras_backup", Int::class.java), "backup rolled back")
+        } finally {
+            holder.rollback()
+            holder.close()
+        }
+
+        jdbc.execute("BEGIN; $sql; COMMIT;")
+        cleaned.forEach { (id, raw) -> assertEquals(PartnerCopySanitizer.description(raw), descriptions(jdbc)[id], raw) }
+        assertEquals(2, jdbc.queryForObject("SELECT rows FROM _r01_v9_83_done WHERE step = 'yacht_extras'", Int::class.java))
     }
 
     @Test
