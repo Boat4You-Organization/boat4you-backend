@@ -3,7 +3,7 @@
 --   * a charter-brand token in a fleet label -> "Boat4You": "Sunsail 424/4/4 Premium" -> "Boat4You 424/4/4 Premium",
 --     "Moorings 4500 Club" -> "Boat4You 4500 Club", "Moorings Oceanis 30.1 Club" -> "Boat4You Oceanis 30.1 Club";
 --     "Moorings" counts as the brand only before a number or as the first word; NSS Charter / NSS / Sunsail / The Moorings /
---     Navigare anywhere as a whole word;
+--     Navigare only as a fleet label (before a number, or "Navigare Yachting"); ALL-CAPS spellings count too (15.10.);
 --   * a whole name that is a curated agency trade name (partner/yacht_name_brand.txt: Rhodes Yachting, Active Cruises)
 --     -> "Boat4You". Owner-named boats (Zenith, Despina, Omnia ...) and the borderline names (Sailtours, Trapani Vela Club,
 --     Pronto Sail, Sailing Spirit) are not on the list and keep their names.
@@ -46,12 +46,12 @@ SELECT CASE
                                      '\s+', ' ', 'g'))
                 IN ('rhodes yachting', 'active cruises')
                THEN 'Boat4You'
-           WHEN raw !~ '\m(NSS Charter|NSS|Sunsail|The Moorings|Moorings(?=[[:space:]]*[0-9])|Navigare)\M'
-            AND raw !~ '^Moorings\M'
+           WHEN raw !~ '\m(NSS Charter|NSS CHARTER|NSS|Sunsail|SUNSAIL|The Moorings|THE MOORINGS|(?:Moorings|MOORINGS)(?=[[:space:]]*[0-9])|Navigare Yachting|NAVIGARE YACHTING|(?:Navigare|NAVIGARE)(?=[[:space:]]*[0-9]))\M'
+            AND raw !~ '^(Moorings|MOORINGS)\M'
                THEN raw
            ELSE btrim(regexp_replace(regexp_replace(regexp_replace(regexp_replace(raw,
-                    '^Moorings\M', 'Boat4You'),
-                    '\m(NSS Charter|NSS|Sunsail|The Moorings|Moorings(?=[[:space:]]*[0-9])|Navigare)\M', 'Boat4You', 'g'),
+                    '^(Moorings|MOORINGS)\M', 'Boat4You'),
+                    '\m(NSS Charter|NSS CHARTER|NSS|Sunsail|SUNSAIL|The Moorings|THE MOORINGS|(?:Moorings|MOORINGS)(?=[[:space:]]*[0-9])|Navigare Yachting|NAVIGARE YACHTING|(?:Navigare|NAVIGARE)(?=[[:space:]]*[0-9]))\M', 'Boat4You', 'g'),
                     'Boat4You([[:space:]/]+Boat4You)+', 'Boat4You', 'g'),
                     '[[:space:]]{2,}', ' ', 'g'))
        END

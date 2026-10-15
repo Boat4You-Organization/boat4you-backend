@@ -23,8 +23,11 @@ object YachtNamePolicy {
     const val PUBLIC_BRAND = "Boat4You"
     const val BRAND_NAMES_RESOURCE = "partner/yacht_name_brand.txt"
 
-    private val MOORINGS_FIRST_WORD = Regex("^Moorings\\b")
-    private val FLEET_TOKEN = Regex("\\b(NSS Charter|NSS|Sunsail|The Moorings|Moorings(?=\\s*[0-9])|Navigare)\\b")
+    // ALL-CAPS partner spellings too (the owner wrote "SUNSAIL"; NauSys sends capitals), like R01 replace.txt; "Navigare"
+    // only as a fleet label (before a number or as "Navigare Yachting") - a boat named just "Navigare" (Italian) stays.
+    private val MOORINGS_FIRST_WORD = Regex("^(Moorings|MOORINGS)\\b")
+    private val FLEET_TOKEN =
+        Regex("\\b(NSS Charter|NSS CHARTER|NSS|Sunsail|SUNSAIL|The Moorings|THE MOORINGS|(?:Moorings|MOORINGS)(?=\\s*[0-9])|Navigare Yachting|NAVIGARE YACHTING|(?:Navigare|NAVIGARE)(?=\\s*[0-9]))\\b")
     private val REPEATED_BRAND = Regex("$PUBLIC_BRAND([\\s/]+$PUBLIC_BRAND)+")
     private val SPACES = Regex("\\s{2,}")
     private val WHITESPACE = Regex("\\s+")

@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.invoice.services
 
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.enums.CountryIsoEnum
 import hr.workspace.boat4you.common.services.ifNotNull
 import hr.workspace.boat4you.common.services.initSpecification
@@ -46,6 +47,7 @@ class InvoiceService(
     private val invoiceMappers: InvoiceMappers,
     private val userRepository: UserRepository,
     private val reservationFlowRepository: ReservationFlowRepository,
+    private val yachtRepository: YachtRepository,
 ) {
     val DATE_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy.")
 
@@ -265,8 +267,11 @@ class InvoiceService(
             view.createdForSurname?.takeIf { it.isNotBlank() } ?: view.reservationFlowSurname,
         ).joinToString(" ")
         // The commission invoice names the vessel as the charter agreement does (CharterAgreementService): the raw
-        // partner name, not the public one (R02 / V9_87 may show "Boat4You ..." to customers).
-        val vesselName = view.yachtPartnerName?.takeIf { it.isNotBlank() } ?: view.yachtName
+        // partner name, not the public one (R02 / V9_87 may show "Boat4You ..." to customers). Read by primary key
+        // rather than through reservation_view, so wave 2 leaves the repeatable view alone (an old jar re-creating
+        // the view without the column would break every ReservationView read of the new jar).
+        val vesselName = view.yachtId?.let { yachtRepository.findById(it).orElse(null) }?.partnerName
+            ?.takeIf { it.isNotBlank() } ?: view.yachtName
         val yachtLine = listOfNotNull(view.modelName, vesselName)
             .joinToString(" - ")
         val locationFrom = view.locationFromName.orEmpty()

@@ -171,12 +171,6 @@ open class ReservationView protected constructor() {
     @Column(name = "model_name")
     open var modelName: String? = null
         protected set
-    /** Raw partner yacht name (R02, V9_85) for the legal/accounting documents that name the vessel as the charter agreement
-     *  does; null = [yachtName] is the raw name. Internal only - never in a public DTO. */
-    @Column(name = "yacht_partner_name")
-    open var yachtPartnerName: String? = null
-        protected set
-
 
     @Column(name = "yacht_main_image")
     open var yachtMainImage: Long? = null
