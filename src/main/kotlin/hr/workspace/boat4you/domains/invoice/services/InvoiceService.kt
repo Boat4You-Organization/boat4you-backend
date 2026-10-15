@@ -264,7 +264,10 @@ class InvoiceService(
             view.createdForName?.takeIf { it.isNotBlank() } ?: view.reservationFlowName,
             view.createdForSurname?.takeIf { it.isNotBlank() } ?: view.reservationFlowSurname,
         ).joinToString(" ")
-        val yachtLine = listOfNotNull(view.modelName, view.yachtName)
+        // The commission invoice names the vessel as the charter agreement does (CharterAgreementService): the raw
+        // partner name, not the public one (R02 / V9_87 may show "Boat4You ..." to customers).
+        val vesselName = view.yachtPartnerName?.takeIf { it.isNotBlank() } ?: view.yachtName
+        val yachtLine = listOfNotNull(view.modelName, vesselName)
             .joinToString(" - ")
         val locationFrom = view.locationFromName.orEmpty()
         val reservationNumber = view.reservationNumber.orEmpty()
