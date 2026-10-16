@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.utils
 
+import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtImage
 
 /**
@@ -57,4 +58,14 @@ object MainImageRules {
         }
         return changed
     }
+
+    /**
+     * What the MMK and NauSys syncs do right after syncPictures, in one place: the card photo ([pick] with the boat's
+     * current main_image_id) and exactly its main flag ([flagMain]), the rows whose flag changed passed to [save].
+     * Returns the new yacht.main_image_id.
+     */
+    fun applyAfterSync(
+        yacht: Yacht,
+        save: (YachtImage) -> Unit,
+    ): Long? = pick(yacht.yachtImages, yacht.mainImageId)?.id.also { flagMain(yacht.yachtImages, it).forEach(save) }
 }

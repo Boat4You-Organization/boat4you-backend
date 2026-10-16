@@ -69,10 +69,12 @@ data class LayoutScanDto(
     val scanned: Int,
     /** Files missing or not decodable. */
     val unreadable: Int,
-    /** Pass as afterId for the next page; null = the scan reached the end. */
+    /** Pass as afterId for the next page; null = the scan reached the end (always null for a call with imageIds). */
     val nextAfterId: Long?,
     /** The images the detector calls a layout drawing: layout_override = true set (or, on a dry run, to be set). */
     val candidates: List<LayoutCandidateDto>,
     /** Boats whose card photo moved off a candidate (apply only). */
     val mainImagesFixed: List<MainImageFixDto>,
+    /** imageIds asked for that are not candidates now (gone, hidden, already decided, no longer main, or no longer flagged): untouched. */
+    val skippedImageIds: List<Long> = emptyList(),
 )

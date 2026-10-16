@@ -178,7 +178,7 @@ class NauSysYachtSyncService(
 
             syncPictures(nausysYacht.pictures, isNewEntity, updatedYacht)
             // One main flag per boat, the card photo's (V9_91: never a hidden placeholder, never the plan while there is a photo)
-            yacht.mainImageId = getMainImage(updatedYacht)?.id.also { MainImageRules.flagMain(updatedYacht.yachtImages, it).forEach(yachtImageRepository::save) }
+            yacht.mainImageId = MainImageRules.applyAfterSync(updatedYacht, yachtImageRepository::save)
             syncEquipment(updatedYacht, nausysYacht, equipmentLinks)
             syncExtras(updatedYacht, nausysYacht, optionalOnSite)
             syncReservationOptions(updatedYacht, nausysYacht.checkInPeriods)

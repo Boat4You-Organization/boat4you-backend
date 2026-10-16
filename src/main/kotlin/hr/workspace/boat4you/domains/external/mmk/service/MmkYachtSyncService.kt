@@ -199,7 +199,7 @@ class MmkYachtSyncService(
                 updatedYacht
             )
             // One main flag per boat, the card photo's (V9_91: never a hidden placeholder, never the plan while there is a photo)
-            yacht.mainImageId = getMainImage(updatedYacht)?.id.also { MainImageRules.flagMain(updatedYacht.yachtImages, it).forEach(yachtImageRepository::save) }
+            yacht.mainImageId = MainImageRules.applyAfterSync(updatedYacht, yachtImageRepository::save)
             // Prefer the raw equipment list when MMK populates it (inventory=raw
             // request param). Raw entries carry the full name + parentId, where
             // parentId points at the generic Equipment in our external_equipment

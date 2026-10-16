@@ -86,6 +86,26 @@ class YachtImageSyncServiceHideTest {
     }
 
     @Test
+    fun `the card moves to a stored photo, never to one still to be downloaded`() {
+        val pending =
+            YachtImage().apply {
+                id = 341901
+                externalUrl = pictures + "n1.jpg"
+                position = 1 // before n2, but its file is not there yet
+            }
+        boat(placeholder, pending, n2)
+        `when`(repository.findById(341899)).thenReturn(Optional.of(placeholder))
+
+        service.updateYachtImageWithUrl(341899, "y-4345/p.webp", KnownPlaceholderImages.PARTNER_BLOCKED_PHOTO)
+
+        verify(jdbc).update(
+            eq("UPDATE yacht SET main_image_id = ? WHERE id = ? AND main_image_id = ?"),
+            aryEq(arrayOf<Any?>(341900L, 4345L, 341899L)),
+            aryEq(intArrayOf(Types.BIGINT, Types.BIGINT, Types.BIGINT)),
+        )
+    }
+
+    @Test
     fun `a placeholder that is not the card photo leaves the card alone`() {
         boat(placeholder, n2).mainImageId = 341900
         `when`(repository.findById(341899)).thenReturn(Optional.of(placeholder))

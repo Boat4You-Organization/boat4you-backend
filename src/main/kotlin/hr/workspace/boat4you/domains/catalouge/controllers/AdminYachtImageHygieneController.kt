@@ -44,9 +44,11 @@ internal class AdminYachtImageHygieneController(
 
     @Operation(
         description =
-            "Images of active boats the file name does not call a layout drawing, measured by the visual detector: a page " +
-                "of limit (default 200, at most 2000) rows after afterId (the answer's nextAfterId). dryRun (default true) " +
-                "only lists the candidates; apply sets layout_override = true and moves the card photo off them. " +
+            "Images of active boats the file name does not call a layout drawing, measured by the visual detector. A dry " +
+                "run (dryRun, default true) lists the candidates of a page of limit (default 200, at most 2000) rows after " +
+                "afterId (the answer's nextAfterId). dryRun=false requires imageIds (comma-separated, at most 2000): the " +
+                "reviewed candidates without the false positives; only those the detector still flags get " +
+                "layout_override = true and lose the card photo, the rest come back in skippedImageIds. " +
                 "onlyMain (default true): the boats' main images only.",
     )
     @PostMapping("/yachts/images/detect-layout")
@@ -55,7 +57,8 @@ internal class AdminYachtImageHygieneController(
         @RequestParam(defaultValue = "true") onlyMain: Boolean,
         @RequestParam(defaultValue = "200") limit: Int,
         @RequestParam(defaultValue = "0") afterId: Long,
-    ): ResponseEntity<LayoutScanDto> = ResponseEntity.ok(imageHygieneService.detectLayout(dryRun, onlyMain, limit, afterId))
+        @RequestParam(required = false) imageIds: List<Long>?,
+    ): ResponseEntity<LayoutScanDto> = ResponseEntity.ok(imageHygieneService.detectLayout(dryRun, onlyMain, limit, afterId, imageIds))
 
     @Operation(description = "Correct one partner image: layout (true / false overrides the file name), hidden (true / false); a field left out stays")
     @PatchMapping("/yacht-images/{id}", consumes = [MediaType.APPLICATION_JSON_VALUE])

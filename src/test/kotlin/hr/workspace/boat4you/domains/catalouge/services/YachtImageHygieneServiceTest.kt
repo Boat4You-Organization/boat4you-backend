@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
 import com.zaxxer.hikari.HikariDataSource
+import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.catalouge.dto.BlockedImageDto
 import hr.workspace.boat4you.domains.catalouge.dto.MainImageFixDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtImageHygieneRequest
@@ -191,11 +192,34 @@ class YachtImageHygieneServiceTest {
             listOf(75797L, 92L)
         service.detectLayout(dryRun = true, onlyMain = false, limit = 2, afterId = 0).nextAfterId shouldBe 91L
 
-        val applied = service.detectLayout(dryRun = false, onlyMain = true, limit = 200, afterId = 0)
+        shouldThrow<ParameterValidationException> { service.detectLayout(dryRun = false, onlyMain = true, limit = 200, afterId = 0) }
+        val applied = service.detectLayout(dryRun = false, onlyMain = true, limit = 200, afterId = 0, imageIds = listOf(75797))
         applied.mainImagesFixed shouldContainExactly listOf(MainImageFixDto(4348, 75797, 75794))
+        applied.skippedImageIds shouldBe emptyList()
         jdbc.queryForObject("SELECT layout_override FROM yacht_image WHERE id = 75797", Boolean::class.java) shouldBe true
         mainOf(4348) shouldBe 75794L
         service.detectLayout(dryRun = true, onlyMain = false, limit = 200, afterId = 0).candidates.map { it.imageId } shouldContainExactly listOf(92L)
+    }
+
+    @Test
+    fun `detect-layout apply - only the reviewed ids, never a row the reviewed page did not show`() {
+        // review finding 16.10.2026: an apply re-scanning "the same page" slid past the PATCHed false positives and
+        // flagged rows nobody had looked at
+        (1L..4L).forEach { boat ->
+            boat(boat, main = boat * 10)
+            image(boat * 10, boat, YACHT + "main.png", 0, main = true, file = planBytes())
+        }
+        val dry = service.detectLayout(dryRun = true, onlyMain = true, limit = 2, afterId = 0)
+        dry.candidates.map { it.imageId } shouldContainExactlyInAnyOrder listOf(10L, 20L)
+        dry.nextAfterId shouldBe 20L
+
+        service.update(20, YachtImageHygieneRequest(layout = false)) // the reviewer's false positive
+        val applied = service.detectLayout(dryRun = false, onlyMain = true, limit = 2, afterId = 0, imageIds = listOf(10, 20, 999))
+        applied.candidates.map { it.imageId } shouldContainExactly listOf(10L)
+        applied.skippedImageIds shouldContainExactly listOf(20L, 999L) // decided by hand / unknown: untouched
+        applied.nextAfterId shouldBe null
+        val overrides = jdbc.queryForList("SELECT id, layout_override FROM yacht_image ORDER BY id").associate { it["id"] to it["layout_override"] }
+        overrides shouldBe mapOf(10L to true, 20L to false, 30L to null, 40L to null) // 30 and 40 were never reviewed
     }
 
     @Test

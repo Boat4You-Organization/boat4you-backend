@@ -21,7 +21,7 @@ class YachtImageSyncService(
 
     /**
      * The downloaded file of an image. With [hiddenReason] (the partner's placeholder, V9_91) the image is also hidden
-     * and loses the main flag, and when it is the boat's card photo (yacht.main_image_id) the card gets the photo
+     * and loses the main flag, and when it is the boat's card photo (yacht.main_image_id) the card gets the stored photo
      * [MainImageRules.pick] chooses now - without waiting for the next partner sync of the boat.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -54,7 +54,9 @@ class YachtImageSyncService(
         yacht: Yacht?,
     ) {
         if (yacht?.id == null || yacht.mainImageId != hiddenImageId) return
-        val main = MainImageRules.pick(yacht.yachtImages, null)?.id
+        // stored images only, like YachtMainImageFixService.repickMain: the card serves the file, a photo still to be
+        // downloaded would show the sites' default picture
+        val main = MainImageRules.pick(yacht.yachtImages.filterNot { it.url.isNullOrEmpty() }, null)?.id
         // the old value re-checked: a sync that moved the main meanwhile wins
         val changed = jdbc.update(REPICK_SQL, arrayOf(main, yacht.id, hiddenImageId), intArrayOf(Types.BIGINT, Types.BIGINT, Types.BIGINT))
         if (changed == 1) log.info("Yacht ${yacht.id}: card photo $hiddenImageId was the partner's placeholder, now ${main ?: "none"}")

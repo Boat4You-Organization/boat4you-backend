@@ -16,6 +16,7 @@ import hr.workspace.boat4you.domains.external.service.YachtImageSyncService
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoMoreInteractions
@@ -167,19 +168,35 @@ class YachtSyncImageTests {
             yacht = yacht,
         )
         blocked.mainImage shouldBe true // the partner's flag, re-applied by the sync ...
-        yacht.mainImageId = nausys.getMainImage(yacht)?.id
-        MainImageRules.flagMain(yacht.yachtImages, yacht.mainImageId)
+        clearInvocations(images)
+        yacht.mainImageId = MainImageRules.applyAfterSync(yacht, images::save) // the sync's own call after syncPictures
 
         yacht.mainImageId shouldBe 341900L
         listOf(blocked, layout, n2).map { it.mainImage } shouldContainExactly listOf(false, false, true) // ... and taken back
+        verify(images).save(blocked)
+        verify(images).save(n2)
+        verifyNoMoreInteractions(images) // only the flags that changed are written
         blocked.hidden shouldBe true // the sync never writes it (read-only for Hibernate)
         yacht.yachtImages.map { it.id } shouldContainExactly listOf(341899L, 75723L, 341900L) // the row stays: never fetched again
     }
 
     @Test
-    fun `MMK - only hidden images left - no card photo, no main flag`() {
+    fun `MMK - a hidden Main image loses the flag to the first photo, only hidden images left - no card photo, no main flag`() {
         val hidden = image(1, mmkDocs + "a.jpg", 0, main = true).apply { hidden = true }
-        mmk.getMainImage(yacht(hidden)) shouldBe null
+        val photo = image(2, mmkDocs + "b.jpg", 1)
+        val boat = yacht(hidden, photo).apply { mainImageId = 1 }
+        mmk.syncPictures(
+            listOf(Image(url = mmkDocs + "a.jpg", description = "Main image", sortOrder = 0), Image(url = mmkDocs + "b.jpg", sortOrder = 1)),
+            isNewEntity = false,
+            yacht = boat,
+        )
+        boat.mainImageId = MainImageRules.applyAfterSync(boat, images::save) // the sync's own call after syncPictures
+        boat.mainImageId shouldBe 2L
+        listOf(hidden, photo).map { it.mainImage } shouldContainExactly listOf(false, true)
+
+        val alone = image(3, mmkDocs + "c.jpg", 0, main = true).apply { this.hidden = true }
+        MainImageRules.applyAfterSync(yacht(alone), images::save) shouldBe null
+        alone.mainImage shouldBe false
     }
 
     @Test

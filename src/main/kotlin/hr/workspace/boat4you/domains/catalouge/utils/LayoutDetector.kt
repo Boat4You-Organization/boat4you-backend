@@ -40,9 +40,13 @@ data class LayoutScore(
  * light-grey) sheet - a large background share, background left INSIDE the drawing's bounding box (around the hull
  * outline, inside cabins), and little colour. Calibrated 16.10.2026 on 96 stored images from the public API (36 plans:
  * 35 that LayoutImageRules flags + the Bright Future plan; 60 photos of the same boats: their main photos, a second photo
- * of 12 and the Bright Future gallery): 36 / 36 plans, 0 / 60 photos (DEPLOY_NOTES 16.10.2026). The photos closest to
- * the line are boats framed by white bars (white 0.25-0.27 but 0.00-0.03 inside the box) and bright interiors (white
- * inside the box up to 0.14, overall at most 0.15); the faintest plans have white 0.29 overall / 0.17 inside.
+ * of 12 and the Bright Future gallery): 36 / 36 plans, 0 / 60 photos (DEPLOY_NOTES 16.10.2026) - IN-SAMPLE: the
+ * thresholds were chosen on these same images (no hold-out), and 35 of the 36 plans are ones the scan never measures
+ * (the file name already flags them). Out of sample (review 16.10.2026): 40 live card photos, 0 flagged; 3 / 3 plans.
+ * Not a precision estimate for the ~13,000 main images: every candidate is reviewed by hand before an apply. The photos
+ * closest to the line are boats framed by white bars (white 0.25-0.27 but 0.00-0.03 inside the box) and bright
+ * interiors (white inside the box up to 0.14 - the line is 0.15, the tightest margin; overall at most 0.15); the
+ * faintest plans have white 0.29 overall / 0.17 inside.
  */
 object LayoutDetector {
     init {

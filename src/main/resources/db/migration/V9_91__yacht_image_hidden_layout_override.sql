@@ -20,8 +20,9 @@
 -- and the repair never write a hidden or layout image there while the boat has a visible photo.
 --
 -- ADD COLUMN ... NOT NULL DEFAULT false is catalog-only on PostgreSQL 11+ (no table rewrite), but it needs ACCESS
--- EXCLUSIVE on yacht_image for an instant, and the partial index takes SHARE while it scans the table (~360,000 rows,
--- the index itself starts empty). An MMK / NauSys agency sync holds RowExclusive on yacht_image until it commits
+-- EXCLUSIVE on yacht_image, and the partial index is built in the same transaction while that lock is held: READS of
+-- yacht_image (boat detail, /public/image lookups) wait as well as writes, until COMMIT - for the scan of ~360,000 rows
+-- (well under a second; the index itself starts empty). An MMK / NauSys agency sync holds RowExclusive on yacht_image until it commits
 -- (minutes), and Flyway runs before the API serves anything on cusma2 (the only API node). Same recipe as V9_90:
 -- PRE-APPLY by hand as boat4you_owner in a quiet moment, outside the sync windows, before the restart
 --     psql -1 -v ON_ERROR_STOP=1 -f V9_91__yacht_image_hidden_layout_override.sql
