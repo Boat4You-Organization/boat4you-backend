@@ -883,7 +883,8 @@ class YachtQueryingService(
      * The yachts on this page by primary key: their capacity columns (capacity contract v1, 2.2) and yacht_content_modified
      * (V9_71) in whole seconds - a yacht without a modified row gets a null updatedAt - and its frozen public slug (V9_90).
      * One query per page, as the modified-time lookup alone was before. `internal_remark` (admin-only) is selected only
-     * for admin searches.
+     * for admin searches. The yacht's public and partner name only feed the note sanitizer (a note naming the boat itself
+     * is hidden) and never enter the DTO from here.
      */
     private fun fetchPageYachtFacts(
         yachtIds: List<Long>,
@@ -900,7 +901,7 @@ class YachtQueryingService(
                     SELECT y.id, y.cabins, y.berths, y.wc, y.crew_cabins, y.crew_berths, y.crew_wc, y.cabin_berths,
                            y.salon_berths, y.showers, y.crew_showers, y.max_persons, y.recommended_persons, y.crew_number,
                            y.cabins_note, y.berths_note, y.wc_note, CAST(FLOOR(EXTRACT(EPOCH FROM m.modified_at)) AS bigint),
-                           $remark, y.public_slug
+                           $remark, y.public_slug, y.name, y.partner_name
                     FROM yacht y
                     LEFT JOIN yacht_content_modified m ON m.yacht_id = y.id
                     WHERE y.id IN (:yachtIds)
@@ -933,6 +934,8 @@ class YachtQueryingService(
                             berthsNote = row[15] as String?,
                             wcNote = row[16] as String?,
                             internalRemark = row[18] as String?,
+                            yachtName = row[20] as String?,
+                            partnerYachtName = row[21] as String?,
                         ),
                     publicSlug = row[19] as String?,
                 )
@@ -1829,6 +1832,7 @@ class YachtQueryingService(
                 berthsNote = row.berthsNote,
                 wcNote = row.wcNote,
                 internalRemark = row.internalRemark,
+                yachtName = row.yachtName,
             )
         return YachtSearchResponseDto(
             id = row.id,
