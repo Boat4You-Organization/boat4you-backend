@@ -7,7 +7,9 @@ import java.text.Normalizer
  * be tested on their own. They HIDE and never rewrite: the result is the normalized note or null, the number still
  * shows. Unlike the sites' safePartnerText there is no "must contain a letter" check and no tidying, so "+2", "/5",
  * "8+2" and "- 4 double ..." survive verbatim (critique B-1). The frontends' yachtCapacity.ts `safeCapacityNote` is
- * the same rule set.
+ * the 6.10.2026 rule set ([BLOCKED_WORDS] and the contact / markup / length checks), their optional second line; the
+ * rules added after the native review of 15.10.2026 ([PRICE_WORDS], currency, the owner abbreviation, and for the three
+ * capacity figures an engine spec or the yacht's own name) run here only, the one gate every surface reads.
  */
 object CapacityNoteRules {
     private const val W_BEFORE = "(?<![\\p{L}\\p{N}_])"
@@ -69,7 +71,79 @@ object CapacityNoteRules {
             "nan",
         )
 
+    /**
+     * A price obligation (native review 15.10.2026; owner rule: no prices or surcharges in a capacity note, only the real
+     * price is shown): "Price is for up to 12 pax. For 13 - 18 pax (in shared cabins) surcharge applies." promises a
+     * charge the shown price does not carry. English plus the partners' other languages (it / es / pt / fr / de / hr): hr
+     * doplata in any form ("uz nadoplatu" too), it "a pagamento", fr "payant(e)", de "kostenpflichtig", "gegen Gebühr",
+     * "Zuschläge" (review of the v3 rules, 16.10.2026).
+     */
+    val PRICE_WORDS: List<String> =
+        listOf(
+            "prices?",
+            "priced",
+            "surcharges?",
+            "supplements?",
+            "supplement[oi]",
+            "suplementos?",
+            "suppléments?",
+            "zuschl[aä]g\\p{L}*",
+            "aufpreis",
+            "(?:na)?doplat\\p{L}*",
+            "fees?",
+            "payable",
+            "paid",
+            "payments?",
+            "pagamento",
+            "payant\\p{L}*",
+            "kostenpflichtig\\p{L}*",
+            "gebühr\\p{L}*",
+            "charged",
+            "extra (?:charges?|costs?)",
+            "additional (?:charges?|costs?)",
+        )
+
     private val BLOCKED = Regex("$W_BEFORE(?:${BLOCKED_WORDS.joinToString("|")})$W_AFTER", RegexOption.IGNORE_CASE)
+    private val PRICE = Regex("$W_BEFORE(?:${PRICE_WORDS.joinToString("|")})$W_AFTER", RegexOption.IGNORE_CASE)
+
+    /**
+     * Any currency symbol, or a currency code also right after a number ("150EUR"); hr eura / euru / eurom too ("50 eura
+     * po noći"). Not "eure", which is German "your".
+     */
+    private val CURRENCY =
+        Regex("\\p{Sc}|(?<![\\p{L}_])(?:eur|euros?|eura|euru|eurom|usd|gbp)(?![\\p{L}_])", RegexOption.IGNORE_CASE)
+
+    /**
+     * The owner abbreviation that "owners?" misses because a digit is glued to it: "(1OWN+2D+1BB)" showed the owner's
+     * cabin in translation ("vlasnička", "Eignerkabine") on 5 boats, review 15.10.2026. OWN in capitals as a token, or
+     * own / owner(s) right after a digit ("(1OWNER+2D+1BB)", "2owners"). The English "with own bathroom" stays, in an
+     * all-capitals note too: a capital OWN followed by bathroom / WC / shower / head / toilet / entrance / access is the
+     * en-suite wording ("4 DOUBLE CABINS WITH OWN BATHROOM"), unless a count or "+" stands right before it - "1 OWN WC +
+     * 2 GUEST WC" is the owner's head.
+     */
+    private val OWNER_ABBREVIATION =
+        Regex(
+            "(?<![\\p{L}_])OWN(?![\\p{L}_])(?!\\s+(?i:bathrooms?|wcs?|showers?|heads?|toilets?|entrance|access)(?!\\p{L}))|" +
+                "(?<=[\\p{N}+]\\s{0,2})OWN(?![\\p{L}_])|(?<=\\p{N})(?i:own(?:ers?)?)(?![\\p{L}_])",
+        )
+
+    /**
+     * Cabins / berths / heads only: an engine maker or a power with its unit is a rig fact the partner typed into the
+     * wrong field ("Yanmar 20hp" as a WC note, review 15.10.2026). PS and CV are left out (port side, convertible); a
+     * maker with them is still caught by its name. Vetus is left out too: it also makes marine toilets ("Vetus electric
+     * WC"); a Vetus engine with hp / kW is still caught by the power. Engine labels themselves never get this rule.
+     */
+    private val ENGINE_MAKER =
+        Regex(
+            "$W_BEFORE(?:yanmar|volvo|penta|nanni|perkins|lombardini|cummins|caterpillar|mtu|tohatsu|mercury|mercruiser|" +
+                "suzuki|yamaha|honda)$W_AFTER",
+            RegexOption.IGNORE_CASE,
+        )
+    private val ENGINE_POWER = Regex("\\d\\s?(?:bhp|b\\.h\\.p\\.?|h\\.p\\.?|hp|kw|ks)(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+
+    /** A yacht name shorter than this (folded) is never looked for in a note. */
+    private const val MIN_YACHT_NAME = 3
+
     private val SHOUTING = Regex("[!?]{2,}")
     private val MARKUP = Regex("[<>{}\\\\`]|[\\u0000-\\u001f\\u007f\\u200b-\\u200f\\u2028-\\u202e\\u2060-\\u2064\\ufeff]")
     private val EMAIL = Regex("[\\p{L}\\p{N}._%+-]+@[\\p{L}\\p{N}-]+\\.[\\p{L}\\p{N}.-]+")
@@ -84,6 +158,13 @@ object CapacityNoteRules {
     private val LONG_NUMBER = Regex("\\d[\\d\\s()./-]{8,}\\d")
     private val NON_DIGIT = Regex("\\D")
 
+    /** Hidden on every surface: markup, a blocked or price word, shouting, the owner abbreviation, contact data. */
+    private val TEXT_RULES: List<Regex> =
+        listOf(MARKUP, BLOCKED, SHOUTING, PRICE, CURRENCY, OWNER_ABBREVIATION, EMAIL, WEB, CONTACT_WORD, LONG_NUMBER)
+
+    /** Hidden in a cabins / berths / heads note only: an engine spec. */
+    private val FIGURE_RULES: List<Regex> = listOf(ENGINE_MAKER, ENGINE_POWER)
+
     private fun hasPhone(text: String): Boolean =
         PHONE_RUN.findAll(text).any { match ->
             val run = match.value
@@ -92,22 +173,42 @@ object CapacityNoteRules {
         }
 
     /**
-     * The note as a public surface may show it, or null. [isName] = operator / agency name matcher. The checks run on
-     * the NFKC form, so fullwidth or other compatibility characters cannot slip past them ("example．com", "ＴＥＬ"); the
-     * text returned is the normalized note itself, never that form.
+     * True when the note names the yacht itself ("Dea Del Mare has 5 Cabins; ..."): one of [yachtNames] (the public and
+     * the raw partner name), folded like the operator names, as whole words. A name made only of capacity words or
+     * digits ("Master", "008") never counts.
+     */
+    private fun namesYacht(
+        probe: String,
+        yachtNames: Collection<String?>,
+    ): Boolean {
+        if (yachtNames.isEmpty()) return false
+        val text = " ${PartnerNameMatcher.fold(probe)} "
+        return yachtNames.any { raw ->
+            val name = raw?.let { PartnerNameMatcher.fold(it) } ?: return@any false
+            name.length >= MIN_YACHT_NAME && !PartnerNameMatcher.isCapacityPhrase(name) && text.contains(" $name ")
+        }
+    }
+
+    /**
+     * The note as a public surface may show it, or null. [isName] = operator / agency name matcher. [dim] is set for a
+     * cabins / berths / heads note (null for an engine or sail label): only there an engine spec is hidden. [yachtNames]
+     * = the boat's own names, hidden in a note. The checks run on the NFKC form, so fullwidth or other compatibility
+     * characters cannot slip past them ("example．com", "ＴＥＬ"); the text returned is the normalized note itself, never
+     * that form.
      */
     fun capacityNote(
         raw: String?,
+        dim: CapacityDim? = null,
+        yachtNames: Collection<String?> = emptyList(),
         isName: (String) -> Boolean,
     ): String? {
         val text = CapacityText.normalizeNote(raw) ?: return null
         val probe = Normalizer.normalize(text, Normalizer.Form.NFKC)
         return when {
             text.length > CapacityText.NOTE_MAX || probe.length > CapacityText.NOTE_MAX -> null
-            MARKUP.containsMatchIn(probe) -> null
-            BLOCKED.containsMatchIn(probe) || SHOUTING.containsMatchIn(probe) -> null
-            EMAIL.containsMatchIn(probe) || WEB.containsMatchIn(probe) || CONTACT_WORD.containsMatchIn(probe) -> null
-            hasPhone(probe) || LONG_NUMBER.containsMatchIn(probe) -> null
+            TEXT_RULES.any { it.containsMatchIn(probe) } || hasPhone(probe) -> null
+            dim != null && FIGURE_RULES.any { it.containsMatchIn(probe) } -> null
+            namesYacht(probe, yachtNames) -> null
             isName(probe) -> null
             else -> text
         }

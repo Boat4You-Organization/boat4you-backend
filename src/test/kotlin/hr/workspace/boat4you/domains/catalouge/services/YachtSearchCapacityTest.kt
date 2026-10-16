@@ -329,9 +329,18 @@ class YachtSearchCapacityTest {
         assertEquals(4.toShort(), one.row.cabins)
         assertEquals(Instant.parse("2026-10-06T08:15:42Z"), one.updatedAt)
         assertEquals(
-            CapacityColumns(cabins = 4, berths = 12, wc = 2, maxPersons = 10, crewNumber = 1, cabinsNote = "4 +2", berthsNote = "(8+2)"),
+            CapacityColumns(
+                cabins = 4,
+                berths = 12,
+                wc = 2,
+                maxPersons = 10,
+                crewNumber = 1,
+                cabinsNote = "4 +2",
+                berthsNote = "(8+2)",
+                yachtName = "Yacht 1",
+            ),
             one.capacity,
-            "public search: no internal remark",
+            "public search: no internal remark; the yacht's own name for the note sanitizer",
         )
         val two = cards.getValue(2)
         assertNull(two.updatedAt)
@@ -345,6 +354,7 @@ class YachtSearchCapacityTest {
                 cabinBerths = 6,
                 salonBerths = 2,
                 recommendedPersons = 7,
+                yachtName = "Yacht 2",
             ),
             two.capacity,
         )
@@ -354,6 +364,21 @@ class YachtSearchCapacityTest {
     @Test
     fun `admin search also reads the internal remark`() {
         assertEquals("CREWED | private", search(params(), isAdmin = true).getValue(1).capacity!!.internalRemark)
+    }
+
+    @Test
+    fun `the page lookup hands the yacht's public and partner name to the note sanitizer`() {
+        // native review 15.10.2026: a note naming the boat itself is hidden, so the sanitizer needs both names
+        val jdbc = JdbcTemplate(dataSource)
+        jdbc.update("UPDATE yacht SET partner_name = 'Dea Del Mare' WHERE id = 1")
+        try {
+            val capacity = search(params()).getValue(1).capacity!!
+            assertEquals("Yacht 1", capacity.yachtName)
+            assertEquals("Dea Del Mare", capacity.partnerYachtName)
+            assertNull(search(params()).getValue(2).capacity!!.partnerYachtName)
+        } finally {
+            jdbc.update("UPDATE yacht SET partner_name = NULL WHERE id = 1")
+        }
     }
 
     @Test

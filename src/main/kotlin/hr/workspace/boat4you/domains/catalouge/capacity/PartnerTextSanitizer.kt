@@ -49,8 +49,18 @@ class PartnerTextSanitizer(
     /** Where an expired agency-name list is re-read: a short-lived daemon thread (once an hour), replaceable in tests. */
     internal var refreshExecutor: Executor = Executor { task -> Thread(task, "capacity-note-agency-names").apply { isDaemon = true }.start() }
 
-    /** The note / label as a public surface may show it (normalized, never rewritten), or null to hide it. */
+    /** An engine / sail label as a public surface may show it (normalized, never rewritten), or null to hide it. */
     fun capacityNote(text: String?): String? = CapacityNoteRules.capacityNote(text) { matcher().matches(it) }
+
+    /**
+     * A cabins / berths / heads note as a public surface may show it, or null: the label rules plus an engine spec in the
+     * wrong field and the yacht's own name ([yachtNames]: public and raw partner name), native review 15.10.2026.
+     */
+    fun capacityNote(
+        text: String?,
+        dim: CapacityDim,
+        yachtNames: Collection<String?>,
+    ): String? = CapacityNoteRules.capacityNote(text, dim, yachtNames) { matcher().matches(it) }
 
     /** Startup (bean init, before the API serves): the first agency-name read, outside any request transaction. */
     @PostConstruct

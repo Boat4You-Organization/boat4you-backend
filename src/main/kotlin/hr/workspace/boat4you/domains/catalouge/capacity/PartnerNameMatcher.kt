@@ -79,6 +79,12 @@ class PartnerNameMatcher private constructor(
                     "suzuki honda yamaha tohatsu caterpillar cummins man mtu hp kw bhp ps cv"
             ).split(' ').toSet()
 
+        /**
+         * True when every word of a FOLDED phrase is capacity vocabulary or a number ("master", "twin cabin", "008"): such
+         * a yacht name says nothing a note may not, so [CapacityNoteRules] never hides a note for containing it.
+         */
+        fun isCapacityPhrase(folded: String): Boolean = folded.split(' ').all { it.isEmpty() || it in CAPACITY_VOCABULARY || it.all(Char::isDigit) }
+
         /** b4y operatorNames.ts fold, with letters of every script kept (NFKD also folds fullwidth / compatibility forms). */
         fun fold(value: String): String {
             val lowered = value.lowercase().replace('đ', 'd').replace('ł', 'l')

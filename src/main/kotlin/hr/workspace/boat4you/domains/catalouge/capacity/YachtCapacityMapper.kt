@@ -37,6 +37,12 @@ data class CapacityColumns(
     val draught: BigDecimal? = null,
     /** ADMIN ONLY - read by [YachtCapacityMapper.brokerNotes] alone, never by the public blocks. */
     val internalRemark: String? = null,
+    /**
+     * yacht.name and yacht.partner_name (V9_85, INTERNAL): read by the sanitizer alone, which hides a note naming the
+     * yacht itself; never copied into a DTO.
+     */
+    val yachtName: String? = null,
+    val partnerYachtName: String? = null,
 ) {
     companion object {
         fun of(yacht: Yacht): CapacityColumns =
@@ -64,6 +70,8 @@ data class CapacityColumns(
                 enginePowerEach = yacht.enginePowerEach,
                 draught = yacht.draught,
                 internalRemark = yacht.internalRemark,
+                yachtName = yacht.name,
+                partnerYachtName = yacht.partnerName,
             )
     }
 }
@@ -90,21 +98,9 @@ class YachtCapacityMapper(
         mode: Mode,
     ): CapacityDto =
         CapacityDto(
-            cabins = dim(c.cabins, c.cabinsNote, CapacityDim.CABINS, mode),
-            berths =
-                dim(
-                    c.berths,
-                    c.berthsNote,
-                    CapacityDim.BERTHS,
-                    mode,
-                    CapacityNoteParser.nausysBerthsSplit(
-                        c.berths?.toInt(),
-                        c.cabinBerths?.toInt(),
-                        c.salonBerths?.toInt(),
-                        c.crewBerths?.toInt(),
-                    ),
-                ),
-            heads = dim(c.wc, c.wcNote, CapacityDim.HEADS, mode),
+            cabins = dim(c, CapacityDim.CABINS, mode),
+            berths = dim(c, CapacityDim.BERTHS, mode),
+            heads = dim(c, CapacityDim.HEADS, mode),
             crewCabins = positive(c.crewCabins),
             crewHeads = positive(c.crewWc),
             showers = positive(c.showers),
@@ -136,15 +132,26 @@ class YachtCapacityMapper(
         return BrokerNotesDto(cabinsNote = c.cabinsNote, berthsNote = c.berthsNote, headsNote = c.wcNote, remark = c.internalRemark)
     }
 
+    /** One figure: its value, the sanitized note (the yacht's own names hide it too) and the split. */
     private fun dim(
-        value: Short?,
-        rawNote: String?,
+        c: CapacityColumns,
         dim: CapacityDim,
         mode: Mode,
-        nausysSplit: CapacitySplit? = null,
     ): CapacityDimDto? {
+        val (value, rawNote) =
+            when (dim) {
+                CapacityDim.CABINS -> c.cabins to c.cabinsNote
+                CapacityDim.BERTHS -> c.berths to c.berthsNote
+                CapacityDim.HEADS -> c.wc to c.wcNote
+            }
         val v = positive(value) ?: return null
-        val safe = sanitizer.capacityNote(rawNote)
+        val safe = sanitizer.capacityNote(rawNote, dim, listOf(c.yachtName, c.partnerYachtName))
+        val nausysSplit =
+            if (dim == CapacityDim.BERTHS) {
+                CapacityNoteParser.nausysBerthsSplit(c.berths?.toInt(), c.cabinBerths?.toInt(), c.salonBerths?.toInt(), c.crewBerths?.toInt())
+            } else {
+                null
+            }
         val split = nausysSplit ?: CapacityNoteParser.parse(v.toInt(), safe, dim)
         val note = safe?.takeIf { mode == Mode.FULL || CapacityText.isShortNote(it) }
         return CapacityDimDto(value = v, note = note, split = split?.toDto())
