@@ -424,7 +424,7 @@ class YachtSearchRealPriceTest {
     @Test
     fun `11 - SEARCH_DEMOTE_STALE_OPTIONS=false keeps the stored OPTION on dated cards only, isOption still needs a live hold`() {
         val exchangeRates = ExchangeRateCalculationService(mock(ExchangeRateRepository::class.java))
-        val realMapper = YachtMapper(exchangeRates, YachtExtrasMapper(exchangeRates), YachtCapacityMapper(CapacityFixtures.sanitizer()))
+        val realMapper = YachtMapper(exchangeRates, YachtExtrasMapper(exchangeRates), YachtCapacityMapper(CapacityFixtures.sanitizer()), YachtGalleryFixture.off())
 
         fun statusOf(call: List<Any?>): OfferStatus? =
             realMapper

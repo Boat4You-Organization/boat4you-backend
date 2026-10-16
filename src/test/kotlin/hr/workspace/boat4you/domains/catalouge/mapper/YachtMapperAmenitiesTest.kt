@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.CategoryEnum
 import hr.workspace.boat4you.domains.catalouge.jpa.Equipment
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtEquipment
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
+import hr.workspace.boat4you.domains.catalouge.services.YachtGalleryService
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
@@ -24,7 +25,13 @@ import kotlin.test.assertEquals
  * ("false", "0", quantity 0) is left out (review 8.10.2026).
  */
 class YachtMapperAmenitiesTest {
-    private val mapper = YachtMapper(mock(ExchangeRateCalculationService::class.java), mock(YachtExtrasMapper::class.java), mock(YachtCapacityMapper::class.java))
+    private val mapper =
+        YachtMapper(
+            mock(ExchangeRateCalculationService::class.java),
+            mock(YachtExtrasMapper::class.java),
+            mock(YachtCapacityMapper::class.java),
+            mock(YachtGalleryService::class.java),
+        )
 
     private fun equipment(
         id: Long,

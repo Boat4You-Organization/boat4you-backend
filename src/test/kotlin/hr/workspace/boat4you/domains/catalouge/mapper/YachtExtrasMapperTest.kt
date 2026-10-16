@@ -25,6 +25,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.SearchSwitchesTestSupport
+import hr.workspace.boat4you.domains.catalouge.services.YachtGalleryFixture
 import hr.workspace.boat4you.domains.exchange.jpa.ExchangeRateRepository
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationExtra
 import org.junit.jupiter.api.Test
@@ -200,7 +201,7 @@ class YachtExtrasMapperTest {
 
     @Test
     fun `boat page - EXTERNAL prose and services cleaned, CUSTOM description, highlights and extras byte-identical`() {
-        val yachtMapper = YachtMapper(exchangeRates, mapper, YachtCapacityMapper(CapacityFixtures.sanitizer()))
+        val yachtMapper = YachtMapper(exchangeRates, mapper, YachtCapacityMapper(CapacityFixtures.sanitizer()), YachtGalleryFixture.off())
         val english = Language().apply { locale = LanguageEnum.EN.locale }
 
         fun yacht(entry: EntryType) =

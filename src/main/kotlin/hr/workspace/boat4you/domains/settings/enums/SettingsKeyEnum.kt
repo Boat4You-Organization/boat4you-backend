@@ -18,4 +18,8 @@ enum class SettingsKeyEnum {
     NAUSYS_REVERIFY,
     NAUSYS_D3_MODE,
     NAUSYS_WARM_LONG_RANGES,
+
+    // Boat page gallery with model and marina photos (photos DESIGN.md, 16.10.2026): OFF = today's gallery, ON = the
+    // YachtGalleryService merge. Same mechanics as the real-price switches (RealPriceSwitches.galleryExtended).
+    GALLERY_EXTENDED,
 }

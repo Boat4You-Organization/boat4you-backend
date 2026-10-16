@@ -273,7 +273,7 @@ class YachtSearchGuletCharterTest {
                 repositories.getRepository(YachtRepository::class.java),
                 locations,
                 mock(ExternalReservationRepository::class.java),
-                YachtMapper(exchangeRates, YachtExtrasMapper(exchangeRates), YachtCapacityMapper(CapacityFixtures.sanitizer())),
+                YachtMapper(exchangeRates, YachtExtrasMapper(exchangeRates), YachtCapacityMapper(CapacityFixtures.sanitizer()), YachtGalleryFixture.off()),
                 mock(OfferRepository::class.java),
                 mock(CustomYachtViewRepository::class.java),
                 mock(CustomYachtDetailRepository::class.java),

@@ -87,6 +87,7 @@ class RealPriceSwitchesTest {
         switches.nausysReverify shouldBe NauSysReverifyMode.OFF
         switches.nausysD3Mode shouldBe NauSysD3Mode.LEGACY
         switches.nausysWarmLongRanges shouldBe OnOff.OFF
+        switches.galleryExtended shouldBe OnOff.OFF
         db.reads shouldBe 1
     }
 
@@ -105,6 +106,7 @@ class RealPriceSwitchesTest {
         db.set(SettingsKeyEnum.NAUSYS_REVERIFY, "WRITE")
         db.set(SettingsKeyEnum.NAUSYS_D3_MODE, "LOG")
         db.set(SettingsKeyEnum.NAUSYS_WARM_LONG_RANGES, "ON")
+        db.set(SettingsKeyEnum.GALLERY_EXTENDED, "on")
 
         switches.snapshot() shouldBe
             RealPriceSwitches.Snapshot(
@@ -119,8 +121,10 @@ class RealPriceSwitchesTest {
                 nausysReverify = NauSysReverifyMode.WRITE,
                 nausysD3Mode = NauSysD3Mode.LOG,
                 nausysWarmLongRanges = OnOff.ON,
+                galleryExtended = OnOff.ON,
             )
         switches.bookingC1.isOn shouldBe true
+        switches.galleryExtended.isOn shouldBe true
         warnings() shouldBe emptyList()
     }
 
@@ -205,9 +209,11 @@ class RealPriceSwitchesTest {
         cache.put("k", "v")
         db.set(SettingsKeyEnum.BOOKING_C1, "ON")
         db.set(SettingsKeyEnum.NAUSYS_REVERIFY, "WRITE")
+        db.set(SettingsKeyEnum.GALLERY_EXTENDED, "ON")
         advance(Duration.ofSeconds(60))
         switches.poll()
         switches.bookingC1 shouldBe OnOff.ON
+        switches.galleryExtended shouldBe OnOff.ON
         cache.get("k")!!.get() shouldBe "v"
     }
 
@@ -239,7 +245,7 @@ class RealPriceSwitchesTest {
     fun `an invalid value warns at most once per key per hour, a missing row never warns`() {
         db.set(SettingsKeyEnum.SEARCH_PREDICATE, "bogus")
         switches.snapshot()
-        warnings().size shouldBe 1 // the 10 missing rows are the documented default: silent
+        warnings().size shouldBe 1 // the 11 missing rows are the documented default: silent
         warnings().count { it.contains("SEARCH_PREDICATE") && it.contains("bogus") } shouldBe 1
 
         repeat(5) {
@@ -261,13 +267,13 @@ class RealPriceSwitchesTest {
         }
         warnings() shouldBe emptyList()
         val infos = { appender.list.filter { it.level == Level.INFO }.map { it.formattedMessage } }
-        infos() shouldBe listOf("Real-price switches effective: 0 of 11 away from the default, search rp:LEGACY:OFF:true")
+        infos() shouldBe listOf("Real-price switches effective: 0 of 12 away from the default, search rp:LEGACY:OFF:true")
         infos().none { it.contains("mmk", ignoreCase = true) || it.contains("nausys", ignoreCase = true) } shouldBe true
 
         db.set(SettingsKeyEnum.MMK_OPTION_VERIFY, "LOG")
         advance(Duration.ofSeconds(60))
         switches.snapshot()
-        infos().last() shouldBe "Real-price switches effective: 1 of 11 away from the default, search rp:LEGACY:OFF:true"
+        infos().last() shouldBe "Real-price switches effective: 1 of 12 away from the default, search rp:LEGACY:OFF:true"
         infos().none { it.contains("mmk", ignoreCase = true) || it.contains("nausys", ignoreCase = true) } shouldBe true
     }
 
@@ -288,6 +294,7 @@ class RealPriceSwitchesTest {
             SettingsKeyEnum.NAUSYS_REVERIFY to listOf("OFF", "LOG", "WRITE"),
             SettingsKeyEnum.NAUSYS_D3_MODE to listOf("LEGACY", "LOG", "WRITE"),
             SettingsKeyEnum.NAUSYS_WARM_LONG_RANGES to listOf("OFF", "ON"),
+            SettingsKeyEnum.GALLERY_EXTENDED to listOf("OFF", "ON"),
         )
 
     @Test

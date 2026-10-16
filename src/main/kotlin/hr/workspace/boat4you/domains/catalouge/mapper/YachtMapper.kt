@@ -31,6 +31,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtSearchSelectResult
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
+import hr.workspace.boat4you.domains.catalouge.services.YachtGalleryService
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.services.withCoordinates
@@ -46,6 +47,7 @@ class YachtMapper(
     private val exchangeRateCalculationService: ExchangeRateCalculationService,
     private val yachtExtrasMapper: YachtExtrasMapper,
     private val capacityMapper: YachtCapacityMapper,
+    private val gallery: YachtGalleryService,
 ) {
     private fun isAdminUser(): Boolean {
         // Null-safe so an anonymous request (authentication may be absent) returns
@@ -263,13 +265,19 @@ class YachtMapper(
             offers = offerDtos,
             agency = if (isAdminUser()) result.agency?.toDto() else null,
             location = location,
+            // GALLERY_EXTENDED=ON adds model and marina photos for the boat page (YachtGalleryService); OFF = this list.
             yachtImages =
-                result.yachtImages
-                    .filter { !it.url.isNullOrEmpty() }
-                    .map { it.toDto() }.sortedBy {
-                    it.mainImage
-                    it.position
-                },
+                gallery.extend(
+                    result,
+                    result.yachtImages
+                        .filter { !it.url.isNullOrEmpty() }
+                        .map { it.toDto() }
+                        .sortedBy {
+                            it.mainImage
+                            it.position
+                        },
+                    location,
+                ),
             // Public: only rows linked to our catalogue (Mario 8.10.2026, equipment audit) and present, with our
             // catalogue name; an unlinked partner row is free text the web would print raw (agency notes, "4 double
             // cabins", a charter company's wording) and stays in the DB, for admins only. One row per code; unlinked

@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageResizeBusyException
+import hr.workspace.boat4you.domains.catalouge.jpa.CatalogueImageRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtImage
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtImageRepository
 import org.junit.jupiter.api.io.TempDir
@@ -43,7 +44,7 @@ class YachtImageResizeGateTests {
         File(uploadDir.toFile(), IMAGE_FILE).writeBytes(byteArrayOf(1, 2, 3))
         `when`(repository.findById(IMAGE_ID))
             .thenReturn(Optional.of(YachtImage().apply { url = IMAGE_FILE }))
-        return YachtImageService(repository, uploadDir.toString(), permits, waitMs)
+        return YachtImageService(repository, mock(CatalogueImageRepository::class.java), uploadDir.toString(), permits, waitMs)
     }
 
     @Test

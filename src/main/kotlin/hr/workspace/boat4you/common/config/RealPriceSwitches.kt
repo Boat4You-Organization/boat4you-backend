@@ -87,6 +87,8 @@ class RealPriceSwitches(
         val nausysReverify: NauSysReverifyMode = NauSysReverifyMode.OFF,
         val nausysD3Mode: NauSysD3Mode = NauSysD3Mode.LEGACY,
         val nausysWarmLongRanges: OnOff = OnOff.OFF,
+        /** `GALLERY_EXTENDED`: model and marina photos in the boat page gallery (YachtGalleryService); not a search switch. */
+        val galleryExtended: OnOff = OnOff.OFF,
     ) {
         /** How many switches differ from their default (today's behaviour). */
         val nonDefaultCount: Int
@@ -105,6 +107,7 @@ class RealPriceSwitches(
                 nausysReverify,
                 nausysD3Mode,
                 nausysWarmLongRanges,
+                galleryExtended,
             )
 
         private companion object {
@@ -141,6 +144,7 @@ class RealPriceSwitches(
     val nausysReverify: NauSysReverifyMode get() = snapshot().nausysReverify
     val nausysD3Mode: NauSysD3Mode get() = snapshot().nausysD3Mode
     val nausysWarmLongRanges: OnOff get() = snapshot().nausysWarmLongRanges
+    val galleryExtended: OnOff get() = snapshot().galleryExtended
 
     /** The SEARCH_* part of the current snapshot, for search cache keys (see [Snapshot.searchKey]). */
     fun searchCacheKey(): String = snapshot().searchKey
@@ -206,6 +210,7 @@ class RealPriceSwitches(
             nausysReverify = v(NAUSYS_REVERIFY_SPEC),
             nausysD3Mode = v(NAUSYS_D3_MODE_SPEC),
             nausysWarmLongRanges = v(NAUSYS_WARM_LONG_RANGES_SPEC),
+            galleryExtended = v(GALLERY_EXTENDED_SPEC),
         )
     }
 
@@ -295,6 +300,7 @@ class RealPriceSwitches(
         val NAUSYS_REVERIFY_SPEC = enumSpec(SettingsKeyEnum.NAUSYS_REVERIFY, NauSysReverifyMode.OFF)
         val NAUSYS_D3_MODE_SPEC = enumSpec(SettingsKeyEnum.NAUSYS_D3_MODE, NauSysD3Mode.LEGACY)
         val NAUSYS_WARM_LONG_RANGES_SPEC = enumSpec(SettingsKeyEnum.NAUSYS_WARM_LONG_RANGES, OnOff.OFF)
+        val GALLERY_EXTENDED_SPEC = enumSpec(SettingsKeyEnum.GALLERY_EXTENDED, OnOff.OFF)
 
         val SPECS: List<Spec<*>> =
             listOf(
@@ -309,6 +315,7 @@ class RealPriceSwitches(
                 NAUSYS_REVERIFY_SPEC,
                 NAUSYS_D3_MODE_SPEC,
                 NAUSYS_WARM_LONG_RANGES_SPEC,
+                GALLERY_EXTENDED_SPEC,
             )
 
         /** Allowed values per switch key, default first. Keys absent here are not real-price switches. */

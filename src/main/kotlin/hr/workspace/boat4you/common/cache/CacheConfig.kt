@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
 import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.jpa.Model
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
+import hr.workspace.boat4you.domains.catalouge.services.ModelDonor
 import hr.workspace.boat4you.domains.exchange.jpa.ExchangeRate
 import org.ehcache.config.builders.CacheConfigurationBuilder
 import org.ehcache.config.builders.ExpiryPolicyBuilder
@@ -430,6 +431,18 @@ class CacheConfig {
                     ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(2)))
                     .build()
 
+            // ModelDonorLookup.donorFor: the boat whose photos stand in for a model in the boat page gallery
+            // (GALLERY_EXTENDED), keyed "modelId:countryCode". Asked only for boats without a real photo (~70 boats,
+            // ~60 models on 16.10.2026); "no donor" is a value too (ModelDonor(null)), so a miss is not repeated.
+            val modelDonorCache =
+                CacheConfigurationBuilder
+                    .newCacheConfigurationBuilder(
+                        String::class.java,
+                        ModelDonor::class.java,
+                        thousandEntryResourcePool,
+                    ).withExpiry(ExpiryPolicyBuilder.timeToLiveExpiration(Duration.ofMinutes(10)))
+                    .build()
+
             cacheManager.createCache("countriesCache", Eh107Configuration.fromEhcacheCacheConfiguration(countriesCache))
             cacheManager.createCache(
                 "locationViewsCache",
@@ -521,6 +534,10 @@ class CacheConfig {
             cacheManager.createCache(
                 "yachtSearchListCache",
                 Eh107Configuration.fromEhcacheCacheConfiguration(yachtSearchListCache),
+            )
+            cacheManager.createCache(
+                "modelDonorCache",
+                Eh107Configuration.fromEhcacheCacheConfiguration(modelDonorCache),
             )
         }
     }

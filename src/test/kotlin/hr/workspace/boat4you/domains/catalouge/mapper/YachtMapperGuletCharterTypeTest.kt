@@ -13,6 +13,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Model
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtCharterType
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
+import hr.workspace.boat4you.domains.catalouge.services.YachtGalleryFixture
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import kotlin.test.assertEquals
@@ -20,7 +21,7 @@ import kotlin.test.assertEquals
 /** The boat page's charter types (YachtDetailsDto.charterType): a gulet never BAREBOAT, every other boat unchanged. */
 class YachtMapperGuletCharterTypeTest {
     private val exchangeRates = mock(ExchangeRateCalculationService::class.java)
-    private val mapper = YachtMapper(exchangeRates, YachtExtrasMapper(exchangeRates), YachtCapacityMapper(CapacityFixtures.sanitizer()))
+    private val mapper = YachtMapper(exchangeRates, YachtExtrasMapper(exchangeRates), YachtCapacityMapper(CapacityFixtures.sanitizer()), YachtGalleryFixture.off())
 
     private fun yacht(
         vesselType: VesselType,

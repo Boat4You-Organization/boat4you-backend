@@ -43,6 +43,7 @@ import hr.workspace.boat4you.domains.catalouge.services.ModelQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.BrandModelAliases
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
+import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
@@ -446,7 +447,7 @@ class MmkYachtSyncService(
         return model
     }
 
-    private fun syncPictures(
+    internal fun syncPictures(
         mmkPictures: List<Image>?,
         isNewEntity: Boolean,
         yacht: Yacht,
@@ -532,9 +533,8 @@ class MmkYachtSyncService(
         }
     }
 
-    private fun getMainImage(yacht: Yacht): YachtImage? {
-        return yacht.yachtImages.firstOrNull { it.mainImage == true } ?: yacht.yachtImages.firstOrNull()
-    }
+    // Never the layout drawing while the boat has a photo (16.10.2026) - MainImageRules.
+    internal fun getMainImage(yacht: Yacht): YachtImage? = MainImageRules.pick(yacht.yachtImages, yacht.mainImageId)
 
     /**
      * Normalised equipment row used for both MMK paths (raw + slim). Lets

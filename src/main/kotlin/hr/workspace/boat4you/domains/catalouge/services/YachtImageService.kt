@@ -3,6 +3,8 @@ package hr.workspace.boat4you.domains.catalouge.services
 import hr.workspace.boat4you.common.services.ImageUtils
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageNotFoundException
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageResizeBusyException
+import hr.workspace.boat4you.domains.catalouge.jpa.CatalogueImage
+import hr.workspace.boat4you.domains.catalouge.jpa.CatalogueImageRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtImageRepository
 import org.opencv.imgproc.Imgproc
 import org.slf4j.LoggerFactory
@@ -19,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 @Service
 class YachtImageService(
     private val yachtImageRepository: YachtImageRepository,
+    private val catalogueImageRepository: CatalogueImageRepository,
     @Value("\${application.upload.directory}")
     private val uploadDir: String,
     @Value("\${application.images.max-concurrent-resizes}")
@@ -68,12 +71,23 @@ class YachtImageService(
         // Lookup and the existence check stay OUTSIDE the gate — they cost a Hikari connection
         // and a stat(), never native memory, and holding a permit across them would shrink the
         // effective resize concurrency for no gain.
-        val yachtImage =
-            yachtImageRepository
-                .findById(imageId)
-                .orElseThrow { ImageNotFoundException() }
+        val storedPath =
+            if (imageId >= CatalogueImage.FIRST_ID) {
+                // V9_89: our own photos (marina) live outside the partner-owned yacht_image, above its id range; an
+                // inactive one is gone for the public. Same file store, gate and Cache-Control as a partner image.
+                catalogueImageRepository
+                    .findById(imageId)
+                    .filter { it.active }
+                    .orElseThrow { ImageNotFoundException() }
+                    .url
+            } else {
+                yachtImageRepository
+                    .findById(imageId)
+                    .orElseThrow { ImageNotFoundException() }
+                    .url
+            }
 
-        val file = File(uploadDir + "/" + yachtImage.url)
+        val file = File(uploadDir + "/" + storedPath)
         if (!file.exists()) {
             throw ImageNotFoundException()
         }

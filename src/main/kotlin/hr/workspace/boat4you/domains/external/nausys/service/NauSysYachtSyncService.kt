@@ -39,6 +39,7 @@ import hr.workspace.boat4you.domains.catalouge.services.ExternalSystemService
 import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
+import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
@@ -371,7 +372,7 @@ class NauSysYachtSyncService(
         }
     }
 
-    private fun syncPictures(
+    internal fun syncPictures(
         nausysPictures: List<RestYachtPicture>?,
         isNewEntity: Boolean,
         yacht: Yacht,
@@ -433,9 +434,8 @@ class NauSysYachtSyncService(
         }
     }
 
-    private fun getMainImage(yacht: Yacht): YachtImage? {
-        return yacht.yachtImages.firstOrNull { it.mainImage == true } ?: yacht.yachtImages.firstOrNull()
-    }
+    // Never the layout drawing while the boat has a photo (16.10.2026) - MainImageRules.
+    internal fun getMainImage(yacht: Yacht): YachtImage? = MainImageRules.pick(yacht.yachtImages, yacht.mainImageId)
 
     /**
      * One yacht_equipment row per partner catalogue item (its external_id; a legacy row without external_id is adopted
