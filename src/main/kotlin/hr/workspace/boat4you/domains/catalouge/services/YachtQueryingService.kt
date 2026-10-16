@@ -27,7 +27,7 @@ import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.catalouge.jpa.ReplacementSearchRow
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import hr.workspace.boat4you.domains.catalouge.utils.OfferCharterRules
-import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.catalouge.exceptions.AgencyNotActiveException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
@@ -762,6 +762,7 @@ class YachtQueryingService(
                     offerChartersByYachtId[view.id],
                     locationCoordinates,
                     keepStoredOption = keepStoredOption,
+                    publicSlug = pageFactsByYachtId[view.id]?.publicSlug,
                 )
             }
 
@@ -860,6 +861,8 @@ class YachtQueryingService(
     private data class PageYachtFacts(
         val updatedAt: Instant?,
         val capacity: CapacityColumns,
+        /** yacht.public_slug (V9_90): the card's frozen URL slug, null while not frozen. */
+        val publicSlug: String?,
     )
 
     /** The location id of a matview label "63-Marina Kastela-HR" (the part before the first dash). */
@@ -878,8 +881,9 @@ class YachtQueryingService(
 
     /**
      * The yachts on this page by primary key: their capacity columns (capacity contract v1, 2.2) and yacht_content_modified
-     * (V9_71) in whole seconds - a yacht without a modified row gets a null updatedAt. One query per page, as the
-     * modified-time lookup alone was before. `internal_remark` (admin-only) is selected only for admin searches.
+     * (V9_71) in whole seconds - a yacht without a modified row gets a null updatedAt - and its frozen public slug (V9_90).
+     * One query per page, as the modified-time lookup alone was before. `internal_remark` (admin-only) is selected only
+     * for admin searches.
      */
     private fun fetchPageYachtFacts(
         yachtIds: List<Long>,
@@ -896,7 +900,7 @@ class YachtQueryingService(
                     SELECT y.id, y.cabins, y.berths, y.wc, y.crew_cabins, y.crew_berths, y.crew_wc, y.cabin_berths,
                            y.salon_berths, y.showers, y.crew_showers, y.max_persons, y.recommended_persons, y.crew_number,
                            y.cabins_note, y.berths_note, y.wc_note, CAST(FLOOR(EXTRACT(EPOCH FROM m.modified_at)) AS bigint),
-                           $remark
+                           $remark, y.public_slug
                     FROM yacht y
                     LEFT JOIN yacht_content_modified m ON m.yacht_id = y.id
                     WHERE y.id IN (:yachtIds)
@@ -930,6 +934,7 @@ class YachtQueryingService(
                             wcNote = row[16] as String?,
                             internalRemark = row[18] as String?,
                         ),
+                    publicSlug = row[19] as String?,
                 )
         }.toMap()
     }
@@ -1828,7 +1833,8 @@ class YachtQueryingService(
         return YachtSearchResponseDto(
             id = row.id,
             slug =
-                SlugUtils.toSlugWithId(
+                YachtPublicSlug.of(
+                    row.publicSlug,
                     row.manufacturerName,
                     row.modelName,
                     row.yachtName,
@@ -2806,7 +2812,7 @@ class YachtQueryingService(
                 .firstOrNull()
                 ?.let { (it as Number).toLong() } ?: return null
         val canonical = yachtRepository.findById(canonicalId).orElse(null) ?: return null
-        return SlugUtils.toSlugWithId(canonical.model?.manufacturer?.name, canonical.model?.name, canonical.name, canonicalId)
+        return YachtPublicSlug.of(canonical)
     }
 
     fun getYachtAvailability(
@@ -2867,11 +2873,14 @@ class YachtQueryingService(
         name: String?,
         pageable: Pageable,
     ): Page<CustomYachtResponse> {
-        return if (name.isNullOrBlank()) {
-            customYachtViewRepository.findAll(pageable).map { yachtMapper.toDto(it) }
-        } else {
-            customYachtViewRepository.findAllByNameLikeIgnoreCase(name.trim(), pageable).map { yachtMapper.toDto(it) }
-        }
+        val page =
+            if (name.isNullOrBlank()) {
+                customYachtViewRepository.findAll(pageable)
+            } else {
+                customYachtViewRepository.findAllByNameLikeIgnoreCase(name.trim(), pageable)
+            }
+        val publicSlugs = YachtPublicSlug.byId(yachtRepository, page.content.mapNotNull { it.id })
+        return page.map { yachtMapper.toDto(it, publicSlugs[it.id]) }
     }
 
     fun getCustomYachtDetails(id: Long): CustomYachtDetailsResponse {

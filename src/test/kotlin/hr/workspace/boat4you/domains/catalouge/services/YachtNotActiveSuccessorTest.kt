@@ -91,6 +91,16 @@ class YachtNotActiveSuccessorTest {
     }
 
     @Test
+    fun `the successor answers under its frozen public slug - V9_90`() {
+        stored(4069, active = false)
+        `when`(entityManager.createNativeQuery(YachtSuccessorLookup.SQL)).thenReturn(query)
+        `when`(query.setParameter("id", 4069L)).thenReturn(query)
+        `when`(query.resultList).thenReturn(listOf(arrayOf<Any?>(11681L, "Lagoon", "Lagoon 42", "Boat4You 42", "lagoon-42-masterpiece-11681")))
+
+        notActive(4069).successor shouldBe YachtSuccessor(11681, "lagoon-42-masterpiece-11681")
+    }
+
+    @Test
     fun `no successor named - the plain 1502`() {
         stored(4067, active = false)
         `when`(entityManager.createNativeQuery(YachtSuccessorLookup.SQL)).thenReturn(query)

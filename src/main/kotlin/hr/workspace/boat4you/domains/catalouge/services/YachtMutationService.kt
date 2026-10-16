@@ -28,6 +28,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtImageRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslationRepository
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import org.springframework.cache.annotation.CacheEvict
 import org.springframework.cache.annotation.Caching
 import org.springframework.stereotype.Service
@@ -66,6 +67,8 @@ class YachtMutationService(
         pdfFile: MultipartFile?,
     ): CustomYachtDetailsResponse {
         val newYacht = createNewYacht(customYachtRequest)
+        // Owner rule 16.10.2026: the slug the boat is created with is its URL for ever - an edit never moves it.
+        YachtPublicSlug.freezeOnCreate(newYacht, yachtRepository)
         createCustomYachtDetails(newYacht, customYachtRequest, pdfFile)
         createTranslations(newYacht, customYachtRequest.descriptions ?: emptyMap(), TranslationType.DESCRIPTION)
         mainImage?.let {

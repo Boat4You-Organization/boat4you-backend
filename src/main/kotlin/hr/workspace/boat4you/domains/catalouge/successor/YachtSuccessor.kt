@@ -1,6 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.successor
 
-import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 
 /**
  * The live listing of the same physical boat as a retired one (yacht_successor, V9_73): its id and the slug its boat
@@ -21,7 +21,7 @@ data class YachtSuccessor(
  */
 object YachtSuccessorLookup {
     const val SQL = """
-        SELECT y.id, mf.name AS manufacturer, m.name AS model, y.name
+        SELECT y.id, mf.name AS manufacturer, m.name AS model, y.name, y.public_slug
         FROM yacht_successor s
         JOIN yacht y              ON y.id = s.new_id
         JOIN agency a             ON a.id = y.agency_id
@@ -35,9 +35,12 @@ object YachtSuccessorLookup {
           AND NOT COALESCE(l.inland, false)
     """
 
-    /** One [SQL] row (id, manufacturer, model, name) → the successor, slug built exactly like the boat page's own. */
+    /**
+     * One [SQL] row (id, manufacturer, model, name, public_slug) → the successor, slug resolved exactly like the boat
+     * page's own (YachtPublicSlug). A row without the 5th column is read as not frozen.
+     */
     fun fromRow(row: Array<*>): YachtSuccessor {
         val id = (row[0] as Number).toLong()
-        return YachtSuccessor(id, SlugUtils.toSlugWithId(row[1] as String?, row[2] as String?, row[3] as String?, id))
+        return YachtSuccessor(id, YachtPublicSlug.of(row.getOrNull(4) as String?, row[1] as String?, row[2] as String?, row[3] as String?, id))
     }
 }

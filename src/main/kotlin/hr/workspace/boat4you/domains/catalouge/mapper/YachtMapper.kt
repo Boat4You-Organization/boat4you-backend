@@ -35,7 +35,7 @@ import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.services.withCoordinates
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
-import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import kotlin.collections.filter
@@ -78,6 +78,8 @@ class YachtMapper(
          * badge); [isOption] (the expiry stamp) stays gated by a live hold either way. Default false = today.
          */
         keepStoredOption: Boolean = false,
+        /** The yacht row's frozen public slug (V9_90, same per-page lookup as [capacityColumns]); null = computed. */
+        publicSlug: String? = null,
     ): YachtSearchResponseDto {
         val yachtLocation = parseYachtSearchViewLocationName(result.locationFullName).withCoordinates(locationCoordinates)
         // One-way charter: surface drop-off as separate DTO only when
@@ -110,7 +112,7 @@ class YachtMapper(
 
         return YachtSearchResponseDto(
             id = result.id,
-            slug = SlugUtils.toSlugWithId(result.manufacturerName, result.modelName, result.yachtName, result.id),
+            slug = YachtPublicSlug.of(publicSlug, result.manufacturerName, result.modelName, result.yachtName, result.id),
             name = result.yachtName,
             location = yachtLocation,
             locationTo = yachtLocationTo,
@@ -239,7 +241,7 @@ class YachtMapper(
         return YachtDetailsDto(
             id = result.id!!,
             name = result.name!!,
-            SlugUtils.toSlugWithId(manufacturer?.name, model?.name, result.name, result.id!!),
+            YachtPublicSlug.of(result),
             buildYear = result.buildYear,
             maxPersons = result.maxPersons,
             cabins = result.cabins,
@@ -325,7 +327,11 @@ class YachtMapper(
         )
     }
 
-    fun toDto(customYachtView: CustomYachtView): CustomYachtResponse {
+    fun toDto(
+        customYachtView: CustomYachtView,
+        /** The yacht's frozen public slug (V9_90; the view does not carry it); null = computed. */
+        publicSlug: String? = null,
+    ): CustomYachtResponse {
         return CustomYachtResponse(
             id = customYachtView.id!!,
             name = customYachtView.name!!,
@@ -335,7 +341,8 @@ class YachtMapper(
             countryCode = customYachtView.countryCode!!,
             lowPrice = customYachtView.lowPrice!!,
             slug =
-                SlugUtils.toSlugWithId(
+                YachtPublicSlug.of(
+                    publicSlug,
                     customYachtView.manufacturerName,
                     customYachtView.modelName,
                     customYachtView.name,
@@ -391,7 +398,7 @@ class YachtMapper(
             amenitiesText = customYachtDetail.amenitiesText,
             toysText = customYachtDetail.toysText,
             engineText = customYachtDetail.engineText,
-            slug = SlugUtils.toSlugWithId(yacht.model?.manufacturer?.name, yacht.model?.name, yacht.name, yacht.id!!),
+            slug = YachtPublicSlug.of(yacht),
         )
     }
 }

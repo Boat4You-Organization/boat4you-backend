@@ -2,7 +2,7 @@ package hr.workspace.boat4you.domains.reservation.service
 
 import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
 import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
-import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.reservation.dto.TripDto
 import hr.workspace.boat4you.domains.reservation.dto.TripMarinaDto
@@ -87,12 +87,7 @@ class TripQueryService(
                         .joinToString(" ")
                         .ifBlank { yacht.name ?: "" }
                 },
-                slug = SlugUtils.toSlugWithId(
-                    yacht.model?.manufacturer?.name,
-                    yacht.model?.name,
-                    yacht.name,
-                    yacht.id!!,
-                ),
+                slug = YachtPublicSlug.of(yacht),
                 buildYear = yacht.buildYear?.toInt(),
                 cabins = yacht.cabins?.toInt(),
                 berths = yacht.berths?.toInt(),

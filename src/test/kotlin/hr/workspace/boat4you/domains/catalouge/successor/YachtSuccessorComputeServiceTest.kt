@@ -43,7 +43,8 @@ class YachtSuccessorComputeServiceTest {
             CREATE TABLE model (id bigint PRIMARY KEY, name text, manufacturer_id bigint);
             CREATE TABLE yacht (id bigint PRIMARY KEY, name text, agency_id bigint, entry_type text NOT NULL,
                                 sys_active boolean NOT NULL DEFAULT true, location_id bigint, build_year integer,
-                                model_id bigint, vessel_type text, length numeric, registration_number varchar(50));
+                                model_id bigint, vessel_type text, length numeric, registration_number varchar(50),
+                                public_slug varchar(255));
             CREATE TABLE offer (id bigserial PRIMARY KEY, yacht_id bigint NOT NULL, date_from date NOT NULL,
                                 date_to date NOT NULL, status text NOT NULL);
             """.trimIndent()
@@ -184,7 +185,7 @@ class YachtSuccessorComputeServiceTest {
     private fun lookup(id: Long): YachtSuccessor? =
         NamedParameterJdbcTemplate(jdbc)
             .query(YachtSuccessorLookup.SQL, mapOf("id" to id)) { rs, _ ->
-                YachtSuccessorLookup.fromRow(arrayOf(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4)))
+                YachtSuccessorLookup.fromRow(arrayOf(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)))
             }.firstOrNull()
 
     @Test
@@ -196,6 +197,10 @@ class YachtSuccessorComputeServiceTest {
         successors() shouldBe mapOf(4066L to 11681L)
         lookup(4066) shouldBe YachtSuccessor(11681, "lagoon-42-masterpiece-11681")
         lookup(11681) shouldBe null
+
+        // owner rule 16.10.2026 (V9_90): once frozen, the redirect goes to the frozen slug, whatever the name says now
+        jdbc.update("UPDATE yacht SET public_slug = 'lagoon-42-old-name-11681' WHERE id = 11681")
+        lookup(4066) shouldBe YachtSuccessor(11681, "lagoon-42-old-name-11681")
     }
 
     @Test

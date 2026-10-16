@@ -24,6 +24,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslationRepository
 import hr.workspace.boat4you.domains.catalouge.mapper.OfferMapper
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtMapper
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import jakarta.persistence.EntityManager
 import jakarta.persistence.EntityManagerFactory
 import org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
@@ -432,6 +433,40 @@ class YachtSearchCapacityTest {
         assertEquals(BrokerNotesDto(cabinsNote = "4 +2", berthsNote = "(8+2)", headsNote = null, remark = "CREWED | private"), admin.getValue(1).brokerNotes)
         assertEquals(BrokerNotesDto(cabinsNote = null, berthsNote = null, headsNote = null, remark = null), admin.getValue(2).brokerNotes)
         assertEquals("CREWED | private", replacementRows().getValue(1).brokerNotes?.remark)
+    }
+
+    @Test
+    fun `cards and the replacement search answer under the frozen public slug, the rest under today's computed one`() {
+        // owner rule 16.10.2026 (V9_90): the same per-page lookup carries yacht.public_slug
+        val jdbc = JdbcTemplate(dataSource)
+        jdbc.update("UPDATE yacht SET public_slug = 'bavaria-46-old-name-1' WHERE id = 1")
+        try {
+            signIn()
+            val cards = realService.getYachts(params(), "id", LanguageEnum.EN, 0, 50, false).content.associateBy { it.id }
+            assertEquals("bavaria-46-old-name-1", cards.getValue(1).slug)
+            assertEquals("yacht-2-2", cards.getValue(2).slug, "not frozen: SlugUtils as before")
+            val replacement = replacementRows()
+            assertEquals("bavaria-46-old-name-1", replacement.getValue(1).slug)
+            assertEquals("yacht-2-2", replacement.getValue(2).slug)
+        } finally {
+            jdbc.update("UPDATE yacht SET public_slug = NULL WHERE id = 1")
+        }
+    }
+
+    @Test
+    fun `the repository freezes only a NULL slug and looks the frozen ones up by id`() {
+        val tx = entityManager.transaction
+        tx.begin()
+        try {
+            yachts.freezePublicSlug(3, "yacht-3-3")
+            // a second freeze (a rerun, a concurrent backfill) never replaces it
+            yachts.freezePublicSlug(3, "renamed-3")
+            tx.commit()
+            assertEquals(mapOf(3L to "yacht-3-3"), YachtPublicSlug.byId(yachts, listOf(1L, 2L, 3L)))
+        } finally {
+            if (tx.isActive) tx.rollback()
+            JdbcTemplate(dataSource).update("UPDATE yacht SET public_slug = NULL WHERE id = 3")
+        }
     }
 
     @Test

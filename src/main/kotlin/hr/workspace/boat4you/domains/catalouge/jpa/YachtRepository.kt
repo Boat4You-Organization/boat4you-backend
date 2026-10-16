@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.catalouge.jpa
 
 import hr.workspace.boat4you.domains.catalouge.dto.AgencyYachtDto
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 
 interface YachtRepository : JpaRepository<Yacht, Long> {
@@ -114,6 +115,21 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
 
     fun countYachtsByModelId(modelId: Long): Int
 
+    /**
+     * Freezes [slug] as the boat's public URL slug (V9_90, owner rule 16.10.2026) - only while it has none, so a second
+     * call, a concurrent backfill or a sync never replaces a frozen slug. The column is not written by Hibernate.
+     */
+    @Modifying
+    @Query(value = "UPDATE yacht SET public_slug = :slug WHERE id = :id AND public_slug IS NULL", nativeQuery = true)
+    fun freezePublicSlug(
+        id: Long,
+        slug: String,
+    )
+
+    /** (id, public_slug) of the given boats that have a frozen slug - one lookup per list page (YachtPublicSlug). */
+    @Query("SELECT y.id, y.publicSlug FROM Yacht y WHERE y.id IN :ids AND y.publicSlug IS NOT NULL")
+    fun findPublicSlugs(ids: Collection<Long>): List<Array<Any>>
+
     fun findByModelId(modelId: Long): List<Yacht>
 
     /**
@@ -142,6 +158,7 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
             SELECT
               y.id                                   AS id,
               y.name                                 AS yacht_name,
+              y.public_slug                          AS public_slug,
               y.build_year                           AS build_year,
               y.max_persons                          AS max_persons,
               y.cabins                               AS cabins,
@@ -292,6 +309,7 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
 interface ReplacementSearchRow {
     val id: Long
     val yachtName: String?
+    val publicSlug: String?
     val buildYear: Short?
     val maxPersons: Short?
     val cabins: Short?

@@ -8,7 +8,7 @@ import hr.workspace.boat4you.domains.branding.Brand
 import hr.workspace.boat4you.domains.branding.BrandRegistry
 import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
-import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.MessageSource
@@ -291,13 +291,7 @@ class InquiryEmailService(
         // boat4you, etc.). Falls back to the brand's home page when no
         // yacht is attached.
         val yachtPageUrl = if (yacht != null) {
-            val slug = SlugUtils.toSlugWithId(
-                manufacturerName = yacht.model?.manufacturer?.name,
-                modelName = yacht.model?.name,
-                yachtName = yacht.name,
-                yachtId = yacht.id!!,
-            )
-            "${brand.websiteUrl}/boat/$slug"
+            "${brand.websiteUrl}/boat/${YachtPublicSlug.of(yacht)}"
         } else {
             brand.websiteUrl
         }
