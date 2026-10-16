@@ -41,6 +41,7 @@ import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
@@ -167,7 +168,11 @@ class NauSysYachtSyncService(
                 return@forEach
             }
 
+            // Owner rule 16.10.2026: the first complete write of a boat - a new one, or a shell row (above) that now has
+            // its model - freezes its URL slug (public name); later updates never touch it.
+            val firstCompleteWrite = isNewEntity || yacht.model == null
             val updatedYacht = updateFromNausysModel(yacht, nausysYacht, agency, allLocationMappings, model)
+            if (firstCompleteWrite) YachtPublicSlug.freezeOnCreate(updatedYacht, yachtRepository)
 
             nausysYacht.highlightsIntText?.let { createTranslations(updatedYacht, it, TranslationType.DESCRIPTION) }
 

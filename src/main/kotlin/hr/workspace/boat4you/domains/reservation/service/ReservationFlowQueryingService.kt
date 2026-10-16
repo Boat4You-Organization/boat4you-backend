@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.reservation.service
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.reservation.dto.DailyCount
 import hr.workspace.boat4you.domains.reservation.dto.DashboardMetricsDto
 import hr.workspace.boat4you.domains.reservation.dto.MyReservationDetailsDto
@@ -40,7 +41,8 @@ class ReservationFlowQueryingService(
                 // Hide cancelled bookings from the client account (B1: an expired unpaid
                 // option is released and removed from My Bookings once auto-cancelled).
                 .filter { it.reservationSysStatus != ReservationStatus.CANCELLED }
-        return reservations.map { reservationMappers.toMyReservationsResponse(it, currency) }
+        val publicSlugs = YachtPublicSlug.byId(yachtRepository, reservations.mapNotNull { it.yachtId })
+        return reservations.map { reservationMappers.toMyReservationsResponse(it, currency, publicSlugs[it.yachtId]) }
     }
 
     fun getMyReservationDetails(
@@ -75,9 +77,9 @@ class ReservationFlowQueryingService(
     ): Page<ReservationViewDto> {
         val startAt = dateFrom?.atStartOfDay()
         val endAt = dateTo?.atTime(23, 59, 59)
-        return reservationViewRepository
-            .findAllReservationsByParams(status, userId, startAt, endAt, reservationId, search, pageable)
-            .map { reservationMappers.toShortDto(it) }
+        val page = reservationViewRepository.findAllReservationsByParams(status, userId, startAt, endAt, reservationId, search, pageable)
+        val publicSlugs = YachtPublicSlug.byId(yachtRepository, page.content.mapNotNull { it.yachtId })
+        return page.map { reservationMappers.toShortDto(it, publicSlugs[it.yachtId]) }
     }
 
     fun getReservationByIdForAdmin(

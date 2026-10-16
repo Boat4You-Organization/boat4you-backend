@@ -14,7 +14,7 @@ import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationS
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
-import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.reservation.dto.MyReservationDetailsDto
 import hr.workspace.boat4you.domains.reservation.dto.MyReservationsDto
@@ -60,6 +60,8 @@ class ReservationMappers(
     fun toMyReservationsResponse(
         reservationView: ReservationView,
         currency: CurrencyEnum,
+        /** The yacht's frozen public slug (V9_90; reservation_view does not carry it); null = computed. */
+        publicSlug: String?,
     ): MyReservationsDto =
         MyReservationsDto(
             reservationId = reservationView.reservationId!!,
@@ -95,7 +97,8 @@ class ReservationMappers(
                     ?.takeIf { it > reservationView.calculatedTotalPrice }
                     ?.let { exchangeRateCalculationService.calculatePriceInfo(it, currency) },
             yachtSlug =
-                SlugUtils.toSlugWithId(
+                YachtPublicSlug.of(
+                    publicSlug,
                     reservationView.manufacturerName,
                     reservationView.modelName,
                     reservationView.yachtName,
@@ -159,7 +162,8 @@ class ReservationMappers(
                 ),
             paymentPhases = paymentPhasesService.getPaymentPhases(reservationView.reservationId!!),
             yachtSlug =
-                SlugUtils.toSlugWithId(
+                YachtPublicSlug.of(
+                    yacht.publicSlug,
                     reservationView.manufacturerName,
                     reservationView.modelName,
                     reservationView.yachtName,
@@ -263,7 +267,11 @@ class ReservationMappers(
         )
     }
 
-    fun toShortDto(reservationView: ReservationView): ReservationViewDto =
+    fun toShortDto(
+        reservationView: ReservationView,
+        /** The yacht's frozen public slug (V9_90; reservation_view does not carry it); null = computed. */
+        publicSlug: String?,
+    ): ReservationViewDto =
         ReservationViewDto(
             reservationId = reservationView.reservationId!!,
             reservationFlowId = reservationView.reservationFlowId!!,
@@ -284,7 +292,8 @@ class ReservationMappers(
             agencySourceExternalSystem = ExternalSystemEnum.fromValue(reservationView.agencySourceExternalSystemId!!),
             yachtId = reservationView.yachtId!!,
             yachtSlug =
-                SlugUtils.toSlugWithId(
+                YachtPublicSlug.of(
+                    publicSlug,
                     reservationView.manufacturerName,
                     reservationView.modelName,
                     reservationView.yachtName,
@@ -352,7 +361,8 @@ class ReservationMappers(
             agencySourceExternalSystem = ExternalSystemEnum.fromValue(reservationView.agencySourceExternalSystemId!!),
             yachtId = reservationView.yachtId,
             yachtSlug =
-                SlugUtils.toSlugWithId(
+                YachtPublicSlug.of(
+                    publicSlug = yacht.publicSlug,
                     manufacturerName = reservationView.manufacturerName,
                     modelName = reservationView.modelName,
                     yachtName = reservationView.yachtName,

@@ -45,6 +45,7 @@ import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
+import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
@@ -186,6 +187,8 @@ class MmkYachtSyncService(
             val filteredProducts =
                 mmkYacht.products?.filter { MMK_ALLOWED_PRODUCTS.contains(it.name.lowercase()) }!!
             val updatedYacht = updateFromMmkModel(yacht, mmkYacht, agency, allLocationMappings, filteredProducts)
+            // Owner rule 16.10.2026: a new boat's first slug (public name) is its URL for ever; an update never touches it.
+            if (isNewEntity) YachtPublicSlug.freezeOnCreate(updatedYacht, yachtRepository)
             val sortedImages = mmkYacht.images?.sortedWith(
                 compareBy<Image> { it.description?.equals("Main image", ignoreCase = true) != true }
                     .then(compareBy(nullsLast()) { it.sortOrder })
@@ -223,6 +226,11 @@ class MmkYachtSyncService(
                         extendedType = YACHT_AGENCY_EXTERNAL_MAPPING_KEY + agency.id,
                     ),
                 )
+            } else if (isNewEntity) {
+                // The row the mapping pointed to is gone (above): relink it to the boat just created, or every sync
+                // re-creates the boat - a new id, so a new URL - again.
+                mapping.systemId = updatedYacht.id!!
+                externalMappingRepository.save(mapping)
             }
         }
 

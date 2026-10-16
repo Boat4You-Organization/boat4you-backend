@@ -49,6 +49,16 @@ open class Yacht {
     @Column(name = "partner_name", columnDefinition = "TEXT")
     open var partnerName: String? = null
 
+    /**
+     * The boat's frozen public URL slug (V9_90, owner rule 16.10.2026: a boat's URL never changes again). Read through
+     * YachtPublicSlug, which falls back to the computed slug while this is NULL. Hibernate never writes it - a sync
+     * re-saving the boat could otherwise put back the NULL it loaded over a slug frozen meanwhile; the only writers are
+     * YachtRepository.freezePublicSlug (creation, backfill) and the admin refresh (YachtPublicSlugService).
+     */
+    @Size(max = 255)
+    @Column(name = "public_slug", insertable = false, updatable = false)
+    open var publicSlug: String? = null
+
     @ManyToOne(fetch = FetchType.LAZY)
     @OnDelete(action = OnDeleteAction.SET_NULL)
     @JoinColumn(name = "agency_id")
