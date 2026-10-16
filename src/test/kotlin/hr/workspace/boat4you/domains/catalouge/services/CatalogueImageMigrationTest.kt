@@ -40,6 +40,7 @@ class CatalogueImageMigrationTest {
             }
 
         private const val V9_89 = "V9_89__catalogue_image_marina_photos.sql"
+        private const val V9_91 = "V9_91__yacht_image_hidden_layout_override.sql"
 
         private val SCHEMA =
             """
@@ -99,6 +100,7 @@ class CatalogueImageMigrationTest {
         jdbc.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public; GRANT ALL ON SCHEMA public TO PUBLIC")
         jdbc.execute(SCHEMA)
         jdbc.execute(SEED)
+        migrate(V9_91) // yacht_image.hidden / layout_override, read by the model-donor SQL
     }
 
     private fun sql(file: String) = ClassPathResource("db/migration/$file").inputStream.bufferedReader().readText()
@@ -361,6 +363,22 @@ class CatalogueImageMigrationTest {
         yacht(14, agency = null, entry = "CUSTOM")
         images(14, photos = 4)
         lookup.donorFor(812, "HR") shouldBe ModelDonor(14)
+    }
+
+    @Test
+    fun `model donor - hidden images and layout_override drawings are no photos (V9_91)`() {
+        migrate(V9_89)
+        val lookup = ModelDonorLookup(jdbc)
+        yacht(20)
+        val ids = images(20, photos = 5) // positions 5, 4, 3, 2, 1
+        jdbc.update("UPDATE yacht_image SET hidden = true WHERE id = ?", ids[0]) // the partner's placeholder
+        jdbc.update("UPDATE yacht_image SET layout_override = true WHERE id = ?", ids[1]) // a plan named like a photo
+
+        lookup.donorFor(812, "HR") shouldBe ModelDonor(null) // 3 real photos left: not enough
+        lookup.donorPhotoIds(20) shouldContainExactly ids.drop(2).reversed()
+
+        jdbc.update("UPDATE yacht_image SET layout_override = false WHERE id = ?", ids[1])
+        lookup.donorPhotoIds(20) shouldContainExactly ids.drop(1).reversed()
     }
 
     @Test

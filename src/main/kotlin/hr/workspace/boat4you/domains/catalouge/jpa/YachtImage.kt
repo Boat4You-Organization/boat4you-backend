@@ -54,4 +54,24 @@ open class YachtImage {
     @ColumnDefault("false")
     @Column(name = "synced")
     open var synced: Boolean? = null
+
+    /**
+     * V9_91: never served to the public and never the main image - the partner's placeholder (NauSys blocked photo,
+     * [hr.workspace.boat4you.domains.catalouge.utils.KnownPlaceholderImages]) or an admin decision. Read-only for
+     * Hibernate: written only by SQL (image download, admin repair / PATCH), so a partner sync re-saving the row can
+     * never clear it.
+     */
+    @Column(name = "hidden", insertable = false, updatable = false)
+    open var hidden: Boolean = false
+
+    /** V9_91: why [hidden] (PARTNER_BLOCKED_PHOTO, ADMIN). Admin-only, read-only for Hibernate like [hidden]. */
+    @Column(name = "hidden_reason", columnDefinition = "TEXT", insertable = false, updatable = false)
+    open var hiddenReason: String? = null
+
+    /**
+     * V9_91: null = the file name decides whether this is the layout drawing ([hr.workspace.boat4you.domains.catalouge.utils.LayoutImageRules]);
+     * true / false = an admin or the visual layout detector said so. Read-only for Hibernate like [hidden].
+     */
+    @Column(name = "layout_override", insertable = false, updatable = false)
+    open var layoutOverride: Boolean? = null
 }

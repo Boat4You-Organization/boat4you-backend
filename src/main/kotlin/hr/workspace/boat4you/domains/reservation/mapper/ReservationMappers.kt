@@ -13,6 +13,7 @@ import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
+import hr.workspace.boat4you.domains.catalouge.services.toPublicDtos
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
@@ -70,7 +71,8 @@ class ReservationMappers(
             yachtId = reservationView.yachtId!!,
             yachtName = reservationView.yachtName!!,
             modelName = reservationView.modelName!!,
-            yachtImage = reservationView.yachtMainImage!!,
+            // null when the boat has no visible image (V9_91: only the partner placeholder) - the web shows its default
+            yachtImage = reservationView.yachtMainImage,
             dateFrom = reservationView.reservationDateFrom!!,
             dateTo = reservationView.reservationDateTo!!,
             checkin = reservationView.offerCheckin,
@@ -145,7 +147,8 @@ class ReservationMappers(
             yachtId = reservationView.yachtId!!,
             yachtName = reservationView.yachtName!!,
             modelName = reservationView.modelName!!,
-            yachtImage = reservationView.yachtMainImage!!,
+            // null when the boat has no visible image (V9_91: only the partner placeholder) - the web shows its default
+            yachtImage = reservationView.yachtMainImage,
             dateFrom = reservationView.reservationDateFrom!!,
             dateTo = reservationView.reservationDateTo!!,
             checkin = reservationView.offerCheckin,
@@ -172,7 +175,7 @@ class ReservationMappers(
             selectedExtras = selectedExtrasDto,
             description = description,
             highlights = highlights,
-            yachtImages = yacht.yachtImages?.map { it.toDto() } ?: emptyList(),
+            yachtImages = yacht.yachtImages.toPublicDtos(yacht.mainImageId),
             maxPersons = yacht.maxPersons,
             cabins = yacht.cabins,
             wc = yacht.wc,

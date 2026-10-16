@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.CatalogueImageRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtImage
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtImageRepository
+import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
 import hr.workspace.boat4you.domains.external.job.ImageDownloadJob
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtSyncService
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysYachtSyncService
@@ -146,6 +147,39 @@ class YachtSyncImageTests {
         verify(files).deleteFile("y-12663/2.webp")
         verifyNoMoreInteractions(files)
         yacht.yachtImages.map { it.id } shouldContainExactly listOf(1L)
+    }
+
+    @Test
+    fun `NauSys - the hidden model placeholder flagged mainPicture is never the main, the card photo's flag is the only one`() {
+        // owner incident 16.10.2026, FuFu 4345: the partner flags its MODEL picture, the blocked-photo placeholder
+        val model = "https://ws.nausys.com/CBMS-external/rest/yachtModel/4327922/pictures/main.jpg"
+        val blocked = image(341899, model, 0, main = true).apply { hidden = true }
+        val layout = image(75723, nausysPics + "layout.png", 1)
+        val n2 = image(341900, nausysPics + "n2.jpg", 2)
+        val yacht = yacht(blocked, layout, n2).apply { mainImageId = 341899 }
+        nausys.syncPictures(
+            listOf(
+                RestYachtPicture(src = model, mainPicture = true),
+                RestYachtPicture(src = nausysPics + "layout.png", mainPicture = false),
+                RestYachtPicture(src = nausysPics + "n2.jpg", mainPicture = false),
+            ),
+            isNewEntity = false,
+            yacht = yacht,
+        )
+        blocked.mainImage shouldBe true // the partner's flag, re-applied by the sync ...
+        yacht.mainImageId = nausys.getMainImage(yacht)?.id
+        MainImageRules.flagMain(yacht.yachtImages, yacht.mainImageId)
+
+        yacht.mainImageId shouldBe 341900L
+        listOf(blocked, layout, n2).map { it.mainImage } shouldContainExactly listOf(false, false, true) // ... and taken back
+        blocked.hidden shouldBe true // the sync never writes it (read-only for Hibernate)
+        yacht.yachtImages.map { it.id } shouldContainExactly listOf(341899L, 75723L, 341900L) // the row stays: never fetched again
+    }
+
+    @Test
+    fun `MMK - only hidden images left - no card photo, no main flag`() {
+        val hidden = image(1, mmkDocs + "a.jpg", 0, main = true).apply { hidden = true }
+        mmk.getMainImage(yacht(hidden)) shouldBe null
     }
 
     @Test

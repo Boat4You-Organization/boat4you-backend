@@ -12,7 +12,7 @@ data class MyReservationsDto(
     val yachtId: Long,
     val yachtName: String,
     val modelName: String,
-    val yachtImage: Long,
+    val yachtImage: Long?,
     val dateFrom: LocalDateTime,
     val dateTo: LocalDateTime,
     val checkin: String?,

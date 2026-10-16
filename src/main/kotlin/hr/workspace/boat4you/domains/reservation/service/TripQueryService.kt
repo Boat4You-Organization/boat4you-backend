@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.reservation.service
 
 import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
 import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
+import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.reservation.dto.TripDto
@@ -50,10 +51,13 @@ class TripQueryService(
                 .filter { it.documentType in travelDocumentTypes }
         }
 
-        // Main image first, then partner ordering — max 8 keeps payload small.
+        // Main image first (the card photo's rule), then partner ordering — max 8 keeps payload small. Hidden images
+        // (V9_91: the partner's placeholder) never.
+        val mainImage = MainImageRules.pick(yacht.yachtImages, yacht.mainImageId)
         val imageIds = yacht.yachtImages
+            .filterNot(MainImageRules::isHidden)
             .sortedWith(
-                compareByDescending<hr.workspace.boat4you.domains.catalouge.jpa.YachtImage> { it.mainImage == true }
+                compareByDescending<hr.workspace.boat4you.domains.catalouge.jpa.YachtImage> { it === mainImage }
                     .thenBy { it.position ?: Short.MAX_VALUE },
             )
             .mapNotNull { it.id }

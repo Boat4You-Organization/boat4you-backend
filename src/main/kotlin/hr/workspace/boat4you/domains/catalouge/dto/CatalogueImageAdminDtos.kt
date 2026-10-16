@@ -40,19 +40,25 @@ data class CatalogueImageUpdateRequest(
     val credit: String? = null,
 )
 
-/** POST /admin/yachts/main-image/fix-layout: one boat whose card photo was its layout drawing. */
+/** POST /admin/yachts/main-image/fix-layout: one boat whose card photo was its layout drawing, a hidden or a missing image. */
 data class MainImageFixDto(
     val yachtId: Long,
-    val fromImageId: Long,
-    val toImageId: Long,
+    /** null: the boat had no card photo (an admin un-hid its only image). */
+    val fromImageId: Long?,
+    /** null: the boat has no visible stored image left (only the partner's placeholder) - the sites show their default. */
+    val toImageId: Long?,
 )
 
 data class MainImageFixResultDto(
     val dryRun: Boolean,
     /** Active boats whose main_image_id is a layout drawing. */
     val layoutMainCount: Int,
-    /** The ones with a stored photo: set (or, on a dry run, to be set) to it. */
+    /** The ones with a stored photo (and every hidden / missing main): set (or, on a dry run, to be set) to it. */
     val fixed: List<MainImageFixDto>,
-    /** The ones without any stored photo: left as they are. */
+    /** Layout mains without any stored photo: left as they are. */
     val withoutPhotoYachtIds: List<Long>,
+    /** Active boats whose main_image_id is a hidden image (V9_91, e.g. the partner's placeholder). */
+    val hiddenMainCount: Int = 0,
+    /** Active boats whose main_image_id names no image of the boat. */
+    val missingMainCount: Int = 0,
 )

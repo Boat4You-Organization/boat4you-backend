@@ -74,4 +74,55 @@ class MainImageRulesTest {
         val main = image(21, "x", 1).apply { externalUrl = nausys + "main.jpg" }
         MainImageRules.pick(listOf(layout, main), null) shouldBe main
     }
+
+    // V9_91, owner incident 16.10.2026 (FuFu 4345): NauSys flags its MODEL picture mainPicture, and that picture is the
+    // generic "Picture is not shown due to possible legal issues" placeholder for some models.
+    private val nausysModel = "https://ws.nausys.com/CBMS-external/rest/yachtModel/4327922/pictures/main.jpg"
+    private val nausysYacht = "https://ws.nausys.com/CBMS-external/rest/yacht/50898648/pictures/"
+
+    private fun blocked(id: Long) =
+        image(id, "x", 0, main = true).apply {
+            externalUrl = nausysModel
+            hidden = true
+        }
+
+    @Test
+    fun `a hidden partner main is never picked - the photo with the lowest position`() {
+        val n2 = image(341900, "x", 2).apply { externalUrl = nausysYacht + "n2.jpg" }
+        val n3 = image(341901, "x", 3).apply { externalUrl = nausysYacht + "n3.jpg" }
+        val layout = image(75723, "x", 1).apply { externalUrl = nausysYacht + "layout.png" }
+        MainImageRules.pick(listOf(blocked(341899), layout, n3, n2), currentMainId = 341899) shouldBe n2
+    }
+
+    @Test
+    fun `a boat whose every image is hidden has no main - not even the placeholder`() {
+        MainImageRules.pick(listOf(blocked(1), blocked(2)), currentMainId = 1) shouldBe null
+    }
+
+    @Test
+    fun `only a layout besides the placeholder - the layout, never the placeholder`() {
+        val layout = image(5, "x", 1).apply { externalUrl = nausysYacht + "layout.png" }
+        MainImageRules.pick(listOf(blocked(4), layout), currentMainId = 4) shouldBe layout
+    }
+
+    @Test
+    fun `layout_override decides over the file name both ways`() {
+        val plan = image(30, "main.png", 0, main = true).apply { layoutOverride = true } // a plan whose name says nothing
+        val photo = image(31, "victoria_layout_3.jpg", 1).apply { layoutOverride = false } // an aerial photo named layout
+        val other = image(32, "n2.jpg", 2)
+        MainImageRules.isLayout(plan) shouldBe true
+        MainImageRules.isLayout(photo) shouldBe false
+        MainImageRules.pick(listOf(plan, photo, other), null) shouldBe photo
+    }
+
+    @Test
+    fun `flagMain - exactly the picked image carries the flag, null clears all, changed rows returned`() {
+        val a = image(40, "a.jpg", 0, main = true).apply { hidden = true }
+        val b = image(41, "b.jpg", 1, main = null)
+        val c = image(42, "c.jpg", 2, main = false)
+        MainImageRules.flagMain(listOf(a, b, c), 41).map { it.id } shouldBe listOf(40L, 41L)
+        listOf(a, b, c).map { it.mainImage } shouldBe listOf(false, true, false)
+        MainImageRules.flagMain(listOf(a, b, c), 41) shouldBe emptyList()
+        MainImageRules.flagMain(listOf(a, b, c), null).map { it.id } shouldBe listOf(41L)
+    }
 }

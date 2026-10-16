@@ -2,11 +2,14 @@ package hr.workspace.boat4you.domains.external.service
 
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.common.services.ImageService
+import hr.workspace.boat4you.common.services.ImageUtils
+import hr.workspace.boat4you.domains.catalouge.utils.KnownPlaceholderImages
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
+import java.io.ByteArrayInputStream
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
@@ -44,12 +47,16 @@ class YachtImageIntegrationServiceAsync(
             return CompletableFuture.completedFuture(ImageSyncOutcome.SKIPPED)
         }
         try {
-            val image = imageService.downloadAsWebp(externalImageUrl)
-            // Result.failure = download failed; success(null) = bytes were not a decodable image
-            val imageBytes = image.getOrNull()
+            val download = imageService.download(externalImageUrl)
+            val source = download.getOrNull()
+            // The partner's placeholder instead of the photo (NauSys blocked photo, 16.10.2026): stored like any picture,
+            // so the row is synced and never fetched again, but hidden - never public, never the main image.
+            val placeholder = source != null && KnownPlaceholderImages.isPlaceholder(source.finalUrl, source.bytes)
+            // null = download failed or the bytes were not a decodable image
+            val imageBytes = source?.let { ImageUtils.convertToWebP(ByteArrayInputStream(it.bytes)) }
             if (imageBytes == null) {
                 deadUrls[externalImageUrl] = Instant.now()
-                val reason = image.exceptionOrNull()?.message ?: "downloaded bytes are not a decodable image"
+                val reason = download.exceptionOrNull()?.message ?: "downloaded bytes are not a decodable image"
                 // Per-URL detail at DEBUG; YachtImageIntegrationService WARNs one summary per run
                 // (count + failing yachts + top hosts) — ~2k dead-URL lines/week otherwise.
                 log.debug("Failed to download image for yacht $yachtId from URL: $externalImageUrl because of: $reason")
@@ -71,7 +78,12 @@ class YachtImageIntegrationServiceAsync(
             }
 
             transactionTemplate.execute<Unit> {
-                yachtImageSyncService.updateYachtImageWithUrl(yachtImageId, result.getOrNull()!!)
+                if (placeholder) {
+                    log.info("Image $yachtImageId of yacht $yachtId is the partner's placeholder ($externalImageUrl): stored hidden")
+                    yachtImageSyncService.updateYachtImageWithUrl(yachtImageId, result.getOrNull()!!, KnownPlaceholderImages.PARTNER_BLOCKED_PHOTO)
+                } else {
+                    yachtImageSyncService.updateYachtImageWithUrl(yachtImageId, result.getOrNull()!!)
+                }
             }
             deadUrls.remove(externalImageUrl)
         } catch (e: Exception) {

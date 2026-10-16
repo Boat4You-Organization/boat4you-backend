@@ -34,6 +34,7 @@ import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationS
 import hr.workspace.boat4you.domains.catalouge.services.YachtGalleryService
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
+import hr.workspace.boat4you.domains.catalouge.services.toPublicDtos
 import hr.workspace.boat4you.domains.catalouge.services.withCoordinates
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
@@ -268,16 +269,13 @@ class YachtMapper(
             agency = if (isAdminUser()) result.agency?.toDto() else null,
             location = location,
             // GALLERY_EXTENDED=ON adds model and marina photos for the boat page (YachtGalleryService); OFF = this list.
+            // Stored images only, hidden ones (V9_91: the partner's placeholder) never; one main = the card photo's rule.
             yachtImages =
                 gallery.extend(
                     result,
                     result.yachtImages
                         .filter { !it.url.isNullOrEmpty() }
-                        .map { it.toDto() }
-                        .sortedBy {
-                            it.mainImage
-                            it.position
-                        },
+                        .toPublicDtos(result.mainImageId),
                     location,
                 ),
             // Public: only rows linked to our catalogue (Mario 8.10.2026, equipment audit) and present, with our

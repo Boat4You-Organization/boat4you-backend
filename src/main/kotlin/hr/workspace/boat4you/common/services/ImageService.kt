@@ -2,39 +2,57 @@ package hr.workspace.boat4you.common.services
 
 import org.springframework.core.io.Resource
 import org.springframework.http.ResponseEntity
+import org.springframework.http.client.JdkClientHttpRequestFactory
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClient
-import java.io.ByteArrayInputStream
-import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.net.URLDecoder
+import java.net.http.HttpClient
+import java.time.Duration
+
+/** A downloaded picture as the partner sent it, and the URL it came from after redirects. */
+class DownloadedImage(
+    val bytes: ByteArray,
+    val finalUrl: String,
+)
 
 @Service
 class ImageService {
+    // Redirects are followed by hand (downloadImage), never by the client, so the final URL is known: a partner may
+    // redirect a picture to a generic placeholder (NauSys: 307 to GenericImage/ORIGINAL/blockedPhoto.png, 16.10.2026).
     private val restClient: RestClient =
         RestClient
             .builder()
-            .build()
+            .requestFactory(
+                JdkClientHttpRequestFactory(
+                    HttpClient
+                        .newBuilder()
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .connectTimeout(Duration.ofSeconds(30))
+                        .build(),
+                ),
+            ).build()
 
-    fun downloadAsWebp(url: String): Result<ByteArray?> {
+    /** The partner's bytes and the final URL. Result.failure = the download failed. */
+    fun download(url: String): Result<DownloadedImage> {
         return try {
-            val inputStream =
+            val image =
                 try {
                     // Use Spring's RestClient to download the image
-                    downloadImage(url)
+                    downloadImage(url, MAX_REDIRECTS)
                 } catch (e: Exception) {
                     // In some cases Spring's RestClient fails for s3 images with space in URL (NauSYS), thats why we use raw URL connection
-                    ByteArrayInputStream(fetchUsingUrlConnection(url))
+                    fetchUsingUrlConnection(url)
                 }
-            Result.success(ImageUtils.convertToWebP(inputStream))
+            Result.success(image)
         } catch (e: Exception) {
             return Result.failure(e)
         }
     }
 
-    private fun fetchUsingUrlConnection(url: String): ByteArray? {
+    private fun fetchUsingUrlConnection(url: String): DownloadedImage {
         try {
             // Use raw URL connection to bypass Spring's URL handling
             val urlObj = URI.create(toSafeUrl(url)).toURL()
@@ -56,7 +74,8 @@ class ImageService {
             val responseCode = connection.getResponseCode()
             if (responseCode == 200) {
                 connection.getInputStream().use { inputStream ->
-                    return inputStream.readAllBytes()
+                    // HttpURLConnection follows same-protocol redirects itself; getURL() is where it ended up
+                    return DownloadedImage(inputStream.readAllBytes(), connection.url.toString())
                 }
             } else {
                 throw java.lang.RuntimeException("HTTP " + responseCode + ": " + connection.getResponseMessage())
@@ -66,7 +85,10 @@ class ImageService {
         }
     }
 
-    private fun downloadImage(url: String): InputStream {
+    private fun downloadImage(
+        url: String,
+        redirectsLeft: Int,
+    ): DownloadedImage {
         return try {
             val response: ResponseEntity<Resource> =
                 restClient
@@ -74,27 +96,30 @@ class ImageService {
                     .uri(toSafeUrl(url))
                     .retrieve()
                     .onStatus({ status -> status.is3xxRedirection }) { _, _ ->
-                        // Let Spring handle redirects automatically
-                        // This block can be used for custom redirect logic if needed
+                        // a redirect is not an error: followed below
                     }.toEntity(Resource::class.java)
 
             if (response.statusCode.is2xxSuccessful && response.body != null) {
-                response.body!!.inputStream
+                response.body!!.inputStream.use { DownloadedImage(it.readAllBytes(), url) }
             } else if (response.statusCode.is3xxRedirection) {
-                // Handle case where redirect wasn't followed automatically
-                val location = response.headers.location?.toString()
-                if (location != null) {
-                    // Recursive call to follow redirect
-                    downloadImage(location)
-                } else {
-                    throw RuntimeException("Redirect response without location header from URL: $url")
-                }
+                downloadImage(redirectTarget(url, response.headers.location, redirectsLeft), redirectsLeft - 1)
             } else {
                 throw RuntimeException("Failed to download image from URL: $url, status: ${response.statusCode}")
             }
         } catch (e: Exception) {
             throw RuntimeException("Failed to download image from URL: $url", e)
         }
+    }
+
+    /** Where a redirect from [url] points; a relative Location resolves against [url]. */
+    private fun redirectTarget(
+        url: String,
+        location: URI?,
+        redirectsLeft: Int,
+    ): String {
+        checkNotNull(location) { "Redirect response without location header from URL: $url" }
+        check(redirectsLeft > 0) { "Too many redirects from URL: $url" }
+        return if (location.isAbsolute) location.toString() else URI.create(toSafeUrl(url)).resolve(location).toString()
     }
 
     private fun toSafeUrl(url: String): String {
@@ -105,5 +130,9 @@ class ImageService {
             .replace("#", "%23")
             .replace("$", "%24")
             .replace("&", "%26")
+    }
+
+    companion object {
+        private const val MAX_REDIRECTS = 5
     }
 }
