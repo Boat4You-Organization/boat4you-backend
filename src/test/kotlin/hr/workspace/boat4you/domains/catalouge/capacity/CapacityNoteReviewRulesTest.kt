@@ -24,10 +24,35 @@ class CapacityNoteReviewRulesTest {
 
     @Test
     fun `the owner abbreviation is hidden like owner(s) - the English own stays`() {
-        val hide = listOf("(1OWN+2D+1BB)", "1 OWN + 2 double", "(OWN cabin + 3 double)", "2own+2", "(1Own+3D)")
+        val hide =
+            listOf(
+                "(1OWN+2D+1BB)",
+                "1 OWN + 2 double",
+                "(OWN cabin + 3 double)",
+                "2own+2",
+                "(1Own+3D)",
+                // owner written out right after a digit ("owners?" needs a word edge before it)
+                "(1OWNER+2D+1BB)",
+                "(1Owner + 3 Guest)",
+                "2owners",
+                // a capital OWN WC with a count before it is the owner's head
+                "1 OWN WC + 2 GUEST WC",
+                "+ OWN HEAD",
+            )
         assertEquals(emptyList(), hide.filter { note(it) != null }, "should be hidden")
+        assertEquals(emptyList(), hide.filter { note(it, CapacityDim.HEADS) != null }, "should be hidden as a heads note")
         assertEquals(emptyList(), hide.filter { sanitizer.capacityNote(it) != null }, "also as a label")
-        val keep = listOf("(4 double cabins, each with own bathroom)", "4 cabins (own WC)", "+1 down the stairs", "(3 double + 1 bunk bed)")
+        val keep =
+            listOf(
+                "(4 double cabins, each with own bathroom)",
+                "4 cabins (own WC)",
+                "+1 down the stairs",
+                "(3 double + 1 bunk bed)",
+                // the en-suite wording in an all-capitals note
+                "4 DOUBLE CABINS WITH OWN BATHROOM",
+                "EACH CABIN WITH OWN WC",
+                "(4 CABINS, EACH WITH OWN SHOWER/WC)",
+            )
         keep.forEach { assertEquals(it, note(it)) }
     }
 
@@ -54,6 +79,17 @@ class CapacityNoteReviewRulesTest {
                 "2 suplementos",
                 "+2 supplément",
                 "+2 Zuschlag",
+                // review of the v3 rules, 16.10.2026
+                "+2 uz nadoplatu",
+                "50 eura po noći",
+                "+2 a pagamento",
+                "+2 en option payante",
+                "+2 kostenpflichtig",
+                "+2 gegen Gebühr",
+                "+2 (Zuschläge)",
+                "+2 supplementi",
+                "+2 berths at additional cost",
+                "extra bed on request, charged separately",
             )
         assertEquals(emptyList(), hide.filter { note(it, CapacityDim.BERTHS) != null }, "should be hidden")
         assertEquals(emptyList(), hide.filter { sanitizer.capacityNote(it) != null }, "also as a label")
@@ -66,6 +102,7 @@ class CapacityNoteReviewRulesTest {
                 "(including any crew)",
                 "4 + 2 bunks forward",
                 "(10+2 dinette +1 skipper) Cat A/B: 13, C16",
+                "+2 in Europe-style bunks",
             )
         keep.forEach { assertEquals(it, note(it, CapacityDim.BERTHS)) }
     }
@@ -87,6 +124,9 @@ class CapacityNoteReviewRulesTest {
                 "(4+2 cv)",
                 "4 + 1 man crew",
                 "3 Showers including the one on the swimming platform",
+                // Vetus also makes marine toilets
+                "Vetus electric WC",
+                "2 electric toilets (Vetus)",
             )
         keep.forEach { assertEquals(it, note(it, CapacityDim.HEADS)) }
     }

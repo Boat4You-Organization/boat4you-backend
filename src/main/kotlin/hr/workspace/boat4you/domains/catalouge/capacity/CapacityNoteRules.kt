@@ -74,7 +74,9 @@ object CapacityNoteRules {
     /**
      * A price obligation (native review 15.10.2026; owner rule: no prices or surcharges in a capacity note, only the real
      * price is shown): "Price is for up to 12 pax. For 13 - 18 pax (in shared cabins) surcharge applies." promises a
-     * charge the shown price does not carry. English plus the partners' other languages (it / es / fr / de / hr).
+     * charge the shown price does not carry. English plus the partners' other languages (it / es / pt / fr / de / hr): hr
+     * doplata in any form ("uz nadoplatu" too), it "a pagamento", fr "payant(e)", de "kostenpflichtig", "gegen Gebühr",
+     * "Zuschläge" (review of the v3 rules, 16.10.2026).
      */
     val PRICE_WORDS: List<String> =
         listOf(
@@ -82,40 +84,58 @@ object CapacityNoteRules {
             "priced",
             "surcharges?",
             "supplements?",
-            "supplemento",
+            "supplement[oi]",
             "suplementos?",
             "suppléments?",
-            "zuschlags?",
+            "zuschl[aä]g\\p{L}*",
             "aufpreis",
-            "doplat\\p{L}*",
+            "(?:na)?doplat\\p{L}*",
             "fees?",
             "payable",
             "paid",
             "payments?",
+            "pagamento",
+            "payant\\p{L}*",
+            "kostenpflichtig\\p{L}*",
+            "gebühr\\p{L}*",
+            "charged",
             "extra (?:charges?|costs?)",
+            "additional (?:charges?|costs?)",
         )
 
     private val BLOCKED = Regex("$W_BEFORE(?:${BLOCKED_WORDS.joinToString("|")})$W_AFTER", RegexOption.IGNORE_CASE)
     private val PRICE = Regex("$W_BEFORE(?:${PRICE_WORDS.joinToString("|")})$W_AFTER", RegexOption.IGNORE_CASE)
 
-    /** Any currency symbol, or a currency code also right after a number ("150EUR"). */
-    private val CURRENCY = Regex("\\p{Sc}|(?<![\\p{L}_])(?:eur|euros?|usd|gbp)(?![\\p{L}_])", RegexOption.IGNORE_CASE)
+    /**
+     * Any currency symbol, or a currency code also right after a number ("150EUR"); hr eura / euru / eurom too ("50 eura
+     * po noći"). Not "eure", which is German "your".
+     */
+    private val CURRENCY =
+        Regex("\\p{Sc}|(?<![\\p{L}_])(?:eur|euros?|eura|euru|eurom|usd|gbp)(?![\\p{L}_])", RegexOption.IGNORE_CASE)
 
     /**
      * The owner abbreviation that "owners?" misses because a digit is glued to it: "(1OWN+2D+1BB)" showed the owner's
-     * cabin in translation ("vlasnička", "Eignerkabine") on 5 boats, review 15.10.2026. OWN in capitals as a token, or own
-     * right after a digit; the English "with own bathroom" stays (in an all-capitals note it is hidden - the number shows).
+     * cabin in translation ("vlasnička", "Eignerkabine") on 5 boats, review 15.10.2026. OWN in capitals as a token, or
+     * own / owner(s) right after a digit ("(1OWNER+2D+1BB)", "2owners"). The English "with own bathroom" stays, in an
+     * all-capitals note too: a capital OWN followed by bathroom / WC / shower / head / toilet / entrance / access is the
+     * en-suite wording ("4 DOUBLE CABINS WITH OWN BATHROOM"), unless a count or "+" stands right before it - "1 OWN WC +
+     * 2 GUEST WC" is the owner's head.
      */
-    private val OWNER_ABBREVIATION = Regex("(?<![\\p{L}_])OWN(?![\\p{L}_])|(?<=\\p{N})(?i:own)(?![\\p{L}_])")
+    private val OWNER_ABBREVIATION =
+        Regex(
+            "(?<![\\p{L}_])OWN(?![\\p{L}_])(?!\\s+(?i:bathrooms?|wcs?|showers?|heads?|toilets?|entrance|access)(?!\\p{L}))|" +
+                "(?<=[\\p{N}+]\\s{0,2})OWN(?![\\p{L}_])|(?<=\\p{N})(?i:own(?:ers?)?)(?![\\p{L}_])",
+        )
 
     /**
      * Cabins / berths / heads only: an engine maker or a power with its unit is a rig fact the partner typed into the
      * wrong field ("Yanmar 20hp" as a WC note, review 15.10.2026). PS and CV are left out (port side, convertible); a
-     * maker with them is still caught by its name. Engine labels themselves never get this rule.
+     * maker with them is still caught by its name. Vetus is left out too: it also makes marine toilets ("Vetus electric
+     * WC"); a Vetus engine with hp / kW is still caught by the power. Engine labels themselves never get this rule.
      */
     private val ENGINE_MAKER =
         Regex(
-            "$W_BEFORE(?:yanmar|volvo|penta|nanni|perkins|lombardini|vetus|cummins|caterpillar|mtu|tohatsu|mercury|mercruiser|" +
+            "$W_BEFORE(?:yanmar|volvo|penta|nanni|perkins|lombardini|cummins|caterpillar|mtu|tohatsu|mercury|mercruiser|" +
                 "suzuki|yamaha|honda)$W_AFTER",
             RegexOption.IGNORE_CASE,
         )
