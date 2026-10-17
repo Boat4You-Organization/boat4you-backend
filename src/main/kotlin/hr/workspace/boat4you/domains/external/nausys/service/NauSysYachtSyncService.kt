@@ -40,6 +40,7 @@ import hr.workspace.boat4you.domains.catalouge.services.LocationQueryingService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
+import hr.workspace.boat4you.domains.catalouge.utils.OwnImageRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
@@ -391,20 +392,21 @@ class NauSysYachtSyncService(
                 createNewYachtImage(yacht, index, restYachtPicture)
             }
         } else {
-            val allYachImages = yacht.yachtImages
+            // V9_92: our own photos (source OWN) are never matched, moved, flagged or deleted here; the partner's follow them
+            val offset = OwnImageRules.partnerOffset(yacht.yachtImages)
             nausysPictures.forEachIndexed { index, nausysPicture ->
-                val yachtImage = allYachImages.find { it.externalUrl == nausysPicture.src }
+                val yachtImage = yacht.yachtImages.find { !OwnImageRules.isOwn(it) && it.externalUrl == nausysPicture.src }
                 if (yachtImage == null) {
-                    createNewYachtImage(yacht, index, nausysPicture)
+                    createNewYachtImage(yacht, offset + index, nausysPicture)
                 } else {
-                    yachtImage.position = index.toShort()
+                    yachtImage.position = (offset + index).toShort()
                     yachtImage.mainImage = nausysPicture.mainPicture
                     yachtImageRepository.save(yachtImage)
                 }
             }
             // delete images that are not in the list
             val toRemove = mutableListOf<YachtImage>()
-            allYachImages.forEach { yachtImage ->
+            OwnImageRules.partnerImages(yacht.yachtImages).forEach { yachtImage ->
                 if (nausysPictures.none { it.src == yachtImage.externalUrl }) {
                     yachtImage.url?.let { fileSystemService.deleteFile(it) }
                     toRemove.add(yachtImage)

@@ -11,10 +11,12 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtImage
  * "main" / first image was the plan. Never a hidden image (V9_91, e.g. the partner's "Picture is not shown due to
  * possible legal issues" placeholder NauSys flags as mainPicture - owner incident 16.10.2026, FuFu 4345) at all.
  *
- * In order: the partner's main image when it is a photo; the current main when it is still a photo of the boat (a boat
- * without a partner main keeps its card photo, so main_image_id - and the sitemap lastmod, V9_71 - does not change on
- * every sync); the photo with the lowest position. Only a boat without any photo keeps the old pick (partner main, else
- * the first image), the plan included; a boat whose every image is hidden has none (null: the web shows its default).
+ * In order: the current main when it is one of our own photos (V9_92, source OWN: an admin chose it, the partner's
+ * mainPicture never overrides it); the partner's main image when it is a photo; the current main when it is still a photo
+ * of the boat (a boat without a partner main keeps its card photo, so main_image_id - and the sitemap lastmod, V9_71 -
+ * does not change on every sync); the photo with the lowest position. Only a boat without any photo keeps the old pick
+ * (partner main, else the first image), the plan included; a boat whose every image is hidden has none (null: the web
+ * shows its default).
  */
 object MainImageRules {
     private val byPosition = compareBy<YachtImage, Short?>(nullsLast()) { it.position }.thenBy(nullsLast()) { it.id }
@@ -31,7 +33,8 @@ object MainImageRules {
     ): YachtImage? {
         val visible = images.filterNot(::isHidden)
         val photos = visible.filterNot(::isLayout)
-        return photos.firstOrNull { it.mainImage == true }
+        return photos.firstOrNull { currentMainId != null && it.id == currentMainId && OwnImageRules.isOwn(it) }
+            ?: photos.firstOrNull { it.mainImage == true }
             ?: photos.firstOrNull { currentMainId != null && it.id == currentMainId }
             ?: photos.minWithOrNull(byPosition)
             ?: visible.firstOrNull { it.mainImage == true }

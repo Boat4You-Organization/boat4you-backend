@@ -1,14 +1,22 @@
 package hr.workspace.boat4you.domains.catalouge.dto
 
+import hr.workspace.boat4you.domains.catalouge.enums.YachtImageSource
+
 /** PATCH /admin/yacht-images/{id}: a field left out (null) stays as it is. */
 data class YachtImageHygieneRequest(
     /** true / false = yacht_image.layout_override (the file-name rule no longer decides for this image). */
     val layout: Boolean? = null,
     /** true = hidden (reason ADMIN: never public, never the main image); false = shown again. */
     val hidden: Boolean? = null,
+    /**
+     * true = the boat's main image (V9_92): yacht.main_image_id and the one main flag. Only a visible, stored photo (not
+     * the layout drawing). An OWN photo stays main through the partner syncs; a partner photo does until the partner flags
+     * another one. false is refused: make another image the main one instead.
+     */
+    val main: Boolean? = null,
 )
 
-/** One partner image as the admin sees it (V9_91 flags). */
+/** One image as the admin sees it (V9_91 flags, V9_92 source). */
 data class YachtImageAdminDto(
     val id: Long,
     val yachtId: Long,
@@ -21,6 +29,8 @@ data class YachtImageAdminDto(
     val hiddenReason: String?,
     /** The boat's card photo (yacht.main_image_id) after the change. */
     val yachtMainImageId: Long?,
+    /** PARTNER (MMK / NauSys) or OWN (our upload: the syncs never delete, move or re-flag it). */
+    val source: YachtImageSource = YachtImageSource.PARTNER,
 )
 
 /** One stored file that is the partner's placeholder (POST /admin/yachts/images/detect-blocked). */

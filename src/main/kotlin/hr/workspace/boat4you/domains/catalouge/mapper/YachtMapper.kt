@@ -32,12 +32,14 @@ import hr.workspace.boat4you.domains.catalouge.jpa.YachtTranslation
 import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.ExchangeRateCalculationService
 import hr.workspace.boat4you.domains.catalouge.services.YachtGalleryService
+import hr.workspace.boat4you.domains.catalouge.services.crewProfileUrl
 import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.services.toPublicDtos
 import hr.workspace.boat4you.domains.catalouge.services.withCoordinates
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Component
 import kotlin.collections.filter
@@ -49,6 +51,8 @@ class YachtMapper(
     private val yachtExtrasMapper: YachtExtrasMapper,
     private val capacityMapper: YachtCapacityMapper,
     private val gallery: YachtGalleryService,
+    /** The API host that serves `/public/...` (api.boat4you.com in production): the crew profile URL is absolute. */
+    @Value("\${server.host}") private val serverHost: String = "",
 ) {
     private fun isAdminUser(): Boolean {
         // Null-safe so an anonymous request (authentication may be absent) returns
@@ -240,6 +244,12 @@ class YachtMapper(
                 .map { yachtExtrasMapper.toDto(it, currency, partnerCopy) }
 
         val capacityColumns = CapacityColumns.of(result)
+        val customDetails =
+            if (result.entryType == EntryType.CUSTOM) {
+                toCustomYachtDetailsDto(result.customYachtDetails.firstOrNull(), currency)
+            } else {
+                null
+            }
 
         return YachtDetailsDto(
             id = result.id!!,
@@ -287,12 +297,7 @@ class YachtMapper(
             description = description,
             highlights = highlights,
             custom = result.entryType == EntryType.CUSTOM,
-            customDetails =
-                if (result.entryType == EntryType.CUSTOM) {
-                    toCustomYachtDetailsDto(result.customYachtDetails.firstOrNull(), currency)
-                } else {
-                    null
-                },
+            customDetails = customDetails,
             securityDeposit = result.deposit,
             insuredSecurityDeposit = result.insuredDeposit,
             depositCurrency = result.depositCurrency,
@@ -309,6 +314,9 @@ class YachtMapper(
             vesselType = result.vesselType ?: VesselType.OTHER,
             capacity = capacityMapper.capacity(capacityColumns, YachtCapacityMapper.Mode.FULL),
             rig = capacityMapper.rig(capacityColumns),
+            // V9_92: our own film and crew profile on any boat (owner request 17.10.2026), the custom boat's film otherwise
+            videoUrl = result.videoUrl?.takeIf { it.isNotBlank() } ?: customDetails?.videoUrl?.takeIf { it.isNotBlank() },
+            crewProfileUrl = result.crewProfileUrl?.takeIf { it.isNotBlank() }?.let { crewProfileUrl(serverHost, result.id!!) },
         )
     }
 

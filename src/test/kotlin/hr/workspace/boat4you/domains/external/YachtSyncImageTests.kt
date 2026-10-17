@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.external
 
 import hr.workspace.boat4you.common.services.FileSystemService
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasZeroPriceSwitchFixture
+import hr.workspace.boat4you.domains.catalouge.enums.YachtImageSource
 import hr.workspace.boat4you.domains.catalouge.jpa.CatalogueImageRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtImage
@@ -105,6 +106,20 @@ class YachtSyncImageTests {
         synced = true
     }
 
+    /** V9_92: our own photo, uploaded by an admin (no external_url). */
+    private fun own(
+        id: Long,
+        position: Int,
+        main: Boolean = false,
+    ) = YachtImage().apply {
+        this.id = id
+        url = "y-12663/own-$id.webp"
+        this.position = position.toShort()
+        mainImage = main
+        synced = true
+        source = YachtImageSource.OWN
+    }
+
     private val mmkDocs = "https://www.booking-manager.com/cbm/documents/"
     private val nausysPics = "https://ws.nausys.com/CBMS-external/rest/yacht/103152/pictures/"
 
@@ -197,6 +212,74 @@ class YachtSyncImageTests {
         val alone = image(3, mmkDocs + "c.jpg", 0, main = true).apply { this.hidden = true }
         MainImageRules.applyAfterSync(yacht(alone), images::save) shouldBe null
         alone.mainImage shouldBe false
+    }
+
+    @Test
+    fun `NauSys syncPictures - our own photos stay first, are never deleted or re-flagged, the OWN main survives the partner's mainPicture`() {
+        // owner request 17.10.2026, gulet Allure 11769: our photos on a partner boat
+        val ownMain = own(900, 0, main = true)
+        val ownSecond = own(901, 1)
+        val partnerMain = image(1, nausysPics + "main.jpg", 2)
+        val dropped = image(2, nausysPics + "n1.jpg", 3)
+        val yacht = yacht(partnerMain, ownSecond, dropped, ownMain).apply { mainImageId = 900 }
+        nausys.syncPictures(
+            listOf(RestYachtPicture(src = nausysPics + "n2.jpg", mainPicture = false), RestYachtPicture(src = nausysPics + "main.jpg", mainPicture = true)),
+            isNewEntity = false,
+            yacht = yacht,
+        )
+
+        verify(files).deleteFile("y-12663/2.webp") // the partner's dropped picture only
+        verifyNoMoreInteractions(files)
+        val added = yacht.yachtImages.single { it.id == null }
+        added.externalUrl shouldBe nausysPics + "n2.jpg"
+        yacht.yachtImages.sortedBy { it.position }.map { it.id } shouldContainExactly listOf(900L, 901L, null, 1L) // OWN block, then the partner's order
+        listOf(ownMain, ownSecond).map { it.position?.toInt() } shouldContainExactly listOf(0, 1)
+        partnerMain.mainImage shouldBe true // the partner's flag, re-applied ...
+
+        yacht.mainImageId = MainImageRules.applyAfterSync(yacht, images::save)
+        yacht.mainImageId shouldBe 900L // ... never over the admin's own main
+        listOf(ownMain, ownSecond, partnerMain).map { it.mainImage } shouldContainExactly listOf(true, false, false)
+        listOf(ownMain, ownSecond).map { it.source } shouldContainExactly listOf(YachtImageSource.OWN, YachtImageSource.OWN)
+    }
+
+    @Test
+    fun `MMK syncPictures - our own photos stay first and are never deleted, the partner's follow them with and without sortOrder`() {
+        val ownMain = own(900, 0, main = true)
+        val ownSecond = own(901, 1)
+        val a = image(1, mmkDocs + "a.jpg", 0, main = true)
+        val b = image(2, mmkDocs + "b.jpg", 1)
+        val dropped = image(3, mmkDocs + "c.jpg", 2)
+        val boat = yacht(a, b, dropped, ownSecond, ownMain).apply { mainImageId = 900 }
+        mmk.syncPictures(
+            listOf(Image(url = mmkDocs + "a.jpg", description = "Main image", sortOrder = 0), Image(url = mmkDocs + "b.jpg", sortOrder = 1)),
+            isNewEntity = false,
+            yacht = boat,
+        )
+
+        verify(files).deleteFile("y-12663/3.webp")
+        verifyNoMoreInteractions(files)
+        boat.yachtImages.sortedBy { it.position }.map { it.id } shouldContainExactly listOf(900L, 901L, 1L, 2L)
+        boat.mainImageId = MainImageRules.applyAfterSync(boat, images::save)
+        boat.mainImageId shouldBe 900L
+        listOf(ownMain, a, b).map { it.mainImage } shouldContainExactly listOf(true, false, false)
+
+        // the partner sends no order (all sortOrder equal): its pictures still go behind our photos, in its order
+        mmk.syncPictures(listOf(Image(url = mmkDocs + "b.jpg", sortOrder = 0), Image(url = mmkDocs + "a.jpg", sortOrder = 0)), isNewEntity = false, yacht = boat)
+        boat.yachtImages.sortedBy { it.position }.map { it.id } shouldContainExactly listOf(900L, 901L, 2L, 1L)
+        listOf(ownMain, ownSecond).map { it.position?.toInt() } shouldContainExactly listOf(0, 1)
+    }
+
+    @Test
+    fun `without own photos both syncs place the partner's pictures exactly as before`() {
+        val a = image(1, mmkDocs + "a.jpg", 5, main = true)
+        val boat = yacht(a)
+        mmk.syncPictures(listOf(Image(url = mmkDocs + "a.jpg", sortOrder = 0)), isNewEntity = false, yacht = boat)
+        a.position?.toInt() shouldBe 5 // MMK without a partner order never moves a picture
+
+        val n = image(2, nausysPics + "main.jpg", 3)
+        val nausysBoat = yacht(n)
+        nausys.syncPictures(listOf(RestYachtPicture(src = nausysPics + "main.jpg", mainPicture = true)), isNewEntity = false, yacht = nausysBoat)
+        n.position?.toInt() shouldBe 0 // NauSys: the partner's index
     }
 
     @Test

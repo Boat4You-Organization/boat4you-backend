@@ -44,6 +44,7 @@ import hr.workspace.boat4you.domains.catalouge.utils.BrandModelAliases
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.InlandVesselRules
 import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
+import hr.workspace.boat4you.domains.catalouge.utils.OwnImageRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
@@ -475,19 +476,22 @@ class MmkYachtSyncService(
                 )
             }
         } else {
-            val allYachImages = yacht.yachtImages
+            // V9_92: our own photos (source OWN) are never matched, moved, flagged or deleted here; the partner's follow them
+            val offset = OwnImageRules.partnerOffset(yacht.yachtImages)
             mmkPictures.forEachIndexed { index, mmkYachtPicture ->
-                val yachtImage = allYachImages.find { it.externalUrl == mmkYachtPicture.url }
+                val yachtImage = yacht.yachtImages.find { !OwnImageRules.isOwn(it) && it.externalUrl == mmkYachtPicture.url }
                 if (yachtImage == null) {
                     createNewYachtImage(
                         yacht,
                         index == 0,
                         mmkYachtPicture,
-                        if (useSortOrder) mmkYachtPicture.sortOrder else index
+                        (if (useSortOrder) mmkYachtPicture.sortOrder else index)?.plus(offset),
                     )
                 } else {
-                    if (useSortOrder && mmkYachtPicture.sortOrder != null) {
-                        yachtImage.position = mmkYachtPicture.sortOrder.toShort()
+                    // the partner's sortOrder when it sends one; behind our own photos (offset > 0) even when it does not
+                    val position = if (useSortOrder && mmkYachtPicture.sortOrder != null) mmkYachtPicture.sortOrder else index.takeIf { offset > 0 }
+                    if (position != null) {
+                        yachtImage.position = (offset + position).toShort()
                         yachtImageRepository.save(yachtImage)
                     }
                     // update previously saved without flag main image
@@ -504,7 +508,7 @@ class MmkYachtSyncService(
             }
             // delete images that are not in the list
             val toRemove = mutableListOf<YachtImage>()
-            allYachImages.forEach { yachtImage ->
+            OwnImageRules.partnerImages(yacht.yachtImages).forEach { yachtImage ->
                 if (mmkPictures.none { it.url == yachtImage.externalUrl }) {
                     yachtImage.url?.let { fileSystemService.deleteFile(it) }
                     toRemove.add(yachtImage)

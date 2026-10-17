@@ -89,12 +89,14 @@ class FileSystemService {
     fun savePdfFile(
         file: MultipartFile,
         subpath: String,
+        // the upload cap unless the caller allows more (the crew profile PDF, V9_92: 15 MB)
+        maxSizeMb: Long = maxFileSizeMb,
     ): Result<String> {
         try {
             // F1-020: magic-byte validation. `Content-Type` header is
             // attacker-controlled; the on-disk artefact's leading four
             // bytes `%PDF` are what we actually rely on.
-            validateFile(file)
+            validateFile(file, maxSizeMb)
             val bytes = file.bytes
             if (!isPdfMagic(bytes)) {
                 throw IllegalArgumentException("Invalid file type. Only PDF files are allowed")
@@ -151,13 +153,16 @@ class FileSystemService {
         }
     }
 
-    private fun validateFile(file: MultipartFile) {
+    private fun validateFile(
+        file: MultipartFile,
+        maxSizeMb: Long = maxFileSizeMb,
+    ) {
         if (file.isEmpty) {
             throw IllegalArgumentException("File is empty")
         }
 
-        if (file.size > maxFileSizeMb * 1024 * 1024) {
-            throw IllegalArgumentException("File size exceeds maximum allowed size of $maxFileSizeMb MB")
+        if (file.size > maxSizeMb * 1024 * 1024) {
+            throw IllegalArgumentException("File size exceeds maximum allowed size of $maxSizeMb MB")
         }
     }
 

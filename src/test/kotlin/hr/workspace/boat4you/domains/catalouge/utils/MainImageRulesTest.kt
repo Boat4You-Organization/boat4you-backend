@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.catalouge.utils
 
+import hr.workspace.boat4you.domains.catalouge.enums.YachtImageSource
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtImage
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
@@ -124,5 +125,31 @@ class MainImageRulesTest {
         listOf(a, b, c).map { it.mainImage } shouldBe listOf(false, true, false)
         MainImageRules.flagMain(listOf(a, b, c), 41) shouldBe emptyList()
         MainImageRules.flagMain(listOf(a, b, c), null).map { it.id } shouldBe listOf(41L)
+    }
+
+    @Test
+    fun `V9_92 - an own photo as the current main beats the partner's main flag, a partner current main does not`() {
+        val ownPhoto =
+            image(50, "x", 3).apply {
+                externalUrl = null
+                url = "y-11769/own.webp"
+                source = YachtImageSource.OWN
+            }
+        val partnerMain = image(51, "n1.jpg", 0, main = true)
+        val partnerOther = image(52, "n2.jpg", 1)
+        MainImageRules.pick(listOf(partnerMain, ownPhoto, partnerOther), currentMainId = 50) shouldBe ownPhoto
+        // our photos alone do not take the card: the partner's main stays until an admin picks one of ours
+        MainImageRules.pick(listOf(partnerMain, ownPhoto, partnerOther), currentMainId = 51) shouldBe partnerMain
+        MainImageRules.pick(listOf(partnerMain, ownPhoto, partnerOther), currentMainId = 52) shouldBe partnerMain
+        // a hidden own main gives the card back to the partner's main photo
+        MainImageRules.pick(listOf(partnerMain, ownPhoto.apply { hidden = true }, partnerOther), currentMainId = 50) shouldBe partnerMain
+    }
+
+    @Test
+    fun `V9_92 - partnerOffset puts the partner's pictures right after our last own photo, 0 without one`() {
+        val own = { id: Long, position: Int -> image(id, "x", position).apply { source = YachtImageSource.OWN } }
+        OwnImageRules.partnerOffset(listOf(image(1, "a.jpg", 7))) shouldBe 0
+        OwnImageRules.partnerOffset(listOf(own(2, 0), own(3, 4), image(1, "a.jpg", 1))) shouldBe 5
+        OwnImageRules.partnerImages(listOf(own(2, 0), image(1, "a.jpg", 1))).map { it.id } shouldBe listOf(1L)
     }
 }

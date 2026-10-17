@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.LayoutScanDto
 import hr.workspace.boat4you.domains.catalouge.dto.MainImageFixDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtImageAdminDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtImageHygieneRequest
+import hr.workspace.boat4you.domains.catalouge.enums.YachtImageSource
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageNotFoundException
 import hr.workspace.boat4you.domains.catalouge.utils.KnownPlaceholderImages
 import hr.workspace.boat4you.domains.catalouge.utils.LayoutDetector
@@ -205,34 +206,30 @@ class YachtImageHygieneService(
         val yachtId =
             jdbc.query("SELECT yacht_id FROM yacht_image WHERE id = ?", { rs, _ -> rs.getLong(1) }, imageId).firstOrNull()
                 ?: throw ImageNotFoundException()
+        if (request.main == false) {
+            throw ParameterValidationException(mapOf("main" to "only true: make another image the main one instead"))
+        }
         request.layout?.let { jdbc.update("UPDATE yacht_image SET layout_override = ? WHERE id = ?", it, imageId) }
         when (request.hidden) {
             true -> jdbc.update(HIDE_SQL, ADMIN, imageId)
             false -> jdbc.update("UPDATE yacht_image SET hidden = false, hidden_reason = NULL WHERE id = ?", imageId)
             null -> {}
         }
-        if (request.layout != null || request.hidden != null) {
+        if (request.main == true) {
+            // V9_92: an admin's main - a visible, stored photo (the change above included; a refusal rolls it back too)
+            val row = jdbc.query(ADMIN_SQL, ADMIN_ROW, imageId).first()
+            val stored = jdbc.queryForObject("SELECT url IS NOT NULL AND url <> '' FROM yacht_image WHERE id = ?", Boolean::class.java, imageId) == true
+            if (row.hidden || row.layout || !stored) {
+                throw ParameterValidationException(mapOf("main" to "only a visible, stored photo can be the main image (not hidden, not the layout drawing)"))
+            }
+            mainImageFix.setMain(yachtId, imageId)
+            log.info("Admin main image {} (yacht {}), layout={}, hidden={}", imageId, yachtId, request.layout, request.hidden)
+        } else if (request.layout != null || request.hidden != null) {
             mainImageFix.repickMain(yachtId)
             log.info("Admin image change {}: layout={}, hidden={} (yacht {})", imageId, request.layout, request.hidden, yachtId)
         }
-        return jdbc.query(ADMIN_SQL, adminRow, imageId).first()
+        return jdbc.query(ADMIN_SQL, ADMIN_ROW, imageId).first()
     }
-
-    private val adminRow =
-        RowMapper { rs, _ ->
-            val override = rs.getBoolean("layout_override").takeUnless { rs.wasNull() }
-            YachtImageAdminDto(
-                id = rs.getLong("id"),
-                yachtId = rs.getLong("yacht_id"),
-                position = rs.getShort("position").takeUnless { rs.wasNull() },
-                mainImage = rs.getBoolean("main_image").takeUnless { rs.wasNull() },
-                layout = override ?: LayoutImageRules.isLayout(rs.getString("external_url"), rs.getString("url")),
-                layoutOverride = override,
-                hidden = rs.getBoolean("hidden"),
-                hiddenReason = rs.getString("hidden_reason"),
-                yachtMainImageId = rs.getLong("yacht_main_image_id").takeUnless { rs.wasNull() },
-            )
-        }
 
     private fun rows(
         sql: String,
@@ -274,12 +271,32 @@ class YachtImageHygieneService(
 
         private const val HIDE_SQL = "UPDATE yacht_image SET hidden = true, hidden_reason = ?, main_image = false WHERE id = ?"
         private const val LAYOUT_SQL = "UPDATE yacht_image SET layout_override = true WHERE id = ? AND layout_override IS NULL AND NOT hidden"
-        private const val ADMIN_SQL = """
+
+        /** The columns of [ADMIN_ROW], from `yacht_image yi JOIN yacht y`. */
+        const val ADMIN_COLUMNS = """
             SELECT yi.id, yi.yacht_id, yi."position", yi.main_image, yi.url, yi.external_url, yi.layout_override, yi.hidden,
-                   yi.hidden_reason, y.main_image_id AS yacht_main_image_id
+                   yi.hidden_reason, yi.source, y.main_image_id AS yacht_main_image_id
             FROM yacht_image yi
             JOIN yacht y ON y.id = yi.yacht_id
-            WHERE yi.id = ?
         """
+        private const val ADMIN_SQL = "$ADMIN_COLUMNS WHERE yi.id = ?"
+
+        /** One image as the admin sees it ([ADMIN_COLUMNS]). */
+        val ADMIN_ROW =
+            RowMapper { rs, _ ->
+                val override = rs.getBoolean("layout_override").takeUnless { rs.wasNull() }
+                YachtImageAdminDto(
+                    id = rs.getLong("id"),
+                    yachtId = rs.getLong("yacht_id"),
+                    position = rs.getShort("position").takeUnless { rs.wasNull() },
+                    mainImage = rs.getBoolean("main_image").takeUnless { rs.wasNull() },
+                    layout = override ?: LayoutImageRules.isLayout(rs.getString("external_url"), rs.getString("url")),
+                    layoutOverride = override,
+                    hidden = rs.getBoolean("hidden"),
+                    hiddenReason = rs.getString("hidden_reason"),
+                    yachtMainImageId = rs.getLong("yacht_main_image_id").takeUnless { rs.wasNull() },
+                    source = YachtImageSource.valueOf(rs.getString("source")),
+                )
+            }
     }
 }

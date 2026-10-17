@@ -104,6 +104,28 @@ class YachtMainImageFixService(
         return fix.takeIf { changed }
     }
 
+    /**
+     * An admin's own choice (V9_92: PATCH /admin/yacht-images/{id} {"main": true}, the main-image upload): the card photo
+     * becomes [imageId] and exactly that image carries the main flag ([MainImageRules.flagMain] in SQL). The caller has
+     * checked the image (a visible, stored photo of this boat).
+     */
+    @Transactional
+    fun setMain(
+        yachtId: Long,
+        imageId: Long,
+    ) {
+        jdbc.update("UPDATE yacht SET main_image_id = ? WHERE id = ?", imageId, yachtId)
+        flagMain(yachtId, imageId)
+    }
+
+    /** Exactly [mainId] carries yacht_image.main_image among the boat's images (none when null); a NULL flag stays NULL. */
+    fun flagMain(
+        yachtId: Long,
+        mainId: Long?,
+    ) {
+        jdbc.update(FLAG_SQL, arrayOf(mainId, yachtId, mainId), UPDATE_TYPES)
+    }
+
     /** null when the row has no image (main_image_id names no image of the boat: LEFT JOIN). */
     private fun image(rs: ResultSet): YachtImage? {
         val id = rs.getLong("image_id")
@@ -135,6 +157,8 @@ class YachtMainImageFixService(
         """
         private const val UPDATE_SQL = "UPDATE yacht SET main_image_id = ? WHERE id = ? AND main_image_id = ?"
         private const val REPICK_SQL = "UPDATE yacht SET main_image_id = ? WHERE id = ? AND main_image_id IS NOT DISTINCT FROM ?"
+        private const val FLAG_SQL =
+            "UPDATE yacht_image SET main_image = (id IS NOT DISTINCT FROM ?) WHERE yacht_id = ? AND (main_image OR id IS NOT DISTINCT FROM ?)"
         private val UPDATE_TYPES = intArrayOf(Types.BIGINT, Types.BIGINT, Types.BIGINT)
     }
 }

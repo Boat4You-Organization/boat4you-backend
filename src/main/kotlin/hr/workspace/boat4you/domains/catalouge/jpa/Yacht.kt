@@ -59,6 +59,24 @@ open class Yacht {
     @Column(name = "public_slug", insertable = false, updatable = false)
     open var publicSlug: String? = null
 
+    /**
+     * The boat's film, a YouTube / Vimeo URL (V9_92, owner request 17.10.2026). Public as videoUrl before the custom
+     * boat's custom_yacht_details.video_url. Hibernate never writes it - a sync re-saving the boat would put back the NULL
+     * it loaded over a URL an admin set meanwhile; the only writer is PATCH /admin/yachts/{id}/media (YachtOwnMediaService).
+     */
+    @Size(max = 512)
+    @Column(name = "video_url", length = 512, insertable = false, updatable = false)
+    open var videoUrl: String? = null
+
+    /**
+     * Stored path of the crew profile PDF under the upload dir (V9_92: documents/y-{id}/{uuid}.pdf), served by
+     * GET /public/yachts/{id}/crew-profile.pdf. Read-only for Hibernate like [videoUrl]; written by
+     * POST / DELETE /admin/yachts/{id}/crew-profile only.
+     */
+    @Size(max = 255)
+    @Column(name = "crew_profile_url", insertable = false, updatable = false)
+    open var crewProfileUrl: String? = null
+
     @ManyToOne(fetch = FetchType.LAZY)
     @OnDelete(action = OnDeleteAction.SET_NULL)
     @JoinColumn(name = "agency_id")

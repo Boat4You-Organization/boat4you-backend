@@ -1,7 +1,10 @@
 package hr.workspace.boat4you.domains.catalouge.jpa
 
+import hr.workspace.boat4you.domains.catalouge.enums.YachtImageSource
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
@@ -74,4 +77,12 @@ open class YachtImage {
      */
     @Column(name = "layout_override", insertable = false, updatable = false)
     open var layoutOverride: Boolean? = null
+
+    /**
+     * V9_92: PARTNER (sync rows, the default) or OWN (an admin upload): the partner syncs never delete, move below the
+     * partner's or re-flag an OWN row. Set on INSERT, never updated (a sync re-saving an OWN row cannot turn it PARTNER).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source", length = 16, nullable = false, updatable = false)
+    open var source: YachtImageSource = YachtImageSource.PARTNER
 }

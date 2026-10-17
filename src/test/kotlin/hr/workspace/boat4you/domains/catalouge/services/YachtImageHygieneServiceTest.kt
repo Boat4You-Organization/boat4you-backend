@@ -5,6 +5,7 @@ import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.catalouge.dto.BlockedImageDto
 import hr.workspace.boat4you.domains.catalouge.dto.MainImageFixDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtImageHygieneRequest
+import hr.workspace.boat4you.domains.catalouge.enums.YachtImageSource
 import hr.workspace.boat4you.domains.catalouge.exceptions.ImageNotFoundException
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
@@ -72,7 +73,9 @@ class YachtImageHygieneServiceTest {
                                       yacht_id bigint NOT NULL REFERENCES yacht (id), main_image boolean, synced boolean);
             """.trimIndent(),
         )
-        jdbc.execute("BEGIN; ${ClassPathResource("db/migration/V9_91__yacht_image_hidden_layout_override.sql").inputStream.bufferedReader().readText()}; COMMIT;")
+        listOf("V9_91__yacht_image_hidden_layout_override.sql", "V9_92__yacht_own_media.sql").forEach {
+            jdbc.execute("BEGIN; ${ClassPathResource("db/migration/$it").inputStream.bufferedReader().readText()}; COMMIT;")
+        }
         uploadDir = Files.createTempDirectory("hygiene-uploads")
         service = YachtImageHygieneService(jdbc, YachtMainImageFixService(jdbc), uploadDir.toString())
     }
@@ -247,5 +250,27 @@ class YachtImageHygieneServiceTest {
         service.update(11, YachtImageHygieneRequest(layout = false)).layout shouldBe false
         service.update(11, YachtImageHygieneRequest()).layoutOverride shouldBe false // nothing asked, nothing changed
         shouldThrow<ImageNotFoundException> { service.update(424242, YachtImageHygieneRequest(hidden = true)) }
+    }
+
+    @Test
+    fun `patch main - a visible stored photo becomes the card photo with the only main flag - layout, hidden, unstored or false are refused`() {
+        // V9_92 (owner request 17.10.2026): the admin picks the boat's main image
+        boat(1, main = 10)
+        image(10, 1, YACHT + "main.jpg", 0, main = true, file = photoBytes())
+        image(11, 1, YACHT + "n1.jpg", 1, file = photoBytes())
+        image(12, 1, YACHT + "layout.jpg", 2, file = planBytes())
+        jdbc.update("INSERT INTO yacht_image (id, url, external_url, \"position\", yacht_id, main_image, synced) VALUES (13, NULL, ?, 3, 1, false, false)", YACHT + "n2.jpg")
+
+        val main = service.update(11, YachtImageHygieneRequest(main = true))
+        main.yachtMainImageId shouldBe 11L
+        main.mainImage shouldBe true
+        main.source shouldBe YachtImageSource.PARTNER
+        jdbc.queryForList("SELECT id FROM yacht_image WHERE main_image ORDER BY id", Long::class.java) shouldContainExactly listOf(11L)
+
+        listOf(12L to YachtImageHygieneRequest(main = true), 13L to YachtImageHygieneRequest(main = true), 10L to YachtImageHygieneRequest(main = false))
+            .forEach { (id, request) -> shouldThrow<ParameterValidationException> { service.update(id, request) } }
+        jdbc.update("UPDATE yacht_image SET hidden = true WHERE id = 10")
+        shouldThrow<ParameterValidationException> { service.update(10, YachtImageHygieneRequest(main = true)) }
+        jdbc.queryForObject("SELECT main_image_id FROM yacht WHERE id = 1", Long::class.java) shouldBe 11L
     }
 }

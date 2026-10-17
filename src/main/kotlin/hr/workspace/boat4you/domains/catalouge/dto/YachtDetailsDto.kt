@@ -66,6 +66,13 @@ data class YachtDetailsDto(
     val capacity: CapacityDto? = null,
     /** Sails, engine and draught as the partner gives them; mainSailType above stays the filter enum. */
     val rig: RigDto? = null,
+    /**
+     * The boat's film, a YouTube or Vimeo URL (V9_92, owner request 17.10.2026): yacht.video_url (any boat, set by an
+     * admin), else a custom boat's customDetails.videoUrl. Null = none.
+     */
+    val videoUrl: String? = null,
+    /** Absolute URL of the crew profile PDF (`{api}/public/yachts/{id}/crew-profile.pdf`, V9_92); null = the boat has none. */
+    val crewProfileUrl: String? = null,
 )
 
 data class CustomYachtDetailsDto(
