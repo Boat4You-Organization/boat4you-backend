@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.dto.YachtImageOrderRequest
 import hr.workspace.boat4you.domains.catalouge.dto.YachtLookupDto
 import hr.workspace.boat4you.domains.catalouge.dto.YachtMediaDto
 import hr.workspace.boat4you.domains.catalouge.services.PartnerImageNotDeletableException
+import hr.workspace.boat4you.domains.catalouge.services.YachtBusyException
 import hr.workspace.boat4you.domains.catalouge.services.YachtOwnMediaService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -31,7 +32,8 @@ import org.springframework.web.multipart.MultipartFile
  * partner-synced boat) - the partner syncs never delete or move what is added here. SYSTEM_ADMIN only, like
  * AdminYachtController (whose /admin/custom-yachts endpoints keep the custom-boat behaviour). Every media call answers
  * the boat's media ([YachtMediaDto]). Validation errors answer 400 code 1102 naming the field (files[i], file, imageIds,
- * videoUrl, main), an unknown boat 404, an unknown image 404 code 1602, deleting a partner picture 409.
+ * videoUrl, main), an unknown boat 404, an unknown image 404 code 1602, deleting a partner picture 409 PARTNER_IMAGE, a
+ * boat a partner sync holds longer than [YachtOwnMediaService.LOCK_TIMEOUT] 409 YACHT_BUSY (nothing stored, try again).
  * PATCH /admin/yacht-images/{id} {"main": true} (AdminYachtImageHygieneController) picks the main image among them.
  */
 @Tag(name = "Yacht media", description = "Our own photos, film and crew profile on any boat (administrators)")
@@ -119,12 +121,21 @@ internal class AdminYachtMediaController(
         @PathVariable id: Long,
     ): ResponseEntity<YachtMediaDto> = ResponseEntity.ok(media.deleteCrewProfile(id))
 
-    /** DELETE of a partner picture: it would come back with the next sync. */
-    @ExceptionHandler(PartnerImageNotDeletableException::class)
-    fun partnerImageNotDeletable(): ResponseEntity<Map<String, String>> =
+    /**
+     * 409: DELETE of a partner picture (it would come back with the next sync), or a boat a partner sync holds until its
+     * agency commits (minutes; nothing was stored, a retry is safe).
+     */
+    @ExceptionHandler(PartnerImageNotDeletableException::class, YachtBusyException::class)
+    fun conflict(e: RuntimeException): ResponseEntity<Map<String, String>> =
         ResponseEntity
             .status(HttpStatus.CONFLICT)
-            .body(mapOf("status" to "PARTNER_IMAGE", "message" to "only our own photos can be deleted: a partner picture comes back with the next sync, hide it instead"))
+            .body(
+                if (e is YachtBusyException) {
+                    mapOf("status" to "YACHT_BUSY", "message" to "${e.message} - nothing was saved")
+                } else {
+                    mapOf("status" to "PARTNER_IMAGE", "message" to "only our own photos can be deleted: a partner picture comes back with the next sync, hide it instead")
+                },
+            )
 
     private companion object {
         const val VIDEO_URL = "videoUrl"

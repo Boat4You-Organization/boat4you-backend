@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.domains.catalouge.dto.MainImageFixDto
 import hr.workspace.boat4you.domains.catalouge.dto.MainImageFixResultDto
+import hr.workspace.boat4you.domains.catalouge.enums.YachtImageSource
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtImage
 import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
 import org.slf4j.LoggerFactory
@@ -126,7 +127,7 @@ class YachtMainImageFixService(
         jdbc.update(FLAG_SQL, arrayOf(mainId, yachtId, mainId), UPDATE_TYPES)
     }
 
-    /** null when the row has no image (main_image_id names no image of the boat: LEFT JOIN). */
+    /** null when the row has no image (main_image_id names no image of the boat: LEFT JOIN). With its source: an OWN current main stays (V9_92). */
     private fun image(rs: ResultSet): YachtImage? {
         val id = rs.getLong("image_id")
         if (rs.wasNull()) return null
@@ -138,20 +139,22 @@ class YachtMainImageFixService(
             mainImage = rs.getBoolean("main_image").takeUnless { rs.wasNull() }
             hidden = rs.getBoolean("hidden")
             layoutOverride = rs.getBoolean("layout_override").takeUnless { rs.wasNull() }
+            source = YachtImageSource.valueOf(rs.getString("source"))
         }
     }
 
     companion object {
         private const val MAINS_SQL = """
             SELECT y.id AS yacht_id, y.main_image_id, yi.id AS image_id, yi.url, yi.external_url, yi."position", yi.main_image,
-                   yi.hidden, yi.layout_override
+                   yi.hidden, yi.layout_override, yi.source
             FROM yacht y
             LEFT JOIN yacht_image yi ON yi.id = y.main_image_id AND yi.yacht_id = y.id
             WHERE y.sys_active AND y.main_image_id IS NOT NULL
             ORDER BY y.id
         """
         private const val IMAGES_SQL = """
-            SELECT yi.yacht_id, yi.id AS image_id, yi.url, yi.external_url, yi."position", yi.main_image, yi.hidden, yi.layout_override
+            SELECT yi.yacht_id, yi.id AS image_id, yi.url, yi.external_url, yi."position", yi.main_image, yi.hidden, yi.layout_override,
+                   yi.source
             FROM yacht_image yi
             WHERE yi.yacht_id IN (:ids) AND yi.url IS NOT NULL AND yi.url <> '' AND NOT yi.hidden
         """

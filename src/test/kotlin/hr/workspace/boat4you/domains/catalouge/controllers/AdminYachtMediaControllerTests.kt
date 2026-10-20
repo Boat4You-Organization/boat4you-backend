@@ -15,9 +15,11 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.springframework.aop.framework.ProxyFactory
 import org.springframework.core.io.ClassPathResource
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.mock.web.MockMultipartFile
 import org.springframework.test.util.ReflectionTestUtils
 import org.springframework.test.web.servlet.MockMvc
@@ -27,6 +29,8 @@ import org.springframework.test.web.servlet.multipart
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.put
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource
+import org.springframework.transaction.interceptor.TransactionInterceptor
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -55,6 +59,7 @@ class AdminYachtMediaControllerTests {
     private lateinit var dataSource: HikariDataSource
     private lateinit var jdbc: JdbcTemplate
     private lateinit var uploadDir: Path
+    private lateinit var files: FileSystemService
     private lateinit var mvc: MockMvc
 
     private val webp = "RIFF".toByteArray() + byteArrayOf(0, 0, 0, 0) + "WEBPVP8 ".toByteArray() + ByteArray(32)
@@ -86,7 +91,7 @@ class AdminYachtMediaControllerTests {
             jdbc.execute("BEGIN; ${ClassPathResource("db/migration/$it").inputStream.bufferedReader().readText()}; COMMIT;")
         }
         uploadDir = Files.createTempDirectory("own-media-uploads")
-        val files = FileSystemService().also { ReflectionTestUtils.setField(it, "uploadDir", uploadDir.toString()) }
+        files = FileSystemService().also { ReflectionTestUtils.setField(it, "uploadDir", uploadDir.toString()) }
         val service = YachtOwnMediaService(jdbc, files, YachtMainImageFixService(jdbc), "$API/")
         mvc =
             MockMvcBuilders
@@ -288,8 +293,11 @@ class AdminYachtMediaControllerTests {
         mvc
             .patch("/admin/yachts/11769/media") {
                 contentType = MediaType.APPLICATION_JSON
-                content = """{"videoUrl":"https://www.youtube.com/watch?v=dQw4w9WgXcQ"}"""
-            }.andExpect { status { isOk() } }
+                content = """{"videoUrl":"http://www.youtube.com/watch?v=dQw4w9WgXcQ"}"""
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.videoUrl") { value("https://www.youtube.com/watch?v=dQw4w9WgXcQ") } // stored as https
+            }
         mvc
             .patch("/admin/yachts/11769/media") {
                 contentType = MediaType.APPLICATION_JSON
@@ -384,5 +392,49 @@ class AdminYachtMediaControllerTests {
                 param("limit", "1")
             }.andExpect { jsonPath("$.length()") { value(1) } }
         mvc.get("/admin/yachts/lookup") { param("q", " ") }.andExpect { jsonPath("$.length()") { value(0) } }
+    }
+
+    @Test
+    fun `a boat a partner sync holds - 409 YACHT_BUSY after the lock timeout, no row and no file left, a retry then works`() {
+        // review 17.10.2026: an agency sync keeps a boat it changed locked until the whole agency commits (minutes); the
+        // service runs in a real transaction here (the other tests call it without one), like @Transactional in the API
+        val service =
+            ProxyFactory(YachtOwnMediaService(jdbc, files, YachtMainImageFixService(jdbc), "$API/"))
+                .apply {
+                    isProxyTargetClass = true
+                    addAdvice(
+                        TransactionInterceptor().apply {
+                            transactionManager = DataSourceTransactionManager(dataSource)
+                            transactionAttributeSource = AnnotationTransactionAttributeSource()
+                        },
+                    )
+                }.proxy as YachtOwnMediaService
+        val txMvc = MockMvcBuilders.standaloneSetup(AdminYachtMediaController(service)).setControllerAdvice(ApiErrorHandler()).build()
+
+        dataSource.connection.use { sync ->
+            sync.autoCommit = false
+            sync.createStatement().use { it.execute("UPDATE yacht SET name = name WHERE id = 11769") } // the sync's dirty boat
+            txMvc
+                .multipart("/admin/yachts/11769/images") {
+                    file(image("files", "a.webp"))
+                    file(image("files", "b.webp"))
+                }.andExpect {
+                    status { isConflict() }
+                    jsonPath("$.status") { value("YACHT_BUSY") }
+                }
+            txMvc
+                .patch("/admin/yachts/11769/media") {
+                    contentType = MediaType.APPLICATION_JSON
+                    content = """{"videoUrl":"https://vimeo.com/982130882"}"""
+                }.andExpect { status { isConflict() } }
+            sync.rollback()
+        }
+        ownIds().shouldBeEmpty()
+        storedFiles().shouldBeEmpty()
+        jdbc.queryForObject("SELECT video_url FROM yacht WHERE id = 11769", String::class.java) shouldBe null
+
+        txMvc.multipart("/admin/yachts/11769/images") { file(image("files", "a.webp")) }.andExpect { status { isOk() } }
+        ownIds() shouldHaveSize 1
+        storedFiles() shouldHaveSize 1
     }
 }

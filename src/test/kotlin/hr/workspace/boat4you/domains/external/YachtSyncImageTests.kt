@@ -270,6 +270,29 @@ class YachtSyncImageTests {
     }
 
     @Test
+    fun `MMK syncPictures - a new picture without sortOrder among ordered ones goes behind our own photos, never NULL`() {
+        // review 17.10.2026: a NULL position sorts FIRST on the public gallery (toPublicDtos), before our own photos
+        val ownMain = own(900, 0, main = true)
+        val ownSecond = own(901, 1)
+        val a = image(1, mmkDocs + "a.jpg", 2, main = true)
+        val boat = yacht(a, ownSecond, ownMain).apply { mainImageId = 900 }
+        mmk.syncPictures(
+            listOf(
+                Image(url = mmkDocs + "a.jpg", description = "Main image", sortOrder = 0),
+                Image(url = mmkDocs + "b.jpg"),
+                Image(url = mmkDocs + "c.jpg", sortOrder = 5),
+            ),
+            isNewEntity = false,
+            yacht = boat,
+        )
+
+        val added = boat.yachtImages.filter { it.id == null }.associateBy { it.externalUrl }
+        added.getValue(mmkDocs + "b.jpg").position?.toInt() shouldBe 3 // its index (1) behind our 2 photos
+        added.getValue(mmkDocs + "c.jpg").position?.toInt() shouldBe 7 // the partner's sortOrder behind our 2 photos
+        listOf(ownMain, ownSecond, a).map { it.position?.toInt() } shouldContainExactly listOf(0, 1, 2)
+    }
+
+    @Test
     fun `without own photos both syncs place the partner's pictures exactly as before`() {
         val a = image(1, mmkDocs + "a.jpg", 5, main = true)
         val boat = yacht(a)

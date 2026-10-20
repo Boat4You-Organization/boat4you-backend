@@ -23,6 +23,15 @@ class VideoUrlRulesTest {
     }
 
     @Test
+    fun `stored as https - an http URL is upgraded, the rest kept as given, a refused one is null`() {
+        VideoUrlRules.normalize("https://vimeo.com/982130882") shouldBe "https://vimeo.com/982130882"
+        VideoUrlRules.normalize("http://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s") shouldBe "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s"
+        VideoUrlRules.normalize("HTTP://vimeo.com/982130882/1a2b3c4d5e") shouldBe "https://vimeo.com/982130882/1a2b3c4d5e"
+        VideoUrlRules.normalize("ftp://vimeo.com/982130882") shouldBe null
+        VideoUrlRules.normalize("https://evil.example/vimeo.com/982130882") shouldBe null
+    }
+
+    @Test
     fun `anything else is refused`() {
         listOf(
             "",

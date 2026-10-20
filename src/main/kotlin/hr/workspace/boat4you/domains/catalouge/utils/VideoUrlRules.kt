@@ -8,7 +8,8 @@ import java.util.Locale
  * - YouTube: `youtube.com/watch?v={id}`, `youtu.be/{id}`, `youtube.com/embed/{id}` (an 11-character video id);
  * - Vimeo: `vimeo.com/{id}` (an unlisted film's `vimeo.com/{id}/{hash}` too), `player.vimeo.com/video/{id}`.
  * http or https, with or without `www.`, no user info or port; any other URL is refused (400), so nothing but a video of
- * these two hosts ever reaches a page as an embed.
+ * these two hosts ever reaches a page as an embed. Stored as [normalize]d: an http URL becomes https, so no site that
+ * embeds it as given shows mixed content.
  */
 object VideoUrlRules {
     const val MAX_LENGTH = 512
@@ -27,6 +28,9 @@ object VideoUrlRules {
             uri.port == -1 &&
             isVideoPath(uri.host?.lowercase(Locale.ROOT), uri.rawPath.orEmpty(), uri.rawQuery)
     }
+
+    /** The URL to store when [isAccepted] (http upgraded to https, the rest as given), else null. */
+    fun normalize(url: String): String? = url.takeIf(::isAccepted)?.let { "https:" + it.substringAfter(':') }
 
     private fun isVideoPath(
         host: String?,

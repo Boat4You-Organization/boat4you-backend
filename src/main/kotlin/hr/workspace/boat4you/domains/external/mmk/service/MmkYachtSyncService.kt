@@ -481,12 +481,9 @@ class MmkYachtSyncService(
             mmkPictures.forEachIndexed { index, mmkYachtPicture ->
                 val yachtImage = yacht.yachtImages.find { !OwnImageRules.isOwn(it) && it.externalUrl == mmkYachtPicture.url }
                 if (yachtImage == null) {
-                    createNewYachtImage(
-                        yacht,
-                        index == 0,
-                        mmkYachtPicture,
-                        (if (useSortOrder) mmkYachtPicture.sortOrder else index)?.plus(offset),
-                    )
+                    // without a sortOrder among ordered ones: its index behind our own photos (a NULL sorts before them); no OWN = as before
+                    val position = if (useSortOrder) mmkYachtPicture.sortOrder ?: index.takeIf { offset > 0 } else index
+                    createNewYachtImage(yacht, index == 0, mmkYachtPicture, position?.plus(offset))
                 } else {
                     // the partner's sortOrder when it sends one; behind our own photos (offset > 0) even when it does not
                     val position = if (useSortOrder && mmkYachtPicture.sortOrder != null) mmkYachtPicture.sortOrder else index.takeIf { offset > 0 }

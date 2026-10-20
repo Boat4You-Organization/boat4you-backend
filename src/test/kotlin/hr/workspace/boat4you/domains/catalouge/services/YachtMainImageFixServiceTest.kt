@@ -51,7 +51,8 @@ class YachtMainImageFixServiceTest {
             CREATE TABLE yacht (id bigint PRIMARY KEY, sys_active boolean NOT NULL DEFAULT true, main_image_id bigint);
             CREATE TABLE yacht_image (id bigserial PRIMARY KEY, url varchar(255), external_url varchar(255), "position" smallint,
                                       yacht_id bigint NOT NULL REFERENCES yacht (id), main_image boolean, synced boolean,
-                                      hidden boolean NOT NULL DEFAULT false, hidden_reason text, layout_override boolean);
+                                      hidden boolean NOT NULL DEFAULT false, hidden_reason text, layout_override boolean,
+                                      source varchar(16) NOT NULL DEFAULT 'PARTNER');
             """.trimIndent(),
         )
         service = YachtMainImageFixService(jdbc)
@@ -186,5 +187,18 @@ class YachtMainImageFixServiceTest {
         jdbc.update("UPDATE yacht SET main_image_id = NULL WHERE id = 14837")
         jdbc.update("UPDATE yacht_image SET hidden = false WHERE id = 60")
         service.repickMain(14837) shouldBe MainImageFixDto(14837, null, 60)
+    }
+
+    @Test
+    fun `repickMain keeps an OWN current main although a partner picture carries the main flag too`() {
+        // V9_92, review 17.10.2026: after the documented sync race the partner's photo is flagged as well; an unrelated
+        // admin decision (PATCH hidden, DELETE of another own photo) must not move the card to it
+        boat(11769, main = 71, active = true)
+        image(70, 11769, MMK + "allure_main.jpg", 2, main = true) // the partner's, read first
+        image(71, 11769, "", 0, main = true)
+        jdbc.update("UPDATE yacht_image SET external_url = NULL, source = 'OWN' WHERE id = 71")
+
+        service.repickMain(11769) shouldBe null
+        mainOf(11769) shouldBe 71L
     }
 }

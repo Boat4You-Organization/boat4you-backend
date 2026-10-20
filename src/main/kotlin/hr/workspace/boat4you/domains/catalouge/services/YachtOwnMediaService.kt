@@ -24,6 +24,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.multipart.MultipartFile
 import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.SQLException
 import java.sql.Types
 
 /** The public URL of a boat's crew profile PDF (V9_92): `{api}/public/yachts/{id}/crew-profile.pdf`. */
@@ -43,11 +44,18 @@ class CrewProfileFile(
 class PartnerImageNotDeletableException : RuntimeException()
 
 /**
+ * A write waited longer than [YachtOwnMediaService.LOCK_TIMEOUT] for the boat (or its image rows): a partner sync that
+ * changed it keeps it locked until its whole agency commits (minutes). Nothing was stored (409): try again later.
+ */
+class YachtBusyException : RuntimeException("the boat is being synced, try again in a few minutes")
+
+/**
  * Our own media on any boat (V9_92, owner request 17.10.2026: gulet Allure 11769, a partner-synced EXTERNAL boat, gets our
  * photos, its film and the crew profile on all 7 sites) - the SYSTEM_ADMIN calls of AdminYachtMediaController and the
  * public crew profile PDF. Plain SQL like YachtImageHygieneService: the boat row is never re-saved through Hibernate, so
  * an admin call never writes back stale partner data, and the partner syncs never write these columns (read-only for
- * Hibernate). Every write locks the boat row first, so two admin calls on one boat queue instead of mixing positions.
+ * Hibernate). Every write locks the boat row first, so two admin calls on one boat queue instead of mixing positions; it
+ * waits at most [LOCK_TIMEOUT] for a partner sync holding the boat, then answers 409 with nothing stored ([writing]).
  *
  * - Photos: stored like every upload (FileSystemService.saveImage: JPEG / PNG / WebP by magic bytes, 10 MB each, WebP
  *   `y-{id}/{uuid}.webp`) as yacht_image rows with source OWN, synced (nothing to download), at most [MAX_IMAGES] per
@@ -95,7 +103,7 @@ class YachtOwnMediaService(
     ): YachtMediaDto {
         yacht(yachtId, lock = false)
         val stored = store(yachtId, requireFiles(files))
-        return withCleanup(stored) {
+        return writing(stored) {
             yacht(yachtId, lock = true)
             val ids = stored.map { insertOwn(yachtId, it) }
             renumber(yachtId, first = emptyList(), newOwn = ids)
@@ -113,7 +121,7 @@ class YachtOwnMediaService(
         if (file == null || file.isEmpty) throw ParameterValidationException(mapOf("file" to "an image file is required"))
         yacht(yachtId, lock = false)
         val stored = store(yachtId, listOf(file), field = { "file" })
-        return withCleanup(stored) {
+        return writing(stored) {
             yacht(yachtId, lock = true)
             val id = insertOwn(yachtId, stored.single())
             renumber(yachtId, first = listOf(id), newOwn = emptyList())
@@ -128,62 +136,66 @@ class YachtOwnMediaService(
     fun reorder(
         yachtId: Long,
         imageIds: List<Long>?,
-    ): YachtMediaDto {
-        yacht(yachtId, lock = true)
-        val images = images(yachtId)
-        val known = images.map { it.id }.toSet()
-        val ids = imageIds.orEmpty()
-        when {
-            ids.isEmpty() -> throw ParameterValidationException(mapOf("imageIds" to "at least one image id required"))
-            ids.size != ids.distinct().size -> throw ParameterValidationException(mapOf("imageIds" to "an image id is listed twice"))
-            !known.containsAll(ids) -> throw ParameterValidationException(mapOf("imageIds" to "not images of yacht $yachtId: ${ids - known}"))
+    ): YachtMediaDto =
+        writing {
+            yacht(yachtId, lock = true)
+            val images = images(yachtId)
+            val known = images.map { it.id }.toSet()
+            val ids = imageIds.orEmpty()
+            when {
+                ids.isEmpty() -> throw ParameterValidationException(mapOf("imageIds" to "at least one image id required"))
+                ids.size != ids.distinct().size -> throw ParameterValidationException(mapOf("imageIds" to "an image id is listed twice"))
+                !known.containsAll(ids) -> throw ParameterValidationException(mapOf("imageIds" to "not images of yacht $yachtId: ${ids - known}"))
+            }
+            val listed = ids.toSet()
+            val rest = images.sortedWith(BY_POSITION).map { it.id }.filterNot { it in listed }
+            writePositions(images, ids + rest)
+            log.info("Images of yacht {} reordered: {} first", yachtId, ids)
+            dto(yachtId, yacht(yachtId, lock = false))
         }
-        val listed = ids.toSet()
-        val rest = images.sortedWith(BY_POSITION).map { it.id }.filterNot { it in listed }
-        writePositions(images, ids + rest)
-        log.info("Images of yacht {} reordered: {} first", yachtId, ids)
-        return dto(yachtId, yacht(yachtId, lock = false))
-    }
 
     /** DELETE /admin/yachts/{id}/images/{imageId}: our own photo only; the card photo moves on when it was this one. */
     @Transactional
     fun deleteImage(
         yachtId: Long,
         imageId: Long,
-    ): YachtMediaDto {
-        val yacht = yacht(yachtId, lock = true)
-        val image = images(yachtId).firstOrNull { it.id == imageId } ?: throw ImageNotFoundException()
-        if (!image.own) throw PartnerImageNotDeletableException()
-        jdbc.update("DELETE FROM yacht_image WHERE id = ? AND yacht_id = ?", imageId, yachtId)
-        image.url?.takeIf { it.isNotBlank() }?.let(::deleteFileAfterCommit)
-        if (yacht.mainImageId == imageId || image.mainImage == true) {
-            mainImageFix.repickMain(yachtId)
-            mainImageFix.flagMain(yachtId, yacht(yachtId, lock = false).mainImageId)
+    ): YachtMediaDto =
+        writing {
+            val yacht = yacht(yachtId, lock = true)
+            val image = images(yachtId).firstOrNull { it.id == imageId } ?: throw ImageNotFoundException()
+            if (!image.own) throw PartnerImageNotDeletableException()
+            jdbc.update("DELETE FROM yacht_image WHERE id = ? AND yacht_id = ?", imageId, yachtId)
+            image.url?.takeIf { it.isNotBlank() }?.let(::deleteFileAfterCommit)
+            if (yacht.mainImageId == imageId || image.mainImage == true) {
+                mainImageFix.repickMain(yachtId)
+                mainImageFix.flagMain(yachtId, yacht(yachtId, lock = false).mainImageId)
+            }
+            log.info("Own photo {} of yacht {} deleted", imageId, yachtId)
+            dto(yachtId, yacht(yachtId, lock = false))
         }
-        log.info("Own photo {} of yacht {} deleted", imageId, yachtId)
-        return dto(yachtId, yacht(yachtId, lock = false))
-    }
 
-    /** PATCH /admin/yachts/{id}/media: the film URL ([VideoUrlRules]); null or blank removes it. */
+    /** PATCH /admin/yachts/{id}/media: the film URL ([VideoUrlRules], stored as https); null or blank removes it. */
     @Transactional
     fun setVideo(
         yachtId: Long,
         videoUrl: String?,
     ): YachtMediaDto {
-        val url = videoUrl?.trim()?.takeIf { it.isNotEmpty() }
-        if (url != null && !VideoUrlRules.isAccepted(url)) {
-            throw ParameterValidationException(
-                mapOf(
-                    "videoUrl" to
-                        "a YouTube (youtube.com/watch?v=..., youtu.be/..., youtube.com/embed/...) or Vimeo (vimeo.com/<id>, " +
-                        "player.vimeo.com/video/<id>) URL of at most ${VideoUrlRules.MAX_LENGTH} characters",
-                ),
-            )
+        val url =
+            videoUrl?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                VideoUrlRules.normalize(it) ?: throw ParameterValidationException(
+                    mapOf(
+                        "videoUrl" to
+                            "a YouTube (youtube.com/watch?v=..., youtu.be/..., youtube.com/embed/...) or Vimeo (vimeo.com/<id>, " +
+                            "player.vimeo.com/video/<id>) URL of at most ${VideoUrlRules.MAX_LENGTH} characters",
+                    ),
+                )
+            }
+        return writing {
+            yacht(yachtId, lock = true)
+            jdbc.update("UPDATE yacht SET video_url = ? WHERE id = ?", url, yachtId)
+            log.info("Video of yacht {} set to {}", yachtId, url)
+            dto(yachtId, yacht(yachtId, lock = false))
         }
-        yacht(yachtId, lock = true)
-        jdbc.update("UPDATE yacht SET video_url = ? WHERE id = ?", url, yachtId)
-        log.info("Video of yacht {} set to {}", yachtId, url)
-        return dto(yachtId, yacht(yachtId, lock = false))
     }
 
     /** POST /admin/yachts/{id}/crew-profile: one PDF per boat; the previous file is deleted after the commit. */
@@ -199,7 +211,7 @@ class YachtOwnMediaService(
             fileSystemService
                 .savePdfFile(file, crewProfileDir(yachtId), MAX_PDF_MB)
                 .getOrElse { throw ParameterValidationException(mapOf("file" to (it.message ?: "not a PDF file"))) }
-        return withCleanup(listOf(path)) {
+        return writing(listOf(path)) {
             val old = yacht(yachtId, lock = true).crewProfileUrl
             jdbc.update("UPDATE yacht SET crew_profile_url = ? WHERE id = ?", path, yachtId)
             old?.takeIf { it.isNotBlank() && it != path }?.let(::deleteFileAfterCommit)
@@ -210,15 +222,16 @@ class YachtOwnMediaService(
 
     /** DELETE /admin/yachts/{id}/crew-profile: the file goes after the commit; no profile = nothing to do. */
     @Transactional
-    fun deleteCrewProfile(yachtId: Long): YachtMediaDto {
-        val old = yacht(yachtId, lock = true).crewProfileUrl
-        if (old != null) {
-            jdbc.update("UPDATE yacht SET crew_profile_url = NULL WHERE id = ?", yachtId)
-            old.takeIf { it.isNotBlank() }?.let(::deleteFileAfterCommit)
-            log.info("Crew profile {} of yacht {} removed", old, yachtId)
+    fun deleteCrewProfile(yachtId: Long): YachtMediaDto =
+        writing {
+            val old = yacht(yachtId, lock = true).crewProfileUrl
+            if (old != null) {
+                jdbc.update("UPDATE yacht SET crew_profile_url = NULL WHERE id = ?", yachtId)
+                old.takeIf { it.isNotBlank() }?.let(::deleteFileAfterCommit)
+                log.info("Crew profile {} of yacht {} removed", old, yachtId)
+            }
+            dto(yachtId, yacht(yachtId, lock = false))
         }
-        return dto(yachtId, yacht(yachtId, lock = false))
-    }
 
     /**
      * GET /public/yachts/{id}/crew-profile.pdf: the stored file of an active boat, or null (404). Only the path stored for
@@ -280,12 +293,16 @@ class YachtOwnMediaService(
         return files
     }
 
-    /** The boat's row ([lock]: FOR UPDATE, the per-boat queue of the writes); an unknown boat answers 404. */
+    /**
+     * The boat's row; an unknown boat answers 404. [lock]: FOR UPDATE, the per-boat queue of the writes, after
+     * `SET LOCAL lock_timeout` ([LOCK_TIMEOUT], for the rest of the transaction: the image rows a sync holds too).
+     */
     private fun yacht(
         yachtId: Long,
         lock: Boolean,
-    ): YachtRow =
-        jdbc
+    ): YachtRow {
+        if (lock) jdbc.execute("SET LOCAL lock_timeout = '$LOCK_TIMEOUT'")
+        return jdbc
             .query(
                 "SELECT main_image_id, video_url, crew_profile_url FROM yacht WHERE id = ?" + if (lock) " FOR UPDATE" else "",
                 { rs, _ ->
@@ -293,6 +310,7 @@ class YachtOwnMediaService(
                 },
                 yachtId,
             ).firstOrNull() ?: throw YachtDoesNotExistException()
+    }
 
     private fun images(yachtId: Long): List<ImageRow> =
         jdbc.query(
@@ -331,17 +349,25 @@ class YachtOwnMediaService(
         }
     }
 
+    /**
+     * One write: a failure removes [files] (stored by this request before the lock; the rows roll back), and a lock wait
+     * longer than [LOCK_TIMEOUT] becomes [YachtBusyException] (409) - nothing is stored, so a retry cannot add the photos
+     * twice (review 17.10.2026: an agency sync holds a boat it changed for minutes, beyond the proxy timeout).
+     */
     @Suppress("TooGenericExceptionCaught") // a failed write removes the files of this request, then rethrows (the rows roll back)
-    private fun <T> withCleanup(
-        files: List<String>,
+    private fun <T> writing(
+        files: List<String> = emptyList(),
         block: () -> T,
     ): T =
         try {
             block()
         } catch (e: Exception) {
             files.forEach { fileSystemService.deleteFile(it) }
-            throw e
+            throw if (isLockTimeout(e)) YachtBusyException() else e
         }
+
+    /** PostgreSQL lock_not_available (55P03): `lock_timeout` ran out (Spring leaves it uncategorized). */
+    private fun isLockTimeout(e: Throwable): Boolean = generateSequence(e) { it.cause }.any { (it as? SQLException)?.sqlState == LOCK_NOT_AVAILABLE }
 
     private fun insertOwn(
         yachtId: Long,
@@ -408,6 +434,10 @@ class YachtOwnMediaService(
         const val MAX_IMAGES = 20
         const val MAX_PDF_MB = 15L
         const val MAX_LOOKUP = 50
+
+        /** How long a write waits for the boat (and its images) when a partner sync holds them. */
+        const val LOCK_TIMEOUT = "5s"
+        private const val LOCK_NOT_AVAILABLE = "55P03"
         private const val BYTES_PER_MB = 1024L * 1024L
 
         private val BY_POSITION = compareBy<ImageRow, Short?>(nullsLast()) { it.position }.thenBy { it.id }
