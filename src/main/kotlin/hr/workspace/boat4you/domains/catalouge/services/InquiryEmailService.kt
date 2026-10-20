@@ -281,7 +281,9 @@ class InquiryEmailService(
         // Yacht thumbnail. We only embed the image URL when the yacht has a
         // synced binary (rare in dev — see the "we'll pull images on prod"
         // decision). Template handles the null case with a placeholder.
+        // 20.10.2026 (Mario "da"): a hidden image (partner placeholder, V9_91) is never the e-mail thumbnail.
         val mainImageId = yacht?.yachtImages
+            ?.filter { !it.hidden }
             ?.let { images -> images.firstOrNull { it.mainImage == true } ?: images.firstOrNull() }
             ?.id
         val yachtImageUrl = mainImageId?.let { "$serverHost/public/image/$it?width=400" }
