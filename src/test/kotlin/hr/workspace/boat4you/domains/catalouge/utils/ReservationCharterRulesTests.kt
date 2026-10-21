@@ -9,31 +9,24 @@ import hr.workspace.boat4you.domains.catalouge.utils.ReservationCharterRules.Kin
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 
-/** Mario 21.10.2026: "GULET JE UVIJEK CREWED" - the charter type a reservation shows. */
+/**
+ * Mario 21.10.2026: "GULET JE UVIJEK CREWED" - the charter type a reservation shows. The agreement changes only for a
+ * gulet ("ugovor ne trebaš sada dirat"): every other boat as before, a skipper extra or bareboat.
+ */
 class ReservationCharterRulesTests {
     @Test
-    fun `a gulet is crewed - without a skipper, with one, whatever the offer says`() {
-        ReservationCharterRules.kind(gulet = true, product = BAREBOAT, extraNames = emptyList()) shouldBe Kind.CREWED
-        ReservationCharterRules.kind(gulet = true, product = BAREBOAT, extraNames = listOf("Skipper")) shouldBe Kind.CREWED
-        ReservationCharterRules.kind(gulet = true, product = null, extraNames = listOf("Transit log")) shouldBe Kind.CREWED
-        ReservationCharterRules.kind(gulet = true, product = UNKNOWN, extraNames = emptyList()) shouldBe Kind.CREWED
+    fun `a gulet is crewed - without a skipper, with one`() {
+        ReservationCharterRules.kind(gulet = true, extraNames = emptyList()) shouldBe Kind.CREWED
+        ReservationCharterRules.kind(gulet = true, extraNames = listOf("Skipper")) shouldBe Kind.CREWED
+        ReservationCharterRules.kind(gulet = true, extraNames = listOf("Transit log", null)) shouldBe Kind.CREWED
     }
 
     @Test
-    fun `a crewed offer product is crewed on any boat`() {
-        ReservationCharterRules.kind(gulet = false, product = CREWED, extraNames = emptyList()) shouldBe Kind.CREWED
-        ReservationCharterRules.kind(gulet = false, product = CREWED, extraNames = listOf("Skipper")) shouldBe Kind.CREWED
-        ReservationCharterRules.kind(gulet = false, product = ALL_INCLUSIVE, extraNames = emptyList()) shouldBe Kind.CREWED
-        ReservationCharterRules.kind(gulet = false, product = CRUISE, extraNames = emptyList()) shouldBe Kind.CREWED
-    }
-
-    @Test
-    fun `a sailing yacht with a skipper extra is skippered, without one bareboat`() {
-        ReservationCharterRules.kind(gulet = false, product = BAREBOAT, extraNames = listOf("Transit log", "SKIPPER (per day)")) shouldBe Kind.SKIPPERED
-        ReservationCharterRules.kind(gulet = false, product = null, extraNames = listOf(null, "skipper")) shouldBe Kind.SKIPPERED
-        ReservationCharterRules.kind(gulet = false, product = BAREBOAT, extraNames = listOf("Transit log", null)) shouldBe Kind.BAREBOAT
-        ReservationCharterRules.kind(gulet = false, product = null, extraNames = emptyList()) shouldBe Kind.BAREBOAT
-        ReservationCharterRules.kind(gulet = false, product = UNKNOWN, extraNames = emptyList()) shouldBe Kind.BAREBOAT
+    fun `every other boat - a skipper extra is skippered, without one bareboat`() {
+        ReservationCharterRules.kind(gulet = false, extraNames = listOf("Transit log", "SKIPPER (per day)")) shouldBe Kind.SKIPPERED
+        ReservationCharterRules.kind(gulet = false, extraNames = listOf(null, "skipper")) shouldBe Kind.SKIPPERED
+        ReservationCharterRules.kind(gulet = false, extraNames = listOf("Transit log", null)) shouldBe Kind.BAREBOAT
+        ReservationCharterRules.kind(gulet = false, extraNames = emptyList()) shouldBe Kind.BAREBOAT
     }
 
     @Test

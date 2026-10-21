@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
 import hr.workspace.boat4you.domains.catalouge.services.CharterAgreementService
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
+import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtLabel
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDto
 import hr.workspace.boat4you.domains.reservation.enums.PaymentType
@@ -882,7 +883,9 @@ class ReservationEmailService(
      * Pre-charter reminder fired by [PreCharterReminderJob] one day before
      * `dateFrom`. Goal: cut no-shows + give the customer a friendly checklist
      * (passport, sailing licence, what to pack) plus the agency contact for
-     * last-minute questions. No financial detail (refund/deposit copy stays
+     * last-minute questions. A gulet sails with its crew, so its guests get
+     * no sailing-licence line (Mario 21.10.2026: "sailing licence kod ekipe
+     * na guletu ne treba"). No financial detail (refund/deposit copy stays
      * out — Mario rule). Idempotency is best-effort: the daily cron filters
      * to dateFrom = tomorrow + status RESERVATION, so a single duplicate run
      * is the only practical risk.
@@ -945,6 +948,8 @@ class ReservationEmailService(
             // 3.7.2026). Null (agency without a link, e.g. Kavas Word-doc
             // flow) → the template omits the CTA block entirely.
             "crewListUrl" to reservation.crewListUrl?.takeIf { it.isNotBlank() },
+            // A gulet's crew sails it: the template drops the sailing-licence / VHF line (whatsNext2).
+            "gulet" to GuletRules.isGulet(yacht.vesselType, yacht.model?.name),
             "sentAt" to sentAtFormatted,
             "currentYear" to LocalDate.now().year.toString(),
         )

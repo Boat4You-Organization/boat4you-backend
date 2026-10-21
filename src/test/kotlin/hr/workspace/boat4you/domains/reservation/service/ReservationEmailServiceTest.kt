@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.reservation.service
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasType
 import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
+import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.Country
 import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.jpa.Model
@@ -21,11 +22,17 @@ import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import hr.workspace.boat4you.domains.voucher.jpa.VoucherRepository
 import org.junit.jupiter.api.Test
-import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
+import org.springframework.context.support.ResourceBundleMessageSource
 import org.springframework.context.support.StaticMessageSource
+import org.thymeleaf.context.Context
+import org.thymeleaf.spring6.SpringTemplateEngine
+import org.thymeleaf.templatemode.TemplateMode
+import org.thymeleaf.templateresolver.ClassLoaderTemplateResolver
 import java.math.BigDecimal
 import java.time.LocalDateTime
+import java.util.Locale
 import java.util.Optional
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -34,6 +41,9 @@ import kotlin.test.assertTrue
 /**
  * R01 in the reservation e-mails: the extras the customer booked and the "available at the marina" list print an
  * EXTERNAL yacht's extras names as customer copy - no "(number of guests to update manually)", no "NSS".
+ *
+ * The pre-charter reminder's checklist: no sailing-licence line for a gulet's guests (Mario 21.10.2026: "sailing
+ * licence kod ekipe na guletu ne treba"), every other boat unchanged.
  */
 class ReservationEmailServiceTest {
     private val sent = mutableListOf<Map<String, Any?>>()
@@ -142,5 +152,68 @@ class ReservationEmailServiceTest {
         val reservation = reservation(EntryType.CUSTOM)
         service(reservation).sendOptionCreatedEmail(reservation.id!!)
         assertTrue(names("availableAtMarina").single().endsWith("(number of guests to update manually)"))
+    }
+
+    /** The real template with the real English bundle (same basename / encoding as spring.messages). */
+    private val templateEngine =
+        SpringTemplateEngine().apply {
+            setTemplateResolver(
+                ClassLoaderTemplateResolver().apply {
+                    prefix = "templates/"
+                    suffix = ".html"
+                    templateMode = TemplateMode.HTML
+                    characterEncoding = "UTF-8"
+                },
+            )
+            setTemplateEngineMessageSource(
+                ResourceBundleMessageSource().apply {
+                    setBasename("messages/email")
+                    setDefaultEncoding("UTF-8")
+                    setFallbackToSystemLocale(false)
+                },
+            )
+        }
+
+    /** The pre-charter reminder as sent for this yacht: its variables and the rendered "Before you arrive" list. */
+    private fun reminder(
+        vessel: VesselType?,
+        modelName: String,
+    ): Pair<Map<String, Any?>, String> {
+        val reservation =
+            reservation(EntryType.EXTERNAL).apply {
+                reservationFlow!!.yacht!!.vesselType = vessel
+                reservationFlow!!.yacht!!.model!!.name = modelName
+            }
+        service(reservation).sendPreCharterReminder(reservation.id!!)
+        val variables = sent.single()
+        val html = templateEngine.process("email/preCharterReminder", Context(Locale.ENGLISH).apply { setVariables(variables) })
+        assertFalse(html.contains("??"), "every message key resolves")
+        return variables to html.substringAfter("Before you arrive").substringBefore("</ul>")
+    }
+
+    @Test
+    fun `pre-charter reminder - a gulet's guests get no sailing-licence line, the rest of the list stays`() {
+        listOf(VesselType.GULET to "Custom", VesselType.MOTOR_YACHT to "Gulet").forEach { (vessel, model) ->
+            sent.clear()
+            val (variables, list) = reminder(vessel, model)
+            assertEquals(true, variables["gulet"], "$vessel $model")
+            assertFalse(list.contains("sailing licence"), "$vessel $model")
+            assertFalse(list.contains("VHF"), "$vessel $model")
+            assertEquals(3, Regex("<li[ >]").findAll(list).count(), "$vessel $model")
+            assertTrue(list.contains("Bring your passport / ID for every guest on board."))
+            assertTrue(list.contains("Pack light layers, swimwear, soft-soled shoes, sunscreen, and any medication you may need."))
+            assertTrue(list.contains("Need help? Reply to this email or call +385 91 3000 009."))
+        }
+    }
+
+    @Test
+    fun `pre-charter reminder - every other boat keeps the sailing-licence line`() {
+        listOf(VesselType.CATAMARAN to "Lagoon 42", VesselType.SAILING_YACHT to "Oceanis 46.1", null to "Lagoon 42").forEach { (vessel, model) ->
+            sent.clear()
+            val (variables, list) = reminder(vessel, model)
+            assertEquals(false, variables["gulet"], "$vessel $model")
+            assertTrue(list.contains("sailing licence and VHF certificate (skipper)"), "$vessel $model")
+            assertEquals(4, Regex("<li[ >]").findAll(list).count(), "$vessel $model")
+        }
     }
 }

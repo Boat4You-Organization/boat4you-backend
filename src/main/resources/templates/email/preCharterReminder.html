@@ -234,7 +234,7 @@
                           </div>
                           <ul style="margin:0; padding:0 0 0 18px; font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-weight:500; font-size:13px; color:#065f46; line-height:1.7;">
                             <li th:text="#{preCharterReminder.whatsNext1}">Bring your passport / ID for every guest on board.</li>
-                            <li th:text="#{preCharterReminder.whatsNext2}">Don&#39;t forget your sailing licence and VHF certificate (skipper) — required at check-in.</li>
+                            <li th:unless="${gulet}" th:text="#{preCharterReminder.whatsNext2}">Don&#39;t forget your sailing licence and VHF certificate (skipper) — required at check-in.</li>
                             <li th:text="#{preCharterReminder.whatsNext3}">Pack light layers, swimwear, soft-soled shoes, sunscreen, and any medication you may need.</li>
                             <li th:text="#{preCharterReminder.whatsNext4}">Need help? Reply to this email or call +385 91 3000 009.</li>
                           </ul>

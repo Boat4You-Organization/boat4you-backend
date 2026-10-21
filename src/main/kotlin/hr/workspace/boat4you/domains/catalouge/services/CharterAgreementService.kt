@@ -290,12 +290,11 @@ class CharterAgreementService(
         val paymentLink = "https://www.boat4you.com/my-bookings/${reservation.id}"
 
         // Charter type (Bareboat / Skippered / Crewed) — ReservationCharterRules: a gulet is always crewed (Mario
-        // 21.10.2026), then the offer's product, then a skipper among the booked extras.
+        // 21.10.2026); every other boat as before, a skipper among the booked extras or bareboat.
         val charterType =
             ReservationCharterRules
                 .kind(
                     gulet = GuletRules.isGulet(yacht.vesselType, yacht.model?.name),
-                    product = flow.offer?.product,
                     extraNames = flow.reservationExtras.map { it.name },
                 ).label
 

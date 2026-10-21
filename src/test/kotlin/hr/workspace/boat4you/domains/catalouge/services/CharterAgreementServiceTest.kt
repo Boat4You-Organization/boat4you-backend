@@ -155,9 +155,12 @@ class CharterAgreementServiceTest {
     }
 
     @Test
-    fun `a crewed offer is a crewed charter on any boat`() {
-        assertEquals("Crewed charter", charterType(VesselType.CATAMARAN, "Lagoon 42", CharterType.CREWED))
-        assertEquals("Crewed charter", charterType(VesselType.CATAMARAN, "Lagoon 42", CharterType.CREWED, "Skipper"))
+    fun `a crewed offer on any other boat reads as before - skippered with a skipper extra, otherwise bareboat`() {
+        // Mario 21.10.2026: "ugovor ne trebaš sada dirat" - only a gulet's agreement changes.
+        assertEquals("Bareboat charter", charterType(VesselType.CATAMARAN, "Lagoon 42", CharterType.CREWED))
+        assertEquals("Skippered charter", charterType(VesselType.CATAMARAN, "Lagoon 42", CharterType.CREWED, "Skipper"))
+        assertEquals("Bareboat charter", charterType(VesselType.MOTOR_YACHT, "Sunseeker 76", CharterType.ALL_INCLUSIVE))
+        assertEquals("Skippered charter", charterType(VesselType.MOTOR_YACHT, "Sunseeker 76", CharterType.CRUISE, "Skipper"))
     }
 
     @Test
