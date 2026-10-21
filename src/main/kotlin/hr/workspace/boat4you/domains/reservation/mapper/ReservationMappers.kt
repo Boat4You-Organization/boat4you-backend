@@ -15,6 +15,8 @@ import hr.workspace.boat4you.domains.catalouge.services.publicAmenities
 import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.services.toPublicDtos
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
+import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
+import hr.workspace.boat4you.domains.catalouge.utils.ReservationCharterRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.reservation.dto.MyReservationDetailsDto
@@ -215,7 +217,8 @@ class ReservationMappers(
             beamInfo = MeasurementUnitDto.toDto(yacht.beam, language),
             lengthInfo = MeasurementUnitDto.toDto(yacht.length, language),
             crewNumber = yacht.crewNumber,
-            charterType = reservationView.charterType,
+            // A gulet is always crewed (ReservationCharterRules, Mario 21.10.2026); every other boat the offer's product.
+            charterType = reservationCharterType(reservationView, yacht),
             vesselType = yacht.vesselType,
             manufacturerName = reservationView.manufacturerName,
             // Customer's my-bookings: linked rows only, one per code (equipment audit 8.10.2026), as on the boat page.
@@ -400,7 +403,8 @@ class ReservationMappers(
             lengthInfo = MeasurementUnitDto.toDto(yacht.length, language),
             crewNumber = yacht.crewNumber,
             vesselType = yacht.vesselType,
-            charterType = reservationView.charterType,
+            // A gulet is always crewed (ReservationCharterRules, Mario 21.10.2026); every other boat the offer's product.
+            charterType = reservationCharterType(reservationView, yacht),
             // Admin: every row; unlinked rows collapse by name (distinctBy equipmentId used to merge them all into one).
             amenities = yacht.yachtEquipments.distinctBy { it.equipmentId ?: ("name:" + (it.name ?: "")) }.map { it.toDto() },
             specialRequest = reservationView.reservationFlowRequest,
@@ -450,6 +454,11 @@ class ReservationMappers(
         val bookedKey = booked.yachtExtrasKey ?: return null
         return if (bookedKey == catalogueRow.extrasKey()) null else booked.name to bookedKey
     }
+
+    private fun reservationCharterType(
+        reservationView: ReservationView,
+        yacht: Yacht,
+    ) = ReservationCharterRules.displayType(reservationView.charterType, GuletRules.isGulet(yacht.vesselType, reservationView.modelName))
 
     private fun supersededSiblings(
         reservationExtras: List<ReservationExtra>,

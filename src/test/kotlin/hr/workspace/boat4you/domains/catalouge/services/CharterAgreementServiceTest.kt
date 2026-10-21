@@ -1,6 +1,8 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
+import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.EntryType
+import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.Agency
 import hr.workspace.boat4you.domains.catalouge.jpa.Country
 import hr.workspace.boat4you.domains.catalouge.jpa.Location
@@ -17,8 +19,8 @@ import hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum
 import hr.workspace.boat4you.domains.settings.services.AdminSettingsService
 import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import org.junit.jupiter.api.Test
-import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import org.springframework.core.io.ClassPathResource
 import org.thymeleaf.spring6.SpringTemplateEngine
 import java.math.BigDecimal
@@ -125,5 +127,43 @@ class CharterAgreementServiceTest {
         val variables = service.buildVariables(reservation(EntryType.CUSTOM))
         assertEquals(listOf("Skipper (number of guests to update manually)"), names(variables, "inPaymentExtras"))
         assertEquals(listOf("Mooring fees (first and last day at the Athenian's Pier)"), names(variables, "obligatoryExtras"))
+    }
+
+    /** The agreement's "Charter type" for this boat, offer product and booked extras (ReservationCharterRules). */
+    private fun charterType(
+        vessel: VesselType,
+        modelName: String,
+        product: CharterType?,
+        vararg extras: String,
+    ): Any? {
+        val reservation =
+            reservation(EntryType.EXTERNAL).apply {
+                reservationFlow!!.yacht!!.vesselType = vessel
+                reservationFlow!!.yacht!!.model!!.name = modelName
+                reservationFlow!!.offer!!.product = product
+                reservationFlow!!.reservationExtras = extras.mapTo(mutableSetOf()) { extra(it, "100", atBase = false) }
+            }
+        return service.buildVariables(reservation)["charterType"]
+    }
+
+    @Test
+    fun `a gulet is a crewed charter - without a skipper, with one, tagged BAREBOAT`() {
+        assertEquals("Crewed charter", charterType(VesselType.GULET, "Custom", CharterType.BAREBOAT))
+        assertEquals("Crewed charter", charterType(VesselType.GULET, "Custom", CharterType.BAREBOAT, "Skipper"))
+        // b4y Gallant 11771: a MOTOR_YACHT of model "Gulet"
+        assertEquals("Crewed charter", charterType(VesselType.MOTOR_YACHT, "Gulet", null, "Transit log"))
+    }
+
+    @Test
+    fun `a crewed offer is a crewed charter on any boat`() {
+        assertEquals("Crewed charter", charterType(VesselType.CATAMARAN, "Lagoon 42", CharterType.CREWED))
+        assertEquals("Crewed charter", charterType(VesselType.CATAMARAN, "Lagoon 42", CharterType.CREWED, "Skipper"))
+    }
+
+    @Test
+    fun `a skipper extra makes it skippered, otherwise bareboat`() {
+        assertEquals("Skippered charter", charterType(VesselType.SAILING_YACHT, "Oceanis 46.1", CharterType.BAREBOAT, "Transit log", "Skipper"))
+        assertEquals("Bareboat charter", charterType(VesselType.SAILING_YACHT, "Oceanis 46.1", CharterType.BAREBOAT, "Transit log"))
+        assertEquals("Bareboat charter", charterType(VesselType.SAILING_YACHT, "Oceanis 46.1", null))
     }
 }

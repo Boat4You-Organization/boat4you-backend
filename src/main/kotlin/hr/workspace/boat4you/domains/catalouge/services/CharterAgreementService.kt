@@ -4,6 +4,8 @@ import com.openhtmltopdf.pdfboxout.PdfRendererBuilder
 import hr.workspace.boat4you.domains.catalouge.jpa.Country
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.partner.PartnerCopySanitizer
+import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
+import hr.workspace.boat4you.domains.catalouge.utils.ReservationCharterRules
 import hr.workspace.boat4you.domains.reservation.jpa.Reservation
 import hr.workspace.boat4you.domains.reservation.service.BankTransferFeeShare
 import hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum
@@ -287,13 +289,15 @@ class CharterAgreementService(
         val cardTotalLabel = "${cardOptionTotal.setScale(2, RoundingMode.HALF_UP).toPlainString()}$currencySymbol"
         val paymentLink = "https://www.boat4you.com/my-bookings/${reservation.id}"
 
-        // Charter type (Bareboat vs Skippered) — derived from extras.
-        val charterType = run {
-            val hasSkipper = flow.reservationExtras.any { e ->
-                e.name?.contains("skipper", ignoreCase = true) == true
-            }
-            if (hasSkipper) "Skippered charter" else "Bareboat charter"
-        }
+        // Charter type (Bareboat / Skippered / Crewed) — ReservationCharterRules: a gulet is always crewed (Mario
+        // 21.10.2026), then the offer's product, then a skipper among the booked extras.
+        val charterType =
+            ReservationCharterRules
+                .kind(
+                    gulet = GuletRules.isGulet(yacht.vesselType, yacht.model?.name),
+                    product = flow.offer?.product,
+                    extraNames = flow.reservationExtras.map { it.name },
+                ).label
 
         // Extras paid on-site at the marina (cash / card at check-in) — charter
         // pack, harbour fees, tourist tax, etc. Listed in their own block with
