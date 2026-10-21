@@ -35,7 +35,8 @@ import hr.workspace.boat4you.domains.catalouge.enums.CharterType
  * | Skipper | 2026 - 2027", "Saxdor - Obligatory daily Skipper", "Tour leader 53", "Crewed Skipper SEY").
  */
 object OfferCharterRules {
-    private val CREWED_PRODUCTS = setOf(CharterType.CREWED, CharterType.ALL_INCLUSIVE, CharterType.CRUISE)
+    /** The crewed offer products; [ReservationCharterRules] reads the same set. */
+    internal val CREWED_PRODUCTS = setOf(CharterType.CREWED, CharterType.ALL_INCLUSIVE, CharterType.CRUISE)
 
     private val IC = RegexOption.IGNORE_CASE
 

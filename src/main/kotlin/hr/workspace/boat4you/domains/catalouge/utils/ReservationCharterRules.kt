@@ -16,7 +16,7 @@ import hr.workspace.boat4you.domains.catalouge.enums.CharterType
  * prices): only what a reservation shows reads it this way.
  */
 object ReservationCharterRules {
-    private val CREWED_PRODUCTS = setOf(CharterType.CREWED, CharterType.ALL_INCLUSIVE, CharterType.CRUISE)
+    private val CREWED_PRODUCTS = OfferCharterRules.CREWED_PRODUCTS
 
     /** What the charter agreement says, with its label on page 1 ("Charter type"). */
     enum class Kind(
