@@ -46,6 +46,50 @@ class ExtraNameNormalizerTests {
         ).forEach { name -> ExtraNameNormalizer.normalize(name) shouldBeSameInstanceAs name }
     }
 
+    // 21.10.2026 (EY SEO regression T12): the ALL-CAPS trailing "RESERVED IN ADVANCE" reads "(reserved in advance)".
+    @Test
+    fun `the EY name gets a lower-case reserved in advance parenthetical`() {
+        ExtraNameNormalizer.normalize("Early check in (at 13:00) RESERVED IN ADVANCE") shouldBe "Early check in (at 13:00) (reserved in advance)"
+        ExtraNameNormalizer.normalize("Early check in (at 13:00)  RESERVED  IN ADVANCE! ") shouldBe "Early check in (at 13:00) (reserved in advance)"
+        ExtraNameNormalizer.normalize("RESERVED IN ADVANCE") shouldBe "(reserved in advance)"
+    }
+
+    @Test
+    fun `a bracketed or dashed RESERVED IN ADVANCE loses its own brackets and dashes`() {
+        ExtraNameNormalizer.normalize("Early check in (RESERVED IN ADVANCE)") shouldBe "Early check in (reserved in advance)"
+        ExtraNameNormalizer.normalize("Early check in (RESERVED IN ADVANCE!)") shouldBe "Early check in (reserved in advance)"
+        ExtraNameNormalizer.normalize("Early check in [RESERVED IN ADVANCE]") shouldBe "Early check in (reserved in advance)"
+        ExtraNameNormalizer.normalize("Early check in - RESERVED IN ADVANCE!") shouldBe "Early check in (reserved in advance)"
+        ExtraNameNormalizer.normalize("Late check out \u2013 RESERVED IN ADVANCE \u2013") shouldBe "Late check out (reserved in advance)"
+        ExtraNameNormalizer.normalize("Early check in: (RESERVED IN ADVANCE)") shouldBe "Early check in (reserved in advance)"
+    }
+
+    @Test
+    fun `reserved in advance that is not ALL-CAPS or not trailing is left alone`() {
+        listOf(
+            "Early check in (at 13:00) (reserved in advance)",
+            "Early check in - reserved in advance",
+            "Early check in (Reserved in advance)",
+            "RESERVED IN ADVANCE: early check in",
+        ).forEach { name -> ExtraNameNormalizer.normalize(name) shouldBeSameInstanceAs name }
+    }
+
+    @Test
+    fun `acronyms stay upper-case`() {
+        listOf("APA", "APA (Advance Provisioning Allowance)", "VAT", "VHF radio", "BVI Cruising Tax", "GPS", "WC chemicals", "AC", "SUP", "TV", "USB")
+            .forEach { name -> ExtraNameNormalizer.normalize(name) shouldBeSameInstanceAs name }
+        ExtraNameNormalizer.normalize("APA - RESERVED IN ADVANCE") shouldBe "APA (reserved in advance)"
+        ExtraNameNormalizer.normalize("SUP board (VAT incl.) RESERVED IN ADVANCE") shouldBe "SUP board (VAT incl.) (reserved in advance)"
+    }
+
+    @Test
+    fun `a normalized name normalizes to itself`() {
+        listOf("Early check in (at 13:00) RESERVED IN ADVANCE", "Early check in [RESERVED IN ADVANCE]", "One man crew RESERVED IN ADVANCE")
+            .map { ExtraNameNormalizer.normalize(it)!! }
+            .forEach { name -> ExtraNameNormalizer.normalize(name) shouldBeSameInstanceAs name }
+        ExtraNameNormalizer.normalize("One man crew RESERVED IN ADVANCE") shouldBe "Skipper (reserved in advance)"
+    }
+
     @Test
     fun `null and blank are returned as they are`() {
         ExtraNameNormalizer.normalize(null) shouldBe null

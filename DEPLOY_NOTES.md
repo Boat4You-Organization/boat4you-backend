@@ -1,5 +1,48 @@
 # Backend deploy notes
 
+## 2026-10-21 — 🔤 Partnerov dodatak „… RESERVED IN ADVANCE“ → „(reserved in advance)“ (Mario 21.10., nalaz EY SEO regresije T12 od 13.10.) — ⏳ NIJE DEPLOYANO (grana `fix/extras-reserved-in-advance` povrh `fix/reverify-digest-on-error` 316c5ed)
+
+Partnerov (MMK/NauSys) dodatak „Early check in (at 13:00) RESERVED IN ADVANCE“ dolazio je na sajtove doslovno, a ALL-CAPS engleski nastavak ruši provjere stranice (EY T12).
+
+- **Pravilo** (`ExtraNameNormalizer.SYNONYMS`, novi redak uz „One man crew“ → „Skipper“): ALL-CAPS „RESERVED IN ADVANCE“ **na kraju** naziva postaje „(reserved in advance)“. Pokriva i „RESERVED IN ADVANCE!“ / „.“, varijantu u zagradama „(…)“ / „[…]“ te crticu ili dvotočku ispred i crticu iza. Njegove zagrade i crtice nestaju, pa nikad ne nastane dupla zagrada. Kao i do sada, samo preimenovani naziv dobiva stisnute dvostruke razmake i obrezane krajeve.
+  - „Early check in (at 13:00) RESERVED IN ADVANCE“ → „Early check in (at 13:00) (reserved in advance)“
+  - „Early check in (RESERVED IN ADVANCE!)“ / „Early check in - RESERVED IN ADVANCE!“ → „Early check in (reserved in advance)“
+  - **Osjetljivo na velika/mala slova, namjerno:** „reserved in advance“, „(Reserved in advance)“ i kratice (APA, VAT, VHF, BVI, GPS, WC, AC, SUP, TV, USB) se ne diraju. Fraza koja nije na kraju („RESERVED IN ADVANCE: early check in“) ostaje kakva jest.
+- **Gdje djeluje** (isti `normalize`, bez promjene pozivatelja):
+  - **Sync piše naziv:** MMK yacht + offer sync pri insertu **i** pri updateu (put za preimenovanje: yacht od 27.9., offer od 29.9.). NauSys yacht + offer sync **samo pri insertu**.
+  - **Prikaz za EXTERNAL brodove:** `PartnerCopySanitizer.extraName` (DTO dodataka, price-calc, e-mailovi, PDF ugovor) prvo zove `ExtraNameNormalizer`. Zato se na sajtovima novi naziv vidi odmah nakon deploya (uz ISR revalidaciju), i za retke koji u bazi još imaju stari naziv.
+  - **NauSys obligatory lookup** traži i normalizirani i sirovi naziv, pa stari retci i dalje nalaze svoj serviceId.
+  - **Bookingi:** stari bookingi s nazivom prije preimenovanja spajaju se preko partnerova ID-a (`bookedIdentity`, 27.9.), kao kod „Transit log“.
+- **Postojeći retci u bazi (`yacht_extras` / `offer_extras`)** mijenjaju se tek kad partner sync sljedeći put zapiše redak. MMK to radi pri svakom syncu, a NauSys **samo pri insertu**, pa NauSys retci ostaju sa starim nazivom dok se ne obrišu i ponovno ne umetnu. Zato **predlažem jednokratni SQL backfill nakon deploya** (NIJE pokrenut, nije migracija; Mariova odluka). SQL je ručno provjeren na PostgreSQL 18 (throwaway docker, ne na produkciji): regex daje isto što i Kotlin u 17/17 slučajeva. Točno ovaj SELECT + UPDATE na probnim tablicama preimenovao je 2 + 1 redak, APA/VHF i mala slova ostali su netaknuti, a drugi SELECT vraća 0. U SQL-u crtice su `-`, `–` i `—`, a Kotlin prima sve Unicode crtice (`\p{Pd}`). `reservation_extras` / `external_reservation_extras` (snimke u trenutku bookinga) i `extras` (naš katalog) se namjerno ne diraju, kao u V9_60.
+  ```sql
+  -- 1) read-only: koliko redaka
+  WITH p(re) AS (VALUES ('[[:space:]]*(?:[-–—:]+[[:space:]]*)?(?:[(\[][[:space:]]*RESERVED[[:space:]]+IN[[:space:]]+ADVANCE[[:space:]]*[!.]*[[:space:]]*[)\]]|\mRESERVED[[:space:]]+IN[[:space:]]+ADVANCE\M[[:space:]]*[!.]*)[[:space:]]*[-–—]*[[:space:]]*$'))
+  SELECT 'yacht_extras' AS t, count(*) FROM public.yacht_extras, p WHERE name ~ p.re
+  UNION ALL
+  SELECT 'offer_extras', count(*) FROM public.offer_extras, p WHERE name ~ p.re;
+
+  -- 2) backfill (u transakciji; offer_extras ~4M redaka = jedan seq scan, bez indeksa na name)
+  BEGIN;
+  SET LOCAL lock_timeout = '5s';
+  WITH p(re) AS (VALUES ('[[:space:]]*(?:[-–—:]+[[:space:]]*)?(?:[(\[][[:space:]]*RESERVED[[:space:]]+IN[[:space:]]+ADVANCE[[:space:]]*[!.]*[[:space:]]*[)\]]|\mRESERVED[[:space:]]+IN[[:space:]]+ADVANCE\M[[:space:]]*[!.]*)[[:space:]]*[-–—]*[[:space:]]*$'))
+  UPDATE public.yacht_extras ye
+     SET name = regexp_replace(regexp_replace(regexp_replace(ye.name, p.re, ' (reserved in advance)'),
+                '[[:space:]]{2,}', ' ', 'g'), '^[[:space:]]+|[[:space:]]+$', '', 'g')
+    FROM p WHERE ye.name ~ p.re;
+  WITH p(re) AS (VALUES ('[[:space:]]*(?:[-–—:]+[[:space:]]*)?(?:[(\[][[:space:]]*RESERVED[[:space:]]+IN[[:space:]]+ADVANCE[[:space:]]*[!.]*[[:space:]]*[)\]]|\mRESERVED[[:space:]]+IN[[:space:]]+ADVANCE\M[[:space:]]*[!.]*)[[:space:]]*[-–—]*[[:space:]]*$'))
+  UPDATE public.offer_extras oe
+     SET name = regexp_replace(regexp_replace(regexp_replace(oe.name, p.re, ' (reserved in advance)'),
+                '[[:space:]]{2,}', ' ', 'g'), '^[[:space:]]+|[[:space:]]+$', '', 'g')
+    FROM p WHERE oe.name ~ p.re;
+  COMMIT;
+  ```
+  Idempotentno: preimenovani redak više ne odgovara WHERE uvjetu. Napomena: kad dodatak nema katalošku vezu (`extras_id` null), `extrasKey()` je naziv, pa preimenovanje mijenja ključ (isto kao V9_60 i MMK preimenovanje od 27.9.). Košarica otvorena baš u trenutku backfilla izgubit će taj odabrani dodatak.
+- **Testovi:** `ExtraNameNormalizerTests` +5 testova (EY primjer; zagrade `()` / `[]`, crtica, en-crtica, „!“, dvotočka; mala slova i fraza koja nije na kraju ostaju **isti objekt**; APA/VAT/VHF/BVI/GPS/WC/AC/SUP/TV/USB ostaju; idempotentnost, uklj. „One man crew RESERVED IN ADVANCE“ → „Skipper (reserved in advance)“). Klasa **10/10 zeleno**. Uz nju `PartnerCopySanitizerTest` 17/17 i `OfferCharterRulesTests` 9/9 (pozivatelji normalizera).
+- **Lint:** ktlint (1.8.0, gradle `ktlintMainSourceSetCheck` + `ktlintTestSourceSetCheck`) 0 nalaza na obje promijenjene datoteke (cijele datoteke); detekt 0 nalaza na `ExtraNameNormalizer.kt`. Puni ktlint izvještaj ima stare nalaze u drugim datotekama (nisu dio ovog commita).
+- **Datoteke:** `src/main/kotlin/hr/workspace/boat4you/domains/catalouge/utils/ExtraNameNormalizer.kt`, `src/test/kotlin/hr/workspace/boat4you/domains/catalouge/utils/ExtraNameNormalizerTests.kt`.
+- **Bez migracije.** Jar NIJE buildan (lead rebuilda prije deploya 22.10.). Grana je povrh `fix/reverify-digest-on-error`, pa jar nosi i digest i gulet-crewed.
+- **Rollback:** prethodni jar. Ako je backfill pokrenut, nazivi ostaju „(reserved in advance)“ dok MMK sync ne vrati partnerov tekst (NauSys ne vraća).
+
 ## 2026-10-21 — 📬 Dnevni pregled provjera kod partnera samo kad ima greška/anomalija (Mario 21.10.: „kada vidiš grešku mi samo pošalji“) — ⏳ NIJE DEPLOYANO (grana `fix/reverify-digest-on-error` povrh `fix/gulet-crewed-contract` a4116bd)
 
 Mario 21.10.: „kada vidiš grešku mi samo pošalji i onda je sredi“. Admin mail „Provjere kod partnera - dnevni pregled“ (`ReverifyDigestJob`, 07:00 UTC, SYSTEM_ADMIN adrese, ShedLock `reverifyDigest`, samo cusma3 `data-sync`) više ne ide svaki dan. Šalje se samo kad okine barem jedan razlog. Inače pregled ostaje samo u dnevniku aplikacije: INFO `Reverify digest: nothing to report, mail skipped` i odmah iza INFO s cijelim tijelom.
