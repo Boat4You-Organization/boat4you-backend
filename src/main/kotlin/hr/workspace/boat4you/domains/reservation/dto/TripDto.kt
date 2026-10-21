@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.dto
 
 import hr.workspace.boat4you.domains.catalouge.dto.CapacityDto
+import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import java.time.LocalDateTime
 
 /**
@@ -52,6 +53,13 @@ data class TripYachtDto(
     val crewNumber: Int? = null,
     /** Capacity as on the boat page; the hub is English-only, so notes print verbatim. */
     val capacity: CapacityDto? = null,
+    /**
+     * The reservation's displayed charter type, as my-bookings and the admin detail show it
+     * ([hr.workspace.boat4you.domains.catalouge.utils.ReservationCharterRules.displayType]): a gulet reads CREWED
+     * (Mario 21.10.2026), every other boat the booked offer's product. Serialised as the enum name; the hub shows the
+     * crew count only for a crewed type (CREWED / ALL_INCLUSIVE / CRUISE).
+     */
+    val charterType: CharterType? = null,
 )
 
 data class TripMarinaDto(

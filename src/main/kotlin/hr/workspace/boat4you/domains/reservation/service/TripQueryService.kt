@@ -2,7 +2,9 @@ package hr.workspace.boat4you.domains.reservation.service
 
 import hr.workspace.boat4you.domains.catalouge.capacity.CapacityColumns
 import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
+import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import hr.workspace.boat4you.domains.catalouge.utils.MainImageRules
+import hr.workspace.boat4you.domains.catalouge.utils.ReservationCharterRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.reservation.dto.TripDto
@@ -102,6 +104,9 @@ class TripQueryService(
                 maxPersons = yacht.maxPersons?.toInt()?.takeIf { it > 0 },
                 crewNumber = yacht.crewNumber?.toInt()?.takeIf { it > 0 },
                 capacity = capacityMapper.capacity(CapacityColumns.of(yacht), YachtCapacityMapper.Mode.FULL),
+                // As my-bookings / admin: the booked offer's product (reservation_view.charter_type = offer.product),
+                // a gulet always CREWED (Mario 21.10.2026).
+                charterType = ReservationCharterRules.displayType(flow.offer?.product, GuletRules.isGulet(yacht.vesselType, yacht.model?.name)),
             ),
             marina = marina,
             crewListUrl = reservation.crewListUrl?.takeIf { it.isNotBlank() },
