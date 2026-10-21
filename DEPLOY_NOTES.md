@@ -1,5 +1,39 @@
 # Backend deploy notes
 
+## 2026-10-21 — 📬 Dnevni pregled provjera kod partnera samo kad ima greška/anomalija (Mario 21.10.: „kada vidiš grešku mi samo pošalji“) — ⏳ NIJE DEPLOYANO (grana `fix/reverify-digest-on-error` povrh `fix/gulet-crewed-contract` a4116bd)
+
+Mario 21.10.: „kada vidiš grešku mi samo pošalji i onda je sredi“. Admin mail „Provjere kod partnera - dnevni pregled“ (`ReverifyDigestJob`, 07:00 UTC, SYSTEM_ADMIN adrese, ShedLock `reverifyDigest`, samo cusma3 `data-sync`) više ne ide svaki dan. Šalje se samo kad okine barem jedan razlog. Inače pregled ostaje samo u dnevniku aplikacije: INFO `Reverify digest: nothing to report, mail skipped` i odmah iza INFO s cijelim tijelom.
+
+- **Mail:** naslov dobiva prefiks „⚠️ “ („⚠️ Provjere kod partnera - dnevni pregled (Boat4You)“). Tijelo počinje s „ZAŠTO OVAJ MAIL“ i jednim retkom po razlogu; iza praznog retka ide izvještaj **točno kao do sada** (runovi, promjene statusa, eskalirane agencije, A2). Isti predložak `email/adminReverifyDigest`, isti put (EmailService, SYSTEM_ADMIN), agencije samo po ID-u.
+- **Razlozi** (čisto pravilo `ReverifyDigestJob.digestTriggers(DigestFacts)`, bez baze i sata):
+  1. **PREKID:** run iz zadnja 24 h s bilješkom (`aborted_reason`) koja nije rutinska: breaker, hard deadline, vremenski budžet MMK-a („stopped at the 100-min time budget…“), NAUSYS_REVERIFY prebačen na OFF, 429 stop, „probe breakers fired“. Rutinske bilješke (ne šalju): D3 sažetak „D3 LOG|WRITE <label>: …“ (`NauSysD3Run.finish`) i bilješka admin undo-a („undo of run #…“). Run bez `ended_at` (u 07:00 još traje ili ga je prekinuo restart) je također PREKID. **NEMA RUNA:** job koji prekidači pokreću svaki dan nema runa u zadnja 24 h. MMK_FREE uvijek; MMK_OPTION kad je `MMK_OPTION_VERIFY` ≠ OFF; NAUSYS_REVERIFY kad je `NAUSYS_REVERIFY` ≠ OFF; NAUSYS_D3 kad je `NAUSYS_D3_MODE` ≠ LEGACY (`expectedDailyJobs`, čita snapshot `RealPriceSwitches`).
+  2. **NOVA ESKALACIJA:** agencija eskalirana u zadnja 24 h, a prethodnih 6 dana nije bila. **TRAJNA ESKALACIJA:** agencija eskalirana ≥ 7 dana u prozoru od 7 dana (isti broj „N dana“ kao u izvještaju), treba odluka. Šalje se svaki dan dok traje.
+  3. **A2:** ispod 1.000 točno 3. dnevni pregled zaredom (dan za `SEARCH_DEMOTE_STALE_OPTIONS=false`), ili jučer ispod 1.000, a danas ≥ 1.000.
+  4. **SKRIVANJE:** WRITE run sakrio je više od 10 % termina koje je kvotirao (`hidden_periods` / `quoted`, uz `quoted` ≥ 100), ili flip log zadnja 24 h ima više od 500 redaka ukupno (redovi admin undo-a se ne broje).
+  5. **LOG RUN:** LOG run s `would_flip_rows` > 500, ili > 10 % svojih poziva (uz ≥ 100 poziva).
+- **Pragovi** (konstante s KDocom u `ReverifyDigestJob.Companion`): `ANOMALY_SHARE_PERCENT = 10`, `ANOMALY_ROWS = 500`, `A2_THRESHOLD = 1000` (postojao), `A2_DAYS_BELOW = 3`, `PERSISTENT_ESCALATION_DAYS = 7`, `MIN_SAMPLE_FOR_SHARE = 100`. Zadnji prag je dodan: udio se ne gleda na runovima s manje od 100 poziva / kvota (D3 retry drain od nekoliko odgovora, admin undo, D3 koji ne broji kvote). Takve runove sudi samo prag od 500 redaka.
+- **SQL ostaje read-only:** isti upiti. Upit eskalacija dobio je dva stupca (`bool_or` za zadnja 24 h / prethodnih 6 dana), ispis je isti. Upiti se sada izvrše jednom, pa se iz istih redaka piše izvještaj i računaju razlozi.
+- **Što data model ne podržava:**
+  - **A2 povijest se ne sprema** (nema tablice, digest ostaje read-only). Pamti se u memoriji JVM-a po UTC danu (zadnjih 7 dana). Restart cusma3 kreće ispočetka, pa mail „3. dan“ nakon restarta može kasniti do 2 dana. „Ispod → iznad“ okida samo kad je jučerašnji pregled u istoj JVM.
+  - **Run koji je bacio iznimku** se u `reverify_run` ne vidi. MMK i NauSys reverifier i D3 u `finally` zatvaraju run s `aborted_reason = null` (D3 s rutinskim sažetkom), pa izgleda kao čist run. Vidi se samo u dnevniku cusma3 (ERROR). Da bi digest to vidio, ti servisi trebali bi upisati bilješku („failed: …“). Nije dirano (izvan opsega).
+  - **NEMA RUNA** čita prekidače u 07:00. Prekidač uključen nakon svog slota (npr. NAUSYS_REVERIFY u 18:00) jednom javi lažni „nema runa“.
+  - **Prije deploya provjeriti** (read-only, cusma4): `SELECT id, job, mode, calls, would_flip_rows, aborted_reason FROM reverify_run WHERE job = 'NAUSYS_D3' ORDER BY id DESC LIMIT 20`. D3 `calls` broji odgovore partnera, a `would_flip_rows` redove; noćni D3 14.10. imao je 458 bi-redova. Ako noćni D3 redovito ima više redova od 10 % svojih poziva, pravilo 5 okida svaki dan. Tada podići prag za D3 ili ga izuzeti (Mariova odluka).
+- **Testovi:**
+  - `ReverifyDigestTriggersTest` (novo, 12 testova):
+    - pregled od 21.10. kao fixture: runovi #36–#41; NAUSYS_REVERIFY LOG wouldFlip=2093 → pravilo 5; agencija 1194 7 dana → pravilo 2; flipovi 190 + 317 = 507 redaka → pravilo 4; pravila 1 i 3 ne okidaju;
+    - miran dan: 0 razloga → bez maila, tijelo nepromijenjeno;
+    - svako pravilo posebno s granicama: točno 10 % i točno 500 ne okidaju; A2 3. dan da, 2. i 4. ne; dan bez pregleda prekida niz; UNDO se ne broji; D3 i UNDO bilješke su rutinske; prekidači → očekivani jobovi.
+  - `MmkFlipLogUndoIntegrationTest` (PostgreSQL 18, Testcontainers):
+    - postojeći test digesta sada provjerava naslov „⚠️ …“ i tijelo koje počinje s „ZAŠTO OVAJ MAIL“ (2 nove eskalacije);
+    - novo: miran dan → `sendEmail` nije pozvan;
+    - novo: eskalacije na pravom SQL-u (nova u odnosu na prethodnih 6 dana, 7 dana = trajna, run stariji od 7 dana se ne broji).
+  - **26/26 zeleno** (12 + cijela klasa od 14).
+- **Lint:** ktlint 0 nalaza na sve tri promijenjene datoteke (cijele datoteke). detekt: `ReverifyDigestJob.kt` 0 nalaza; u testu je `LongParameterList` na pomoćnoj funkciji suzbijen kao u ostalim fixtureima. Puni detekt pada na starim nalazima (nije dio ovog commita).
+- **Datoteke:** `src/main/kotlin/hr/workspace/boat4you/domains/external/job/ReverifyDigestJob.kt`, `src/test/kotlin/hr/workspace/boat4you/domains/external/job/ReverifyDigestTriggersTest.kt` (novo), `src/test/kotlin/hr/workspace/boat4you/domains/external/mmk/MmkFlipLogUndoIntegrationTest.kt`. Novi konstruktorski parametar `RealPriceSwitches` (postojeći `@Component`).
+- **Bez migracije** (jar nosi V9_79 + V9_82–V9_92, kao `fix/gulet-crewed-contract`).
+- **Jar:** `./gradlew bootJar -x test` → `build/libs/boat4you-0.0.1-SNAPSHOT.jar`, md5 `0e203f6b3250fbf536b49eb8a7794770`. Jedan jar nosi gulet-crewed i ovu promjenu. Ponašanje digesta mijenja samo cusma3 (job je `data-sync`), a jar je isti za oba čvora.
+- **Rollback:** prethodni jar; u bazi se ništa ne mijenja.
+
 ## 2026-10-21 — ⛵ Gulet = uvijek Crewed u ugovoru PDF (samo gulet), my-bookings/admin DTO, trip stranici; podsjetnik prije polaska guletu bez retka o licenci (Mario 21.10.: „GULET JE UVIJEK CREWED“) — ⏳ NIJE DEPLOYANO (grana `fix/gulet-crewed-contract` iz origin/main `9eb99c7`)
 
 Mario 21.10. (stavka 10, nastavak gulet pravila od 9.10.): web i admin od 9.10. za gulet nikad ne kažu Bareboat (`GuletRules`), ali rezervacija je i dalje čitala partnerov tip. Ugovor o najmu (PDF) gledao je samo extrase, pa je gulet bez skipera dobio „Bareboat charter“. My-bookings i admin detalj rezervacije vraćali su `charterType` ravno iz `reservation_view.charter_type` = `offer.product` (prod: 97 budućih gulet ponuda partner označava BAREBOAT). Odluka: **GULET JE UVIJEK CREWED**.

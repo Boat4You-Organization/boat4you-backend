@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.external.mmk
 
 import com.zaxxer.hikari.HikariDataSource
+import hr.workspace.boat4you.common.config.RealPriceSwitchesFixture
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
@@ -18,6 +19,7 @@ import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.string.shouldStartWith
 import jakarta.persistence.EntityManager
 import jakarta.persistence.EntityManagerFactory
 import org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
@@ -470,15 +472,7 @@ class MmkFlipLogUndoIntegrationTest {
         offer(5, "FREE", yacht = 3, from = F.plusDays(7))
         inTx { offers.markMmkPeriodUnavailable(3, F.plusDays(7), T.plusDays(7), run, ReverifyJobs.MMK_FREE, "TWO_STRIKE_EMPTY", null, TODAY, false) }
         runs.finish(run, abortedReason = null, escalatedAgencyIds = listOf(1L, 77L))
-        val mails = mutableListOf<List<Any?>>()
-        val email =
-            mock(EmailService::class.java) { inv ->
-                if (inv.method.name == "sendEmail") mails += inv.arguments.toList()
-                null
-            }
-        val users = mock(UserRepository::class.java)
-        `when`(users.findAllAdminEmailAddresses()).thenReturn(listOf("admin@example.test"))
-        val job = ReverifyDigestJob(jdbc, email, users)
+        val job = digestJob()
 
         val body = job.buildDigest()
 
@@ -494,7 +488,66 @@ class MmkFlipLogUndoIntegrationTest {
         job.sendDigest()
         val mail = mails.single()
         mail[0] shouldBe listOf("admin@example.test")
+        mail[1] shouldBe "⚠️ Provjere kod partnera - dnevni pregled (Boat4You)"
         mail[2] shouldBe ReverifyDigestJob.TEMPLATE
-        ((mail[3] as Map<*, *>)["reportBody"] as String) shouldContain "A2 KRITERIJ"
+        val mailed = (mail[3] as Map<*, *>)["reportBody"] as String
+        mailed shouldStartWith "ZAŠTO OVAJ MAIL\n  NOVA ESKALACIJA: agencija 1 (prethodnih 6 dana nije bila eskalirana)\n" +
+            "  NOVA ESKALACIJA: agencija 77 (prethodnih 6 dana nije bila eskalirana)\n\nPROVJERE KOD PARTNERA"
+        mailed shouldContain "A2 KRITERIJ"
+    }
+
+    @Test
+    fun `a quiet day is not mailed, the digest stays in the log`() {
+        offer(1, "OPTION", ext = "2")
+        runs.finish(runs.start(ReverifyJobs.MMK_FREE, ReverifyRunMode.WRITE))
+        val job = digestJob()
+
+        job.buildDigest() shouldStartWith "PROVJERE KOD PARTNERA"
+        job.sendDigest()
+
+        mails shouldBe emptyList()
+    }
+
+    @Test
+    fun `escalations read new against the 6 days before and persistent on 7 days`() {
+        fun escalatedDaysAgo(
+            days: Int,
+            vararg agencies: Long,
+        ) {
+            val run = runs.start(ReverifyJobs.NAUSYS_REVERIFY, ReverifyRunMode.LOG)
+            runs.finish(run, escalatedAgencyIds = agencies.toList())
+            jdbc.update("UPDATE reverify_run SET started_at = started_at - make_interval(days => ?) WHERE id = ?", days, run)
+        }
+        runs.finish(runs.start(ReverifyJobs.MMK_FREE, ReverifyRunMode.WRITE))
+        escalatedDaysAgo(3, 5L)
+        escalatedDaysAgo(0, 5L, 6L)
+        (0..6).forEach { escalatedDaysAgo(it, 9L) }
+        escalatedDaysAgo(8, 10L) // outside the 7-day window
+        escalatedDaysAgo(0, 10L)
+
+        val body = digestJob().buildDigest()
+
+        body shouldStartWith "ZAŠTO OVAJ MAIL\n"
+        body shouldContain "NOVA ESKALACIJA: agencija 6 "
+        body shouldContain "NOVA ESKALACIJA: agencija 10 "
+        body shouldNotContain "NOVA ESKALACIJA: agencija 5 "
+        body shouldNotContain "NOVA ESKALACIJA: agencija 9 "
+        body shouldContain "TRAJNA ESKALACIJA: agencija 9, 7 dana u zadnjih 7 - treba odluka"
+        body shouldNotContain "TRAJNA ESKALACIJA: agencija 5"
+        body shouldContain "agencija 9: NAUSYS_REVERIFY, 7 dana"
+    }
+
+    private val mails = mutableListOf<List<Any?>>()
+
+    private fun digestJob(): ReverifyDigestJob {
+        mails.clear()
+        val email =
+            mock(EmailService::class.java) { inv ->
+                if (inv.method.name == "sendEmail") mails += inv.arguments.toList()
+                null
+            }
+        val users = mock(UserRepository::class.java)
+        `when`(users.findAllAdminEmailAddresses()).thenReturn(listOf("admin@example.test"))
+        return ReverifyDigestJob(jdbc, email, users, RealPriceSwitchesFixture.switches())
     }
 }
