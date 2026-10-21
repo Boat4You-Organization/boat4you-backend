@@ -57,8 +57,11 @@ import org.openapitools.client.mmk.model.Offer as MmkOffer
  *    from its own periods: a long block MMK stopped quoting is found even while the yacht's weeks still sell.
  *  - Breakers before any write: too few decided week groups, too many call failures, too large a share of the
  *    fleet's week groups empty (then nothing is written), too large a share of the other groups empty (then only
- *    those are skipped), or too large a share of ONE agency's groups of a shape empty (an agency whose feed broke
- *    looks exactly like one that withdrew its list; that decision goes to a human via the ERROR log).
+ *    those are skipped), or too large a share of ONE agency's week groups empty (an agency whose feed broke looks
+ *    exactly like one that withdrew its list; that decision goes to a human via the ERROR log and the digest). An
+ *    agency's other lengths are escalated the same way only when its weeks do not vouch for its feed (they are
+ *    escalated too, or fewer than [MIN_AGENCY_SEASONS_FOR_CAP] of them were decided): a small agency's non-weekly
+ *    sample is a few clustered periods, and more than half of it empty is its normal state (21.10.2026).
  *  - A wall-clock budget, because `getOffers` retries 3x with a 60 s read timeout and an outage would otherwise
  *    run into the 16:40 availability slot.
  *
@@ -107,7 +110,8 @@ class MmkFreeOfferReverifyService(
         const val MAX_EMPTY_SHARE = 0.10
 
         // One agency at a time is the realistic failure (credentials, a company flag, a 200-[] answer for its
-        // yachts). Above this share of an agency's seasons we stop trusting the answer and ask a human.
+        // yachts). Above this share of an agency's week groups we stop trusting the answer and ask a human; its other
+        // lengths only when its weeks do not vouch for it (see suspectAgencies).
         const val MAX_EMPTY_SHARE_PER_AGENCY = 0.50
         const val MIN_AGENCY_SEASONS_FOR_CAP = 5
 
@@ -378,21 +382,10 @@ class MmkFreeOfferReverifyService(
             return FreeOutcome(seasons.size, empty.size, it)
         }
 
-        // Agencies whose whole fleet answers empty are not decided by this job - per shape, and a broken week feed
-        // makes the agency's other lengths suspect as well.
-        val suspect =
-            emptyByAgency
-                .filter { (key, e) ->
-                    val d = decidedByAgency[key]?.get() ?: 0
-                    d >= MIN_AGENCY_SEASONS_FOR_CAP && e.get().toDouble() / d > MAX_EMPTY_SHARE_PER_AGENCY
-                }.keys
-        suspect.forEach { (agency, weekly) ->
-            log.error(
-                "MMK free-offer reverify: agency $agency has ${emptyByAgency[agency to weekly]} of ${decidedByAgency[agency to weekly]} " +
-                    "${if (weekly) "week" else "non-weekly"} groups unquoted - looks like a broken feed or a whole-fleet withdrawal; " +
-                    "NOT hidden automatically, decide by hand",
-            )
-        }
+        // Agencies whose whole fleet answers empty are not decided by this job: their weeks always, their other lengths
+        // only when the weeks do not vouch for the feed (suspectAgencies). A broken week feed makes the agency's other
+        // lengths suspect as well.
+        val suspect = suspectAgencies(decidedByAgency, emptyByAgency)
         if (empty.isEmpty()) return FreeOutcome(seasons.size, 0, null, suspect)
 
         // Other lengths are judged on their own share once there are enough of them to have one; the weeks vouch that
@@ -439,6 +432,67 @@ class MmkFreeOfferReverifyService(
                 if (ctx.outOfTime.get()) "; STOPPED at the time budget, the rest runs tomorrow" else "",
         )
         return FreeOutcome(seasons.size, empty.size, null, suspect)
+    }
+
+    /**
+     * The (agency, weekly) shapes this run leaves to a human (ERROR log, `reverify_run.escalated_agency_ids`, digest),
+     * each judged only with at least [MIN_AGENCY_SEASONS_FOR_CAP] decided groups and more than
+     * [MAX_EMPTY_SHARE_PER_AGENCY] of them unquoted:
+     *  - the week groups of an agency, always (agency 1504 on 14., 17. and 18.10.2026);
+     *  - its other lengths only when its weeks do not vouch for its feed: the weeks are escalated too, or fewer than
+     *    [MIN_AGENCY_SEASONS_FOR_CAP] of them were decided. When the weeks vouch, its unquoted other lengths go through
+     *    the two-strike path like any other group (fleet breakers, per-run cap and flip log unchanged). A small
+     *    agency's non-weekly sample is a handful of clustered periods (off-season 14-night blocks, starts on a day its
+     *    boats do not embark), so more than half of it empty is its normal state, not a broken feed: run #37
+     *    (20.10.2026) had 70 of 8,003 non-weekly groups unquoted fleet-wide, 31 of them at four agencies with 43
+     *    non-weekly groups in all (1194 15/19, 1444 6/6, 1560 6/11, 1701 4/7) whose weeks were never escalated, and
+     *    ~717 of their periods were re-escalated every day without ever being decided.
+     */
+    private fun suspectAgencies(
+        decidedByAgency: Map<Pair<Long, Boolean>, AtomicInteger>,
+        emptyByAgency: Map<Pair<Long, Boolean>, AtomicInteger>,
+    ): Set<Pair<Long, Boolean>> {
+        fun decided(key: Pair<Long, Boolean>) = decidedByAgency[key]?.get() ?: 0
+
+        fun empty(key: Pair<Long, Boolean>) = emptyByAgency[key]?.get() ?: 0
+
+        fun overCap(key: Pair<Long, Boolean>) = decided(key) >= MIN_AGENCY_SEASONS_FOR_CAP && empty(key).toDouble() / decided(key) > MAX_EMPTY_SHARE_PER_AGENCY
+
+        val suspect = mutableSetOf<Pair<Long, Boolean>>()
+        emptyByAgency.keys.filter(::overCap).sortedWith(compareBy({ it.first }, { !it.second })).forEach { key ->
+            val agency = key.first
+            val weeks = agency to true
+            val counts = "${empty(key)} of ${decided(key)}"
+            when {
+                key.second -> {
+                    suspect += key
+                    log.error(
+                        "MMK free-offer reverify: agency $agency has $counts week groups unquoted - looks like a broken feed or a " +
+                            "whole-fleet withdrawal; NOT hidden automatically, decide by hand",
+                    )
+                }
+                decided(weeks) < MIN_AGENCY_SEASONS_FOR_CAP || overCap(weeks) -> {
+                    suspect += key
+                    val why =
+                        if (overCap(weeks)) {
+                            "its week groups are unquoted too (${empty(weeks)} of ${decided(weeks)})"
+                        } else {
+                            "only ${decided(weeks)} of its week groups decided (< $MIN_AGENCY_SEASONS_FOR_CAP), no weekly evidence for its feed"
+                        }
+                    log.error(
+                        "MMK free-offer reverify: agency $agency has $counts non-weekly groups unquoted and $why - looks like a " +
+                            "broken feed or a whole-fleet withdrawal; NOT hidden automatically, decide by hand",
+                    )
+                }
+                else ->
+                    log.info(
+                        "MMK free-offer reverify: agency $agency has $counts non-weekly groups unquoted, but its weeks vouch for its " +
+                            "feed (${empty(weeks)} of ${decided(weeks)} week groups unquoted) - NOT escalated, its non-weekly periods " +
+                            "go through the two-strike check",
+                    )
+            }
+        }
+        return suspect
     }
 
     /**

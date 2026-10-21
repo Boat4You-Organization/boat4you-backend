@@ -4,12 +4,14 @@ import hr.workspace.boat4you.common.config.RealPriceSwitches
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.StaleMmkOfferCombo
 import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
+import hr.workspace.boat4you.domains.external.evidence.ReverifyJobs
 import hr.workspace.boat4you.domains.external.evidence.ReverifyRunStore
 import hr.workspace.boat4you.domains.external.mmk.client.MmkRetryableClient
 import hr.workspace.boat4you.domains.external.mmk.model.MmkDateTimeWrapper
 import hr.workspace.boat4you.domains.external.mmk.service.MmkFreeOfferReverifyService
 import hr.workspace.boat4you.domains.external.mmk.service.MmkYachtOfferSyncService
 import hr.workspace.boat4you.domains.external.service.YachtSyncMutex
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.nulls.shouldBeNull
@@ -41,6 +43,12 @@ class MmkFreeOfferReverifyServiceTests {
     private val calls = ConcurrentHashMap<String, Int>()
     private val flips = ConcurrentHashMap.newKeySet<Pair<Long, LocalDate>>()
     private val flipPeriods = ConcurrentHashMap.newKeySet<Triple<Long, LocalDate, LocalDate>>()
+
+    // (job, reason) of every flip-log row markMmkPeriodUnavailable was asked to write
+    private val flipLog = ConcurrentHashMap.newKeySet<Pair<String, String>>()
+
+    // escalated agency ids of every finished run (reverify_run.escalated_agency_ids; null = none)
+    private val escalations = mutableListOf<List<Long>>()
     private var combos: List<StaleMmkOfferCombo> = emptyList()
 
     // rows markPeriodUnavailable reports as flipped (0 = an option or our booking arrived since the candidate query)
@@ -89,6 +97,7 @@ class MmkFreeOfferReverifyServiceTests {
                     if (flipResult > 0) {
                         flips += inv.getArgument<Long>(0) to inv.getArgument<LocalDate>(1)
                         flipPeriods += Triple(inv.getArgument<Long>(0), inv.getArgument<LocalDate>(1), inv.getArgument<LocalDate>(2))
+                        flipLog += inv.getArgument<String>(4) to inv.getArgument<String>(5)
                     }
                     flipResult
                 }
@@ -134,6 +143,18 @@ class MmkFreeOfferReverifyServiceTests {
             }
         }
 
+    private val runStore =
+        mock(ReverifyRunStore::class.java) { inv ->
+            when (inv.method.name) {
+                "start" -> 0L
+                "finish" -> {
+                    synchronized(escalations) { escalations += (inv.arguments[3] as Collection<*>?).orEmpty().map { it as Long } }
+                    null
+                }
+                else -> null
+            }
+        }
+
     // MMK_OPTION_VERIFY at its default (OFF): these are the regression tests of today's behaviour.
     private val switches = mock(RealPriceSwitches::class.java).also { `when`(it.mmkOptionVerify).thenReturn(RealPriceSwitches.MmkOptionVerifyMode.OFF) }
     private val service =
@@ -144,7 +165,7 @@ class MmkFreeOfferReverifyServiceTests {
             jdbc,
             mock(MmkYachtOfferSyncService::class.java),
             mock(PartnerPeriodCheckStore::class.java),
-            mock(ReverifyRunStore::class.java),
+            runStore,
             switches,
         )
 
@@ -279,18 +300,94 @@ class MmkFreeOfferReverifyServiceTests {
         strikes.keys.none { it.startsWith("10|") } shouldBe true
     }
 
+    // ---- per-agency breaker (21.10.2026: the weeks of an agency vouch for its other lengths)
+
+    /** Agency 77 on yachts 1..6: six quoted weeks each and one 14-night block each that MMK does not quote. */
+    private fun agencyWithSellingWeeksAndEmptyBlocks(jan2: LocalDate): List<StaleMmkOfferCombo> =
+        (1L..6L).flatMap { y -> season(y, 6, agency = 77).also { w -> quoted[y] = w.map { it.dateFrom }.toSet() } + combo(y, 77, jan2, 14) }
+
     @Test
-    fun `an agency whose long blocks all answer empty is escalated while its weeks are still judged`() {
-        // MMK not quoting ANY long period of one agency looks like a call-shape problem, not eight withdrawals
+    fun `an agency whose weeks sell is not escalated for its long blocks - they get first strikes and are hidden on day two`() {
+        // Le Bateau Blanc 1444, 20.10.2026: 6 of 6 non-weekly groups (off-season 14-night blocks) empty while its weeks
+        // sell. The weeks vouch for the feed, so the blocks are judged one by one like any other group.
         val jan2 = LocalDate.of(2027, 1, 2)
-        combos = healthyFleet() + (1L..8L).flatMap { y -> season(y, 6, agency = 77) + combo(y, 77, jan2, 14) } + season(11, 6, agency = 77)
-        (1L..8L).forEach { y -> quoted[y] = combos.filter { it.yachtId == y && it.dateTo == it.dateFrom.plusDays(7) }.map { it.dateFrom }.toSet() }
+        combos = healthyFleet() + agencyWithSellingWeeksAndEmptyBlocks(jan2) + season(11, 6, agency = 77) // 1 of 7 week groups empty
+
+        val r1 = service.reverifyFreeOffers(day1)
+
+        r1.aborted.shouldBeNull()
+        r1.firstStrikes shouldBe 12
+        (1L..6L).forEach { y -> strikes["$y|$jan2|${jan2.plusDays(14)}"] shouldBe (day1 to null) }
+        strikes.keys.count { it.startsWith("11|") } shouldBe 6 // its weeks are judged as before
+        flips.isEmpty() shouldBe true
+
+        val r2 = service.reverifyFreeOffers(day2)
+
+        r2.hiddenPeriods shouldBe 12
+        flipPeriods.filter { it.first in 1L..6L }.shouldContainExactlyInAnyOrder((1L..6L).map { Triple(it, jan2, jan2.plusDays(14)) })
+        flipLog.shouldContainExactly(ReverifyJobs.MMK_FREE to MmkFreeOfferReverifyService.REASON_TWO_STRIKE_EMPTY)
+        escalations.flatten().shouldBeEmpty()
+    }
+
+    @Test
+    fun `an agency without weekly evidence is escalated for its long blocks as before`() {
+        val jan2 = LocalDate.of(2027, 1, 2)
+        // 78: long blocks only, 4 of 6 empty
+        val agency78 = (1L..6L).map { y -> combo(y, 78, jan2, 14) }
+        (1L..2L).forEach { y -> quotedPeriods[y] = setOf(jan2 to jan2.plusDays(14)) }
+        // 79: only 3 decided week groups (all quoted), 5 of 6 long blocks empty
+        val agency79 = (11L..16L).map { y -> combo(y, 79, jan2, 14) } + (11L..13L).flatMap { y -> season(y, 3, agency = 79) }
+        (11L..13L).forEach { y -> quoted[y] = agency79.filter { it.yachtId == y && it.dateTo == it.dateFrom.plusDays(7) }.map { it.dateFrom }.toSet() }
+        quotedPeriods[11] = setOf(jan2 to jan2.plusDays(14))
+        combos = healthyFleet() + agency78 + agency79
 
         val r = service.reverifyFreeOffers(day1)
 
         r.aborted.shouldBeNull()
-        strikes.keys.none { k -> k.substringBefore('|').toLong() in 1L..8L } shouldBe true
-        strikes.keys.count { it.startsWith("11|") } shouldBe 6
+        r.firstStrikes shouldBe 0
+        strikes.isEmpty() shouldBe true
+        escalations.single().shouldContainExactlyInAnyOrder(78L, 79L)
+    }
+
+    @Test
+    fun `an agency whose weeks are mostly unquoted is escalated for both shapes as before`() {
+        // agency 80: 4 of 6 week groups empty (67 %) and 6 of 6 long blocks empty - the weeks cannot vouch for anything
+        val jan2 = LocalDate.of(2027, 1, 2)
+        val weeks = (1L..6L).flatMap { y -> season(y, 3, agency = 80) }
+        (1L..2L).forEach { y -> quoted[y] = weeks.filter { it.yachtId == y }.map { it.dateFrom }.toSet() }
+        combos = healthyFleet() + weeks + (1L..6L).map { y -> combo(y, 80, jan2, 14) }
+
+        val r = service.reverifyFreeOffers(day1)
+
+        r.aborted.shouldBeNull()
+        r.firstStrikes shouldBe 0
+        strikes.isEmpty() shouldBe true
+        escalations.single() shouldContainExactly listOf(80L)
+    }
+
+    @Test
+    fun `the fleet-wide week breaker still stops everything, the long blocks of an agency whose weeks vouch for it included`() {
+        val jan2 = LocalDate.of(2027, 1, 2)
+        combos = healthyFleet() + agencyWithSellingWeeksAndEmptyBlocks(jan2) + (21L..40L).flatMap { season(it, 3, agency = 500 + it) } // 20 / 86
+
+        val r = service.reverifyFreeOffers(day1)
+
+        r.aborted.shouldNotBeNull() shouldContain "outage"
+        strikes.isEmpty() shouldBe true
+    }
+
+    @Test
+    fun `the fleet-wide non-weekly breaker still skips the long blocks of an agency whose weeks vouch for it`() {
+        val jan2 = LocalDate.of(2027, 1, 2)
+        val longOnes = (200L until 260L).map { y -> combo(y, 2000 + y, jan2, 14) }
+        (200L until 250L).forEach { y -> quotedPeriods[y] = setOf(jan2 to jan2.plusDays(14)) } // with agency 77: 16 of 66 empty
+        combos = healthyFleet() + agencyWithSellingWeeksAndEmptyBlocks(jan2) + longOnes
+
+        val r = service.reverifyFreeOffers(day1)
+
+        r.aborted.shouldBeNull()
+        strikes.isEmpty() shouldBe true
+        escalations.flatten().shouldBeEmpty()
     }
 
     @Test
