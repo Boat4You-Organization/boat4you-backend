@@ -14,6 +14,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtraRepository
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
+import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysObligatoryExtrasService
 import org.slf4j.Logger
@@ -251,19 +252,26 @@ class PriceCalculationService(
         // buckets, so alreadyCounted alone would let them through).
         alreadyCounted += ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, allYachtExtras)
 
-        val yachtExtrasByName = allYachtExtras.associateBy { it.name }
+        // The re-quote names a service through ExtraNameNormalizer, but a row the NauSys
+        // sync inserted before a rule existed keeps the raw partner name (it writes the
+        // name on insert only): rows are looked up and names compared under both
+        // spellings, an exact name first.
+        fun sameName(name: String) = ExtraNameNormalizer.normalize(name)!!.trim().lowercase()
+
+        val yachtExtrasByName =
+            allYachtExtras.associateBy { ExtraNameNormalizer.normalize(it.name) } + allYachtExtras.associateBy { it.name }
         // The re-quote returns the whole obligatory list, base items included. With
         // several offer rows under one catalogue key (Skipper + "Skipper's liability
         // insurance") a base item can come back under its own name rather than the
         // shared key, so names already in the price count as accounted for too.
         val namesCounted =
-            (base.selectedExtrasInPrice + base.selectedExtrasAtBase).mapTo(HashSet()) { it.name.trim().lowercase() }
+            (base.selectedExtrasInPrice + base.selectedExtrasAtBase).mapTo(HashSet()) { sameName(it.name) }
 
         val promoted =
             obligatory.mapNotNull { o ->
                 val ye = yachtExtrasByName[o.name]
                 val key = ye?.extrasKey() ?: o.name
-                if (o.name.trim().lowercase() in namesCounted) return@mapNotNull null
+                if (sameName(o.name) in namesCounted) return@mapNotNull null
                 // add() == false -> already accounted for (base obligatory / selected) -> skip
                 if (key.isBlank() || !alreadyCounted.add(key)) return@mapNotNull null
                 ExtrasPriceDto(

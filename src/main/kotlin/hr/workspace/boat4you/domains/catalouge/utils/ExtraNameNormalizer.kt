@@ -8,14 +8,20 @@ package hr.workspace.boat4you.domains.catalouge.utils
  * customer extras tab or in e-mails, and the admin offer builder - which finds the skipper row by the keyword
  * "skipper" - did not find it at all (Mario 24.9.2026: show it as Skipper everywhere).
  *
- * Applied only where the yacht / offer sync WRITES the name (MMK + NauSys, on insert). Everything that MATCHES a
+ * Applied where the yacht / offer sync WRITES the name (MMK on insert and update, NauSys on insert only) and where a
+ * name is read (PartnerCopySanitizer.extraName for display, OfferCharterRules.roleOf). Everything that MATCHES a
  * partner extra (catalogue `match_keys`, externalId, payment-type keywords) keeps using the raw partner name.
- * V9_60 applied the same rule to the rows that already existed - keep its SQL pattern in step when adding a rule.
+ * A row written before a rule existed keeps its old name until a sync rewrites it (V9_60 backfilled "One man crew";
+ * a later rule's comment says where its backfill is), so code that joins a stored name to a partner name compares
+ * both spellings (NauSysObligatoryExtrasService, PriceCalculationService.mergeNausysObligatory).
  *
  * A name no rule matches comes back byte-for-byte unchanged (no general trim / whitespace cleanup): stored names are
  * join keys (extrasKey() falls back to the name, NauSysObligatoryExtrasService maps names back to NauSys services).
  */
 object ExtraNameNormalizer {
+    /** Whitespace incl. the no-break space (a decoded &nbsp;): Java's `\s` is ASCII-only. */
+    private const val WS = """[\s\xA0]"""
+
     /**
      * Partner phrase (whole words, case-insensitive unless the row says otherwise) -> our label. Add a row to cover
      * another partner wording.
@@ -30,7 +36,7 @@ object ExtraNameNormalizer {
             // Case-SENSITIVE on purpose: a name that already reads "reserved in advance" and every other word or
             // acronym (APA, VAT, VHF ...) stay as they are. No SQL twin like V9_60: the backfill is in DEPLOY_NOTES.
             Regex(
-                """\s*(?:[\p{Pd}:]+\s*)?(?:[(\[]\s*RESERVED\s+IN\s+ADVANCE\s*[!.]*\s*[)\]]|\bRESERVED\s+IN\s+ADVANCE\b\s*[!.]*)\s*\p{Pd}*\s*$""",
+                """$WS*(?:[\p{Pd}:]+$WS*)?(?:[(\[]$WS*RESERVED$WS+IN$WS+ADVANCE$WS*[!.]*$WS*[)\]]|\bRESERVED$WS+IN$WS+ADVANCE\b$WS*[!.]*)$WS*\p{Pd}*$WS*$""",
             ) to " (reserved in advance)",
         )
 

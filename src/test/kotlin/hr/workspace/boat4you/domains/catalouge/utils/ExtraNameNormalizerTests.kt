@@ -64,6 +64,15 @@ class ExtraNameNormalizerTests {
         ExtraNameNormalizer.normalize("Early check in: (RESERVED IN ADVANCE)") shouldBe "Early check in (reserved in advance)"
     }
 
+    // A no-break space (a decoded &nbsp; in partner text) is whitespace for the rule, and it does not survive the rename.
+    @Test
+    fun `a no-break space around or inside RESERVED IN ADVANCE is matched and dropped`() {
+        ExtraNameNormalizer.normalize("Early check in\u00A0RESERVED IN ADVANCE") shouldBe "Early check in (reserved in advance)"
+        ExtraNameNormalizer.normalize("Early check in \u00A0RESERVED IN ADVANCE") shouldBe "Early check in (reserved in advance)"
+        ExtraNameNormalizer.normalize("Early check in RESERVED\u00A0IN\u00A0ADVANCE\u00A0") shouldBe "Early check in (reserved in advance)"
+        ExtraNameNormalizer.normalize("Early check in -\u00A0(\u00A0RESERVED IN ADVANCE\u00A0)") shouldBe "Early check in (reserved in advance)"
+    }
+
     @Test
     fun `reserved in advance that is not ALL-CAPS or not trailing is left alone`() {
         listOf(
