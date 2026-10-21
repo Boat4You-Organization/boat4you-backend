@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.evidence.ReverifyJobs
 import hr.workspace.boat4you.domains.external.evidence.ReverifyRunMode
+import hr.workspace.boat4you.domains.external.nausys.service.NauSysReverifyLimits
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.Logger
@@ -23,8 +24,10 @@ import java.util.concurrent.ConcurrentSkipListMap
 
 /**
  * Daily admin digest of the partner reverifiers (real-price DESIGN.md WS-B "Run log"): the runs of the last 24 h
- * with their counters (LOG runs show would-upserts / would-flips), the status flips of the last 24 h per job and
- * reason, the agencies escalated in the last 7 days (the breakers refused to decide them), and the A2 criterion: the
+ * with their counters (LOG runs show would-upserts / would-flips; a NAUSYS_REVERIFY LOG run also the
+ * [NauSysReverifyLimits.capP3] its step 2 is held to), the status flips of the last 24 h per run, the job that wrote
+ * them and reason, with the old statuses and the agency ids they hit, the agencies escalated in the last 7 days (the
+ * breakers refused to decide them), and the A2 criterion: the
  * number of future OPTION / OPTION_WAITING rows without a live hold, a booking in progress or partner evidence for
  * exactly their dates in the last 7 days (flip SEARCH_DEMOTE_STALE_OPTIONS=false when it stays below 1,000 on three
  * consecutive days).
@@ -44,6 +47,7 @@ class ReverifyDigestJob(
     private val emailService: EmailService,
     private val userRepository: UserRepository,
     private val switches: RealPriceSwitches,
+    private val nauSysLimits: NauSysReverifyLimits,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -123,26 +127,45 @@ class ReverifyDigestJob(
             appendLine(
                 "  #${r["id"]} ${r["job"]} ${r["mode"]} ${r["started_at"]} -> ${r["ended_at"] ?: "JOS TRAJE / PREKINUT"}: " +
                     "calls=${r["calls"]} quoted=${r["quoted"]} empty=${r["empty"]} unknown=${r["unknown"]} upserts=${r["upserts"]} " +
-                    "strikes=${r["first_strikes"]} hidden=${r["hidden_periods"]} (${r["hidden_rows"]} rows) wouldFlip=${r["would_flip_rows"]}",
+                    "strikes=${r["first_strikes"]} hidden=${r["hidden_periods"]} (${r["hidden_rows"]} rows) wouldFlip=${r["would_flip_rows"]}" +
+                    capNote(r),
             )
             r["aborted_reason"]?.let { appendLine("      prekid/napomena: $it") }
             ids(r["escalated_agency_ids"]).takeIf { it.isNotEmpty() }?.let { appendLine("      eskalirane agencije (id): ${it.joinToString(", ")}") }
         }
     }
 
+    /**
+     * NAUSYS_REVERIFY LOG: step 2 asks at most [NauSysReverifyLimits.capP3] open-strike periods a run and LOG takes none
+     * off, so the would-flip count stays at about that cap every day (21.10.2026: ~2,090) - the cap, not a new anomaly.
+     */
+    private fun capNote(r: Map<String, Any?>): String =
+        if (r["job"] == ReverifyJobs.NAUSYS_REVERIFY && r["mode"] == ReverifyRunMode.LOG.name) {
+            " (korak 2 ograničen na capP3=${nauSysLimits.capP3} perioda/dan; LOG ništa ne skida, pa broj stoji uz taj limit)"
+        } else {
+            ""
+        }
+
     private fun StringBuilder.appendFlips(flips: List<Map<String, Any?>>) {
         appendLine("PROMJENE STATUSA (partner_offer_flip_log, zadnja 24 h; undo: POST /admin/reverify/runs/{id}/undo)")
+        appendLine("  job = tko je promijenio status: MMK_FREE = korak 2 (grupe brod/godina/oblik bez ijedne kvote), MMK_OPTION = koraci 2c/2b (opcije, otvoreni udarci)")
         if (flips.isEmpty()) appendLine("  (nema)")
         flips.forEach { f ->
             appendLine(
                 "  run #${f["run_id"] ?: "-"} ${f["job"]} ${system(f["external_system_id"])} ${f["reason"]}: " +
                     "${f["periods"]} termina, ${f["rows"]} redaka -> UNAVAILABLE",
             )
+            val more = num(f["agencies"]) - FLIP_AGENCIES_SHOWN
+            appendLine(
+                "      prije: ${f["old_statuses"] ?: "?"}; agencije (id: redaka): ${f["top_agencies"] ?: "-"}" +
+                    if (more > 0) " (+$more)" else "",
+            )
         }
     }
 
     private fun StringBuilder.appendEscalations(rows: List<Map<String, Any?>>) {
         appendLine("ESKALIRANE AGENCIJE, zadnjih 7 dana (breakeri ih NISU sakrili - odluka je na adminu)")
+        appendLine("  job = run čiji ih je breaker eskalirao; MMK_FREE eskalacija vrijedi i za korake 2c/2b (MMK_OPTION)")
         if (rows.isEmpty()) appendLine("  (nema)")
         rows.forEach { appendLine("  agencija ${it["agency_id"]}: ${it["jobs"]}, ${it["days"]} dana, zadnji put ${it["last_seen"]}") }
     }
@@ -296,10 +319,31 @@ class ReverifyDigestJob(
                 "hidden_rows, would_flip_rows, aborted_reason, escalated_agency_ids FROM reverify_run " +
                 "WHERE started_at > now() - INTERVAL '24 hours' ORDER BY started_at, id"
 
+        /** Agencies (ids) printed under one flip line, most rows first; the rest is only counted. */
+        const val FLIP_AGENCIES_SHOWN = 10
+
+        /** One flip line of [FLIPS_SQL]: `x` is a flip-log row of the group `g`. */
+        private const val SAME_FLIP_GROUP =
+            "x.run_id IS NOT DISTINCT FROM g.run_id AND x.job = g.job AND x.reason = g.reason AND x.external_system_id = g.external_system_id"
+
+        /**
+         * The flip-log rows of the last 24 h per run, job, reason and partner. `job` is what the writer stored with the
+         * flip (MMK: the step's job, MMK_FREE step 2 / MMK_OPTION steps 2c-2b), so a flip is always listed under the
+         * job that made it; the old statuses and the agency ids say what each line took off the site (20.10.2026: the
+         * Y Knot OPTION rows were in run #38 MMK_OPTION, but only an agency query outside the digest could tell).
+         */
         private const val FLIPS_SQL =
-            "SELECT run_id, job, reason, external_system_id, count(*) AS rows, count(DISTINCT (yacht_id, date_from, date_to)) AS periods " +
-                "FROM partner_offer_flip_log WHERE created_at > now() - INTERVAL '24 hours' " +
-                "GROUP BY run_id, job, reason, external_system_id ORDER BY run_id, job, reason"
+            "WITH f AS (SELECT l.run_id, l.job, l.reason, l.external_system_id, l.yacht_id, l.date_from, l.date_to, l.old_status, " +
+                "y.agency_id FROM partner_offer_flip_log l LEFT JOIN yacht y ON y.id = l.yacht_id " +
+                "WHERE l.created_at > now() - INTERVAL '24 hours') " +
+                "SELECT g.run_id, g.job, g.reason, g.external_system_id, count(*) AS rows, " +
+                "count(DISTINCT (g.yacht_id, g.date_from, g.date_to)) AS periods, count(DISTINCT g.agency_id) AS agencies, " +
+                "(SELECT string_agg(s.old_status || ' ' || s.n, ', ' ORDER BY s.n DESC, s.old_status) " +
+                "FROM (SELECT x.old_status, count(*) AS n FROM f x WHERE $SAME_FLIP_GROUP GROUP BY x.old_status) s) AS old_statuses, " +
+                "(SELECT string_agg(a.agency_id || ': ' || a.n, ', ' ORDER BY a.n DESC, a.agency_id) " +
+                "FROM (SELECT x.agency_id, count(*) AS n FROM f x WHERE $SAME_FLIP_GROUP AND x.agency_id IS NOT NULL " +
+                "GROUP BY x.agency_id ORDER BY n DESC, x.agency_id LIMIT $FLIP_AGENCIES_SHOWN) a) AS top_agencies " +
+                "FROM f g GROUP BY g.run_id, g.job, g.reason, g.external_system_id ORDER BY g.run_id, g.job, g.reason"
 
         private const val ESCALATIONS_SQL =
             "SELECT e.agency_id, string_agg(DISTINCT r.job, ', ') AS jobs, max(r.started_at)::date AS last_seen, " +

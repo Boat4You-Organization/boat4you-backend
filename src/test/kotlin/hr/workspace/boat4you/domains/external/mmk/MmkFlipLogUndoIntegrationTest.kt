@@ -8,10 +8,12 @@ import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.evidence.PartnerPeriodCheckStore
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheckPriority
 import hr.workspace.boat4you.domains.external.evidence.PeriodCheckResult
+import hr.workspace.boat4you.domains.external.evidence.ReverifyCounters
 import hr.workspace.boat4you.domains.external.evidence.ReverifyJobs
 import hr.workspace.boat4you.domains.external.evidence.ReverifyRunMode
 import hr.workspace.boat4you.domains.external.evidence.ReverifyRunStore
 import hr.workspace.boat4you.domains.external.job.ReverifyDigestJob
+import hr.workspace.boat4you.domains.external.nausys.service.NauSysReverifyLimits
 import hr.workspace.boat4you.domains.external.service.PartnerFlipUndoService
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import io.kotest.matchers.collections.shouldContainExactly
@@ -497,6 +499,36 @@ class MmkFlipLogUndoIntegrationTest {
     }
 
     @Test
+    fun `each flip is listed under the run and job that wrote it, with its old statuses and agency ids`() {
+        // 20.10.2026: Y Knot's phantom OPTION rows were hidden by MMK_OPTION step 2c (run #38), Sailway's FREE weeks by
+        // MMK_FREE (run #37); the digest named both jobs right, only the agencies behind each line were missing.
+        jdbc.update("INSERT INTO agency (id, name) VALUES (3, 'Phantom Options Ltd') ON CONFLICT (id) DO NOTHING")
+        jdbc.update("INSERT INTO yacht (id, name, agency_id) VALUES (5, 'Five', 3) ON CONFLICT (id) DO NOTHING")
+        offer(1, "FREE", yacht = 3)
+        offer(2, "OPTION", ext = "2", yacht = 5)
+        offer(3, "OPTION", ext = "2", yacht = 5, from = F.plusDays(3))
+        val free = runs.start(ReverifyJobs.MMK_FREE, ReverifyRunMode.WRITE)
+        val option = runs.start(ReverifyJobs.MMK_OPTION, ReverifyRunMode.WRITE)
+        val firstEmptyOn = TODAY.minusDays(1)
+        inTx { offers.markMmkPeriodUnavailable(3, F, T, free, ReverifyJobs.MMK_FREE, "TWO_STRIKE_EMPTY", firstEmptyOn, TODAY, false) }
+        inTx {
+            offers.markMmkPeriodUnavailable(5, F, T, option, ReverifyJobs.MMK_OPTION, "TWO_STRIKE_EMPTY", firstEmptyOn, TODAY, true)
+            offers.markMmkPeriodUnavailable(5, F.plusDays(3), T.plusDays(3), option, ReverifyJobs.MMK_OPTION, "TWO_STRIKE_EMPTY", firstEmptyOn, TODAY, true)
+        }
+        runs.finish(free)
+        runs.finish(option)
+        runs.finish(runs.start(ReverifyJobs.NAUSYS_REVERIFY, ReverifyRunMode.LOG), ReverifyCounters(calls = 6000, wouldFlipRows = 2093))
+
+        val body = digestJob().buildDigest()
+
+        body shouldContain "  run #$free MMK_FREE MMK TWO_STRIKE_EMPTY: 1 termina, 1 redaka -> UNAVAILABLE\n      prije: FREE 1; agencije (id: redaka): 1: 1\n"
+        body shouldContain "  run #$option MMK_OPTION MMK TWO_STRIKE_EMPTY: 2 termina, 2 redaka -> UNAVAILABLE\n      prije: OPTION 2; agencije (id: redaka): 3: 2\n"
+        body shouldContain "NAUSYS_REVERIFY LOG"
+        body shouldContain "wouldFlip=2093 (korak 2 ograničen na capP3=2000 perioda/dan;"
+        body shouldNotContain "Phantom Options"
+    }
+
+    @Test
     fun `a quiet day is not mailed, the digest stays in the log`() {
         offer(1, "OPTION", ext = "2")
         runs.finish(runs.start(ReverifyJobs.MMK_FREE, ReverifyRunMode.WRITE))
@@ -548,6 +580,6 @@ class MmkFlipLogUndoIntegrationTest {
             }
         val users = mock(UserRepository::class.java)
         `when`(users.findAllAdminEmailAddresses()).thenReturn(listOf("admin@example.test"))
-        return ReverifyDigestJob(jdbc, email, users, RealPriceSwitchesFixture.switches())
+        return ReverifyDigestJob(jdbc, email, users, RealPriceSwitchesFixture.switches(), NauSysReverifyLimits())
     }
 }

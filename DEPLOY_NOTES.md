@@ -31,8 +31,48 @@ Mario 21.10.: „kada vidiš grešku mi samo pošalji i onda je sredi“. Admin 
 - **Lint:** ktlint 0 nalaza na sve tri promijenjene datoteke (cijele datoteke). detekt: `ReverifyDigestJob.kt` 0 nalaza; u testu je `LongParameterList` na pomoćnoj funkciji suzbijen kao u ostalim fixtureima. Puni detekt pada na starim nalazima (nije dio ovog commita).
 - **Datoteke:** `src/main/kotlin/hr/workspace/boat4you/domains/external/job/ReverifyDigestJob.kt`, `src/test/kotlin/hr/workspace/boat4you/domains/external/job/ReverifyDigestTriggersTest.kt` (novo), `src/test/kotlin/hr/workspace/boat4you/domains/external/mmk/MmkFlipLogUndoIntegrationTest.kt`. Novi konstruktorski parametar `RealPriceSwitches` (postojeći `@Component`).
 - **Bez migracije** (jar nosi V9_79 + V9_82–V9_92, kao `fix/gulet-crewed-contract`).
-- **Jar:** `./gradlew bootJar -x test` → `build/libs/boat4you-0.0.1-SNAPSHOT.jar`, md5 `0e203f6b3250fbf536b49eb8a7794770`. Jedan jar nosi gulet-crewed i ovu promjenu. Ponašanje digesta mijenja samo cusma3 (job je `data-sync`), a jar je isti za oba čvora.
+- **Jar:** `./gradlew bootJar -x test` → `build/libs/boat4you-0.0.1-SNAPSHOT.jar`, md5 `0e203f6b3250fbf536b49eb8a7794770` (**zamijenjen**: vrijedi md5 iz „Popravak pravila eskalacije“ niže). Jedan jar nosi gulet-crewed i ovu promjenu. Ponašanje digesta mijenja samo cusma3 (job je `data-sync`), a jar je isti za oba čvora.
 - **Rollback:** prethodni jar; u bazi se ništa ne mijenja.
+
+### Popravak pravila eskalacije (MMK ne-tjedni oblik) — 21.10., ista grana, ⏳ NIJE DEPLOYANO
+
+- **Problem (read-only istraga na produkciji 21.10.):** pregled svaki dan eskalira MMK agencije 1194 (VOG FLEET), 1444 (Le Bateau Blanc), 1701 (Alsalos) i 1560 (Main Sailing). Uzrok je naše pravilo, ne partnerov feed: breaker po agenciji (`MIN_AGENCY_SEASONS_FOR_CAP = 5`, `MAX_EMPTY_SHARE_PER_AGENCY = 0.50`, `MmkFreeOfferReverifyService`) primjenjivao se i na **ne-tjedni** oblik. Ne-tjedni uzorak male agencije je malen i grupiran: 14-noćni blokovi subota→subota izvan sezone, periodi koji ne počinju subotom na brodovima koji primaju ukrcaj samo subotom. Zato je „više od 50 % praznih“ njihovo normalno stanje.
+- **Dokazi (run #37, 20.10.):**
+  - MMK je vratio prazno za 51 od 10.272 tjedne grupe (0,5 %) i 70 od 8.003 ne-tjedne (0,9 %).
+  - Četiri agencije drže 31 od tih 70, a ukupno imaju samo 43 ne-tjedne grupe: 1701 4/7, 1194 15/19, 1444 6/6, 1560 6/11.
+  - Tjedni oblik nijedne od njih nikad nije eskaliran. Tjedni idu normalnim putem dva prazna odgovora u dva dana (npr. 1560 ima 530 skrivenih tjedana).
+  - Eskalirani periodi se nikad ne odluče, pa se eskalacija ponavlja svaki dan. Zaglavljeno je ~717 perioda: 605 kod 1194, 22 kod 1444, 75 kod 1560, 15 kod 1701.
+  - Agencija 1504 eskalirana je 14., 17. i 18.10. za **tjedne** grupe. To pravilo treba hvatati i ono ostaje kakvo je.
+- **Novo pravilo** (`MmkFreeOfferReverifyService.suspectAgencies`, isti pragovi):
+  - **Tjedni oblik agencije:** točno kao prije. ≥ 5 odlučenih tjednih grupa i > 50 % praznih = eskalacija (ERROR, `reverify_run.escalated_agency_ids`, pregled). Tada su sumnjive i njene ostale duljine.
+  - **Ne-tjedni oblik** (≥ 5 odlučenih, > 50 % praznih) eskalira se samo ako tjedni oblik ne jamči za feed agencije: tjedni je i sam iznad 50 % praznih, ili agencija ima manje od 5 odlučenih tjednih grupa (nema tjednog dokaza).
+  - **Kad tjedni jamče:** prazne ne-tjedne grupe idu normalnim putem. Prvi udarac danas, sutra sakriveno ako je opet prazno, samo točni datumi. Ostaju kočnice flote (abort kad je > 10 % tjednih grupa prazno; ne-tjedni preskočeni kad je > 10 % ne-tjednih prazno uz ≥ 50 odlučenih), limit 400 grupa po runu i flip log za undo (job MMK_FREE, razlog TWO_STRIKE_EMPTY). Ista agencija u koracima 2c/2b (MMK_OPTION) sada dobiva udarce i za ne-tjedne periode.
+  - **Log:** tjedni ERROR tekst je nepromijenjen. Ne-tjedna eskalacija je ERROR s razlogom: „its week groups are unquoted too (x of y)“ ili „only N of its week groups decided (< 5), no weekly evidence for its feed“. Kad tjedni jamče, piše se INFO „agency X has N of M non-weekly groups unquoted, but its weeks vouch for its feed (x of y week groups unquoted) - NOT escalated, its non-weekly periods go through the two-strike check“.
+- **Nakon deploya:**
+  - 1194, 1444, 1560 i 1701 više se ne eskaliraju od prvog MMK runa (13:30 UTC). TRAJNA ESKALACIJA za 1194 nestaje već sljedeći pregled. U bloku ESKALIRANE AGENCIJE ostaju dok ne izađu iz prozora od 7 dana.
+  - Njihovih ~717 zaglavljenih perioda odluči se u 2 dana. Prvi dan dobiju prvi udarac (ili im se udarac obriše ako ih MMK kotira). Drugi dan se sakriju oni koji su opet prazni, s flip logom i undo-om po runu.
+  - Drugi dan MMK_FREE može sakriti stotine redaka više nego inače. Ako flip log za 24 h prijeđe 500 redaka, pregled jednom pošalje mail s razlogom SKRIVANJE (očekivano, jednokratno).
+  - Provjera (read-only, cusma4): `SELECT id, started_at, escalated_agency_ids FROM reverify_run WHERE job = 'MMK_FREE' ORDER BY id DESC LIMIT 3` ne smije sadržavati 1194/1444/1560/1701. U journalu cusma3 tražiti `vouch for its feed`.
+- **Testovi** (`MmkFreeOfferReverifyServiceTests`, sada 20; mock `ReverifyRunStore` hvata `escalated_agency_ids`):
+  - (a) agencija čiji tjedni prodaju, 6/6 praznih 14-noćnih blokova → nije eskalirana; dan 1 šest prvih udaraca, dan 2 sakriveno točno tih 6 perioda (flip log MMK_FREE / TWO_STRIKE_EMPTY); njeni tjedni se sude kao prije. Zamjenjuje stari test „an agency whose long blocks all answer empty is escalated…“, koji je tvrdio staro ponašanje.
+  - (b) agencija bez tjednih grupa (4/6 praznih blokova) i agencija s 3 odlučene tjedne grupe (5/6 praznih) → obje eskalirane kao prije, ništa udareno.
+  - (c) agencija s 4/6 praznih tjednih grupa → eskalirana za oba oblika, ništa udareno (nepromijenjeno).
+  - (d) kočnice flote: 23 % praznih tjednih grupa → abort, ništa zapisano, ni blokovi agencije za koju tjedni jamče; 24 % praznih ne-tjednih grupa → ne-tjedni preskočeni i za tu agenciju.
+  - Na starom kodu padaju (a) i (d, ne-tjedni), a (b), (c) i (d, abort) prolaze (provjereno vraćanjem servisa na HEAD).
+
+### Oznake u pregledu (isti commit niz)
+
+- **„Y Knot pod MMK_FREE“ nije bila greška oznake.** Pregled od 21.10. ispravno je ispisao `run #37 MMK_FREE … 190 termina, 356 redaka` i `run #38 MMK_OPTION … 317 termina, 324 redaka`. Job u retku je ono što je zapisao korak koji je promijenio status: `partner_offer_flip_log.job` = job koraka, a koraci 2c/2b pišu MMK_OPTION s ID-em MMK_OPTION runa. 212 OPTION redaka Y Knota (1579) nalazi se u runu #38. Zabuna je nastala jer redak ne kaže čiji su redovi, pa je pripisivanje rađeno zasebnim upitom po agenciji, bez joba. Ni ESKALIRANE AGENCIJE ne griješe: `escalated_agency_ids` zapisuje samo MMK_FREE run (breaker probe), a ta eskalacija vrijedi i za korake 2c/2b.
+- **Popravak:** ispod svakog retka PROMJENE STATUSA ide redak `prije: OPTION 324; agencije (id: redaka): 1579: 212, …`. To su stari statusi i do 10 agencija po ID-u, ostatak kao „(+N)“. Dodane su dvije legende: „MMK_FREE = korak 2, MMK_OPTION = koraci 2c/2b“ i uz eskalacije „job = run čiji ih je breaker eskalirao“. SQL ostaje read-only (CTE nad `partner_offer_flip_log` + `yacht.agency_id`), bez migracije, samo ID-jevi.
+- **NAUSYS_REVERIFY LOG u RUNOVI:** uz `wouldFlip=` piše „(korak 2 ograničen na capP3=2000 perioda/dan; LOG ništa ne skida, pa broj stoji uz taj limit)“. capP3 se čita iz `NauSysReverifyLimits` (`nausys.reverify.cap-p3`, zadano 2000; novi konstruktorski parametar digesta). Razlog 5 (LOG RUN > 500 redaka) i dalje šalje mail svaki dan dok je NAUSYS_REVERIFY u LOG-u. To nije dirano.
+- **Podjela wouldFlip po razlogu (STEP0 / ROUTE_GONE / EMPTY) nije moguća bez nove kolone.** `reverify_run.would_flip_rows` je jedan brojač. NauSys LOG ne piše flip log, a `partner_period_check` drži samo zadnji rezultat po periodu (periode, ne redove). Broj za korak 0 postoji samo u journalu cusma3 („step 0: N periods under a live reservation, X rows would flip (LOG)“). Za podjelu treba brojač po razlogu, dakle migracija. Nije rađeno.
+- **Test:** `MmkFlipLogUndoIntegrationTest` (PG 18), sada 15, jedan novi. Flip MMK_FREE na agenciji 1 i dva MMK_OPTION na agenciji 3 → svaki je pod svojim runom i jobom, sa starim statusom i ID-em agencije. NAUSYS_REVERIFY LOG s wouldFlip=2093 → napomena capP3=2000. Ime agencije se ne ispisuje.
+
+- **Testovi ukupno:** `MmkFreeOfferReverifyServiceTests` 20, `MmkOptionVerifyTests` 15, `MmkFlipLogUndoIntegrationTest` 15, `ReverifyDigestTriggersTest` 12 = **62/62 zeleno**.
+- **Lint:** ktlint 0 nalaza na sve 4 promijenjene .kt datoteke (cijele datoteke). detekt nema nalaza u tim datotekama; puni detekt pada na 570 starih nalaza.
+- **Datoteke:** `src/main/kotlin/hr/workspace/boat4you/domains/external/mmk/service/MmkFreeOfferReverifyService.kt`, `src/main/kotlin/hr/workspace/boat4you/domains/external/job/ReverifyDigestJob.kt`, `src/test/kotlin/hr/workspace/boat4you/domains/external/mmk/MmkFreeOfferReverifyServiceTests.kt`, `src/test/kotlin/hr/workspace/boat4you/domains/external/mmk/MmkFlipLogUndoIntegrationTest.kt`.
+- **Jar (vrijedi ovaj):** `./gradlew bootJar -x test` → md5 `62dd743ffde3b59148dd1d5a4be64b66`. Nosi gulet-crewed, pregled samo kad ima greške i ovaj popravak. Bez migracije (V9_79 + V9_82–V9_92). Pravilo i pregled rade samo na cusma3 (`data-sync`), a jar je isti za oba čvora.
+- **Rollback:** prethodni jar. U bazi se ništa ne mijenja; flipovi novih udaraca imaju undo po runu (`POST /admin/reverify/runs/{id}/undo`).
 
 ## 2026-10-21 — ⛵ Gulet = uvijek Crewed u ugovoru PDF (samo gulet), my-bookings/admin DTO, trip stranici; podsjetnik prije polaska guletu bez retka o licenci (Mario 21.10.: „GULET JE UVIJEK CREWED“) — ⏳ NIJE DEPLOYANO (grana `fix/gulet-crewed-contract` iz origin/main `9eb99c7`)
 
