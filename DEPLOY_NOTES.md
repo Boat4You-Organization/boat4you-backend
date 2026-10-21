@@ -1,5 +1,45 @@
 # Backend deploy notes
 
+## 2026-10-21 — ⛵ Gulet = uvijek Crewed u ugovoru PDF, my-bookings/admin DTO i e-mailovima (Mario 21.10.: „GULET JE UVIJEK CREWED“) — ⏳ NIJE DEPLOYANO (grana `fix/gulet-crewed-contract` iz origin/main `9eb99c7`)
+
+Mario 21.10. (stavka 10, nastavak gulet pravila od 9.10.): web i admin od 9.10. za gulet nikad ne kažu Bareboat (`GuletRules`), ali rezervacija je i dalje čitala partnerov tip. Ugovor o najmu (PDF) gledao je samo extrase, pa je gulet bez skipera dobio „Bareboat charter“. My-bookings i admin detalj rezervacije vraćali su `charterType` ravno iz `reservation_view.charter_type` = `offer.product` (prod: 97 budućih gulet ponuda partner označava BAREBOAT). Odluka: **GULET JE UVIJEK CREWED**.
+
+- **Pravilo (jedno, za sve površine):** `ReservationCharterRules` (`domains/catalouge/utils`, uz `GuletRules`, KDoc s Mariovom odlukom):
+  1. gulet (`GuletRules.isGulet`: vessel type GULET ili model sadrži „gulet“) = **CREWED**, bez obzira na tip ponude i na skipera;
+  2. ponuda CREWED (te ALL_INCLUSIVE / CRUISE, posadne kao u `OfferCharterRules`) = CREWED na bilo kojem brodu;
+  3. bukirani extra čije ime sadrži „skipper“ (bilo koja veličina slova, dosadašnja logika ugovora) = SKIPPERED;
+  4. inače BAREBOAT (i ponuda bez tipa, kao do sada).
+- **Što jar radi:**
+  - **Ugovor o najmu PDF** (`CharterAgreementService.buildVariables` → `charterType`): „Crewed charter“ / „Skippered charter“ / „Bareboat charter“ po pravilu gore. Predložak `contract/charterAgreement.html` je nepromijenjen (red „Charter type“ samo ispisuje varijablu). Opća klauzula 6 „Skipper qualifications (bareboat charters)“ ostaje. Isti PDF ide u e-mail potvrde rezervacije (`ReservationEmailService.sendConfirmationForReserved`: bank transfer, Stripe kartica, admin potvrda) i u admin preuzimanje `GET /admin/reservations/{id}/charter-agreement.pdf`.
+  - **my-bookings** (`GET /secured/reservations/my-reservations/{id}` → `MyReservationDetailsDto.charterType`) i **admin detalj rezervacije** (`GET /admin/reservations/{id}` → `ReservationViewDetailsDto.charterType`), oba kroz `ReservationMappers`: gulet → `CREWED` (njegov ALL_INCLUSIVE / CRUISE ostaje, to su posadni tipovi); svaki drugi brod i dalje dobiva tip ponude (enum nema SKIPPERED).
+  - **Ostala mjesta** (grep `charterType` / `Bareboat` / `BAREBOAT` po `domains/reservation`, `domains/invoice`, e-mail predlošcima i `resources/templates`): tip najma ne ispisuje nijedan e-mail predložak, faktura ni admin export. E-mail ga nosi samo kroz priloženi ugovor PDF. Popis rezervacija (`MyReservationsDto`, `ReservationViewDto`) nema `charterType`.
+- **Ne dira:** partnerove podatke (`offer.product`, `reservation.product` koji ide partneru, `yacht_charter_type`, cijene, extrase), `reservation_view` (`R__1_02` nepromijenjen, md5 isti u jaru), potvrđene cijene, OPTION_WAITING, `InquiryEmailService` (LOCKED). **Bez migracije** (jar nosi V9_79 + V9_82–V9_92 kao origin/main).
+- **Promjena i izvan guleta (za znanje):** u ugovoru ne-gulet s ponudom CREWED / ALL_INCLUSIVE / CRUISE sada piše „Crewed charter“. Prije je pisalo „Skippered charter“ ako je bukiran skiper, inače „Bareboat charter“. DTO-i za ne-gulete su nepromijenjeni.
+- **Datoteke:** `src/main/kotlin/hr/workspace/boat4you/domains/catalouge/utils/ReservationCharterRules.kt` (novo), `domains/catalouge/services/CharterAgreementService.kt`, `domains/reservation/mapper/ReservationMappers.kt`. Testovi: `ReservationCharterRulesTests.kt` (novo), `reservation/mapper/ReservationMappersCharterTypeTest.kt` (novo), `catalouge/services/CharterAgreementServiceTest.kt` (+3 testa).
+- **Testovi:** ciljani `ReservationCharterRulesTests` 5, `ReservationMappersCharterTypeTest` 2, `CharterAgreementServiceTest` 5 (3 nova), `CharterAgreementVesselLabelTest` 2, `GuletRulesTests` 6 i `ReservationEmailServiceTest` 2, svi zeleni. Pokriveni slučajevi:
+  - gulet bez skipera → „Crewed charter“;
+  - gulet BAREBOAT + skiper → „Crewed charter“;
+  - gulet po modelu (MOTOR_YACHT „Gulet“) → Crewed;
+  - CREWED ponuda na katamaranu → „Crewed charter“;
+  - jedrilica + skiper → „Skippered charter“;
+  - obično → „Bareboat charter“;
+  - gulet BAREBOAT → `CREWED` u my-bookings I admin DTO-u;
+  - ne-gulet zadržava tip ponude.
+
+  Puni paket `./gradlew test` (JDK 21, Testcontainers PG 18): **1171 testova: 1138 prošlo / 31 palo / 2 preskočena**. Ista 31 kao do sada: ReservationPaymentPhasesServiceTest ×26 datumski, ReservationOptionsCombinationProvider ×2, NauSysDateTimeWrapper, MatchersTests, Boat4youWsApplicationTests bez DB env-a. **0 novih padova.**
+
+  ktlint: 0 nalaza na promijenjenim redovima (ostali nalazi u diranim datotekama su stariji). detekt: 569 nalaza prije i poslije, 0 novih.
+- **Jar:** `build/libs/boat4you-0.0.1-SNAPSHOT.jar` (`./gradlew bootJar -x test`, kod `9891631`), md5 `fdc8f8a77f52d889bac87a2708ce7aa7`.
+- [ ] Deploy jara (lead): **cusma2** prvo. To je jedini API čvor: my-bookings, admin detalj, PDF i e-mail potvrde idu kroz API (kontroleri + Stripe webhook).
+- [ ] Zatim **cusma3** kroz gate (restart = tvrdi gate na sync aktivnost: prozor, 0 crona, 0 shedlock, 0 sync linija; provjera mora ABORT-ati), da oba čvora nose isti jar.
+- [ ] Bez pre-applya, bez Flyway migracije („Schema up to date“).
+- [ ] **Provjera nakon deploya:** admin `GET /admin/reservations/{id}` za gulet rezervaciju (ponuda BAREBOAT) → `charterType: "CREWED"`. `GET /admin/reservations/{id}/charter-agreement.pdf` iste rezervacije → stranica 1 „Charter type: Crewed charter“. Jedrilica sa skiperom → „Skippered charter“, bez njega → „Bareboat charter“ (nepromijenjeno). Web my-bookings istog gulet bookinga → `charterType` `CREWED`.
+- **Rollback:** stari jar (`webservice.jar.prev`), bez SQL-a i bez podataka.
+- **Poznato / otvoreno:**
+  - (a) e-mail `preCharterReminder` (svi jezici) i dalje piše opći podsjetnik „sailing licence and VHF certificate (skipper)“ i gostu guleta. Tip najma ne ispisuje, ali za crewed charter nije relevantan. Nije dirano, Mario odlučuje.
+  - (b) 9.728 kombinacija brod+termin s više tipova ponude: kartica i dalje pokazuje najjeftiniju, a rezervacija tip ponude koja je bukirana. Za gulete je to sada svejedno, za ostale nije mijenjano.
+  - (c) gulet čiju ponudu partner šalje kao UNKNOWN (NauSys) u DTO-u sada dobiva `CREWED`. Javni `GuletRules.publicCharterType` UNKNOWN i dalje ostavlja UNKNOWN (katalog nije diran).
+
 ## 2026-10-17 — 📸 Naše fotke, film i crew profile na BILO KOJEM brodu (V9_92 `yacht_image.source` OWN/PARTNER, `yacht.video_url`, `yacht.crew_profile_url`); syncovi nikad ne brišu/ne miču naše fotke — gulet Allure 11769 — ✅ DEPLOYANO 20.10.2026 13:06 UTC OBA čvora (cusma2 13:06:09 Flyway 9.92 `success`, cusma3 `boat4youscheduler.service` 13:06:40 „Schema up to date“; gate 13:06 inwin, shedlock prazan, 0 sync linija), jar md5 `f5129430531c5485bb639d9a82e089d2`, `23a167d`, tag `live/2026-10-20-own-media` (grana `feat/own-media` iz origin/main `918e912`). V9_92 pre-apply 07:1x UTC bez retka u `flyway_schema_history` → Flyway na cusma2 „applied 1 migration“ u 22 ms (idempotentni DDL), red 9.92 success 13:06:09. API `gulet-allure-11769`: `videoUrl`/`crewProfileUrl` = null (ključevi prisutni); Kanalu 1111 36 slika nepromijenjeno; admin Boats · Media live isti dan (13:08 UTC).
 
 Mario 17.10. 00:30 („ubaci i crew profile na allure tako da ga imamo na svim stranicama“): gulet **Allure** (`/boat/gulet-allure-11769`, EXTERNAL, partner šalje 3 slike: 200134 main, 200179, 200130 tlocrt) dobiva NAŠE fotke, Vimeo film `https://vimeo.com/982130882` i crew profile PDF — na svih 7 sajtova. Do sada: admin upload slika postojao je samo pod `/admin/custom-yachts` (custom brodovi), a MMK/NauSys `syncPictures` brisao je svaki `yacht_image` čiji `external_url` partner više ne šalje — naša slika (bez `external_url`) bi nestala na prvom syncu. Video i PDF postojali su samo na `custom_yacht_details`, web je prikazivao samo `customDetails.videoUrl`.
