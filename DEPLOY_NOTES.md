@@ -12,6 +12,8 @@ Digest od 22.10. 07:00 imao je 6 razloga; provjera na cusma4/cusma3 07:04–07:1
 
 Testovi: `ReverifyDigestTriggersTest` (+2), `MmkFreeOfferReverifyServiceTests` (+1), `MmkFlipLogUndoIntegrationTest` (digest body).
 
+**Isti deploy nosi i `V9_93__catalogue_image_credit_latin_script.sql`** (22.10., popodne): dva kredita fotki marina iz uvoza 20.10. (id 2000000069 Portorosa, 2000000141) imala su ime autora ćirilicom/grčkim + latinična transliteracija u zagradi; SEO regresija T11 na EY i b4y (`…-11338`). UPDATE ostavlja samo latinično ime (CC BY atribucija transliteracijom je dovoljna); idempotentno, 2 retka. Nakon deploya stranice se osvježe kroz ISR.
+
 ## 2026-10-21 — 🔤 Partnerov dodatak „… RESERVED IN ADVANCE“ → „(reserved in advance)“ (Mario 21.10., nalaz EY SEO regresije T12 od 13.10.) — ⏳ NIJE DEPLOYANO (grana `fix/extras-reserved-in-advance` povrh `fix/reverify-digest-on-error` 316c5ed)
 
 Partnerov (MMK/NauSys) dodatak „Early check in (at 13:00) RESERVED IN ADVANCE“ dolazio je na sajtove doslovno, a ALL-CAPS engleski nastavak ruši provjere stranice (EY T12).
