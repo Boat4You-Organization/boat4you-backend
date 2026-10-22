@@ -49,8 +49,8 @@ class PriceCalculationExtrasZeroTest {
         this.obligatory = obligatory
         this.payableInBase = payableInBase
         this.paymentType = paymentType
-        this.validDaysFrom = validDaysFrom
-        this.validDaysTo = validDaysTo
+        this.validDaysFrom = validDaysFrom?.toShort()
+        this.validDaysTo = validDaysTo?.toShort()
     }
 
     @Test

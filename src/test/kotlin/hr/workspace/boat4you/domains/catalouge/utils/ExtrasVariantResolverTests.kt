@@ -24,8 +24,8 @@ class ExtrasVariantResolverTests {
         this.obligatory = obligatory
         this.externalId = externalId
         this.price = BigDecimal.TEN
-        this.validDaysFrom = validDaysFrom
-        this.validDaysTo = validDaysTo
+        this.validDaysFrom = validDaysFrom?.toShort()
+        this.validDaysTo = validDaysTo?.toShort()
     }
 
     private fun offerExtra(

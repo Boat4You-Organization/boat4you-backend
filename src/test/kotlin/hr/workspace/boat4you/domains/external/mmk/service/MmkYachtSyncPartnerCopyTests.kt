@@ -113,11 +113,11 @@ class MmkYachtSyncPartnerCopyTests {
             optionalOnSite = false,
         )
 
-        assertEquals(0, existing.validDaysFrom)
-        assertEquals(7, existing.validDaysTo)
+        assertEquals(0.toShort(), existing.validDaysFrom)
+        assertEquals(7.toShort(), existing.validDaysTo)
         val inserted = yacht.yachtExtras.single { it.externalId == 2L }
-        assertEquals(8, inserted.validDaysFrom)
-        assertEquals(14, inserted.validDaysTo)
+        assertEquals(8.toShort(), inserted.validDaysFrom)
+        assertEquals(14.toShort(), inserted.validDaysTo)
     }
 
     private fun yacht() =

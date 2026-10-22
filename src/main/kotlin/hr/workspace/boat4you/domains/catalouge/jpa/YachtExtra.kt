@@ -86,18 +86,20 @@ open class YachtExtra {
      * NULL = the partner gave no bound.
      */
     @Column(name = "valid_days_from")
-    open var validDaysFrom: Int? = null
+    open var validDaysFrom: Short? = null // SMALLINT: Hibernate validates the JDBC type (Int = INTEGER failed the 21:19 UTC start, 22.10.2026)
 
     @Column(name = "valid_days_to")
-    open var validDaysTo: Int? = null
+    open var validDaysTo: Short? = null
 
     /**
      * Whether the row applies to a charter of [nights] nights ([Offer.numberOfDays]): inside the partner's day bounds,
      * a missing or zero upper bound never excludes. A one-week charter keeps the 0-7 rows and drops the 8-14 ones.
      */
-    fun appliesToNights(nights: Long): Boolean =
-        (validDaysFrom == null || nights >= validDaysFrom!!) &&
-            (validDaysTo == null || validDaysTo == 0 || nights <= validDaysTo!!)
+    fun appliesToNights(nights: Long): Boolean {
+        val from = validDaysFrom?.toLong()
+        val to = validDaysTo?.toLong()
+        return (from == null || nights >= from) && (to == null || to == 0L || nights <= to)
+    }
 
     @Enumerated(EnumType.STRING)
     @NotNull
