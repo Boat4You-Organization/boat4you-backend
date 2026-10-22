@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-22 — 🧾 Extrasi po trajanju chartera: MMK `validDaysFrom/To` (V9_94) — Therasia Bali 5.4: „Luxury Pack 2weeks“ zbrajan uz tjedni paket (Mario 22.10., PDF ponude Sailing Sicily) — ⏳ NIJE DEPLOYANO (grana `fix/extras-duration-variants`, worktree `wt/extras-duration`)
+## 2026-10-22 — 🧾 Extrasi po trajanju chartera: MMK `validDaysFrom/To` (V9_94) — Therasia Bali 5.4: „Luxury Pack 2weeks“ zbrajan uz tjedni paket (Mario 22.10., PDF ponude Sailing Sicily) — ✅ DEPLOYANO 22.10.2026 (2. pokušaj: cusma2 21:26:03 UTC, cusma3 21:26:28 UTC kroz gate; jar md5 6a949232721cea236b8bd7edbc03cf62, commit 2285f7b, tag `live/2026-10-22-extras-duration`; V9_94 primijenjen već u 1. pokušaju 21:19:00; stupci 0/1.243.535 popunjeni do noćnog MMK yacht synca 06:10)
 
 Mario 22.10.: na https://www.boat4you.com/boat/bali-catamarans-bali-54-therasia-11907 „dva luxury packa obligatory, one i two weeks“ + „vidi cijenu apa“. Ponuda agencije (MMK booking 8393-92090-00001-01230, 4.–11.9.2027): APA Aug–Sept 3.310 € + Luxury Pack Bali 5.4 5.200 € + Luxury Pack 5200€/week 0 € = 8.510 € u bazi. Naš `offer_extras` za taj termin je IDENTIČAN (3 retka, 8.510), ali stranica je uz to prikazivala i „Luxury Pack 2weeks“ 10.400 € (per booking) kao obvezan: `ExtrasVariantResolver` ga nije prepoznao kao varijantu („2weeks“ slijepljeno, „Bali 5.4“ u imenu sidra). Bez datuma stranica pokazuje sve varijante i APA najjeftinije sezone (2.185 €, siječanj–svibanj).
 
@@ -13,7 +13,8 @@ Uzrok: MMK uz svaki extra šalje `validDaysFrom`/`validDaysTo` (dani chartera; p
 - APA bez datuma ostaje kako je (Mario 22.10.: „nije važno, ostavi kako je, važno je da kada se odabere datum bude točna APA“ — s datumom je točna: offer_extras + filtar po check-inu). NauSys `minDuration/maxDuration` (RestYachtReservationExtra) isti koncept — zasebno.
 - Testovi: `ExtrasVariantResolverTests` (+3), `PriceCalculationExtrasZeroTest` (+1), `MmkYachtSyncPartnerCopyTests` (+1).
 - ⚠️ **Incident 22.10. 21:19:40–21:22 UTC (API down ~2,5 min):** 1. deploy (jar 3ac4ad6e, entitet `Int?`) — V9_94 je prošao, ali Hibernate `validate` je odbio start: „Schema-validation: wrong column type encountered in column [valid_days_from] in table [yacht_extras]“ (SMALLINT ≠ Int/INTEGER) → crash loop na cusma2, deploy skripta stala na health pollu, cusma3 netaknut. Ručni rollback na `webservice.jar.prev` (391cc323, 17:58) 21:22 UTC, health 200. Popravak: polja `Short?` (toShort u syncu), isti V9_94 (stupci već u bazi).
-- Jar (1. pokušaj) 22.10. 23:08 CEST iz 6cad812: `build/libs/boat4you-0.0.1-SNAPSHOT.jar` md5 `3ac4ad6e2004b898c8496ff203e0ff37`, sadrži V9_94.
+- Jar (2. pokušaj, LIVE) 23:2x CEST iz 2285f7b: md5 `6a949232721cea236b8bd7edbc03cf62`; oba čvora jedan čisti start, 0 ERROR, API 200.
+- Jar (1. pokušaj, povučen) 22.10. 23:08 CEST iz 6cad812: `build/libs/boat4you-0.0.1-SNAPSHOT.jar` md5 `3ac4ad6e2004b898c8496ff203e0ff37`, sadrži V9_94.
 
 ## 2026-10-22 — ⚠️ Digest: run koji još traje nije „PREKID“, MMK_OPTION prag 25 %, breaker: last-minute grupe ne glasaju o feedu (digest 22.10. 07:00) — ✅ DEPLOYANO 22.10.2026 (cusma2 17:58:10 UTC — V9_93 primijenjen 17:58:03; cusma3 17:58:39 UTC kroz gate; jar md5 391cc323f4a122391c37b0a92b5f82db; tag `live/2026-10-22-extras-normalizer`)
 
