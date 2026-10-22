@@ -33,7 +33,8 @@ class ReverifyDigestTriggersTest {
         wouldFlip: Long = 0,
         note: String? = null,
         ended: Boolean = true,
-    ) = RunFact(id, job, mode, ended, calls, quoted, hidden, wouldFlip, note)
+        alive: Boolean = false,
+    ) = RunFact(id, job, mode, ended, calls, quoted, hidden, wouldFlip, note, alive)
 
     private fun d3Note(
         label: String,
@@ -141,8 +142,18 @@ class ReverifyDigestTriggersTest {
             listOf(
                 "PREKID: run #1 MMK_FREE WRITE: too few decided week groups: 12 < 50",
                 "PREKID: run #2 MMK_OPTION WRITE: stopped at the 100-min time budget, the rest runs tomorrow",
-                "PREKID: run #3 NAUSYS_REVERIFY LOG nije završio (još traje ili je prekinut)",
+                "PREKID: run #3 NAUSYS_REVERIFY LOG nije završio i ne napreduje (prekinut ili zapeo)",
             )
+    }
+
+    @Test
+    fun `a run still going at 07 00 and progressing is not an interruption, one without progress for 30 min is`() {
+        // 22.10.2026: the nightly D3 run #47 was at 29,200 of ~38,000 answers at 07:00 on a slow NauSys night and was mailed as PREKID
+        val running = run(47, ReverifyJobs.NAUSYS_D3, "LOG", calls = 29_200, wouldFlip = 5, ended = false, alive = true)
+
+        digestTriggers(facts(runs = listOf(running), expectedJobs = setOf(ReverifyJobs.NAUSYS_D3))).shouldBeEmpty()
+        digestTriggers(facts(runs = listOf(running.copy(alive = false)), expectedJobs = setOf(ReverifyJobs.NAUSYS_D3))) shouldContainExactly
+            listOf("PREKID: run #47 NAUSYS_D3 LOG nije završio i ne napreduje (prekinut ili zapeo)")
     }
 
     @Test
@@ -224,6 +235,27 @@ class ReverifyDigestTriggersTest {
             )
 
         digestTriggers(f) shouldContainExactly listOf("SKRIVANJE: run #1 MMK_FREE WRITE sakrio 101 termina = 10,1 % od 1000 kvotiranih (prag 10 %)")
+    }
+
+    @Test
+    fun `MMK_OPTION hides stale options by selection, so its share bar is 25 percent, not 10`() {
+        // the WRITE runs of 17.-21.10.2026 hid 8.6-17.9 % of the stale options they quoted; run #44 (13.0 %) was mailed on 22.10.2026
+        val f =
+            facts(
+                runs =
+                    listOf(
+                        run(44, ReverifyJobs.MMK_OPTION, "WRITE", quoted = 1_960, hidden = 255),
+                        run(45, ReverifyJobs.MMK_OPTION, "WRITE", quoted = 1_000, hidden = 251),
+                        run(46, ReverifyJobs.MMK_FREE, "WRITE", quoted = 1_960, hidden = 255),
+                    ),
+                expectedJobs = emptySet(),
+            )
+
+        digestTriggers(f) shouldContainExactly
+            listOf(
+                "SKRIVANJE: run #45 MMK_OPTION WRITE sakrio 251 termina = 25,1 % od 1000 kvotiranih (prag 25 %)",
+                "SKRIVANJE: run #46 MMK_FREE WRITE sakrio 255 termina = 13,0 % od 1960 kvotiranih (prag 10 %)",
+            )
     }
 
     @Test

@@ -439,6 +439,21 @@ class MmkFreeOfferReverifyServiceTests {
     }
 
     @Test
+    fun `an agency whose only remaining weeks are last-minute is not escalated when they go unquoted - they get first strikes`() {
+        // 1482, 21.10.2026: "4 of 5 week groups unquoted" was one boat's 24.10. week each - the season's last week - while
+        // its 2027 weeks still sold; an agency closing its last weeks is not a broken feed, the weeks are verified as usual
+        val lastWeek = day1.plusDays(3)
+        combos = healthyFleet(count = 100) + (1L..5L).map { y -> combo(y, 90, lastWeek) }
+
+        val r = service.reverifyFreeOffers(day1)
+
+        r.aborted.shouldBeNull()
+        r.firstStrikes shouldBe 5
+        (1L..5L).forEach { y -> strikes["$y|$lastWeek|${lastWeek.plusDays(7)}"] shouldBe (day1 to null) }
+        escalations.flatten().shouldBeEmpty()
+    }
+
+    @Test
     fun `the run aborts without writing when the fleet-wide empty share is implausible`() {
         combos = healthyFleet(count = 60) + (1L..20L).flatMap { season(it, 3, agency = 500 + it) } // 20 / 80 = 25 %
 

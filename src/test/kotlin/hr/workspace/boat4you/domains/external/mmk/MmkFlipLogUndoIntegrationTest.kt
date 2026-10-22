@@ -580,6 +580,6 @@ class MmkFlipLogUndoIntegrationTest {
             }
         val users = mock(UserRepository::class.java)
         `when`(users.findAllAdminEmailAddresses()).thenReturn(listOf("admin@example.test"))
-        return ReverifyDigestJob(jdbc, email, users, RealPriceSwitchesFixture.switches(), NauSysReverifyLimits())
+        return ReverifyDigestJob(jdbc, email, users, RealPriceSwitchesFixture.switches(), NauSysReverifyLimits(), runs)
     }
 }

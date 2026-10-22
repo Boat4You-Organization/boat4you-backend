@@ -1,5 +1,17 @@
 # Backend deploy notes
 
+## 2026-10-22 — ⚠️ Digest: run koji još traje nije „PREKID“, MMK_OPTION prag 25 %, breaker: last-minute grupe ne glasaju o feedu (digest 22.10. 07:00) — ⏳ NIJE DEPLOYANO (grana `fix/extras-reserved-in-advance`, deploy večeras zajedno s normalizatorom)
+
+Digest od 22.10. 07:00 imao je 6 razloga; provjera na cusma4/cusma3 07:04–07:19 UTC: 3 lažna, 2 očekivana, 1 kraj sezone.
+
+- **PREKID run #47 NAUSYS_D3 LOG** — run je još trajao (29.200 → 30.200 poziva između 07:00 i 07:19, load 0,00; NauSys ~2× sporiji nego 21.10., kad je završio 06:31 uz 38.195 poziva). Popravak: `ReverifyRunStore.lastProgress` (po JVM-u: start + svaki flush brojača) i `RunFact.alive`; otvoren run je PREKID samo bez napretka ≥ `STALL_AFTER` = 30 min (MMK/NauSys flush svake 2 min, D3 svakih 200 odgovora ≈ 5 min). Tijelo: „JOS TRAJE (napreduje)“ / „PREKINUT ILI ZAPEO“. Digest i runovi žive u istom scheduler JVM-u (cusma3, profil data-sync), pa registar vrijedi; bez migracije.
+- **SKRIVANJE run #44 MMK_OPTION 13,0 %** — normalna stopa koraka 2c (WRITE runovi 17.–21.10.: 10,7 / 8,6 / 17,9 / 11,3 / 13,0 %); svih 282 redaka TWO_STRIKE_EMPTY, 167 agencije 1579 (8 brodova, tjedni 28.8.–9.10.2027, bez rezervacije u availabilityju, bez kvote dva dana zaredom). Popravak: `OPTION_ANOMALY_SHARE_PERCENT` = 25 % samo za MMK_OPTION; MMK_FREE i NauSys ostaju na 10 %.
+- **NOVA ESKALACIJA 1482 (4 od 5 tjednih grupa)** — 5 brodova; jedina preostala 2026 grupa svakog broda = tjedan 24.10. (20.10. kvotiran, 21.10. prazan), a 2027 tjedni kvotirani s cijenom (124 FREE redaka): kraj sezone, ne pokvaren feed. Popravak: `LAST_MINUTE_DAYS` = 14 — grupa čiji svi termini počinju unutar 14 dana probe-a se i verificira (two-strike) kao svaka druga, ali ne ulazi u udjele flote ni agencije. Probe log: „N groups with only last-minute periods … kept out of the shares“. Očekivani učinak: val eskalacija „kraj sezone“ (zadnji tjedni listopada/studenog) izostaje.
+- **TRAJNA 1194 + nova 1886 (non-weekly)** — pravilo od 21.10. (tjedni jamče za feed) prvi put djeluje u runu 22.10. 13:30 (cusma3 na jaru 316c5ed2 od 18:06); bez promjene koda.
+- **LOG RUN #46 NAUSYS_REVERIFY wouldFlip 2261** — zadnji LOG run; WRITE uključen 21.10. 18:06:49, prvi WRITE run 22.10. 17:30. Očekivano: sljedećih ~5 jutara digest javlja SKRIVANJE ~2.000 redaka/dan (ROUTE_GONE zaostatak 10.065 redaka, capP3 = 2000) — namjerno, prag ostaje.
+
+Testovi: `ReverifyDigestTriggersTest` (+2), `MmkFreeOfferReverifyServiceTests` (+1), `MmkFlipLogUndoIntegrationTest` (digest body).
+
 ## 2026-10-21 — 🔤 Partnerov dodatak „… RESERVED IN ADVANCE“ → „(reserved in advance)“ (Mario 21.10., nalaz EY SEO regresije T12 od 13.10.) — ⏳ NIJE DEPLOYANO (grana `fix/extras-reserved-in-advance` povrh `fix/reverify-digest-on-error` 316c5ed)
 
 Partnerov (MMK/NauSys) dodatak „Early check in (at 13:00) RESERVED IN ADVANCE“ dolazio je na sajtove doslovno, a ALL-CAPS engleski nastavak ruši provjere stranice (EY T12).

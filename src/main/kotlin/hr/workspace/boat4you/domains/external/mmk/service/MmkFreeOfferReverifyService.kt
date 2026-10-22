@@ -115,6 +115,14 @@ class MmkFreeOfferReverifyService(
         const val MAX_EMPTY_SHARE_PER_AGENCY = 0.50
         const val MIN_AGENCY_SEASONS_FOR_CAP = 5
 
+        /**
+         * A group whose periods all start within this many days is the season's end, not evidence about the feed: an
+         * agency closes its last weeks one boat at a time (1482, 21.10.2026: "4 of 5 week groups unquoted" = one 24.10.
+         * week per boat while its 2027 weeks sold). Such groups are probed and verified like any other but stay out of
+         * the fleet and agency shares (see suspectAgencies).
+         */
+        const val LAST_MINUTE_DAYS = 14L
+
         // Below this many decided seasons there is no fleet to compare against: the partner is sick, write nothing.
         const val MIN_DECIDED_SEASONS = 50
         const val MAX_UNKNOWN_SHARE = 0.10
@@ -158,6 +166,9 @@ class MmkFreeOfferReverifyService(
         val periods: List<Period>,
     ) {
         val label get() = "$year ${if (weekly) "weeks" else "other lengths"}"
+
+        /** Nothing but last-minute periods left ([LAST_MINUTE_DAYS]); [periods] are sorted by start. */
+        fun lastMinuteOnly(today: LocalDate) = periods.last().dateFrom < today.plusDays(LAST_MINUTE_DAYS)
     }
 
     private enum class Probe { QUOTED, EMPTY, UNKNOWN }
@@ -344,20 +355,27 @@ class MmkFreeOfferReverifyService(
         val decidedByAgency = ConcurrentHashMap<Pair<Long, Boolean>, AtomicInteger>()
         val emptyByAgency = ConcurrentHashMap<Pair<Long, Boolean>, AtomicInteger>()
         val unknown = AtomicInteger()
+        val lastMinute = AtomicInteger()
         runWorkers("mmk-free-probe", ConcurrentLinkedQueue(seasons), ctx, { "yacht=${it.yachtId} ${it.label}" }) { season ->
             val agencyKey = season.agencyId to season.weekly
+            // Season's end (LAST_MINUTE_DAYS): probed and verified like any other group, but not a vote on the feed.
+            val judged = !season.lastMinuteOnly(ctx.today)
+            if (!judged) lastMinute.incrementAndGet()
             when (probeSeason(season, ctx)) {
                 Probe.EMPTY -> {
                     empty.add(season)
-                    decidedByShape.getValue(season.weekly).incrementAndGet()
-                    emptyByShape.getValue(season.weekly).incrementAndGet()
-                    decidedByAgency.getOrPut(agencyKey) { AtomicInteger() }.incrementAndGet()
-                    emptyByAgency.getOrPut(agencyKey) { AtomicInteger() }.incrementAndGet()
+                    if (judged) {
+                        decidedByShape.getValue(season.weekly).incrementAndGet()
+                        emptyByShape.getValue(season.weekly).incrementAndGet()
+                        decidedByAgency.getOrPut(agencyKey) { AtomicInteger() }.incrementAndGet()
+                        emptyByAgency.getOrPut(agencyKey) { AtomicInteger() }.incrementAndGet()
+                    }
                 }
-                Probe.QUOTED -> {
-                    decidedByShape.getValue(season.weekly).incrementAndGet()
-                    decidedByAgency.getOrPut(agencyKey) { AtomicInteger() }.incrementAndGet()
-                }
+                Probe.QUOTED ->
+                    if (judged) {
+                        decidedByShape.getValue(season.weekly).incrementAndGet()
+                        decidedByAgency.getOrPut(agencyKey) { AtomicInteger() }.incrementAndGet()
+                    }
                 Probe.UNKNOWN -> unknown.incrementAndGet()
             }
             val done = probed.incrementAndGet()
@@ -374,7 +392,9 @@ class MmkFreeOfferReverifyService(
             "MMK free-offer reverify probe: weeks ${decidedByShape.getValue(true)} decided, ${emptyByShape.getValue(true)} fully unquoted " +
                 "(${"%.1f".format(weeklyShare * 100)} %); other lengths ${decidedByShape.getValue(false)} decided, " +
                 "${emptyByShape.getValue(false)} fully unquoted (${"%.1f".format(otherShare * 100)} %); " +
-                "${unknown.get()} unknown (call failures)${if (ctx.outOfTime.get()) ", STOPPED at the time budget" else ""}",
+                "${unknown.get()} unknown (call failures); ${lastMinute.get()} groups with only last-minute periods " +
+                "(start < today + $LAST_MINUTE_DAYS d) probed but kept out of the shares" +
+                if (ctx.outOfTime.get()) "; STOPPED at the time budget" else "",
         )
         // The week groups are the calibrated baseline: if they look wrong, the partner is sick and nothing is written.
         abortReason(seasons.size, decidedByShape.getValue(true).get(), unknown.get(), weeklyShare)?.let {
@@ -447,6 +467,10 @@ class MmkFreeOfferReverifyService(
      *    (20.10.2026) had 70 of 8,003 non-weekly groups unquoted fleet-wide, 31 of them at four agencies with 43
      *    non-weekly groups in all (1194 15/19, 1444 6/6, 1560 6/11, 1701 4/7) whose weeks were never escalated, and
      *    ~717 of their periods were re-escalated every day without ever being decided.
+     * Groups with nothing but last-minute periods left ([LAST_MINUTE_DAYS]) are counted on neither side: at the season's
+     * end an agency closes its last weeks one boat at a time (1482, 21.10.2026: 4 of 5 week groups = one 24.10. week
+     * each, its 2027 weeks still quoted), which this rule would read as a withdrawn fleet; those periods still go
+     * through the two-strike check.
      */
     private fun suspectAgencies(
         decidedByAgency: Map<Pair<Long, Boolean>, AtomicInteger>,

@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.evidence.ReverifyJobs
 import hr.workspace.boat4you.domains.external.evidence.ReverifyRunMode
+import hr.workspace.boat4you.domains.external.evidence.ReverifyRunStore
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysReverifyLimits
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
@@ -17,6 +18,8 @@ import org.springframework.context.annotation.Profile
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.util.Locale
@@ -34,7 +37,9 @@ import java.util.concurrent.ConcurrentSkipListMap
  *
  * Mailed only when something needs a human (Mario 21.10.2026: "kada vidiš grešku mi samo pošalji"): [digestTriggers]
  * names the reasons, they head the body under [REASONS_HEADING] and the subject gets [SUBJECT_PREFIX]. A day without a
- * reason stays in the application log only (INFO, full body).
+ * reason stays in the application log only (INFO, full body). A run still open at 07:00 is an interruption only when
+ * this JVM has not written it for [STALL_AFTER] ([ReverifyRunStore.lastProgress]; the jobs run in this scheduler JVM):
+ * the nightly D3 run of a slow NauSys night is still going at 07:00 (22.10.2026, run #47), a killed or hung one is not.
  *
  * Admin-only mail through the existing admin mail path (SYSTEM_ADMIN addresses, internal template). Agency IDS only,
  * never a name: nothing here may reach a public surface. Read-only SQL. 07:00 UTC: after the night chain (NauSys
@@ -48,6 +53,7 @@ class ReverifyDigestJob(
     private val userRepository: UserRepository,
     private val switches: RealPriceSwitches,
     private val nauSysLimits: NauSysReverifyLimits,
+    private val runStore: ReverifyRunStore,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -89,6 +95,8 @@ class ReverifyDigestJob(
 
     private fun composeDigest(): Digest {
         val runs = jdbcTemplate.queryForList(RUNS_SQL)
+        val now = Instant.now()
+        val alive = runs.associate { r -> num(r["id"]) to (r["ended_at"] == null && stillProgressing(num(r["id"]), now)) }
         val flips = jdbcTemplate.queryForList(FLIPS_SQL)
         val escalations = jdbcTemplate.queryForList(ESCALATIONS_SQL)
         val a2BySystem = jdbcTemplate.queryForList(A2_CRITERION_SQL).associate { system(it["external_system_id"]) to (it["rows"] as Number).toLong() }
@@ -100,7 +108,7 @@ class ReverifyDigestJob(
                 appendLine("PROVJERE KOD PARTNERA (MMK / NauSys) - zadnja 24 h")
                 appendLine("Samo za admine: agencije su navedene po ID-u.")
                 appendLine()
-                appendRuns(runs)
+                appendRuns(runs, alive)
                 appendLine()
                 appendFlips(flips)
                 appendLine()
@@ -110,7 +118,7 @@ class ReverifyDigestJob(
             }
         val facts =
             DigestFacts(
-                runs = runs.map(::runFact),
+                runs = runs.map { runFact(it, alive.getValue(num(it["id"]))) },
                 flips = flips.map(::flipFact),
                 escalations = escalations.map(::escalationFact),
                 expectedJobs = expectedDailyJobs(switches.snapshot()),
@@ -120,12 +128,24 @@ class ReverifyDigestJob(
         return Digest(body, digestTriggers(facts))
     }
 
-    private fun StringBuilder.appendRuns(runs: List<Map<String, Any?>>) {
+    /** True when this JVM wrote the open run within [STALL_AFTER] of [now]: still going, as opposed to killed or hung. */
+    private fun stillProgressing(
+        runId: Long,
+        now: Instant,
+    ): Boolean = runStore.lastProgress(runId)?.let { Duration.between(it, now) <= STALL_AFTER } == true
+
+    private fun openRunLabel(alive: Boolean): String =
+        if (alive) "JOS TRAJE (napreduje)" else "PREKINUT ILI ZAPEO (bez napretka ${STALL_AFTER.toMinutes()} min)"
+
+    private fun StringBuilder.appendRuns(
+        runs: List<Map<String, Any?>>,
+        alive: Map<Long, Boolean>,
+    ) {
         appendLine("RUNOVI (reverify_run, LOG = samo brojanje: upserts/would_flip su 'bi bilo')")
         if (runs.isEmpty()) appendLine("  (nijedan run u zadnja 24 h)")
         runs.forEach { r ->
             appendLine(
-                "  #${r["id"]} ${r["job"]} ${r["mode"]} ${r["started_at"]} -> ${r["ended_at"] ?: "JOS TRAJE / PREKINUT"}: " +
+                "  #${r["id"]} ${r["job"]} ${r["mode"]} ${r["started_at"]} -> ${r["ended_at"] ?: openRunLabel(alive.getValue(num(r["id"])))}: " +
                     "calls=${r["calls"]} quoted=${r["quoted"]} empty=${r["empty"]} unknown=${r["unknown"]} upserts=${r["upserts"]} " +
                     "strikes=${r["first_strikes"]} hidden=${r["hidden_periods"]} (${r["hidden_rows"]} rows) wouldFlip=${r["would_flip_rows"]}" +
                     capNote(r),
@@ -193,8 +213,10 @@ class ReverifyDigestJob(
 
     private fun system(value: Any?): String = (value as? Number)?.toInt()?.let { v -> ExternalSystemEnum.entries.firstOrNull { it.value == v }?.name } ?: "?"
 
-    private fun runFact(r: Map<String, Any?>) =
-        RunFact(
+    private fun runFact(
+        r: Map<String, Any?>,
+        alive: Boolean,
+    ) = RunFact(
             id = num(r["id"]),
             job = r["job"].toString(),
             mode = r["mode"].toString(),
@@ -204,6 +226,7 @@ class ReverifyDigestJob(
             hiddenPeriods = num(r["hidden_periods"]),
             wouldFlipRows = num(r["would_flip_rows"]),
             note = r["aborted_reason"]?.toString(),
+            alive = alive,
         )
 
     private fun flipFact(f: Map<String, Any?>) = FlipFact(job = f["job"].toString(), rows = num(f["rows"]))
@@ -238,6 +261,8 @@ class ReverifyDigestJob(
         val wouldFlipRows: Long,
         /** `aborted_reason`: a breaker, a stop or a routine closing summary (see [isRoutineNote]). */
         val note: String?,
+        /** Not ended, and this JVM wrote it within [STALL_AFTER]: still going (no reason to mail), not killed or hung. */
+        val alive: Boolean = false,
     )
 
     /** One flip-log group of the last 24 h (per run, job, reason and partner): its job and row count. */
@@ -293,6 +318,21 @@ class ReverifyDigestJob(
          * (`hidden_periods` vs `quoted`), or a LOG run whose would-flip rows are MORE than this share of its calls.
          */
         const val ANOMALY_SHARE_PERCENT = 10L
+
+        /**
+         * The share bar of an MMK_OPTION WRITE run: steps 2c/2b ask stale OPTION / OPTION_WAITING periods by selection,
+         * so hiding a good share of them is the step's normal day - 8.6-17.9 % on the WRITE runs of 17.-21.10.2026
+         * (#20, #26, #32, #38, #44; #44 with 13.0 % was mailed on 22.10.2026 as an anomaly). MMK_FREE and NauSys keep
+         * [ANOMALY_SHARE_PERCENT].
+         */
+        const val OPTION_ANOMALY_SHARE_PERCENT = 25L
+
+        /**
+         * An open run this JVM has not written for this long is interrupted (killed, or hung on the partner). The MMK and
+         * NauSys reverifiers flush their counters every 2 min (heartbeat), D3 every 200 answers - about every 5 min at
+         * the slow NauSys pace of 22.10.2026 (~40 answers/min).
+         */
+        val STALL_AFTER: Duration = Duration.ofMinutes(30)
 
         /**
          * Anomaly row bar: MORE than this many rows flipped to UNAVAILABLE in the last 24 h in total (flip log, admin
@@ -376,13 +416,14 @@ class ReverifyDigestJob(
         /**
          * Why the digest needs a human, one line each (empty = log only):
          *  1. a run of the last 24 h stopped (breaker, deadline, time budget, switch, rate limits - any note but the
-         *     routine summary, see [isRoutineNote]) or never finished (still running at 07:00 or killed), or a job the
-         *     switches run every day has no run in the last 24 h;
+         *     routine summary, see [isRoutineNote]) or is open without progress for [STALL_AFTER] (killed or hung; one
+         *     still progressing at 07:00 is not a reason), or a job the switches run every day has no run in the
+         *     last 24 h;
          *  2. an agency escalated in the last 24 h and not in the 6 days before (new), or escalated on
          *     [PERSISTENT_ESCALATION_DAYS] days of the last 7 (persistent);
          *  3. A2 below [A2_THRESHOLD] on the third consecutive daily digest ([A2_DAYS_BELOW]), or back from below to above it;
-         *  4. a WRITE run hid more than [ANOMALY_SHARE_PERCENT] % of the terms it quoted, or the flips of the last 24 h
-         *     exceed [ANOMALY_ROWS] rows;
+         *  4. a WRITE run hid more than [ANOMALY_SHARE_PERCENT] % of the terms it quoted ([OPTION_ANOMALY_SHARE_PERCENT] for
+         *     MMK_OPTION), or the flips of the last 24 h exceed [ANOMALY_ROWS] rows;
          *  5. a LOG run would flip more than [ANOMALY_ROWS] rows or more than [ANOMALY_SHARE_PERCENT] % of its calls.
          * Pure: no clock, no database.
          */
@@ -431,7 +472,8 @@ class ReverifyDigestJob(
             val stopped =
                 facts.runs.mapNotNull { r ->
                     when {
-                        !r.ended -> "PREKID: run #${r.id} ${r.job} ${r.mode} nije završio (još traje ili je prekinut)"
+                        !r.ended && r.alive -> null
+                        !r.ended -> "PREKID: run #${r.id} ${r.job} ${r.mode} nije završio i ne napreduje (prekinut ili zapeo)"
                         r.note != null && !isRoutineNote(r.job, r.note) -> "PREKID: run #${r.id} ${r.job} ${r.mode}: ${r.note}"
                         else -> null
                     }
@@ -467,10 +509,10 @@ class ReverifyDigestJob(
         private fun hideAnomalies(facts: DigestFacts): List<String> {
             val perRun =
                 facts.runs
-                    .filter { it.mode == ReverifyRunMode.WRITE.name && it.quoted >= MIN_SAMPLE_FOR_SHARE && exceedsShare(it.hiddenPeriods, it.quoted) }
+                    .filter { it.mode == ReverifyRunMode.WRITE.name && it.quoted >= MIN_SAMPLE_FOR_SHARE && exceedsShare(it.hiddenPeriods, it.quoted, shareBar(it.job)) }
                     .map {
                         "SKRIVANJE: run #${it.id} ${it.job} WRITE sakrio ${it.hiddenPeriods} termina = ${percent(it.hiddenPeriods, it.quoted)} % " +
-                            "od ${it.quoted} kvotiranih (prag $ANOMALY_SHARE_PERCENT %)"
+                            "od ${it.quoted} kvotiranih (prag ${shareBar(it.job)} %)"
                     }
             val rows = facts.flips.filter { it.job != ReverifyJobs.UNDO }.sumOf { it.rows }
             return perRun + listOfNotNull("SKRIVANJE: $rows redaka -> UNAVAILABLE u zadnja 24 h (prag $ANOMALY_ROWS)".takeIf { rows > ANOMALY_ROWS })
@@ -485,10 +527,14 @@ class ReverifyDigestJob(
                         "(prag: više od $ANOMALY_ROWS redaka ili $ANOMALY_SHARE_PERCENT % poziva)"
                 }
 
+        /** The hide-share bar of a WRITE run of [job]: [OPTION_ANOMALY_SHARE_PERCENT] for MMK_OPTION, else [ANOMALY_SHARE_PERCENT]. */
+        fun shareBar(job: String): Long = if (job == ReverifyJobs.MMK_OPTION) OPTION_ANOMALY_SHARE_PERCENT else ANOMALY_SHARE_PERCENT
+
         private fun exceedsShare(
             part: Long,
             whole: Long,
-        ): Boolean = part * 100 > whole * ANOMALY_SHARE_PERCENT
+            sharePercent: Long = ANOMALY_SHARE_PERCENT,
+        ): Boolean = part * 100 > whole * sharePercent
 
         private fun percent(
             part: Long,

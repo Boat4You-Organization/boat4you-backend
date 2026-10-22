@@ -4,7 +4,9 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.RowMapper
 import org.springframework.stereotype.Component
 import java.sql.Timestamp
+import java.time.Instant
 import java.time.LocalDateTime
+import java.util.concurrent.ConcurrentHashMap
 
 /** `reverify_run.mode`: LOG = probes and bookkeeping only, flips counted; WRITE = flips written. */
 enum class ReverifyRunMode { LOG, WRITE }
@@ -64,23 +66,33 @@ data class ReverifyRun(
  * Run log of the reverify / D3 jobs (`reverify_run`, V9_82; DESIGN.md WS-B "Run log"). [start] opens a row, the job
  * adds counters as it goes ([addCounters], so a crash still leaves the partial numbers) and [finish] closes it.
  * Plain JDBC, one statement per call (joins the caller's transaction when there is one). Timestamps are DB time.
+ *
+ * [lastProgress] remembers, per JVM, when each open run last wrote (its start or a counter flush): the digest, which runs
+ * in the same scheduler JVM, tells a run that is still going at 07:00 from one that was killed or hangs (22.10.2026:
+ * the nightly D3 run #47 was at 29,200 of ~38,000 answers at 07:00 on a slow NauSys night and was mailed as "PREKID").
  */
 @Component
 class ReverifyRunStore(
     private val jdbcTemplate: JdbcTemplate,
 ) {
+    /** Last write (start, counter flush) of every run this JVM opened and has not finished yet. */
+    private val lastProgress = ConcurrentHashMap<Long, Instant>()
+
     /** Opens a run and returns its id. */
     fun start(
         job: String,
         mode: ReverifyRunMode,
     ): Long {
         require(job.isNotBlank() && job.length <= JOB_MAX) { "job must be 1..$JOB_MAX characters: '$job'" }
-        return jdbcTemplate.queryForObject(
-            "INSERT INTO reverify_run (job, mode, started_at) VALUES (?, ?, now()) RETURNING id",
-            Long::class.java,
-            job,
-            mode.name,
-        )!!
+        val id =
+            jdbcTemplate.queryForObject(
+                "INSERT INTO reverify_run (job, mode, started_at) VALUES (?, ?, now()) RETURNING id",
+                Long::class.java,
+                job,
+                mode.name,
+            )!!
+        lastProgress[id] = Instant.now()
+        return id
     }
 
     /** Adds [delta] to the run's counters. */
@@ -89,7 +101,14 @@ class ReverifyRunStore(
         delta: ReverifyCounters,
     ) {
         jdbcTemplate.update("UPDATE reverify_run SET $ADD_COUNTERS WHERE id = ?", *delta.args(), runId)
+        lastProgress[runId] = Instant.now()
     }
+
+    /**
+     * When this JVM last wrote the still-open run [runId] (its start or a counter flush), or null: the run finished, or
+     * another JVM opened it. A run whose counters stop moving stops touching this, so a hang ages out like a kill.
+     */
+    fun lastProgress(runId: Long): Instant? = lastProgress[runId]
 
     /**
      * Closes the run: adds [delta], sets `ended_at = now()`, the abort reason (cut to 200 characters) when given, and
@@ -101,6 +120,7 @@ class ReverifyRunStore(
         abortedReason: String? = null,
         escalatedAgencyIds: Collection<Long>? = null,
     ) {
+        lastProgress.remove(runId)
         jdbcTemplate.update { con ->
             con
                 .prepareStatement(
