@@ -17,11 +17,15 @@ class ExtrasVariantResolverTests {
         name: String,
         obligatory: Boolean = true,
         externalId: Long? = null,
+        validDaysFrom: Int? = null,
+        validDaysTo: Int? = null,
     ) = YachtExtra().apply {
         this.name = name
         this.obligatory = obligatory
         this.externalId = externalId
         this.price = BigDecimal.TEN
+        this.validDaysFrom = validDaysFrom
+        this.validDaysTo = validDaysTo
     }
 
     private fun offerExtra(
@@ -136,5 +140,49 @@ class ExtrasVariantResolverTests {
             emptySet(),
             ExtrasVariantResolver.supersededYachtExtraKeys(listOf(offerExtra(pack1)), listOf(yachtExtra(pack2, obligatory = false))),
         )
+    }
+
+    // Sailing Sicily Bali 5.4 (Therasia 11907, 22.10.2026): MMK bounds every row to charter lengths in days -
+    // the weekly pack 0-7, "Luxury Pack 2weeks" 8-14, the 0 EUR label row 0-365; APA season variants likewise.
+    private val luxuryWeek = "Luxury Pack Bali 5.4 (Skipper-Hostess- Cook-final cleaning - bed linen + towels- beach towels)"
+    private val luxuryTwoWeeks = "Luxury Pack 2weeks (Skipper-Hostess- Cook-final cleaning - bed linen + towels- beach towels)"
+    private val luxuryLabel = "Luxury Pack Bali 5.4 5200€ per week (Skipper-Hostess- Cook-final cleaning - bed linen + towels- beach towels)"
+
+    @Test
+    fun `a glued duration token normalizes away like a spaced one`() {
+        assertEquals("luxury pack", ExtrasVariantResolver.normalizeVariantName(luxuryTwoWeeks))
+        assertEquals("luxury pack", ExtrasVariantResolver.normalizeVariantName("Luxury Pack 2 weeks (…)"))
+    }
+
+    @Test
+    fun `charter-length bounds decide the variant without looking at the name`() {
+        val rows = listOf(
+            yachtExtra(luxuryWeek, externalId = 34832401335801230, validDaysFrom = 0, validDaysTo = 7),
+            yachtExtra(luxuryTwoWeeks, externalId = 36160021335801230, validDaysFrom = 8, validDaysTo = 14),
+            yachtExtra(luxuryLabel, externalId = 36186611335801230, validDaysFrom = 0, validDaysTo = 365),
+            yachtExtra("APA Bali 5.4 20% charter price  Aug-Sept", externalId = 35544411335801230, validDaysFrom = 0, validDaysTo = 7),
+            yachtExtra("APA Bali 5.4 20% charter price  Aug-Sept 2 weeks", externalId = 35621161335801230, validDaysFrom = 8, validDaysTo = 14),
+            yachtExtra("Transit log"), // no bounds synced yet -> never excluded
+            yachtExtra("Safety net", obligatory = false, validDaysFrom = 8, validDaysTo = 14), // optional rows are not touched
+        )
+
+        assertEquals(
+            setOf(rows[1].extrasKey(), rows[4].extrasKey()),
+            ExtrasVariantResolver.outOfDurationYachtExtraKeys(rows, nights = 7),
+        )
+        assertEquals(
+            setOf(rows[0].extrasKey(), rows[3].extrasKey()),
+            ExtrasVariantResolver.outOfDurationYachtExtraKeys(rows, nights = 14),
+        )
+        assertEquals(emptySet(), ExtrasVariantResolver.outOfDurationYachtExtraKeys(listOf(rows[5], rows[6]), nights = 7))
+    }
+
+    @Test
+    fun `a zero or missing upper bound never excludes`() {
+        val open = yachtExtra("Tourist tax", validDaysFrom = 0, validDaysTo = 0)
+        val unknown = yachtExtra("Transit log")
+        kotlin.test.assertTrue(open.appliesToNights(21))
+        kotlin.test.assertTrue(unknown.appliesToNights(21))
+        kotlin.test.assertFalse(yachtExtra("Two weeks only", validDaysFrom = 8, validDaysTo = 14).appliesToNights(7))
     }
 }

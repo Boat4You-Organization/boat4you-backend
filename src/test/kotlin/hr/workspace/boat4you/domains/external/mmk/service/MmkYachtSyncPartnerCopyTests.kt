@@ -67,6 +67,8 @@ class MmkYachtSyncPartnerCopyTests {
         id: Long,
         name: String,
         description: String?,
+        validDaysFrom: Long = 0,
+        validDaysTo: Long = 0,
     ) = Extras(
         name = name,
         obligatory = false,
@@ -74,11 +76,49 @@ class MmkYachtSyncPartnerCopyTests {
         currency = "EUR",
         unit = "per_booking",
         payableInBase = true,
-        validDaysFrom = 0,
-        validDaysTo = 0,
+        validDaysFrom = validDaysFrom,
+        validDaysTo = validDaysTo,
         id = id,
         description = description,
     )
+
+    @Test
+    fun `charter-length bounds are stored on update and on insert`() {
+        // Therasia 11907 (22.10.2026): "Luxury Pack Bali 5.4" 0-7 days, "Luxury Pack 2weeks" 8-14 days
+        val yacht = yacht()
+        val existing =
+            YachtExtra().apply {
+                id = 100
+                externalId = 1
+                name = updatedName
+                price = BigDecimal("50")
+                unit = ExtrasUnitType.PER_BOOKING
+                type = ExtrasType.EXTRAS
+                this.yacht = yacht
+            }
+        yacht.yachtExtras.add(existing)
+
+        service.syncExtras(
+            yacht,
+            listOf(
+                Product(
+                    name = "Crewed",
+                    extras =
+                        listOf(
+                            extra(1, updatedName, null, validDaysFrom = 0, validDaysTo = 7),
+                            extra(2, insertedName, null, validDaysFrom = 8, validDaysTo = 14),
+                        ),
+                ),
+            ),
+            optionalOnSite = false,
+        )
+
+        assertEquals(0, existing.validDaysFrom)
+        assertEquals(7, existing.validDaysTo)
+        val inserted = yacht.yachtExtras.single { it.externalId == 2L }
+        assertEquals(8, inserted.validDaysFrom)
+        assertEquals(14, inserted.validDaysTo)
+    }
 
     private fun yacht() =
         Yacht().apply {

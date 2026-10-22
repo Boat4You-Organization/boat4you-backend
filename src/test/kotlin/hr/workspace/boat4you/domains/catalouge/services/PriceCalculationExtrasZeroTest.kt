@@ -38,6 +38,8 @@ class PriceCalculationExtrasZeroTest {
         obligatory: Boolean,
         paymentType: ExtraPaymentType?,
         payableInBase: Boolean = false,
+        validDaysFrom: Int? = null,
+        validDaysTo: Int? = null,
     ) = YachtExtra().apply {
         id = nextId++
         this.name = name
@@ -47,6 +49,24 @@ class PriceCalculationExtrasZeroTest {
         this.obligatory = obligatory
         this.payableInBase = payableInBase
         this.paymentType = paymentType
+        this.validDaysFrom = validDaysFrom
+        this.validDaysTo = validDaysTo
+    }
+
+    @Test
+    fun `an obligatory row bound to other charter lengths is neither listed nor charged`() {
+        // Therasia Bali 5.4 (22.10.2026): one-week booking, MMK bounds the weekly pack to 0-7 days and the
+        // two-week pack to 8-14; the page summed both (5,200 + 10,400 EUR) before V9_94.
+        val weekly = extra("Luxury Pack Bali 5.4", "5200", obligatory = true, ExtraPaymentType.ON_SITE, payableInBase = true, validDaysFrom = 0, validDaysTo = 7)
+        val twoWeeks = extra("Luxury Pack 2weeks", "10400", obligatory = true, ExtraPaymentType.ON_SITE, payableInBase = true, validDaysFrom = 8, validDaysTo = 14)
+        val open = extra("Luxury Pack label", "0", obligatory = true, ExtraPaymentType.ON_SITE, payableInBase = true, validDaysFrom = 0, validDaysTo = 365)
+
+        val result = calculate(listOf(weekly, twoWeeks, open, transitLog), selected = emptySet(), optionalOnSite = false)
+
+        val listed = (result.selectedExtrasAtBase + result.selectedExtrasInPrice).map { it.name }
+        kotlin.test.assertTrue("Luxury Pack Bali 5.4" in listed, listed.toString())
+        kotlin.test.assertTrue("Luxury Pack label" in listed, listed.toString())
+        kotlin.test.assertFalse("Luxury Pack 2weeks" in listed, listed.toString())
     }
 
     private val transitLog = extra("Transit log", "250", obligatory = true, ExtraPaymentType.WITH_BOOKING)

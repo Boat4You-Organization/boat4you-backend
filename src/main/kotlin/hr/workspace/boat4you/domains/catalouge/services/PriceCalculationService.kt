@@ -83,6 +83,11 @@ class PriceCalculationService(
                         it.validForBases!!.any { e ->
                             e in externalBasesExternalIds
                         }
+                }.filter {
+                    // V9_94: the partner's charter-length bounds (MMK validDaysFrom/To). Therasia Bali 5.4,
+                    // 22.10.2026: "Luxury Pack 2weeks" (8-14 days, 10,400 €) was listed and summed next to the
+                    // weekly "Luxury Pack Bali 5.4" (0-7 days, 5,200 €) on a one-week booking.
+                    it.appliesToNights(offer.numberOfDays())
                 }.filter { it.obligatory == true || selectedExtras.contains(it.extrasKey()) }
                 .filter { it.extrasKey() !in supersededYachtExtraKeys }
                 .map { yachtExtrasMapper.toInternalCalc(it) }

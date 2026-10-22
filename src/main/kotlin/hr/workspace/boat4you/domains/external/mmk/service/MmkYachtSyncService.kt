@@ -744,6 +744,9 @@ class MmkYachtSyncService(
                         ?: mmkExtra.validDateFrom?.value?.toLocalDate()
                     extraAlreadyOnYacht.validTo = mmkExtra.sailingDateTo?.value?.toLocalDate()
                         ?: mmkExtra.validDateTo?.value?.toLocalDate()
+                    // V9_94: charter-length bounds (days); 0-365 = unbounded, 0-7 weekly, 8-14 two-week variants
+                    extraAlreadyOnYacht.validDaysFrom = mmkExtra.validDaysFrom.toInt()
+                    extraAlreadyOnYacht.validDaysTo = mmkExtra.validDaysTo.toInt()
                     // R01: partner copy cleaned before it is stored (descriptions only; the name stays the raw key)
                     extraAlreadyOnYacht.description = PartnerCopySanitizer.syncDescription(mmkExtra.description, yacht.agency)
                     matchedIds.add(extraAlreadyOnYacht.id!!)
@@ -765,6 +768,8 @@ class MmkYachtSyncService(
                     ?: mmkExtra.validDateFrom?.value?.toLocalDate()
                 yachtExtra.validTo = mmkExtra.sailingDateTo?.value?.toLocalDate()
                     ?: mmkExtra.validDateTo?.value?.toLocalDate()
+                yachtExtra.validDaysFrom = mmkExtra.validDaysFrom.toInt()
+                yachtExtra.validDaysTo = mmkExtra.validDaysTo.toInt()
                 yachtExtra.type = ExtrasType.EXTRAS
                 yachtExtra.description = PartnerCopySanitizer.syncDescription(mmkExtra.description, yacht.agency)
                 yachtExtraRepository.save(yachtExtra)

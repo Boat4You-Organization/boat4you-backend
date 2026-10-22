@@ -65,7 +65,8 @@ class OfferMapper(
                     .map { it.extrasKey() }
                     .toSet(),
             supersededExtrasKeys =
-                ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, offer.yacht?.yachtExtras.orEmpty()),
+                ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, offer.yacht?.yachtExtras.orEmpty()) +
+                    ExtrasVariantResolver.outOfDurationYachtExtraKeys(offer.yacht?.yachtExtras.orEmpty(), offer.numberOfDays()),
             extras =
                 filteredOfferExtras
                     .filter { it.first.shouldDisplay() }

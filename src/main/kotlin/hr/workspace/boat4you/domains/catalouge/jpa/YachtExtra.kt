@@ -80,6 +80,25 @@ open class YachtExtra {
     @Column(name = "valid_to")
     open var validTo: LocalDate? = null
 
+    /**
+     * MMK `validDaysFrom` / `validDaysTo` (V9_94): the charter lengths, in days, the partner limits this row to -
+     * "Luxury Pack Bali 5.4" 0-7, "Luxury Pack 2weeks" 8-14, an unbounded row 0-365 (Therasia 11907, 22.10.2026).
+     * NULL = the partner gave no bound.
+     */
+    @Column(name = "valid_days_from")
+    open var validDaysFrom: Int? = null
+
+    @Column(name = "valid_days_to")
+    open var validDaysTo: Int? = null
+
+    /**
+     * Whether the row applies to a charter of [nights] nights ([Offer.numberOfDays]): inside the partner's day bounds,
+     * a missing or zero upper bound never excludes. A one-week charter keeps the 0-7 rows and drops the 8-14 ones.
+     */
+    fun appliesToNights(nights: Long): Boolean =
+        (validDaysFrom == null || nights >= validDaysFrom!!) &&
+            (validDaysTo == null || validDaysTo == 0 || nights <= validDaysTo!!)
+
     @Enumerated(EnumType.STRING)
     @NotNull
     @Column(name = "type", nullable = false)

@@ -1,5 +1,18 @@
 # Backend deploy notes
 
+## 2026-10-22 — 🧾 Extrasi po trajanju chartera: MMK `validDaysFrom/To` (V9_94) — Therasia Bali 5.4: „Luxury Pack 2weeks“ zbrajan uz tjedni paket (Mario 22.10., PDF ponude Sailing Sicily) — ⏳ NIJE DEPLOYANO (grana `fix/extras-duration-variants`, worktree `wt/extras-duration`)
+
+Mario 22.10.: na https://www.boat4you.com/boat/bali-catamarans-bali-54-therasia-11907 „dva luxury packa obligatory, one i two weeks“ + „vidi cijenu apa“. Ponuda agencije (MMK booking 8393-92090-00001-01230, 4.–11.9.2027): APA Aug–Sept 3.310 € + Luxury Pack Bali 5.4 5.200 € + Luxury Pack 5200€/week 0 € = 8.510 € u bazi. Naš `offer_extras` za taj termin je IDENTIČAN (3 retka, 8.510), ali stranica je uz to prikazivala i „Luxury Pack 2weeks“ 10.400 € (per booking) kao obvezan: `ExtrasVariantResolver` ga nije prepoznao kao varijantu („2weeks“ slijepljeno, „Bali 5.4“ u imenu sidra). Bez datuma stranica pokazuje sve varijante i APA najjeftinije sezone (2.185 €, siječanj–svibanj).
+
+Uzrok: MMK uz svaki extra šalje `validDaysFrom`/`validDaysTo` (dani chartera; provjereno 22.10. s cusma2 na `/yacht/34794241335801230`: tjedni paket i tjedni APA 0–7, „2weeks“ varijante 8–14, label 0 € 0–365), a `MmkYachtSyncService.syncExtras` to nije spremao.
+
+- **V9_94** `yacht_extras.valid_days_from/valid_days_to SMALLINT NULL`; sync ih piše pri insertu i updateu (NULL = partner nije dao granicu → nikad ne isključuje).
+- `YachtExtra.appliesToNights(nights)`; **PriceCalculationService** filtrira yacht-level extrase po `offer.numberOfDays()` (uz postojeći filtar po datumu check-ina); **OfferMapper.supersededExtrasKeys** dobiva i retke izvan trajanja (web ih već skriva kroz `supersededExtrasKeys`, bez promjene weba); **YachtExtraRepository** (`findYachtExtraIdsGroupedByYacht` + legacy `findYachtExtraIdsByYachtAndPeriod`, upiti koji za stranicu broda biraju jedan redak po ključu) filtriraju po granicama trajanja: odabrani raspon = njegova duljina u danima, bez raspona = standardni tjedan (7); „2weeks“ varijante se pojave tek uz dvotjedni termin i ne mogu „pobijediti“ particiju APA ključa na tjednom prikazu.
+- `ExtrasVariantResolver.normalizeVariantName`: znamenke prije riječi trajanja, pa „2weeks“ normalizira kao „2 weeks“ (robusnost, nije nosivi popravak).
+- Rollout: stupci su NULL dok noćni MMK yacht sync ne upiše granice (ponašanje nepromijenjeno do tada); za flotu 1478 (29 brodova) može se ručno pokrenuti sync agencije nakon deploya.
+- NE rješava: APA bez datuma i dalje pokazuje jednu sezonsku varijantu (koju bira web po ključu) — odluka Mario: najskuplja / sljedeća sezona / raspon. NauSys `minDuration/maxDuration` (RestYachtReservationExtra) isti koncept — zasebno.
+- Testovi: `ExtrasVariantResolverTests` (+3), `PriceCalculationExtrasZeroTest` (+1), `MmkYachtSyncPartnerCopyTests` (+1).
+
 ## 2026-10-22 — ⚠️ Digest: run koji još traje nije „PREKID“, MMK_OPTION prag 25 %, breaker: last-minute grupe ne glasaju o feedu (digest 22.10. 07:00) — ✅ DEPLOYANO 22.10.2026 (cusma2 17:58:10 UTC — V9_93 primijenjen 17:58:03; cusma3 17:58:39 UTC kroz gate; jar md5 391cc323f4a122391c37b0a92b5f82db; tag `live/2026-10-22-extras-normalizer`)
 
 Digest od 22.10. 07:00 imao je 6 razloga; provjera na cusma4/cusma3 07:04–07:19 UTC: 3 lažna, 2 očekivana, 1 kraj sezone.

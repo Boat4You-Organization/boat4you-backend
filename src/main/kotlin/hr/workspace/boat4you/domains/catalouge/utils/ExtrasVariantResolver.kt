@@ -40,15 +40,33 @@ object ExtrasVariantResolver {
     /** An obligatory row the partner (offer) or the booking (snapshot) vouches for. */
     data class Anchor(val name: String?, val externalId: Long?, val key: String?)
 
-    /** "Comfort Pack 2 weeks (Final Cleaning, …)" -> "comfort pack". */
+    /**
+     * "Comfort Pack 2 weeks (Final Cleaning, …)" -> "comfort pack". Digits go before the duration words so a glued
+     * "2weeks" (Sailing Sicily, 22.10.2026) loses its "weeks" like a spaced "2 weeks" does.
+     */
     fun normalizeVariantName(name: String?): String =
         (name ?: "")
             .lowercase()
             .replace(parenthetical, "")
-            .replace(durationWords, " ")
             .replace(digitsAndSlashes, " ")
+            .replace(durationWords, " ")
             .replace(whitespace, " ")
             .trim()
+
+    /**
+     * extrasKey() of every obligatory yacht-level row the partner limits to OTHER charter lengths than [nights]
+     * ([YachtExtra.appliesToNights], MMK validDaysFrom/To, V9_94). Deterministic, name-independent: the two-week
+     * "Luxury Pack 2weeks" (8-14 days) on a one-week offer, the weekly packs and APA rows on a two-week one.
+     */
+    fun outOfDurationYachtExtraKeys(
+        yachtExtras: Collection<YachtExtra>,
+        nights: Long,
+    ): Set<String> =
+        yachtExtras
+            .asSequence()
+            .filter { it.obligatory == true && !it.appliesToNights(nights) }
+            .map { it.extrasKey() }
+            .toSet()
 
     fun supersededYachtExtraKeys(
         offerExtras: Collection<OfferExtra>,

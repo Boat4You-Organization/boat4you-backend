@@ -54,6 +54,14 @@ interface YachtExtraRepository : JpaRepository<YachtExtra, Long> {
                 -- above then picks the variant covering check-in.
                 AND (CAST(:dateFrom AS date) IS NULL OR valid_from <= CAST(:dateTo AS date))
                 AND (CAST(:dateTo AS date) IS NULL OR valid_to >= CAST(:dateFrom AS date))
+                -- V9_94 charter-length bounds (MMK validDaysFrom/To, in days): a selected range keeps the rows bound
+                -- to its length, no range the rows of a standard week (7). Therasia Bali 5.4 (22.10.2026): the
+                -- "Luxury Pack 2weeks" (8-14) and the "… 2 weeks" APA rows must not win their partition on a
+                -- one-week view. NULL or a 0 upper bound never excludes.
+                AND (valid_days_from IS NULL
+                     OR valid_days_from <= COALESCE(CAST(:dateTo AS date) - CAST(:dateFrom AS date), 7))
+                AND (valid_days_to IS NULL OR valid_days_to = 0
+                     OR valid_days_to >= COALESCE(CAST(:dateTo AS date) - CAST(:dateFrom AS date), 7))
                 AND CASE
                     WHEN :validForExtBaseIds IS NULL THEN true
                     WHEN array_length(:validForExtBaseIds, 1) IS NULL THEN true
@@ -115,6 +123,11 @@ interface YachtExtraRepository : JpaRepository<YachtExtra, Long> {
             WHERE yacht_id = :yachtId
                 AND (CAST(:dateFrom AS date) IS NULL OR valid_from <= CAST(:dateTo AS date))
                 AND (CAST(:dateTo AS date) IS NULL OR valid_to >= CAST(:dateFrom AS date))
+                -- V9_94 charter-length bounds, as in findYachtExtraIdsGroupedByYacht (no range = standard week of 7)
+                AND (valid_days_from IS NULL
+                     OR valid_days_from <= COALESCE(CAST(:dateTo AS date) - CAST(:dateFrom AS date), 7))
+                AND (valid_days_to IS NULL OR valid_days_to = 0
+                     OR valid_days_to >= COALESCE(CAST(:dateTo AS date) - CAST(:dateFrom AS date), 7))
         )
         SELECT id
         FROM ranked
