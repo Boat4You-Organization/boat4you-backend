@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-22 — ⚠️ Digest: run koji još traje nije „PREKID“, MMK_OPTION prag 25 %, breaker: last-minute grupe ne glasaju o feedu (digest 22.10. 07:00) — ⏳ NIJE DEPLOYANO (grana `fix/extras-reserved-in-advance`, deploy večeras zajedno s normalizatorom)
+## 2026-10-22 — ⚠️ Digest: run koji još traje nije „PREKID“, MMK_OPTION prag 25 %, breaker: last-minute grupe ne glasaju o feedu (digest 22.10. 07:00) — ✅ DEPLOYANO 22.10.2026 (cusma2 17:58:10 UTC — V9_93 primijenjen 17:58:03; cusma3 17:58:39 UTC kroz gate; jar md5 391cc323f4a122391c37b0a92b5f82db; tag `live/2026-10-22-extras-normalizer`)
 
 Digest od 22.10. 07:00 imao je 6 razloga; provjera na cusma4/cusma3 07:04–07:19 UTC: 3 lažna, 2 očekivana, 1 kraj sezone.
 
@@ -14,7 +14,7 @@ Testovi: `ReverifyDigestTriggersTest` (+2), `MmkFreeOfferReverifyServiceTests` (
 
 **Isti deploy nosi i `V9_93__catalogue_image_credit_latin_script.sql`** (22.10., popodne): dva kredita fotki marina iz uvoza 20.10. (id 2000000069 Portorosa, 2000000141) imala su ime autora ćirilicom/grčkim + latinična transliteracija u zagradi; SEO regresija T11 na EY i b4y (`…-11338`). UPDATE ostavlja samo latinično ime (CC BY atribucija transliteracijom je dovoljna); idempotentno, 2 retka. Nakon deploya stranice se osvježe kroz ISR.
 
-## 2026-10-21 — 🔤 Partnerov dodatak „… RESERVED IN ADVANCE“ → „(reserved in advance)“ (Mario 21.10., nalaz EY SEO regresije T12 od 13.10.) — ⏳ NIJE DEPLOYANO (grana `fix/extras-reserved-in-advance` povrh `fix/reverify-digest-on-error` 316c5ed)
+## 2026-10-21 — 🔤 Partnerov dodatak „… RESERVED IN ADVANCE“ → „(reserved in advance)“ (Mario 21.10., nalaz EY SEO regresije T12 od 13.10.) — ✅ DEPLOYANO 22.10.2026 (cusma2 17:58:10 UTC — V9_93 primijenjen 17:58:03; cusma3 17:58:39 UTC kroz gate; jar md5 391cc323f4a122391c37b0a92b5f82db; tag `live/2026-10-22-extras-normalizer`)
 
 Jar 22.10. 19:55 CEST iz 995d0e3 (+ merge main e815ed9, samo DEPLOY_NOTES): `build/libs/boat4you-0.0.1-SNAPSHOT.jar` md5 `391cc323f4a122391c37b0a92b5f82db`, sadrži V9_93; nosi i digest popravke (5a283de) i V9_93 (995d0e3).
 
