@@ -12,6 +12,7 @@ Uzrok: MMK uz svaki extra šalje `validDaysFrom`/`validDaysTo` (dani chartera; p
 - Rollout: stupci su NULL dok noćni MMK yacht sync ne upiše granice (ponašanje nepromijenjeno do tada); za flotu 1478 (29 brodova) može se ručno pokrenuti sync agencije nakon deploya.
 - APA bez datuma ostaje kako je (Mario 22.10.: „nije važno, ostavi kako je, važno je da kada se odabere datum bude točna APA“ — s datumom je točna: offer_extras + filtar po check-inu). NauSys `minDuration/maxDuration` (RestYachtReservationExtra) isti koncept — zasebno.
 - Testovi: `ExtrasVariantResolverTests` (+3), `PriceCalculationExtrasZeroTest` (+1), `MmkYachtSyncPartnerCopyTests` (+1).
+- Jar 22.10. 23:08 CEST iz 6cad812: `build/libs/boat4you-0.0.1-SNAPSHOT.jar` md5 `3ac4ad6e2004b898c8496ff203e0ff37`, sadrži V9_94.
 
 ## 2026-10-22 — ⚠️ Digest: run koji još traje nije „PREKID“, MMK_OPTION prag 25 %, breaker: last-minute grupe ne glasaju o feedu (digest 22.10. 07:00) — ✅ DEPLOYANO 22.10.2026 (cusma2 17:58:10 UTC — V9_93 primijenjen 17:58:03; cusma3 17:58:39 UTC kroz gate; jar md5 391cc323f4a122391c37b0a92b5f82db; tag `live/2026-10-22-extras-normalizer`)
 
