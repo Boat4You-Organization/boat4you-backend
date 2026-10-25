@@ -49,6 +49,7 @@ import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
+import hr.workspace.boat4you.domains.external.service.PartnerFleetMirror
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.YACHT_AGENCY_EXTERNAL_MAPPING_KEY
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMappingRepository
@@ -61,6 +62,7 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Clock
 import java.time.LocalDate
 import kotlin.jvm.optionals.getOrNull
 
@@ -89,6 +91,9 @@ class MmkYachtSyncService(
     private val realPriceSwitches: RealPriceSwitches,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
+    /** The partner fleet mirror's notion of now (PartnerFleetMirror.GRACE); tests pin it. */
+    internal var clock: Clock = Clock.systemUTC()
 
     companion object {
         val MMK_ALLOWED_PRODUCTS =
@@ -244,15 +249,26 @@ class MmkYachtSyncService(
         // DEEPSEA observed as stale 2026-05-28). Switch to externalId-NotIn
         // for the correct semantics, with the same empty-list safety guard
         // as the NauSys deactivator.
-        if (syncedYachts.isEmpty()) {
-            log.warn(
-                "MMK take-back aborted for agency ${agency.id}: empty partner response — " +
-                    "refusing to mass-deactivate.",
-            )
-            return
-        }
+        // An empty list is a glitch until it has lasted PartnerFleetMirror.GRACE; then the partner has emptied the
+        // fleet (MMK and Multihull Yachting 1605, 22.10.2026) and we mirror it: every yacht of the agency goes off.
         val yachtsToDeactivate =
-            yachtRepository.findAllByAgencyAndExternalIdNotIn(agency, syncedYachts.toList())
+            if (syncedYachts.isEmpty()) {
+                val verdict =
+                    PartnerFleetMirror.judge(agency, clock.instant()) { agencyRepository.countByPartnerFleetEmptySinceIsNotNull() }
+                if (verdict == PartnerFleetMirror.Verdict.FIRST_SIGHTING) agencyRepository.save(agency)
+                if (verdict != PartnerFleetMirror.Verdict.MIRROR) {
+                    val aborted =
+                        "MMK take-back aborted for agency ${agency.id}: empty partner response ($verdict since " +
+                            "${agency.partnerFleetEmptySince}) — refusing to mass-deactivate."
+                    if (verdict == PartnerFleetMirror.Verdict.PARTNER_OUTAGE) log.error(aborted) else log.warn(aborted)
+                    return
+                }
+                log.warn("MMK take-back for agency ${agency.id} ${agency.name}: no yachts since ${agency.partnerFleetEmptySince}, mirroring the partner")
+                yachtRepository.findAllByAgencyAndSysActiveTrue(agency)
+            } else {
+                if (PartnerFleetMirror.fleetListed(agency)) agencyRepository.save(agency)
+                yachtRepository.findAllByAgencyAndExternalIdNotIn(agency, syncedYachts.toList())
+            }
         log.warn(
             "MMK take-back for agency ${agency.id} ${agency.name}: partner returned " +
                 "${syncedYachts.size} yachts (skipped: noProducts=$skippedNoProducts vesselType=$skippedVesselType inland=$skippedInland); " +

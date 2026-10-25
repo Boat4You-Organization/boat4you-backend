@@ -45,6 +45,7 @@ import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
 import hr.workspace.boat4you.domains.external.service.ExternalMappingService
+import hr.workspace.boat4you.domains.external.service.PartnerFleetMirror
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMapping.Companion.YACHT_AGENCY_EXTERNAL_MAPPING_KEY
 import hr.workspace.boat4you.domains.external.sync.jpa.ExternalMappingRepository
@@ -59,6 +60,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.time.Clock
 import kotlin.collections.forEach
 
 @Service
@@ -85,6 +87,9 @@ class NauSysYachtSyncService(
     private val realPriceSwitches: RealPriceSwitches,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
+
+    /** The partner fleet mirror's notion of now (PartnerFleetMirror.GRACE); tests pin it. */
+    internal var clock: Clock = Clock.systemUTC()
 
     @Transactional
     fun syncYachtsForAgency(
@@ -211,26 +216,31 @@ class NauSysYachtSyncService(
         agencyId: Long,
         allYachts: List<Long>,
     ) {
-        // Safety guard: if the partner response was empty (transient outage,
-        // auth failure, partner-side maintenance), refuse to deactivate ALL
-        // of the agency's yachts. The catalogue almost always carries >0
-        // entries; an empty list almost always means a flaky upstream call,
-        // not a partner emptying their fleet. The next successful sync run
-        // takes care of any genuine removals.
-        if (allYachts.isEmpty()) {
-            log.warn(
-                "Deactivation aborted for agency $agencyId: partner returned 0 yachts " +
-                    "(treating as suspected upstream glitch).",
-            )
-            return
-        }
-
         val agency =
             agencyRepository
                 .findById(agencyId)
                 .orElseThrow { IllegalArgumentException("Agency with id $agencyId not found") }
 
-        val yachtsToDeactivate = yachtRepository.findAllByAgencyAndExternalIdNotIn(agency, allYachts)
+        // An empty list (transient outage, auth failure, maintenance) is a glitch until it has lasted
+        // PartnerFleetMirror.GRACE; then the partner has emptied the fleet and we mirror it: every yacht goes off.
+        val yachtsToDeactivate =
+            if (allYachts.isEmpty()) {
+                val verdict =
+                    PartnerFleetMirror.judge(agency, clock.instant()) { agencyRepository.countByPartnerFleetEmptySinceIsNotNull() }
+                if (verdict == PartnerFleetMirror.Verdict.FIRST_SIGHTING) agencyRepository.save(agency)
+                if (verdict != PartnerFleetMirror.Verdict.MIRROR) {
+                    val aborted =
+                        "Deactivation aborted for agency $agencyId: partner returned 0 yachts ($verdict since " +
+                            "${agency.partnerFleetEmptySince})."
+                    if (verdict == PartnerFleetMirror.Verdict.PARTNER_OUTAGE) log.error(aborted) else log.warn(aborted)
+                    return
+                }
+                log.warn("NauSys take-back for agency ${agency.id} ${agency.name}: no yachts since ${agency.partnerFleetEmptySince}, mirroring the partner")
+                yachtRepository.findAllByAgencyAndSysActiveTrue(agency)
+            } else {
+                if (PartnerFleetMirror.fleetListed(agency)) agencyRepository.save(agency)
+                yachtRepository.findAllByAgencyAndExternalIdNotIn(agency, allYachts)
+            }
         log.warn("Deactivating ${yachtsToDeactivate.size} yachts for agency ${agency.id} ${agency.name}")
         yachtsToDeactivate.forEach {
             it.sysActive = false

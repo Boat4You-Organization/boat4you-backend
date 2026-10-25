@@ -24,6 +24,9 @@ interface YachtRepository : JpaRepository<Yacht, Long> {
 
     fun findAllByAgencyId(agencyId: Long): List<Yacht>
 
+    /** The agency's yachts still on - what the partner fleet mirror switches off when the partner lists none. */
+    fun findAllByAgencyAndSysActiveTrue(agency: Agency): List<Yacht>
+
     @Query(
         """
         SELECT new hr.workspace.boat4you.domains.catalouge.dto.AgencyYachtDto(y.id, y.name, y.excludeDiscount)
@@ -346,8 +349,10 @@ interface ReplacementSearchRow {
     val locationId: Long?
     val locationName: String?
     val locationCountry: String?
+
     /** Average per-day price across the yacht's active offers in the destination; null if no offer. */
     val avgClientPrice: java.math.BigDecimal?
+
     /** True when the only reason the yacht is surfaced is an overlapping `external_reservation` (no offer available). */
     val onlyExternalReservation: Boolean
 }

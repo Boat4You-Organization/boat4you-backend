@@ -11,6 +11,7 @@ import jakarta.validation.constraints.NotNull
 import jakarta.validation.constraints.Size
 import org.hibernate.annotations.ColumnDefault
 import java.math.BigDecimal
+import java.time.Instant
 import kotlin.jvm.Transient
 
 @Entity
@@ -86,6 +87,12 @@ open class Agency {
     // overridden, and one partner's sync can never re-activate what the other's deactivated.
     @Column(name = "sync_deactivated_by")
     open var syncDeactivatedBy: Int? = null
+
+    // Partner fleet mirror (Mario 25.10.2026, V9_95): when the partner's catalogue first answered with no yachts for
+    // this agency; NULL = it lists yachts. After PartnerFleetMirror.GRACE the sync switches the whole fleet off, like
+    // MMK did with Multihull Yachting (1605) on 22.10.2026. Written only by the yacht syncs through PartnerFleetMirror.
+    @Column(name = "partner_fleet_empty_since")
+    open var partnerFleetEmptySince: Instant? = null
 
     // EAGER fetch — admin AgencyDto serialises every source into a `sources`
     // array. Default LAZY would only load the collection inside the

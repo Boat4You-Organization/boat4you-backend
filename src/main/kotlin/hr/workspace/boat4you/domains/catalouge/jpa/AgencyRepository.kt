@@ -13,6 +13,9 @@ interface AgencyRepository : JpaRepository<Agency, Long> {
     @Query("SELECT a.name FROM Agency a WHERE a.name IS NOT NULL")
     fun findAllNames(): List<String>
 
+    /** Agencies whose partner catalogue currently answers with no yachts (PartnerFleetMirror's outage breaker). */
+    fun countByPartnerFleetEmptySinceIsNotNull(): Long
+
     // Toggle the "partner stopped serving us" flag without merging the whole
     // agency graph (avoids touching agencySources). Hides/restores the agency's
     // yachts via yacht_search_view + getValidYacht. Mario rule 29.6.2026.
