@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-25 — 🪞 Zrcaljenje prazne flote partnera (V9_95, Multihull Yachting 1605) + mrtvi partnerski URL-ovi slika = skriveno s razlogom (Allure 11769) — ⏳ čeka deploy
+## 2026-10-25 — 🪞 Zrcaljenje prazne flote partnera (V9_95, Multihull Yachting 1605) + mrtvi partnerski URL-ovi slika = skriveno s razlogom (Allure 11769) — ✅ cusma2 LIVE 25.10. 10:09 UTC (jar 22a6366f, V9_95 primijenjena 10:09:05, start 12,4 s, health 200) · ⏳ cusma3 u prozoru 13:00–14:10 UTC (1. pokušaj 10:0x stao na preflightu: nedostajao /tmp/.aud_pw4, ništa dirano) · admin „DEAD LINK“ LIVE 10:1x (entry index-BWWK3K5V)
 
 Mario 25.10.: „MMK je maknuo prikaz plovila od Multihull yachtinga za sada, tako treba biti i kod nas, mi prikazujemo sta na MMK i nausys daje“ + „kod Allure u adminu ima ovih praznih slika, neznam sta je ovo“.
 
