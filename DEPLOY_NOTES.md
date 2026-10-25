@@ -1,5 +1,25 @@
 # Backend deploy notes
 
+## 2026-10-25 — 🪞 Zrcaljenje prazne flote partnera (V9_95, Multihull Yachting 1605) + mrtvi partnerski URL-ovi slika = skriveno s razlogom (Allure 11769) — ⏳ čeka deploy
+
+Mario 25.10.: „MMK je maknuo prikaz plovila od Multihull yachtinga za sada, tako treba biti i kod nas, mi prikazujemo sta na MMK i nausys daje“ + „kod Allure u adminu ima ovih praznih slika, neznam sta je ovo“.
+
+**1. Prazna flota agencije (`PartnerFleetMirror`)**
+- Uzrok: MMK za agenciju 1605 od 22.10. 06:10 UTC vraća `[]` (HTTP 200, prazan popis), dok availability za njenu tvrtku i dalje odgovara. Take-back guard (od 28.5.) kod praznog odgovora odbija deaktivaciju („refusing to mass-deactivate“) — pa smo 3 dana prodavali 17 brodova / 52 slobodna tjedna kojih na MMK-u više nema. Isti dan još 7 agencija u istom stanju (1437, 1617, 1625, 1666, 1684, 679, 692; samo 1684 ima buduće FREE ponude: 29).
+- Pravilo (MMK i NauSys): prvi prazan odgovor se zabilježi (`agency.partner_fleet_empty_since`, **V9_95** TIMESTAMPTZ ↔ `Instant?`, isti par kao `expires_at`); prazan odgovor koji traje ≥ 44 h (dvije noći; sync 06:10 + 3 backupa) gasi SVE brodove agencije kao da su nestali s popisa; neprazan odgovor briše oznaku. Brod se sam pali kad ga partner opet navede (`sysActive = true` u updateu). Breaker: > 50 agencija istodobno praznih = partner pao, ništa se ne gasi (ERROR u logu).
+- Nova repo metoda `findAllByAgencyAndSysActiveTrue` (bez `NOT IN ()` ruba); `AgencyRepository.countByPartnerFleetEmptySinceIsNotNull`.
+- **V9_95 data fix (Mariova izričita odluka, odmah a ne za 2 dana):** 1605 → `partner_fleet_empty_since = 2026-10-22 06:10 UTC` + `UPDATE yacht SET sys_active = false WHERE agency_id = 1605` (17 brodova). Ostalih 7 ide pravilom (prvi sync nakon deploya = bilježenje, gašenje ~2 dana kasnije ako i dalje prazno).
+- Ručni blacklist (605 Global Yachting, 777 Mia Catamaran = Valencija, Mario 25.10.) ostaje `active=false` + `skip_external_system=true` — to NIJE zrcalo i ne vraća se samo.
+
+**2. Mrtvi partnerski URL-ovi slika**
+- Uzrok praznih kartica u adminu: Allure ima 78 PARTNER redaka `synced=false` (MMK `cbm/documents/...AllureE-*.jpg` → ništa ne isporučuju); javno se nikad nisu vidjele (public API = samo synced), admin Media prikazuje sve retke pa su to prazni okviri. Mrtvi URL-ovi su se pamtili samo u memoriji (`deadUrls`, 7 dana), na disku ništa. Na svim aktivnim brodovima: 622 takvih redaka na 137 brodova.
+- Popravak: neuspjeli download / nedekodirani bajtovi / odbijeni save → `YachtImageSyncService.markDeadPartnerUrl` = `hidden=true, hidden_reason='DEAD_PARTNER_URL'` (samo još nesinkronizirani i neskriveni red); uspješan kasniji download isti red opet otkriva (`HEAL_SQL`, samo ako je razlog DEAD_PARTNER_URL — ADMIN/PARTNER_BLOCKED se ne diraju). Backfill sam od sebe: ImageDownloadJob (12×/dan) ionako pokušava sve `synced=false` retke, nakon restarta `deadUrls` je prazan → prvih ~24 h označi svih 622.
+- Admin (grana `fix/media-dead-link-chip`): čip „DEAD LINK“ umjesto „HIDDEN“ + tooltip s razlogom (ADMIN / PARTNER_BLOCKED_PHOTO / DEAD_PARTNER_URL).
+
+Testovi: `PartnerFleetMirrorTests` (5), `MmkYachtSyncEmptyFleetTests` (4), `NauSysYachtSyncEmptyFleetTests` (3), `YachtImageSyncServiceHideTest` (+2), `YachtImageIntegrationServiceAsyncPlaceholderTest` (+1).
+
+Provjera nakon deploya: `agency 1605` → 0 `sys_active` brodova; stranica broda 1605 → 404/308; `yacht_image` s `hidden_reason='DEAD_PARTNER_URL'` raste do ~622 unutar 24 h; cusma3 log 06:10 UTC: „take-back aborted … (FIRST_SIGHTING …)“ za ostalih 7 agencija.
+
 ## 2026-10-22 — 🧾 Extrasi po trajanju chartera: MMK `validDaysFrom/To` (V9_94) — Therasia Bali 5.4: „Luxury Pack 2weeks“ zbrajan uz tjedni paket (Mario 22.10., PDF ponude Sailing Sicily) — ✅ DEPLOYANO 22.10.2026 (2. pokušaj: cusma2 21:26:03 UTC, cusma3 21:26:28 UTC kroz gate; jar md5 6a949232721cea236b8bd7edbc03cf62, commit 2285f7b, tag `live/2026-10-22-extras-duration`; V9_94 primijenjen već u 1. pokušaju 21:19:00; stupci 0/1.243.535 popunjeni do noćnog MMK yacht synca 06:10)
 
 Mario 22.10.: na https://www.boat4you.com/boat/bali-catamarans-bali-54-therasia-11907 „dva luxury packa obligatory, one i two weeks“ + „vidi cijenu apa“. Ponuda agencije (MMK booking 8393-92090-00001-01230, 4.–11.9.2027): APA Aug–Sept 3.310 € + Luxury Pack Bali 5.4 5.200 € + Luxury Pack 5200€/week 0 € = 8.510 € u bazi. Naš `offer_extras` za taj termin je IDENTIČAN (3 retka, 8.510), ali stranica je uz to prikazivala i „Luxury Pack 2weeks“ 10.400 € (per booking) kao obvezan: `ExtrasVariantResolver` ga nije prepoznao kao varijantu („2weeks“ slijepljeno, „Bali 5.4“ u imenu sidra). Bez datuma stranica pokazuje sve varijante i APA najjeftinije sezone (2.185 €, siječanj–svibanj).

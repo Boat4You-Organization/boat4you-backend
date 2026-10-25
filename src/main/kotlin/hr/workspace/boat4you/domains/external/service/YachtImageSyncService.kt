@@ -37,6 +37,12 @@ class YachtImageSyncService(
         }
         yachtImage.url = url
         yachtImage.synced = true
+        if (hiddenReason == null && yachtImage.hiddenReason == DEAD_PARTNER_URL) {
+            // the partner's link delivers again: shown like any photo
+            jdbc.update(HEAL_SQL, yachtImageId, DEAD_PARTNER_URL)
+            yachtImage.hidden = false
+            yachtImage.hiddenReason = null
+        }
         if (hiddenReason != null) {
             yachtImage.mainImage = false
             // hidden is read-only for Hibernate (a partner sync re-saving the row must never clear it): written here
@@ -47,6 +53,18 @@ class YachtImageSyncService(
         }
 
         yachtImageRepository.save(yachtImage)
+    }
+
+    /**
+     * A partner image whose URL delivers no picture (404, HTML, undecodable bytes - the 78 booking-manager document
+     * links of Gulet Allure 11769 that showed as empty cards in the admin, 25.10.2026): hidden with [DEAD_PARTNER_URL]
+     * so the admin's media page names the empty card. Public pages never showed it (never synced). Only a row still
+     * unsynced and not hidden for another reason is marked; [updateYachtImageWithUrl] shows it again when a later
+     * download succeeds (the job retries a dead URL after YachtImageIntegrationServiceAsync.RETRY_DEAD_URL_AFTER).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun markDeadPartnerUrl(yachtImageId: Long) {
+        jdbc.update(MARK_DEAD_SQL, DEAD_PARTNER_URL, yachtImageId)
     }
 
     private fun repickCardPhoto(
@@ -63,7 +81,12 @@ class YachtImageSyncService(
     }
 
     companion object {
+        /** yacht_image.hidden_reason of a partner image whose URL delivers no picture. */
+        const val DEAD_PARTNER_URL = "DEAD_PARTNER_URL"
         private const val HIDE_SQL = "UPDATE yacht_image SET hidden = true, hidden_reason = ?, main_image = false WHERE id = ?"
+        private const val MARK_DEAD_SQL =
+            "UPDATE yacht_image SET hidden = true, hidden_reason = ? WHERE id = ? AND synced = false AND hidden = false"
+        private const val HEAL_SQL = "UPDATE yacht_image SET hidden = false, hidden_reason = NULL WHERE id = ? AND hidden_reason = ?"
         private const val REPICK_SQL = "UPDATE yacht SET main_image_id = ? WHERE id = ? AND main_image_id = ?"
     }
 }

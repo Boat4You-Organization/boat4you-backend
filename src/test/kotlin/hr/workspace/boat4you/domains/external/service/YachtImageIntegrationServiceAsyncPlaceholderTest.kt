@@ -10,10 +10,13 @@ import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.ArgumentMatchers.isNull
 import org.mockito.ArgumentMatchers.startsWith
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.opencv.core.Core
 import org.opencv.core.CvType
@@ -84,6 +87,11 @@ class YachtImageIntegrationServiceAsyncPlaceholderTest {
         }
         server.createContext("/nausys/GenericImage/ORIGINAL/blockedPhoto.png") { ok(it, blocked) }
         server.createContext("/CBMS-external/rest/yacht/50898648/pictures/n2.jpg") { ok(it, photo) }
+        // a booking-manager document link that delivers nothing any more (Gulet Allure 11769, 25.10.2026)
+        server.createContext("/cbm/documents/AllureE-gone.jpg") { exchange ->
+            exchange.sendResponseHeaders(404, -1)
+            exchange.close()
+        }
         server.start()
     }
 
@@ -104,6 +112,14 @@ class YachtImageIntegrationServiceAsyncPlaceholderTest {
             ImageSyncOutcome.SUCCESS
 
         verify(rows).updateYachtImageWithUrl(eq(341899L), startsWith("y-4345/"), eq(KnownPlaceholderImages.PARTNER_BLOCKED_PHOTO))
+    }
+
+    @Test
+    fun `a link that delivers no picture fails the download and is marked dead on the row`() {
+        service.syncOffersForAgencyYachts(341901, 11769, "$base/cbm/documents/AllureE-gone.jpg").get() shouldBe ImageSyncOutcome.FAILED
+
+        verify(rows).markDeadPartnerUrl(341901L)
+        verify(rows, never()).updateYachtImageWithUrl(eq(341901L), anyString(), any())
     }
 
     @Test

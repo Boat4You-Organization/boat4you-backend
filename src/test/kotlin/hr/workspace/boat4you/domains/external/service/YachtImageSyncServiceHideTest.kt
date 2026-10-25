@@ -121,6 +121,41 @@ class YachtImageSyncServiceHideTest {
     }
 
     @Test
+    fun `a dead partner link is hidden with its reason - one update, the row itself untouched`() {
+        service.markDeadPartnerUrl(341899)
+
+        verify(jdbc).update(
+            "UPDATE yacht_image SET hidden = true, hidden_reason = ? WHERE id = ? AND synced = false AND hidden = false",
+            YachtImageSyncService.DEAD_PARTNER_URL,
+            341899L,
+        )
+        verifyNoMoreInteractions(jdbc)
+        verifyNoInteractions(repository)
+    }
+
+    @Test
+    fun `a photo whose link was dead is shown again once it downloads`() {
+        boat(placeholder, layout, n2)
+        n2.synced = false
+        n2.hidden = true
+        n2.hiddenReason = YachtImageSyncService.DEAD_PARTNER_URL
+        `when`(repository.findById(341900)).thenReturn(Optional.of(n2))
+
+        service.updateYachtImageWithUrl(341900, "y-4345/n2.webp")
+
+        verify(jdbc).update(
+            "UPDATE yacht_image SET hidden = false, hidden_reason = NULL WHERE id = ? AND hidden_reason = ?",
+            341900L,
+            YachtImageSyncService.DEAD_PARTNER_URL,
+        )
+        verifyNoMoreInteractions(jdbc)
+        n2.synced shouldBe true
+        n2.hidden shouldBe false
+        n2.hiddenReason shouldBe null
+        verify(repository).save(n2)
+    }
+
+    @Test
     fun `a photo is stored as before - no SQL besides the entity save`() {
         boat(n2)
         n2.url = null

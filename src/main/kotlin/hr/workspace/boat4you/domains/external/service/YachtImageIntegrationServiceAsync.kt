@@ -56,6 +56,8 @@ class YachtImageIntegrationServiceAsync(
             val imageBytes = source?.let { ImageUtils.convertToWebP(ByteArrayInputStream(it.bytes)) }
             if (imageBytes == null) {
                 deadUrls[externalImageUrl] = Instant.now()
+                // persisted too: the admin's media page names the empty card (hidden, DEAD_PARTNER_URL)
+                transactionTemplate.execute<Unit> { yachtImageSyncService.markDeadPartnerUrl(yachtImageId) }
                 val reason = download.exceptionOrNull()?.message ?: "downloaded bytes are not a decodable image"
                 // Per-URL detail at DEBUG; YachtImageIntegrationService WARNs one summary per run
                 // (count + failing yachts + top hosts) — ~2k dead-URL lines/week otherwise.
@@ -69,6 +71,7 @@ class YachtImageIntegrationServiceAsync(
                     // validation reject (size cap, undecodable) — deterministic per URL,
                     // retrying every run can't succeed; back off like a dead URL
                     deadUrls[externalImageUrl] = Instant.now()
+                    transactionTemplate.execute<Unit> { yachtImageSyncService.markDeadPartnerUrl(yachtImageId) }
                     log.debug("Failed to save image for yacht $yachtId from URL: $externalImageUrl because of: ${cause.message}")
                 } else {
                     // local disk/NFS problem, not a dead partner URL — stay loud, retry next run
