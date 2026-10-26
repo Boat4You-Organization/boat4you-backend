@@ -27,4 +27,9 @@ interface AiChatMessageRepository : JpaRepository<AiChatMessage, Long> {
     fun countBySessionId(sessionId: Long): Long
 
     fun deleteAllBySessionId(sessionId: Long)
+
+    fun findBySessionIdAndClientMessageId(
+        sessionId: Long,
+        clientMessageId: String,
+    ): AiChatMessage?
 }

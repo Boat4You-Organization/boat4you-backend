@@ -35,6 +35,14 @@ open class AiChatMessage {
     @Column(name = "created_at", nullable = false)
     open var createdAt: Instant = Instant.now()
 
+    /** The admin user who wrote an ADMIN line (no FK: deleting the user must not block). */
+    @Column(name = "author_user_id")
+    open var authorUserId: Long? = null
+
+    /** The widget's id for a visitor message, unique per session, so a retried POST is a replay (see the unique constraint). */
+    @Column(name = "client_message_id", length = 64)
+    open var clientMessageId: String? = null
+
     companion object {
         const val ROLE_USER = "USER"
         const val ROLE_ASSISTANT = "ASSISTANT"

@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.chat.jpa
 
+import hr.workspace.boat4you.domains.contactcenter.SiteIds
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
@@ -91,7 +92,52 @@ open class AiChatSession {
     @Column(name = "deleted_at")
     open var deletedAt: Instant? = null
 
+    /** The public site the conversation happened on (`SiteIds`); every IRIS session so far came from boat4you.com. */
+    @Column(name = "site_id", length = 40, nullable = false)
+    open var siteId: String = SiteIds.BOAT4YOU
+
+    @Column(name = "visitor_id")
+    open var visitorId: Long? = null
+
+    @Column(name = "visit_id")
+    open var visitId: Long? = null
+
+    @Column(name = "contact_id")
+    open var contactId: Long? = null
+
+    @Column(name = "phone", length = 40)
+    open var phone: String? = null
+
+    /** First reply of anyone (the AI or a broker) and who gave it ([RESPONSE_BY_AI] / [RESPONSE_BY_HUMAN]). */
+    @Column(name = "first_response_at")
+    open var firstResponseAt: Instant? = null
+
+    @Column(name = "first_response_by", length = 10)
+    open var firstResponseBy: String? = null
+
+    @Column(name = "first_human_response_at")
+    open var firstHumanResponseAt: Instant? = null
+
+    @Column(name = "handoff_requested_at")
+    open var handoffRequestedAt: Instant? = null
+
+    @Column(name = "taken_over_at")
+    open var takenOverAt: Instant? = null
+
+    @Column(name = "ai_return_after_minutes")
+    open var aiReturnAfterMinutes: Int? = null
+
+    /**
+     * Set only by the missed-conversation job's SQL, never by a session save: a stale in-memory copy must not reset it
+     * (so it is neither inserted nor updated by JPA; a new row gets the column default FALSE).
+     */
+    @Column(name = "missed", nullable = false, insertable = false, updatable = false)
+    open var missed: Boolean = false
+
     companion object {
+        const val RESPONSE_BY_AI = "AI"
+        const val RESPONSE_BY_HUMAN = "HUMAN"
+
         const val STATUS_AI = "AI"
         const val STATUS_HUMAN_REQUESTED = "HUMAN_REQUESTED"
         const val STATUS_HUMAN = "HUMAN"
