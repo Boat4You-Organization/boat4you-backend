@@ -37,7 +37,6 @@ class BrandRegistry {
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.EN,
             ),
-
             // ───────── Catamaran Croatia Charter — TODO: real assets ─────────
             // Front-end: catamaran-croatia-charter.com (front-end repo:
             // /catamaran-croatia-charter — still zipped). Mario to provide:
@@ -57,7 +56,6 @@ class BrandRegistry {
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.HR, // Croatian-managed brand → admins read inquiry email in Croatian
             ),
-
             // ───────── Catamaran Charter Greece — TODO ─────────
             Brand(
                 id = "catamaran-greece",
@@ -72,7 +70,6 @@ class BrandRegistry {
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.EN, // Greek not in our locale set → admins read in EN until staff confirms preference
             ),
-
             // ───────── Catamaran Charter Italy — TODO ─────────
             Brand(
                 id = "catamaran-italy",
@@ -80,14 +77,13 @@ class BrandRegistry {
                 tagline = null,
                 fromAddress = "info@boat4you.com", // TODO
                 recipientAddress = "info@boat4you.com", // TODO
-                websiteUrl = "https://catamaran-charter-italy.com",
+                websiteUrl = "https://www.catamarancharteritaly.com",
                 supportEmail = "info@boat4you.com", // TODO
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.IT,
             ),
-
             // ───────── Catamaran Charter Caribbean — TODO ─────────
             Brand(
                 id = "catamaran-caribbean",
@@ -102,7 +98,6 @@ class BrandRegistry {
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.EN,
             ),
-
             // ───────── Europe Yachts — TODO ─────────
             // Already unpacked at /europe-yachts/europe-yachts-web-main and
             // points NEXT_PUBLIC_BOAT_WS_API_URL at api.boat4you.com. Add
@@ -118,6 +113,24 @@ class BrandRegistry {
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
+                defaultLanguage = LanguageEnum.EN,
+            ),
+            // ───────── Croatia Yachting — real site data, shared boat4you mailbox ─────────
+            // Name, tagline, site URL and accent colour: croatia-yachting-web-main
+            // src/config/pdf-brand.config.ts; contact email + phone: contactInfo.config.ts.
+            // From / recipient stay on the boat4you mailbox (SMTP logs in as it, and leads
+            // must keep landing in info@boat4you.com), like the other sister brands.
+            Brand(
+                id = "croatia-yachting",
+                displayName = "Yacht Charter Croatia",
+                tagline = "Yacht charter in Croatia",
+                fromAddress = "info@boat4you.com",
+                recipientAddress = "info@boat4you.com",
+                websiteUrl = "https://www.croatia-yachting.com",
+                supportEmail = "info@croatia-yachting.com",
+                supportPhone = "+385 91 3000 009",
+                logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO replace with brand logo
+                accentColor = "#0e63a8",
                 defaultLanguage = LanguageEnum.EN,
             ),
         ).associateBy { it.id }
