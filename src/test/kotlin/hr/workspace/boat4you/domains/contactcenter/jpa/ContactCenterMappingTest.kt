@@ -7,7 +7,9 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import hr.workspace.boat4you.domains.contactcenter.ContactCenterTestDb
 import hr.workspace.boat4you.domains.contactcenter.SiteIds
+import hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum
 import hr.workspace.boat4you.domains.settings.jpa.SettingsRepository
+import hr.workspace.boat4you.domains.settings.services.AdminSettingsService
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import jakarta.persistence.EntityManagerFactory
@@ -208,5 +210,13 @@ class ContactCenterMappingTest {
         jdbc.update("UPDATE ai_chat_session SET missed = TRUE WHERE id = ?", s.id)
         sessions.save(s.apply { adminUnread = true }) // this object still says missed = false
         jdbc.queryForObject("SELECT missed FROM ai_chat_session WHERE id = ?", Boolean::class.java, s.id) shouldBe true
+    }
+
+    @Test
+    fun `a cc row in settings does not break the admin settings list`() {
+        jdbc.update(
+            "INSERT INTO settings (name, value, created, entity_status) VALUES ('cc.handoff.minutes', '7', now(), 'ACTIVE')",
+        )
+        AdminSettingsService(settingsRepository).getAllSettings().map { it.name } shouldBe SettingsKeyEnum.entries
     }
 }

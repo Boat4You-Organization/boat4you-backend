@@ -14,7 +14,7 @@ class AdminSettingsService(
     private val settingsRepository: SettingsRepository,
 ) {
     fun getAllSettings(): List<SettingsDto> {
-        val dbSettingsMap = settingsRepository.findAll().associateBy { it.name }
+        val dbSettingsMap = settingsRepository.findAllByNameIn(SettingsKeyEnum.entries).associateBy { it.name }
 
         val combinedSettings =
             SettingsKeyEnum.entries.map { entry ->
