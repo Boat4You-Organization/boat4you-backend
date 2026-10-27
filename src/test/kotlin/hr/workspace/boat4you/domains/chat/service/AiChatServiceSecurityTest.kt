@@ -8,6 +8,8 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatMessageRepository
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import hr.workspace.boat4you.domains.chat.service.AiChatService.MessageOutcome
+import hr.workspace.boat4you.domains.contactcenter.jpa.CcSearchRepository
+import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
 import com.sun.net.httpserver.HttpServer
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -112,6 +114,7 @@ class AiChatServiceSecurityTest {
             emailService,
             geoIp,
             blogIndex,
+            ChatSearchRecorder(mock(CcSearchRepository::class.java) { inv -> if (inv.method.name == "saveAll") inv.arguments[0] else null }),
             txManager,
             "info@example.com",
         )

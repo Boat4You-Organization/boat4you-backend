@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
+import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -35,8 +36,16 @@ class AiChatToolExecutor(
     @Volatile
     private var amenityIdsByLabel: Map<String, Long> = emptyMap()
 
-    /** [cards] = yacht cards, [blogs] = blog guide links; both rendered by the widget from the message payload. */
-    data class ToolOutcome(val resultForModel: String, val cards: ArrayNode? = null, val blogs: ArrayNode? = null)
+    /**
+     * [cards] = yacht cards, [blogs] = blog guide links; both rendered by the widget from the message payload.
+     * [search] = the criteria `search_yachts` actually sent, set on every return of that tool and never shown to the model or the widget.
+     */
+    data class ToolOutcome(
+        val resultForModel: String,
+        val cards: ArrayNode? = null,
+        val blogs: ArrayNode? = null,
+        val search: SearchCriteria? = null,
+    )
 
     private companion object {
         /** Charter types whose listing may state a crew count (capacity contract v1, 7.2). */
@@ -79,14 +88,40 @@ class AiChatToolExecutor(
         val limit = input.path("limit").asInt(5).coerceIn(1, 6)
         val equipment = input.path("equipment").mapNotNull { it.asText(null) }.filter { it.isNotBlank() }
 
+        // The whitelisted values this call works with, for the contact center's search log; blank or <= 0 means "not set".
+        fun criteria(
+            resolved: ResolvedPlace?,
+            sentEquipment: List<String>,
+            resultCount: Int,
+            totalAvailable: Int?,
+        ) = SearchCriteria(
+            countryCode = countryCode.takeIf { it.isNotBlank() },
+            location = location.takeIf { it.isNotBlank() },
+            did = resolved?.did?.toLongOrNull(),
+            startDate = SearchCriteria.parseDate(startDate),
+            endDate = SearchCriteria.parseDate(endDate),
+            minPersons = minPersons.takeIf { it > 0 },
+            minCabins = minCabins.takeIf { it > 0 },
+            minPriceEur = minTotalPriceEur.takeIf { it > 0 },
+            maxPriceEur = maxTotalPriceEur.takeIf { it > 0 },
+            vesselType = vesselType.takeIf { it.isNotBlank() },
+            equipment = sentEquipment,
+            resultCount = resultCount,
+            totalAvailable = totalAvailable,
+            searchedArea = resolved?.let { "${it.name} (${it.type.lowercase()})".take(120) },
+        )
+
         if (countryCode.isBlank() || startDate.isBlank() || endDate.isBlank()) {
-            return ToolOutcome("""{"error":"countryCode, startDate and endDate are required"}""")
+            return ToolOutcome("""{"error":"countryCode, startDate and endDate are required"}""", search = criteria(null, emptyList(), 0, null))
         }
         val days = runCatching {
             ChronoUnit.DAYS.between(LocalDate.parse(startDate), LocalDate.parse(endDate)).toInt()
         }.getOrDefault(0)
         if (days !in MIN_NIGHTS..MAX_NIGHTS) {
-            return ToolOutcome("""{"error":"invalid date range — use YYYY-MM-DD, $MIN_NIGHTS to $MAX_NIGHTS nights"}""")
+            return ToolOutcome(
+                """{"error":"invalid date range — use YYYY-MM-DD, $MIN_NIGHTS to $MAX_NIGHTS nights"}""",
+                search = criteria(null, emptyList(), 0, null),
+            )
         }
 
         // "Split" must search the Split REGION, not all of Croatia (Mario 20.7.2026:
@@ -94,6 +129,7 @@ class AiChatToolExecutor(
         // the same autocomplete the website's "Where" field uses and pass its did.
         val resolved = if (location.isBlank()) null else resolveDestination(location, countryCode)
         val equipmentIds = equipment.mapNotNull { amenityId(it) }
+        val sentEquipment = equipment.filter { amenityId(it) != null }
 
         val uri = UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts")
             .queryParam("startDate", startDate)
@@ -115,7 +151,10 @@ class AiChatToolExecutor(
             client.get().uri(uri).retrieve().body(String::class.java)
         } catch (e: Exception) {
             log.warn("chat search_yachts failed: ${e.message}")
-            return ToolOutcome("""{"error":"search temporarily unavailable, apologize and suggest trying again"}""")
+            return ToolOutcome(
+                """{"error":"search temporarily unavailable, apologize and suggest trying again"}""",
+                search = criteria(resolved, sentEquipment, 0, null),
+            )
         }
 
         val parsed = objectMapper.readTree(body)
@@ -195,7 +234,11 @@ class AiChatToolExecutor(
             set<JsonNode>("yachts", forModel)
             if (taken == 0) put("hint", "no results — suggest relaxing filters (dates, budget, cabins, equipment) or a nearby area")
         }
-        return ToolOutcome(objectMapper.writeValueAsString(result), if (taken > 0) cards else null)
+        return ToolOutcome(
+            objectMapper.writeValueAsString(result),
+            if (taken > 0) cards else null,
+            search = criteria(resolved, sentEquipment, taken, totalAvailable),
+        )
     }
 
     /** The period total of one search row and the window it is for; [dates] = "exact" | "nearby". */

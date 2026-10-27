@@ -5,6 +5,8 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatMessageRepository
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import hr.workspace.boat4you.domains.chat.service.AiChatService
+import hr.workspace.boat4you.security.ANONYMOUS_USER_ID
+import hr.workspace.boat4you.security.getAuthenticatedUserId
 import org.springframework.data.domain.PageRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -98,7 +100,7 @@ class AdminAiChatController(
         val session = active(id) ?: return ResponseEntity.notFound().build()
         val content = request.content?.trim().orEmpty()
         if (content.isBlank()) return ResponseEntity.badRequest().build()
-        return ResponseEntity.ok(chat.adminReply(session, content))
+        return ResponseEntity.ok(chat.adminReply(session, content, getAuthenticatedUserId().takeIf { it != ANONYMOUS_USER_ID }))
     }
 
     /** Delete one conversation — broker housekeeping (soft delete). A flagged session is evidence: 409. */
