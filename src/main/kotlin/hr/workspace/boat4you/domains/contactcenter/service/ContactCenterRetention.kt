@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service
 /**
  * The contact-center retention (design §8; ADMIN-5, BACKEND-30, BACKEND-32):
  *
- *  - raw tracking (`cc_event`, `cc_page_view`) goes after [RAW_MONTHS] months;
+ *  - raw tracking (`cc_event`, `cc_page_view` and the `SITE_SEARCH` rows of `cc_search`) goes after [RAW_MONTHS] months;
  *  - conversations (`ai_chat_session`, its messages by cascade), `cc_visit`, `cc_visitor` and `cc_contact` go after
  *    [ACTIVITY_MONTHS] months since the last activity;
  *  - the full IP of a visit and of a chat session becomes NULL after `cc.retention.ip.days` (90 by default); the country stays.
@@ -36,11 +36,13 @@ class ContactCenterRetention(
         val contacts: Int,
         val ipsCleared: Int,
         val chatIpsCleared: Int,
+        val searches: Int,
     )
 
     fun purge(): Result {
         val events = deleteOld("cc_event", "x.created_at < now() - make_interval(months => $RAW_MONTHS)")
         val pageViews = deleteOld("cc_page_view", "x.viewed_at < now() - make_interval(months => $RAW_MONTHS)")
+        val searches = deleteOld("cc_search", "x.created_at < now() - make_interval(months => $RAW_MONTHS) AND x.source = 'SITE_SEARCH'")
         val chatSessions =
             deleteOld("ai_chat_session", "x.last_activity_at < now() - make_interval(months => $ACTIVITY_MONTHS) AND NOT x.flagged")
         val visits =
@@ -78,7 +80,7 @@ class ContactCenterRetention(
                     "AND NOT x.flagged AND x.created_at < now() - make_interval(days => ?) LIMIT ?)",
                 ipDays,
             )
-        return Result(pageViews, events, chatSessions, visits, visitors, contacts, ipsCleared, chatIpsCleared)
+        return Result(pageViews, events, chatSessions, visits, visitors, contacts, ipsCleared, chatIpsCleared, searches)
     }
 
     /** `table` and `condition` are constants of this class, never input. */

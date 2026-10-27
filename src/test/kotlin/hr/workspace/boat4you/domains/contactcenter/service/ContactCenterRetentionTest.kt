@@ -150,6 +150,16 @@ class ContactCenterRetentionTest {
         session("25 months")
         visit(visitor("25 months"), "25 months")
         retention.purge()
-        retention.purge() shouldBe ContactCenterRetention.Result(0, 0, 0, 0, 0, 0, 0, 0)
+        retention.purge() shouldBe ContactCenterRetention.Result(0, 0, 0, 0, 0, 0, 0, 0, 0)
+    }
+
+    @Test
+    fun `site searches go after 13 months, AI searches stay`() {
+        val old = id("INSERT INTO cc_search (source, site_id, created_at) VALUES ('SITE_SEARCH', 'boat4you', now() - interval '14 months')")
+        val young = id("INSERT INTO cc_search (source, site_id, created_at) VALUES ('SITE_SEARCH', 'boat4you', now() - interval '12 months')")
+        val ai = id("INSERT INTO cc_search (source, site_id, created_at) VALUES ('AI_CHAT', 'boat4you', now() - interval '14 months')")
+        retention.purge().searches shouldBe 1
+        exists("cc_search", old) shouldBe false
+        listOf(young, ai).forEach { exists("cc_search", it) shouldBe true }
     }
 }

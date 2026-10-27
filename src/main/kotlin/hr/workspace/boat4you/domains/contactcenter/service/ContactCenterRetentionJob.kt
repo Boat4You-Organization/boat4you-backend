@@ -25,6 +25,6 @@ class ContactCenterRetentionJob(
     }
 
     private companion object {
-        val NOTHING = ContactCenterRetention.Result(0, 0, 0, 0, 0, 0, 0, 0)
+        val NOTHING = ContactCenterRetention.Result(0, 0, 0, 0, 0, 0, 0, 0, 0)
     }
 }
