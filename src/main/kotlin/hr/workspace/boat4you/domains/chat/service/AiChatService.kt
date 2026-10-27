@@ -8,6 +8,8 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatMessage
 import hr.workspace.boat4you.domains.chat.jpa.AiChatMessageRepository
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
+import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
+import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
@@ -47,6 +49,7 @@ class AiChatService(
     private val emailService: EmailService,
     private val geoIp: GeoIpService,
     private val blogIndex: ChatBlogIndex,
+    private val searchRecorder: ChatSearchRecorder,
     transactionManager: PlatformTransactionManager,
     @Value("\${chat.notify-email:info@boat4you.com}")
     private val notifyEmail: String,
@@ -200,14 +203,17 @@ class AiChatService(
         try {
             val accepted = tx.execute { acceptVisitorMessage(session, content, page) }!!
             if (accepted is Accepted.Done) return accepted.outcome
+            // Every search_yachts call of this reply; filled by the model loop, stored with the reply in tx2 (BACKEND-17).
+            // A model failure keeps what was collected before it.
+            val searches = mutableListOf<SearchCriteria>()
             val reply =
                 try {
-                    runAssistant(session, page)
+                    runAssistant(session, page, searches)
                 } catch (e: Exception) {
                     log.warn("chat assistant failed for session ${session.id}: ${e.message}")
                     AssistantResult.Reply(FAILURE_APOLOGY, null)
                 }
-            return tx.execute { finishReply(session, (accepted as Accepted.AskModel).userMsg, reply) }!!
+            return tx.execute { finishReply(session, (accepted as Accepted.AskModel).userMsg, reply, searches) }!!
         } finally {
             inFlight.remove(sessionId)
         }
@@ -251,12 +257,19 @@ class AiChatService(
         return Accepted.AskModel(userMsg)
     }
 
-    private fun finishReply(session: AiChatSession, userMsg: AiChatMessage, reply: AssistantResult): MessageOutcome {
+    private fun finishReply(
+        session: AiChatSession,
+        userMsg: AiChatMessage,
+        reply: AssistantResult,
+        searches: List<SearchCriteria>,
+    ): MessageOutcome {
         val lock =
             when (reply) {
                 is AssistantResult.Lock -> reply
                 is AssistantResult.Reply -> ChatSecurityGuard.checkOutput(reply.text, canary)?.let { AssistantResult.Lock(DIR_OUT, it, reply.text) }
             }
+        // The searches belong to this reply's transaction whether the reply is shown or a lock takes its place.
+        searchRecorder.record(session.siteId, session.id!!, session.visitId, searches, flagged = lock != null)
         if (lock != null) {
             // The reply is never stored or shown: the handoff text takes its place.
             lock(session, lock.direction, lock.hit, lock.excerpt)
@@ -352,7 +365,11 @@ class AiChatService(
 
     // ---------------------------------------------------------------- internals
 
-    private fun runAssistant(session: AiChatSession, page: String? = null): AssistantResult {
+    private fun runAssistant(
+        session: AiChatSession,
+        page: String?,
+        searches: MutableList<SearchCriteria>,
+    ): AssistantResult {
         val history = buildModelMessages(session.id!!)
         var pendingCards: ArrayNode? = null
         var pendingBlogs: ArrayNode? = null
@@ -407,6 +424,7 @@ class AiChatService(
                     return AssistantResult.Lock(DIR_MODEL, ChatSecurityGuard.Hit("MANIPULATION", "SECURITY_HANDOFF"), lastVisitorLine(session))
                 }
                 val outcome = executeTool(session, name, block.path("input"))
+                outcome.search?.let(searches::add)
                 if (outcome.cards != null) pendingCards = outcome.cards
                 if (outcome.blogs != null) pendingBlogs = outcome.blogs
                 results.add(
