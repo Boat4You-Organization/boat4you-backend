@@ -194,14 +194,25 @@ class AiChatService(
      *
      * Three steps so no DB connection waits on Anthropic (review B5): store + guard in one transaction, the model loop
      * without one, the reply (or the lock after the output check) in a second transaction.
+     *
+     * [clientMessageId] is the widget's id for this message, already through [normalizeClientMessageId]. A message of
+     * this session that carries it is a retry: its first answer is replayed (BACKEND-19), before the cap check and
+     * without a second model call.
      */
-    fun handleVisitorMessage(session: AiChatSession, rawContent: String, page: String? = null): MessageOutcome {
+    fun handleVisitorMessage(
+        session: AiChatSession,
+        rawContent: String,
+        page: String? = null,
+        clientMessageId: String? = null,
+    ): MessageOutcome {
         val content = rawContent.trim().take(MAX_MESSAGE_CHARS)
         require(content.isNotBlank()) { "empty message" }
         val sessionId = session.id!!
         if (!inFlight.add(sessionId)) return MessageOutcome.Busy
         try {
-            val accepted = tx.execute { acceptVisitorMessage(session, content, page) }!!
+            // The controller looked before it took the slot; a retry that finished in between is found here (BACKEND-19).
+            findDuplicate(sessionId, clientMessageId)?.let { return replayOf(session, it) }
+            val accepted = tx.execute { acceptVisitorMessage(session, content, page, clientMessageId) }!!
             if (accepted is Accepted.Done) return accepted.outcome
             // Every search_yachts call of this reply; filled by the model loop, stored with the reply in tx2 (BACKEND-17).
             // A model failure keeps what was collected before it.
@@ -219,10 +230,50 @@ class AiChatService(
         }
     }
 
-    private fun acceptVisitorMessage(session: AiChatSession, content: String, page: String?): Accepted {
+    /**
+     * The answer to a message the widget sent before (same session, same [clientMessageId]), or null when the id is
+     * null or this session never saw it (the same id in another conversation is a new message, BACKEND-29).
+     * [MessageOutcome.Busy] while that session is still being answered.
+     */
+    fun replayIfDuplicate(
+        session: AiChatSession,
+        clientMessageId: String?,
+    ): MessageOutcome? {
+        val original = findDuplicate(session.id!!, clientMessageId) ?: return null
+        return if (session.id!! in inFlight) MessageOutcome.Busy else replayOf(session, original)
+    }
+
+    private fun findDuplicate(
+        sessionId: Long,
+        clientMessageId: String?,
+    ): AiChatMessage? = clientMessageId?.let { messages.findBySessionIdAndClientMessageId(sessionId, it) }
+
+    /**
+     * What the first POST of [original] returned: the handoff when the session is locked now, otherwise the stored
+     * message plus the first assistant line before the next visitor message (none in a HUMAN conversation).
+     */
+    private fun replayOf(
+        session: AiChatSession,
+        original: AiChatMessage,
+    ): MessageOutcome {
+        if (isLocked(session)) return MessageOutcome.Locked(ChatSecurityGuard.handoffText(session.locale))
+        val firstAssistant =
+            messages
+                .findAllBySessionIdAndIdGreaterThanOrderByIdAsc(session.id!!, original.id!!)
+                .takeWhile { it.role != AiChatMessage.ROLE_USER }
+                .firstOrNull { it.role == AiChatMessage.ROLE_ASSISTANT }
+        return MessageOutcome.Replied(listOfNotNull(original, firstAssistant))
+    }
+
+    private fun acceptVisitorMessage(
+        session: AiChatSession,
+        content: String,
+        page: String?,
+        clientMessageId: String?,
+    ): Accepted {
         check(messages.countBySessionId(session.id!!) < MAX_MESSAGES_PER_SESSION) { "session message cap reached" }
 
-        val userMsg = save(session.id!!, AiChatMessage.ROLE_USER, content)
+        val userMsg = save(session.id!!, AiChatMessage.ROLE_USER, content, clientMessageId = clientMessageId)
         session.lastActivityAt = Instant.now()
         updatePresence(session, page)
 
@@ -345,10 +396,14 @@ class AiChatService(
             }
         }
 
-    /** Broker reply from the admin inbox — takes ownership of the session. */
+    /** Broker reply from the admin inbox — takes ownership of the session. [authorUserId] is the admin who wrote it. */
     @Transactional
-    fun adminReply(session: AiChatSession, content: String): AiChatMessage {
-        val msg = save(session.id!!, AiChatMessage.ROLE_ADMIN, content.trim().take(MAX_MESSAGE_CHARS))
+    fun adminReply(
+        session: AiChatSession,
+        content: String,
+        authorUserId: Long? = null,
+    ): AiChatMessage {
+        val msg = save(session.id!!, AiChatMessage.ROLE_ADMIN, content.trim().take(MAX_MESSAGE_CHARS), authorUserId = authorUserId)
         session.status = AiChatSession.STATUS_HUMAN
         session.adminUnread = false
         session.lastActivityAt = Instant.now()
@@ -702,13 +757,22 @@ class AiChatService(
         }, "chat-notify-${session.id}").start()
     }
 
-    private fun save(sessionId: Long, role: String, content: String, payload: String? = null): AiChatMessage =
+    private fun save(
+        sessionId: Long,
+        role: String,
+        content: String,
+        payload: String? = null,
+        clientMessageId: String? = null,
+        authorUserId: Long? = null,
+    ): AiChatMessage =
         messages.save(
             AiChatMessage().apply {
                 this.sessionId = sessionId
                 this.role = role
                 this.content = content
                 this.payload = payload
+                this.clientMessageId = clientMessageId
+                this.authorUserId = authorUserId
             },
         )
 
@@ -736,6 +800,12 @@ class AiChatService(
         const val MAX_BLOG_LINKS = 2
 
         private const val SITE = "https://www.boat4you.com"
+
+        /** The widget's message id: a UUID or any short token, nothing that could carry markup or SQL (column VARCHAR(64)). */
+        val CLIENT_MESSAGE_ID = Regex("^[A-Za-z0-9_-]{8,64}$")
+
+        /** The trimmed id when it is a safe token, otherwise null (the POST is then a new message, as before the id existed). */
+        fun normalizeClientMessageId(raw: String?): String? = raw?.trim()?.takeIf { CLIENT_MESSAGE_ID.matches(it) }
 
         /** One leading slash, no "//", no backslash, no "@", no whitespace (review B6). */
         private val SAFE_PAGE = Regex("""^/(?![/\\])[A-Za-z0-9/_\-.~%?=&+,]{0,499}$""")

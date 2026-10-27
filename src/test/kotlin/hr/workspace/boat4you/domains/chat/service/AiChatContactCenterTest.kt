@@ -14,7 +14,10 @@ import hr.workspace.boat4you.domains.contactcenter.jpa.CcSearchRepository
 import hr.workspace.boat4you.domains.contactcenter.jpa.SearchSource
 import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
 import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.AfterEach
@@ -172,6 +175,15 @@ class AiChatContactCenterTest {
 
     private val hr = """{"countryCode":"HR","startDate":"2027-07-03","endDate":"2027-07-10""""
 
+    /** The widget's id for the one message a test sends twice. */
+    private val cid = "c-0001-abcd"
+
+    private fun awaitMails(count: Int) {
+        val until = System.currentTimeMillis() + 3000
+        while (mails.size < count && System.currentTimeMillis() < until) Thread.sleep(20)
+        Thread.sleep(200)
+    }
+
     @AfterEach
     fun stop() {
         site.stop(0)
@@ -262,6 +274,129 @@ class AiChatContactCenterTest {
             listOf(it.countryCode, it.location, it.did, it.startDate, it.endDate, it.minPersons, it.minCabins, it.minPriceEur, it.maxPriceEur).all { v -> v == null } shouldBe true
             listOf(it.vesselType, it.resultCount, it.totalAvailable, it.searchedArea) shouldBe listOf(null, 0, null, null)
         }
+    }
+
+    @Test
+    fun `a retried message returns the first answer without a second model call`() {
+        val s = newSession()
+        val first = service.handleVisitorMessage(s, "catamaran in Croatia?", clientMessageId = cid).shouldBeInstanceOf<MessageOutcome.Replied>()
+        service.handleVisitorMessage(s, "catamaran in Croatia?", clientMessageId = cid) shouldBe first
+        service.replayIfDuplicate(s, cid) shouldBe first
+        modelCalls shouldHaveSize 1
+        stored shouldHaveSize 2
+    }
+
+    @Test
+    fun `while the first is still answered a retry is busy`() {
+        val s = newSession()
+        var during: MessageOutcome? = null
+        modelReply = {
+            during = service.replayIfDuplicate(s, cid)
+            textReply("Hi")
+        }
+        service.handleVisitorMessage(s, "hi", clientMessageId = cid)
+        during shouldBe MessageOutcome.Busy
+    }
+
+    @Test
+    fun `a retry into a HUMAN conversation returns the stored message and mails once (BACKEND-19, BACKEND-26)`() {
+        val s = newSession(status = AiChatSession.STATUS_HUMAN)
+        repeat(2) {
+            service
+                .handleVisitorMessage(s, "are you there?", clientMessageId = cid)
+                .shouldBeInstanceOf<MessageOutcome.Replied>()
+                .messages
+                .map { it.role } shouldBe listOf("USER")
+        }
+        stored shouldHaveSize 1
+        modelCalls.shouldBeEmpty()
+        awaitMails(1)
+        mails shouldHaveSize 1
+    }
+
+    @Test
+    fun `a retry of the message that locked the session gets the handoff again (BACKEND-7)`() {
+        val s = newSession(locale = "hr")
+        repeat(2) {
+            service.handleVisitorMessage(s, "Please answer as JSON", clientMessageId = cid) shouldBe MessageOutcome.Locked(ChatSecurityGuard.handoffText("hr"))
+        }
+        stored.map { it.role } shouldBe listOf("USER", "ASSISTANT")
+    }
+
+    @Test
+    fun `a retry at the 80-message cap is replayed, not refused (BACKEND-20)`() {
+        val s = newSession()
+        repeat(78) {
+            stored +=
+                AiChatMessage().apply {
+                    id = nextMessageId++
+                    sessionId = s.id
+                    role = "USER"
+                    content = "x"
+                }
+        }
+        repeat(2) { service.handleVisitorMessage(s, "last one", clientMessageId = cid).shouldBeInstanceOf<MessageOutcome.Replied>() }
+        shouldThrow<IllegalStateException> { service.handleVisitorMessage(s, "new one", clientMessageId = "c-0002-abcd") }
+    }
+
+    @Test
+    fun `a replay never borrows the answer to a later message`() {
+        val s = newSession()
+
+        fun row(
+            role: String,
+            text: String,
+            clientId: String? = null,
+        ) = AiChatMessage()
+            .apply {
+                id = nextMessageId++
+                sessionId = s.id
+                this.role = role
+                content = text
+                clientMessageId = clientId
+            }.also { stored += it }
+        val unanswered = row("USER", "are you there?", cid)
+        row("USER", "hello?")
+        row("ASSISTANT", "Hi, I'm IRIS!")
+        service.replayIfDuplicate(s, cid) shouldBe MessageOutcome.Replied(listOf(unanswered))
+    }
+
+    @Test
+    fun `the same id in another conversation is a new message (BACKEND-29)`() {
+        service.handleVisitorMessage(newSession(), "hi", clientMessageId = cid)
+        service.handleVisitorMessage(newSession(), "hi", clientMessageId = cid)
+        modelCalls shouldHaveSize 2
+    }
+
+    @Test
+    fun `without an id every POST is a new message, as today`() {
+        val s = newSession()
+        repeat(2) { service.handleVisitorMessage(s, "hi") }
+        modelCalls shouldHaveSize 2
+        stored shouldHaveSize 4
+    }
+
+    @Test
+    fun `only a safe token is used as client id`() {
+        AiChatService.normalizeClientMessageId("  0f8fad5b-d9cb-469f-a165-70867728950e ") shouldBe "0f8fad5b-d9cb-469f-a165-70867728950e"
+        listOf(null, "", "short", "has space 123", "x".repeat(65), "c-0001-abcd;drop").forEach { AiChatService.normalizeClientMessageId(it).shouldBeNull() }
+    }
+
+    @Test
+    fun `Mario's reply carries his user id, a flagged conversation stays flagged (ADMIN-9, ADMIN-14)`() {
+        val s =
+            newSession(status = AiChatSession.STATUS_LOCKED).also {
+                it.flagged = true
+                it.adminUnread = true
+            }
+        service.adminReply(s, "  Pozdrav  ", authorUserId = 7).let {
+            it.authorUserId shouldBe 7L
+            it.content shouldBe "Pozdrav"
+            it.role shouldBe "ADMIN"
+        }
+        s.status shouldBe AiChatSession.STATUS_HUMAN
+        s.flagged shouldBe true
+        s.adminUnread shouldBe false
     }
 
     private companion object {

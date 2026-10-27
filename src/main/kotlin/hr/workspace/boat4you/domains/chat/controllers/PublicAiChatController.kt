@@ -38,7 +38,13 @@ class PublicAiChatController(
         val referrer: String? = null,
         val name: String? = null,
     )
-    data class MessageRequest(val content: String? = null, val page: String? = null)
+
+    data class MessageRequest(
+        val content: String? = null,
+        val page: String? = null,
+        /** The widget's id for this message; a retry of the same POST carries the same one and gets the first answer back. */
+        val clientMessageId: String? = null,
+    )
     data class PresenceRequest(val page: String? = null)
     data class MessageDto(val id: Long, val role: String, val content: String, val payload: String?)
     data class SessionStateDto(val token: String, val status: String, val messages: List<MessageDto>, val visitorName: String? = null)
@@ -94,6 +100,10 @@ class PublicAiChatController(
     fun postMessage(@PathVariable token: String, @RequestBody request: MessageRequest): ResponseEntity<Any> {
         if (!chat.isEnabled()) return disabled()
         val session = chat.getSession(token) ?: return notFound()
+        // A retried POST (same client id) is answered from the store: no reopen, no second model call, no cap check.
+        // The rate limiter sits in front of this controller, so a retry still counts against it.
+        val clientMessageId = AiChatService.normalizeClientMessageId(request.clientMessageId)
+        chat.replayIfDuplicate(session, clientMessageId)?.let { return respond(token, session, it) }
         // A closed thread reopens on the visitor's next message — same conversation,
         // same owner (human if a broker ever replied), never a silent AI reset.
         chat.reopenIfClosed(session)
@@ -101,17 +111,24 @@ class PublicAiChatController(
         if (content.isBlank()) return ResponseEntity.badRequest().body(mapOf("error" to "empty"))
 
         val outcome = try {
-            chat.handleVisitorMessage(session, content, request.page?.trim()?.take(500))
+            chat.handleVisitorMessage(session, content, request.page?.trim()?.take(500), clientMessageId)
         } catch (e: IllegalStateException) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(mapOf("error" to "cap"))
         }
-        return when (outcome) {
+        return respond(token, session, outcome)
+    }
+
+    private fun respond(
+        token: String,
+        session: AiChatSession,
+        outcome: AiChatService.MessageOutcome,
+    ): ResponseEntity<Any> =
+        when (outcome) {
             is AiChatService.MessageOutcome.Replied ->
                 ResponseEntity.ok(SessionStateDto(token, session.status, outcome.messages.map(::dto), session.visitorName))
             is AiChatService.MessageOutcome.Locked -> locked(outcome.handoffText)
             AiChatService.MessageOutcome.Busy -> ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "busy"))
         }
-    }
 
     /** Polling for broker replies once a human owns the session. */
     @GetMapping("/sessions/{token}/messages")
