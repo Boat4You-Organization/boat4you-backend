@@ -35,7 +35,7 @@ class YachtNamePolicyTest {
 
     @Test
     fun `the curated list is the shipped file`() {
-        YachtNamePolicy.brandNames shouldBe setOf("rhodes yachting", "active cruises", "sea novels")
+        YachtNamePolicy.brandNames shouldBe setOf("rhodes yachting", "active cruises")
     }
 
     @Test

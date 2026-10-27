@@ -2,8 +2,6 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import com.zaxxer.hikari.HikariDataSource
 import hr.workspace.boat4you.domains.catalouge.utils.SlugUtils
-import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicy
-import hr.workspace.boat4you.domains.catalouge.utils.YachtNamePolicyFixtures
 import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -27,7 +25,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * V9_99 (SM8, 27.10.2026) on PostgreSQL 18, the file in one transaction like Flyway, over the production labels of the
- * boats it fixes. The new frozen slugs are checked against the Kotlin rule (SlugUtils on the labels the migration leaves),
+ * boats it fixes and the ones it leaves. The new frozen slugs are checked against the Kotlin rule (SlugUtils on the labels the migration leaves),
  * which is the only slug rule there is.
  */
 @Testcontainers
@@ -44,7 +42,7 @@ class Sm8OperatorLabelsMigrationTest {
 
         private const val V9_99 = "V9_99__sm8_operator_names_out_of_boat_labels.sql"
         private val LONG_AGO: OffsetDateTime = OffsetDateTime.parse("2000-01-01T00:00:00Z")
-        private val FIXED = listOf(867L, 868L, 869L, 870L, 4202L)
+        private val FIXED = listOf(867L, 868L, 869L, 870L)
 
         private val SCHEMA =
             """
@@ -81,7 +79,7 @@ class Sm8OperatorLabelsMigrationTest {
                 (20128, 'C''s The Day', 'C''s The Day', 'beneteau-sunsail-41-cs-the-day-20128', 5542, 'SAILING_YACHT', true),
                 (20131, 'Diamond Girl', 'Diamond Girl', 'beneteau-moorings-5000-diamond-girl-20131', 5543, 'SAILING_YACHT', true),
                 (20133, 'Good Vibrations', 'Good Vibrations', 'beneteau-moorings-5000-good-vibrations-20133', 5543, 'SAILING_YACHT', true),
-                -- controls: an owner-named boat, a boat V9_87 already renamed, a boat on a builder model; 20128-20133 stay as they are
+                -- controls: an owner-named boat, a boat V9_87 already renamed, a boat on a builder model; 4202 and 20128-20133 stay as they are
                 (7, 'Zenith', 'Zenith', 'beneteau-oceanis-41-zenith-7', 301, 'SAILING_YACHT', true),
                 (6, 'Boat4You', 'Rhodes Yachting', 'beneteau-oceanis-41-boat4you-6', 301, 'SAILING_YACHT', true);
             """.trimIndent()
@@ -159,11 +157,11 @@ class Sm8OperatorLabelsMigrationTest {
     }
 
     @Test
-    fun `the agency-named boat gets the public Boat4You label, the raw name stays internal, model labels stay`() {
+    fun `boat names and the other model labels stay as they are`() {
         migrate()
         jdbc.queryForList("SELECT name FROM model WHERE id IN (5542, 5543) ORDER BY id", String::class.java) shouldContainExactly
             listOf("Sunsail 41", "Moorings 5000")
-        jdbc.queryForMap("SELECT name, partner_name FROM yacht WHERE id = 4202") shouldBe mapOf("name" to "Boat4You", "partner_name" to "Sea novels")
+        jdbc.queryForMap("SELECT name, partner_name FROM yacht WHERE id = 4202") shouldBe mapOf("name" to "Sea novels", "partner_name" to "Sea novels")
         jdbc.queryForList("SELECT name FROM yacht WHERE id IN (6, 7) ORDER BY id", String::class.java) shouldContainExactly listOf("Boat4You", "Zenith")
     }
 
@@ -177,12 +175,12 @@ class Sm8OperatorLabelsMigrationTest {
             withClue(id) {
                 after[id] shouldBe computed[id]
                 after[id]!! shouldEndWith "-$id"
-                listOf("odisej", "kolotura", "sea-novels").forEach { after[id]!! shouldNotContain it }
+                listOf("odisej", "kolotura").forEach { after[id]!! shouldNotContain it }
             }
         }
         after - FIXED.toSet() shouldBe before - FIXED.toSet()
         after[868] shouldBe "custom-made-ms-custom-aurum-sky-868"
-        after[4202] shouldBe "lagoon-42-boat4you-4202"
+        after[4202] shouldBe "lagoon-42-sea-novels-4202"
         after[20131] shouldBe "beneteau-moorings-5000-diamond-girl-20131"
     }
 
@@ -196,7 +194,7 @@ class Sm8OperatorLabelsMigrationTest {
         bumped() shouldBe emptyList()
         slugs() shouldBe slugs
         jdbc.queryForList("SELECT step || '=' || rows FROM _sm8_v9_99_done ORDER BY step", String::class.java) shouldContainExactly
-            listOf("builders=4", "slugs=5", "yacht_names=1")
+            listOf("builders=4", "slugs=4")
     }
 
     @Test
@@ -217,8 +215,6 @@ class Sm8OperatorLabelsMigrationTest {
                 "model_builder:9002:MY Custom Anthea:419",
                 "model_builder:9003:MY Custom Black Swan:419",
                 "model_builder:9004:M/S Ad Astra:308",
-                "yacht_name:4202:Sea novels:",
-                "yacht_slug:4202:lagoon-42-sea-novels-4202:",
                 "yacht_slug:867:kolotura-ms-ad-astra-867:",
                 "yacht_slug:868:odisej-ltd-ms-custom-aurum-sky-868:",
                 "yacht_slug:869:odisej-ltd-my-custom-anthea-869:",
@@ -230,9 +226,9 @@ class Sm8OperatorLabelsMigrationTest {
     @Test
     fun `it waits for a sync holding a boat's row and still writes everything`() {
         dataSource.connection.use { sync ->
-            // an agency sync holds 4202's row for 5 s - longer than one 3 s attempt
+            // an agency sync holds 870's row for 5 s - longer than one 3 s attempt
             sync.autoCommit = false
-            sync.createStatement().use { it.executeUpdate("UPDATE yacht SET cabins = 4 WHERE id = 4202") }
+            sync.createStatement().use { it.executeUpdate("UPDATE yacht SET cabins = 4 WHERE id = 870") }
             val deploy = CompletableFuture.runAsync { migrate() }
             Thread.sleep(5_000)
             deploy.isDone shouldBe false
@@ -240,18 +236,6 @@ class Sm8OperatorLabelsMigrationTest {
             sync.autoCommit = true
             deploy.get(60, TimeUnit.SECONDS)
         }
-        slugs()[4202] shouldBe "lagoon-42-boat4you-4202"
-        jdbc.queryForObject("SELECT name FROM yacht WHERE id = 4202", String::class.java) shouldBe "Boat4You"
-    }
-
-    @Test
-    fun `R02NamePolicyParity v2 - the SQL rule equals YachtNamePolicy on every fixture and on the curated list`() {
-        migrate()
-        (YachtNamePolicyFixtures.CASES.map { it.first } + YachtNamePolicy.brandNames + "Sea novels").forEach { raw ->
-            withClue(raw) {
-                jdbc.queryForObject("SELECT public.r02_yacht_public_name_v2(?)", String::class.java, raw) shouldBe
-                    YachtNamePolicy.publicName(raw)
-            }
-        }
+        slugs()[870] shouldBe "custom-made-my-custom-black-swan-870"
     }
 }
