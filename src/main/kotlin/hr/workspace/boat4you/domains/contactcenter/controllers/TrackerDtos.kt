@@ -55,13 +55,14 @@ data class EventDto(
     val at: Long? = null,
 )
 
+/** The list elements are nullable because Jackson puts a JSON `null` element into a Kotlin list; the validator drops and counts it. */
 data class BeatRequest(
     val siteId: String? = null,
     val visitorKey: String? = null,
     val visitId: String? = null,
     val visible: Boolean? = null,
-    val pageViews: List<PageViewDto>? = null,
-    val events: List<EventDto>? = null,
+    val pageViews: List<PageViewDto?>? = null,
+    val events: List<EventDto?>? = null,
 )
 
 data class ProactiveMessageDto(

@@ -101,12 +101,12 @@ class TrackerInputValidator(
         var dropped = 0
         val pageViews = ArrayList<PageViewIn>(pageViewsIn.size)
         for (dto in pageViewsIn) {
-            val pageView = pageViewOf(siteId, dto, now).valueOr { return it }
+            val pageView = if (dto == null) null else pageViewOf(siteId, dto, now).valueOr { return it }
             if (pageView == null) dropped++ else pageViews += pageView
         }
         val events = ArrayList<EventIn>(eventsIn.size)
         for (dto in eventsIn) {
-            val event = eventOf(dto, now)
+            val event = dto?.let { eventOf(it, now) }
             if (event == null) dropped++ else events += event
         }
         return Checked.Ok(BeatCommand(siteId, visitorKey, visitKey, req.visible ?: true, pageViews, events, dropped))

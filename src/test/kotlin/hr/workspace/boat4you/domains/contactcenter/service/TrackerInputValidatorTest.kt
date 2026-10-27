@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.contactcenter.service
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import hr.workspace.boat4you.domains.branding.BrandRegistry
 import hr.workspace.boat4you.domains.contactcenter.CHROME_UA
 import hr.workspace.boat4you.domains.contactcenter.CcTestClock
@@ -292,5 +293,16 @@ class TrackerInputValidatorTest {
         events.events.map { it.pvClientId } shouldBe listOf("pv1-abcdef", null, null, null, null, null)
         events.events.map { it.consentWithdrawn } shouldBe listOf(false, false, false, true, false, false)
         events.dropped shouldBe 2
+    }
+
+    @Test
+    fun `a null element of the page view or event list is dropped and counted, never an error`() {
+        // Jackson puts a null into a Kotlin List<..> (StrictNullChecks is off in Boot's KotlinModule), so the body is read the way the controller reads it
+        val body =
+            """{"siteId":"boat4you","visitorKey":"$key","visitId":"$visitKey","pageViews":[null,{"id":"pv1-abcdef","url":"$b4y/"}],"events":[null]}"""
+        (v.beat(jacksonObjectMapper().readValue<BeatRequest>(body), b4y) as Checked.Ok).value.let {
+            it.pageViews.size shouldBe 1
+            it.dropped shouldBe 2
+        }
     }
 }
