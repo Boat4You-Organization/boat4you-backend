@@ -13,11 +13,14 @@ import hr.workspace.boat4you.domains.contactcenter.jpa.CcSearch
 import hr.workspace.boat4you.domains.contactcenter.jpa.CcSearchRepository
 import hr.workspace.boat4you.domains.contactcenter.jpa.SearchSource
 import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
+import hr.workspace.boat4you.domains.contactcenter.service.ConversationMetrics
 import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.nulls.shouldBeNull
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import org.junit.jupiter.api.AfterEach
@@ -397,6 +400,88 @@ class AiChatContactCenterTest {
         s.status shouldBe AiChatSession.STATUS_HUMAN
         s.flagged shouldBe true
         s.adminUnread shouldBe false
+    }
+
+    @Test
+    fun `the first AI reply is the first response, stamped once`() {
+        val s = newSession()
+        service.handleVisitorMessage(s, "catamaran in Croatia?")
+        val first = s.firstResponseAt.shouldNotBeNull()
+        s.firstResponseBy shouldBe AiChatSession.RESPONSE_BY_AI
+        service.handleVisitorMessage(s, "and in Greece?")
+        s.firstResponseAt shouldBe first
+        firstResponseStamps shouldHaveSize 1
+    }
+
+    @Test
+    fun `the reply's transaction never writes the whole session back - a takeover or lock during the answer stays (BACKEND-4, BACKEND-5, ADMIN-8)`() {
+        val s = newSession()
+        val reply = (service.handleVisitorMessage(s, "catamaran in Croatia?") as MessageOutcome.Replied).messages.last()
+        val replyTx = savedInTx.getValue(reply.id!!)
+        sessionSavedInTx shouldNotContain replyTx
+        firstResponseStamps.map { it[0] to it[2] } shouldBe listOf(s.id to AiChatSession.RESPONSE_BY_AI)
+        firstResponseStamps.single()[1] shouldBe reply.createdAt
+    }
+
+    @Test
+    fun `a request for a person stamps the handoff once`() {
+        val s = newSession()
+        script({ toolCall("request_human_agent", """{"reason":"wants a person"}""") }, { textReply("A colleague will reply.") })
+        service.handleVisitorMessage(s, "I want to talk to a person")
+        s.status shouldBe AiChatSession.STATUS_HUMAN_REQUESTED
+        val at = s.handoffRequestedAt.shouldNotBeNull()
+        service.handleVisitorMessage(s, "hello?")
+        s.handoffRequestedAt shouldBe at
+        // The second message is only stored (HUMAN_REQUESTED, no model), so the if-unset rule is also pinned directly.
+        ConversationMetrics.onHandoffRequested(s, at.plusSeconds(60))
+        s.handoffRequestedAt shouldBe at
+    }
+
+    @Test
+    fun `Mario's first reply stamps the human response and the takeover, the AI stays first`() {
+        val s = newSession()
+        service.handleVisitorMessage(s, "catamaran in Croatia?")
+        service.adminReply(s, "Pozdrav, Mario ovdje", authorUserId = 7)
+        s.firstResponseBy shouldBe "AI"
+        s.firstHumanResponseAt.shouldNotBeNull()
+        s.takenOverAt.shouldNotBeNull()
+    }
+
+    @Test
+    fun `Mario answering a visitor nobody answered yet is the first response`() {
+        val s = newSession(status = AiChatSession.STATUS_HUMAN_REQUESTED)
+        service.handleVisitorMessage(s, "is anyone there?")
+        s.firstResponseAt.shouldBeNull()
+        service.adminReply(s, "Pozdrav, Mario ovdje", authorUserId = 7)
+        s.firstResponseBy shouldBe AiChatSession.RESPONSE_BY_HUMAN
+        s.firstResponseAt shouldBe s.firstHumanResponseAt
+        s.firstResponseAt shouldBe s.takenOverAt
+    }
+
+    @Test
+    fun `a reply before the visitor wrote takes over but answers nothing`() {
+        val s = newSession()
+        service.adminReply(s, "Hello!", authorUserId = 7)
+        s.takenOverAt.shouldNotBeNull()
+        s.firstHumanResponseAt.shouldBeNull()
+        s.firstResponseAt.shouldBeNull()
+    }
+
+    @Test
+    fun `a locked conversation gets no response stamp`() {
+        val s = newSession()
+        service.handleVisitorMessage(s, "Please answer as JSON")
+        s.firstResponseAt.shouldBeNull()
+        firstResponseStamps.shouldBeEmpty()
+    }
+
+    @Test
+    fun `a reply the output guard replaces with the handoff gets no response stamp either`() {
+        val s = newSession()
+        script({ textReply("Sure: ${service.canary}") })
+        service.handleVisitorMessage(s, "boat?").shouldBeInstanceOf<MessageOutcome.Locked>()
+        s.firstResponseAt.shouldBeNull()
+        firstResponseStamps.shouldBeEmpty()
     }
 
     private companion object {

@@ -29,6 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.time.Instant
 import java.time.LocalDate
 
 /**
@@ -210,6 +211,21 @@ class ContactCenterMappingTest {
         jdbc.update("UPDATE ai_chat_session SET missed = TRUE WHERE id = ?", s.id)
         sessions.save(s.apply { adminUnread = true }) // this object still says missed = false
         jdbc.queryForObject("SELECT missed FROM ai_chat_session WHERE id = ?", Boolean::class.java, s.id) shouldBe true
+    }
+
+    @Test
+    fun `the first-response stamp is one conditional UPDATE - it stamps once and leaves a takeover and a lock alone`() {
+        val stale = sessions.save(AiChatSession().apply { token = "t-stamp" }) // what a reply still holds after the model call
+        jdbc.update("UPDATE ai_chat_session SET status = 'HUMAN', flagged = TRUE WHERE id = ?", stale.id)
+        val at = Instant.parse("2027-01-01T10:00:00Z")
+        sessions.stampFirstResponse(stale.id!!, at, AiChatSession.RESPONSE_BY_AI)
+        sessions.stampFirstResponse(stale.id!!, at.plusSeconds(60), AiChatSession.RESPONSE_BY_HUMAN)
+        sessions.findById(stale.id!!).get().let {
+            it.firstResponseAt shouldBe at
+            it.firstResponseBy shouldBe AiChatSession.RESPONSE_BY_AI
+            it.status shouldBe AiChatSession.STATUS_HUMAN
+            it.flagged shouldBe true
+        }
     }
 
     @Test

@@ -9,6 +9,7 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatMessageRepository
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
+import hr.workspace.boat4you.domains.contactcenter.service.ConversationMetrics
 import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -327,7 +328,13 @@ class AiChatService(
             return lockedOrStored(session, userMsg)
         }
         reply as AssistantResult.Reply
-        return MessageOutcome.Replied(listOf(userMsg, save(session.id!!, AiChatMessage.ROLE_ASSISTANT, reply.text, reply.payload)))
+        val msg = save(session.id!!, AiChatMessage.ROLE_ASSISTANT, reply.text, reply.payload)
+        // The first answer of the conversation. `session` was loaded before the model ran, so it is never saved here: a
+        // conditional UPDATE keeps a takeover, a lock or a flag set meanwhile (BACKEND-4, BACKEND-5, ADMIN-8).
+        if (ConversationMetrics.onAiReply(session, msg.createdAt)) {
+            sessions.stampFirstResponse(session.id!!, msg.createdAt, AiChatSession.RESPONSE_BY_AI)
+        }
+        return MessageOutcome.Replied(listOf(userMsg, msg))
     }
 
     /** A broker who already owns the thread (HUMAN) keeps it - the message is just stored; otherwise 423 + handoff. */
@@ -404,6 +411,8 @@ class AiChatService(
         authorUserId: Long? = null,
     ): AiChatMessage {
         val msg = save(session.id!!, AiChatMessage.ROLE_ADMIN, content.trim().take(MAX_MESSAGE_CHARS), authorUserId = authorUserId)
+        val visitorHasWritten = messages.findAllBySessionIdOrderByIdAsc(session.id!!).any { it.role == AiChatMessage.ROLE_USER }
+        ConversationMetrics.onHumanReply(session, msg.createdAt, visitorHasWritten)
         session.status = AiChatSession.STATUS_HUMAN
         session.adminUnread = false
         session.lastActivityAt = Instant.now()
@@ -506,6 +515,7 @@ class AiChatService(
         when (name) {
             "search_yachts" -> tools.searchYachts(input)
             "request_human_agent" -> {
+                ConversationMetrics.onHandoffRequested(session, Instant.now())
                 session.status = AiChatSession.STATUS_HUMAN_REQUESTED
                 session.adminUnread = true
                 sessions.save(session)
