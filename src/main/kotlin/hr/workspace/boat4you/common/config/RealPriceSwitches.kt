@@ -87,6 +87,7 @@ class RealPriceSwitches(
         val nausysReverify: NauSysReverifyMode = NauSysReverifyMode.OFF,
         val nausysD3Mode: NauSysD3Mode = NauSysD3Mode.LEGACY,
         val nausysWarmLongRanges: OnOff = OnOff.OFF,
+        val reverifyDigest: OnOff = OnOff.ON,
         /** `GALLERY_EXTENDED`: model and marina photos in the boat page gallery (YachtGalleryService); not a search switch. */
         val galleryExtended: OnOff = OnOff.OFF,
     ) {
@@ -107,6 +108,7 @@ class RealPriceSwitches(
                 nausysReverify,
                 nausysD3Mode,
                 nausysWarmLongRanges,
+                reverifyDigest,
                 galleryExtended,
             )
 
@@ -144,6 +146,7 @@ class RealPriceSwitches(
     val nausysReverify: NauSysReverifyMode get() = snapshot().nausysReverify
     val nausysD3Mode: NauSysD3Mode get() = snapshot().nausysD3Mode
     val nausysWarmLongRanges: OnOff get() = snapshot().nausysWarmLongRanges
+    val reverifyDigest: OnOff get() = snapshot().reverifyDigest
     val galleryExtended: OnOff get() = snapshot().galleryExtended
 
     /** The SEARCH_* part of the current snapshot, for search cache keys (see [Snapshot.searchKey]). */
@@ -210,6 +213,7 @@ class RealPriceSwitches(
             nausysReverify = v(NAUSYS_REVERIFY_SPEC),
             nausysD3Mode = v(NAUSYS_D3_MODE_SPEC),
             nausysWarmLongRanges = v(NAUSYS_WARM_LONG_RANGES_SPEC),
+            reverifyDigest = v(REVERIFY_DIGEST_SPEC),
             galleryExtended = v(GALLERY_EXTENDED_SPEC),
         )
     }
@@ -300,6 +304,7 @@ class RealPriceSwitches(
         val NAUSYS_REVERIFY_SPEC = enumSpec(SettingsKeyEnum.NAUSYS_REVERIFY, NauSysReverifyMode.OFF)
         val NAUSYS_D3_MODE_SPEC = enumSpec(SettingsKeyEnum.NAUSYS_D3_MODE, NauSysD3Mode.LEGACY)
         val NAUSYS_WARM_LONG_RANGES_SPEC = enumSpec(SettingsKeyEnum.NAUSYS_WARM_LONG_RANGES, OnOff.OFF)
+        val REVERIFY_DIGEST_SPEC = enumSpec(SettingsKeyEnum.REVERIFY_DIGEST, OnOff.ON)
         val GALLERY_EXTENDED_SPEC = enumSpec(SettingsKeyEnum.GALLERY_EXTENDED, OnOff.OFF)
 
         val SPECS: List<Spec<*>> =
@@ -315,6 +320,7 @@ class RealPriceSwitches(
                 NAUSYS_REVERIFY_SPEC,
                 NAUSYS_D3_MODE_SPEC,
                 NAUSYS_WARM_LONG_RANGES_SPEC,
+                REVERIFY_DIGEST_SPEC,
                 GALLERY_EXTENDED_SPEC,
             )
 

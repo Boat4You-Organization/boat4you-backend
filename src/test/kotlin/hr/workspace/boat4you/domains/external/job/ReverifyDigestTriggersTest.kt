@@ -168,6 +168,15 @@ class ReverifyDigestTriggersTest {
     }
 
     @Test
+    fun `the REVERIFY_DIGEST switch OFF keeps every digest in the log, ON mails only with a reason`() {
+        ReverifyDigestJob.mailAllowed(RealPriceSwitches.Snapshot(), reasons = 2) shouldBe true
+        ReverifyDigestJob.mailAllowed(RealPriceSwitches.Snapshot(), reasons = 0) shouldBe false
+        ReverifyDigestJob.mailAllowed(RealPriceSwitches.Snapshot(reverifyDigest = RealPriceSwitches.OnOff.OFF), reasons = 2) shouldBe false
+        RealPriceSwitches.REVERIFY_DIGEST_SPEC.parse("off") shouldBe RealPriceSwitches.OnOff.OFF
+        RealPriceSwitches.REVERIFY_DIGEST_SPEC.default shouldBe RealPriceSwitches.OnOff.ON
+    }
+
+    @Test
     fun `the expected daily jobs follow the switches`() {
         ReverifyDigestJob.expectedDailyJobs(RealPriceSwitches.Snapshot()) shouldBe setOf(ReverifyJobs.MMK_FREE)
         ReverifyDigestJob.expectedDailyJobs(
