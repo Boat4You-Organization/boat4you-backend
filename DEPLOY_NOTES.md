@@ -1,5 +1,57 @@
 # Backend deploy notes
 
+## 2026-10-26 — 💬 Contact Center P1a: temelji backenda — ⏳ NIJE DEPLOYANO (grana feat/contact-center-p1a)
+
+Prvi korak contact centera (dizajn `infra/docs/contact-center-dizajn-2026-10-25.md`): samo temelji — tablice, bilježenje pretraga IRIS-a, mjerenje odgovora, retention i tri joba. Posjetitelj ništa ne vidi i nijedan sajt se ne mijenja; tracker API je P1b, admin API za nova polja i `cc.*` postavke je P2. Grana iz `main` `3e72e63`, 10 commitova (`7fb6a3e` … `5d8d7da`) + ovaj; ništa nije pushano ni deployano. **Deploy treba Marijin go** — taj go je ujedno potvrda prijedloga iz dizajna §8 (13 / 24 mjeseca, IP 90 dana), vidi točku 5.
+
+**1. Tri aditivne migracije V9_96–V9_98 (V9_99 ostaje slobodna)**
+- V9_96: nove tablice `cc_contact`, `cc_contact_tag`, `cc_visitor`, `cc_visit`, `cc_page_view`, `cc_event`. V9_97: `cc_search`. Svaki FK ima izričit `ON DELETE`, ništa ne pokazuje na `inquiry`.
+- V9_98: `ALTER TABLE ai_chat_session` (`site_id` NOT NULL DEFAULT `'boat4you'`, `visitor_id`/`visit_id`/`contact_id`, `phone`, stampovi prvog odgovora/preuzimanja/zahtjeva za osobu, `missed` DEFAULT false, partial indeksi) i `ai_chat_message` (`author_user_id`, `client_message_id` + `UNIQUE (session_id, client_message_id)`; NULL se ne sudara).
+- **Stari jar radi na migriranoj schemi:** svaki novi stupac je nullable ili ima default, a postojeći stupci se ne diraju. Rollback = `webservice.jar.prev` bez ikakvog SQL-a (tablice `cc_*` ostaju, bezopasne).
+- Pre-apply nije nužan: konstantni DEFAULT je samo katalog (PG ≥ 11), indeksi su na maloj tablici (razgovori od 19.7.2026), a piše je samo chat na cusma2 (kratke transakcije; model ide izvan transakcije). Ako Mario ipak želi isti recept kao V9_90–V9_92: sve tri redom (V9_98 treba V9_96) kao `boat4you_owner`, `psql -1 -v ON_ERROR_STOP=1 -f …` (**obavezno `-1`**), prije restarta cusma2. Redoslijed jara kao i prije: cusma2 (Flyway), pa cusma3 kroz gate — cusma3 se ne diže prije V9_96–98 u bazi.
+- V9_80/V9_81 (grana `feat/revolut-payments`) i dalje nisu na produ i idu out-of-order kad dođu, kao do sada.
+
+**2. Ključevi `cc.*`** (tablica `settings`, `name`/`value`; čitaju se najviše svakih 10 s; nema retka, neispravna ili izvan raspona vrijednost = zadano; ništa se ne mora seedati; admin lista postavki ne učitava `cc.*` retke)
+- `cc.handoff.minutes` — zadano **5** (1–120): koliko minuta zahtjev za osobu čeka prije nego razgovor postane `missed`.
+- `cc.backfill.enabled` — zadano **false**.
+- `cc.retention.ip.days` — zadano **90** (1–3650).
+- Spring svojstva (okolina, ne `settings`; zadane vrijednosti ostaju): `cc.settings.cache-ttl` PT10S, `cc.missed.poll-ms` 60000, `cc.backfill.poll-ms` 300000, `cc.retention.batch` 5000.
+
+**3. Tri joba — samo cusma3** (`@Profile("data-sync")` + ShedLock; isti jar na oba čvora, cusma2 ih ne pokreće)
+- `MissedConversationJob` — svake minute, lock `ccMissedConversations`: stavlja `missed = true` razgovoru kojem je zatražena osoba, a broker nije odgovorio u `cc.handoff.minutes` (odgovor koji stigne kasnije od toga također se broji kao propušten). Jedini pisac tog stupca (u JPA-u je read-only).
+- `IrisSearchBackfillJob` — svakih 5 min gleda prekidač, lock `ccIrisSearchBackfill`.
+- `ContactCenterRetentionJob` — svaku noć 03:45 (poslije Inquiry 03:30 i Reaper 03:40), lock `ccRetentionPurge`.
+
+**4. Backfill — Mario ga pali jednom, nakon go-livea**
+- `INSERT INTO settings (name, value, created, entity_status) VALUES ('cc.backfill.enabled', 'true', now(), 'ACTIVE')`. Job u idućem pollu (≤ 5 min) prođe sve IRIS razgovore, upiše **procijenjene** `cc_search` retke (`estimated = true`, iz spremljenih kartica i teksta posjetitelja; razgovori iz `flagged` sesija nose `flagged = true`; obuhvaća i soft-deleted razgovore — statistika ih mora filtrirati preko `chat_session_id` → `deleted_at`) i **sam vrati ključ na `false`**. Log na cusma3: „IRIS search backfill: N sessions scanned, M estimated searches written, cc.backfill.enabled switched off“. Ponovljiv (briše i ponovno upisuje samo procijenjene retke).
+- Red u `settings` nakon prvog runa postoji (unique po `name`), pa idući put: `UPDATE settings SET value = 'true', modified = now() WHERE name = 'cc.backfill.enabled'`.
+
+**5. Retention — što se dogodi s prvim runom u 03:45 nakon deploya**
+- Briše se samo ono što je starije od 13 mjeseci (`cc_page_view`, `cc_event`) odnosno 24 mjeseca od zadnje aktivnosti (`ai_chat_*`, `cc_contact`, `cc_visitor`, `cc_visit`). `cc_*` tablice su na početku prazne, a razgovori postoje od 19.7.2026, pa **prvi run ne briše ništa** (razgovori najranije 07.2028). `inquiry` ne dira (to radi `InquiryRetentionJob`).
+- **Prvi run ujedno briše puni IP svake ne-flagirane IRIS sesije starije od `cc.retention.ip.days` (90)** — `ai_chat_session.ip` → NULL, država ostaje (dizajn §8). To je nepovratno i pogađa sesije od 20.7.2026 (kad je IP stupac nastao) do „deploy minus 90 dana“. Ako Mario želi stare IP-ove dulje, neka **prije deploya** postavi ključ: `INSERT INTO settings (name, value, created, entity_status) VALUES ('cc.retention.ip.days', '3650', now(), 'ACTIVE')` (ili manju vrijednost po želji).
+- **Flagirane sesije su izuzete** (nisu ni brisane ni im se čisti IP), kao i posjeti, posjetitelji i kontakti na koje pokazuju, **dok Mario ne odluči** (BACKEND-32, zadnja točka; ADMIN-5). Brojač ponavljača po IP-u (samo flagirane, 24 h) ostaje netaknut.
+
+**6. Domena Italije i brand Croatia Yachting** (`BrandRegistry`)
+- `catamaran-italy`: `websiteUrl` je bio pogrešni `catamaran-charter-italy.com`, sada pravi `https://www.catamarancharteritaly.com`.
+- Novi brand `croatia-yachting` (`www.croatia-yachting.com`): naziv „Yacht Charter Croatia“, support `info@croatia-yachting.com`, tel. +385 91 3000 009, boja `#0e63a8`. Prije toga bi upit s tog sajta dobio zadani boat4you brand. From i primatelj ostaju `info@boat4you.com` (SMTP se prijavljuje s tog sandučića, upiti moraju i dalje sletjeti u njega), logo je privremeno boat4you znak. Ostali brandovi (boat4you, catamaran-croatia, -greece, -caribbean, europe-yachts) nepromijenjeni.
+- `SiteIds` (7 ključeva sajtova, i mapiranje domene → site id) zasad ništa ne mijenja u ponašanju: svaka postojeća chat sesija je `boat4you` (DEFAULT iz V9_98).
+
+**7. Što se još mijenja u radu IRIS-a (vidljivo samo u bazi i u JSON-u admina)**
+- Svaki `search_yachts` poziv odgovora (i prazni, i zaključani) upisuje redak u `cc_search` u istoj transakciji kao odgovor (`flagged` ako je sesija zaključana). Tekst modela, kartice, tool definicije, sustavni prompt i `ChatSecurityGuard` nisu dirani; `/public/chat` kodovi (423/400/409/429/404/503) isti.
+- Novi razgovori dobivaju stampove prvog odgovora (AI/čovjek), preuzimanja i zahtjeva za osobu. Odgovor brokera i transkript u adminu imaju dva nova aditivna polja (`authorUserId`, `clientMessageId`).
+- `clientMessageId` (idempotentan ponovni POST) je spreman, ali ga stari widget ne šalje, pa u P1a ništa ne mijenja za posjetitelje.
+
+**8. Provjere uz deploy**
+- [ ] Prije: `timedatectl` na cusma2 = `Etc/UTC` kao na cusma3 (stupci su `TIMESTAMP` bez zone, a `missed` i retention uspoređuju s `now()`; pomak zone pomiče granice za sate).
+- [ ] Poslije cusma2: jedna IRIS poruka koja pokrene pretragu, pa `SELECT id, source, site_id, chat_session_id, result_count, flagged, estimated FROM cc_search ORDER BY id DESC LIMIT 3` — redak za tu sesiju. (Zapis ide uz svaki odgovor; kad bi povezivanje transakcije zakazalo, svaki IRIS odgovor bi pao odmah, pa se vidi na prvoj poruci.)
+- [ ] Poslije cusma3: čist start; nakon zahtjeva za osobu i `cc.handoff.minutes` minuta u journalu „Missed conversations: n newly marked“.
+- [ ] Nakon prvog 03:45: `SELECT name, locked_at, locked_by FROM shedlock WHERE name = 'ccRetentionPurge'` ima redak (log „Contact center retention: …“ postoji samo ako je nešto promijenjeno).
+- [ ] Nakon paljenja backfilla: u journalu cusma3 redak „IRIS search backfill …“ unutar jednog polla, a `SELECT value FROM settings WHERE name = 'cc.backfill.enabled'` = `false`.
+
+**Testovi (puni run `./gradlew test ktlintCheck`, 27.10.2026, na `5d8d7da`):** 1298 testova, **31 pada — isti 31 kao na `main` `3e72e63`** (1223 testa, 31 pada; usporedba po imenu testa, razlika nula): `ReservationPaymentPhasesServiceTest` ×26 (Jan1 5, Jan15 5, Feb15 6, Feb16 5, Dec31 5), `ReservationOptionsCombinationProviderTests` ×2, `NauSysDateTimeWrapperTests` ×1, `MatchersTests` ×1, `Boat4youWsApplicationTests` ×1 (nema DB okoline). 0 novih padova; **75 novih testova, svi zeleni:** `BrandResolverSitesTest` 4, `SiteIdsTest` 4, `ContactCenterMigrationTest` 6, `ContactCenterMappingTest` 7, `CcSettingsTest` 5, `AiChatToolSearchCriteriaTest` 3, `AiChatContactCenterTest` 24, `ChatControllersContactCenterTest` 3, `MissedConversationMarkerTest` 2, `IrisCriteriaEstimatorTest` 6, `IrisSearchBackfillTest` 5, `ContactCenterRetentionTest` 6; `AiChatServiceSecurityTest` (19) prolazi uz izmjenu samo konstruktora. ktlint: 0 nalaza u 33 nove datoteke i 0 u redovima koje je grana dodala; 323 starih nalaza na neizmijenjenim redovima 6 postojećih datoteka (`AiChatService`, `AiChatToolExecutor`, `PublicAiChatController`, `AdminAiChatController`, `AiChatRepositories`, `AiChatServiceSecurityTest`) ostaju (ktlint je `ignoreFailures`).
+
+**Nije u P1a:** tracker API, `LiveVisitorRegistry`, filtriranje botova, upis `visitor_id`/`visit_id` na sesiju (P1b); `site_id` po sajtu na novim chat sesijama, AI se vraća nakon `cc.handoff.minutes`, circuit breaker (P1c); admin API i pisanje `cc.*` postavki (P2); GDPR brisanje/izvoz za `cc_*` i IRIS po e-mailu i odluka o flagiranim dokazima (kasniji plan); statistika (mora isključiti `estimated`, `flagged`, spam kontakte i soft-deleted razgovore).
+
 ## 2026-10-25 — 🪞 Zrcaljenje prazne flote partnera (V9_95, Multihull Yachting 1605) + mrtvi partnerski URL-ovi slika = skriveno s razlogom (Allure 11769) — ✅ LIVE OBA ČVORA 25.10.: cusma2 10:09 UTC (jar 22a6366f, V9_95 primijenjena 10:09:05, start 12,4 s, health 200), cusma3 14:03:41 UTC (gate prošao 14:03, bez sync aktivnosti, čist start 12,6 s); tag live/2026-10-25-partner-mirror (1. pokušaj 10:0x stao na preflightu: nedostajao /tmp/.aud_pw4, ništa dirano; ⚠️ 25.10. = kraj ljetnog vremena, lokalno = UTC+1) · admin „DEAD LINK“ LIVE 10:1x (entry index-BWWK3K5V)
 
 Mario 25.10.: „MMK je maknuo prikaz plovila od Multihull yachtinga za sada, tako treba biti i kod nas, mi prikazujemo sta na MMK i nausys daje“ + „kod Allure u adminu ima ovih praznih slika, neznam sta je ovo“.
