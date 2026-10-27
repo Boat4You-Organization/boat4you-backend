@@ -6,7 +6,7 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import java.time.Duration
 
-/** The retention purges on PostgreSQL 18 with the real V9_96-V9_98 schema: FK rules, partial indexes and the step order. */
+/** The retention purges on PostgreSQL 18 with the real V9_100-V9_102 schema: FK rules, partial indexes and the step order. */
 class ContactCenterRetentionTest {
     private val jdbc = ContactCenterTestDb.ready()
     private val retention = ContactCenterRetention(jdbc, CcSettings(jdbc, Duration.ZERO), batch = 2)

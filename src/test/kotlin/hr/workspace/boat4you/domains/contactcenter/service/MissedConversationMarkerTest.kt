@@ -5,7 +5,7 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import java.time.Duration
 
-/** The missed-conversation stamp on PostgreSQL 18 with the real V9_98 columns: no human reply within `cc.handoff.minutes` of the request. */
+/** The missed-conversation stamp on PostgreSQL 18 with the real V9_102 columns: no human reply within `cc.handoff.minutes` of the request. */
 class MissedConversationMarkerTest {
     private val jdbc = ContactCenterTestDb.ready()
     private val marker = MissedConversationMarker(jdbc, CcSettings(jdbc, Duration.ZERO))

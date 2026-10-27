@@ -34,7 +34,7 @@ import java.time.LocalDate
 
 /**
  * The contact-center entities and the new IRIS chat fields through the real Hibernate mappings on PostgreSQL 18: Hibernate
- * builds a schema from the entities, then the tables the migrations own are dropped and V9_96-V9_98 (plus the chat chain)
+ * builds a schema from the entities, then the tables the migrations own are dropped and V9_100-V9_102 (plus the chat chain)
  * replace them, so the validator checks every mapping against the real DDL, as ddl-auto validate does on prod.
  */
 @DataJpaTest(
@@ -106,7 +106,7 @@ class ContactCenterMappingTest {
     }
 
     @Test
-    fun `Hibernate validates every mapping against V9_96-V9_98, as ddl-auto validate does on prod`() {
+    fun `Hibernate validates every mapping against V9_100-V9_102, as ddl-auto validate does on prod`() {
         entityManagerFactory.unwrap(SessionFactory::class.java).schemaManager.validateMappedObjects()
     }
 

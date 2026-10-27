@@ -24,9 +24,9 @@ object ContactCenterTestDb {
 
     val CONTACT_CENTER =
         listOf(
-            "V9_96__cc_contact_visitor_visit.sql",
-            "V9_97__cc_search.sql",
-            "V9_98__ai_chat_contact_center.sql",
+            "V9_100__cc_contact_visitor_visit.sql",
+            "V9_101__cc_search.sql",
+            "V9_102__ai_chat_contact_center.sql",
         )
 
     private val postgres: PostgreSQLContainer<Nothing> by lazy {

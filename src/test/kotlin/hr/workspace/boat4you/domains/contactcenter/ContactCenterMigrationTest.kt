@@ -8,7 +8,7 @@ import org.springframework.dao.DuplicateKeyException
 import org.springframework.jdbc.core.JdbcTemplate
 
 /**
- * V9_96 - V9_98 on PostgreSQL 18 over the real chat migration chain: the IRIS security columns survive untouched
+ * V9_100 - V9_102 on PostgreSQL 18 over the real chat migration chain: the IRIS security columns survive untouched
  * (BACKEND-30), the previous jar can still write sessions and messages (rollback), and every FK has the ON DELETE rule
  * the retention purge relies on (BACKEND-32).
  */
