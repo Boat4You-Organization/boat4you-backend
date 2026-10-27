@@ -76,6 +76,10 @@ class ReverifyDigestJob(
             log.info("Reverify digest (log only):\n{}", digest.text)
             return
         }
+        if (!mailAllowed(switches.snapshot(), digest.triggers.size)) {
+            log.info("Reverify digest: REVERIFY_DIGEST is OFF, {} reason(s), mail skipped (log only):\n{}", digest.triggers.size, digest.text)
+            return
+        }
         val recipients = userRepository.findAllAdminEmailAddresses()
         if (recipients.isEmpty()) {
             log.warn("Reverify digest: no admin e-mail addresses - digest only in the log:\n{}", digest.text)
@@ -435,6 +439,12 @@ class ReverifyDigestJob(
                 logRunAnomalies(facts.runs)
 
         /** The jobs that run every day under [snapshot]: the MMK free-offer reverify always, the others when switched on. */
+        /** Mail only when there is a reason and the REVERIFY_DIGEST switch is ON (OFF = log only, Mario 27.10.2026). */
+        fun mailAllowed(
+            snapshot: RealPriceSwitches.Snapshot,
+            reasons: Int,
+        ): Boolean = reasons > 0 && snapshot.reverifyDigest.isOn
+
         fun expectedDailyJobs(snapshot: RealPriceSwitches.Snapshot): Set<String> =
             buildSet {
                 add(ReverifyJobs.MMK_FREE)

@@ -18,6 +18,10 @@ enum class SettingsKeyEnum {
     NAUSYS_REVERIFY,
     NAUSYS_D3_MODE,
     NAUSYS_WARM_LONG_RANGES,
+    // Daily reverify digest mail (ReverifyDigestJob, 07:00 UTC): ON = mail the admins when a trigger fires (today's
+    // behaviour), OFF = never mail, the digest stays in the cusma3 log (Mario 27.10.2026: "ugasi da mi ne dolaze vise ovi
+    // emailovi"). Same mechanics as the other real-price switches (RealPriceSwitches.reverifyDigest).
+    REVERIFY_DIGEST,
 
     // Boat page gallery with model and marina photos (photos DESIGN.md, 16.10.2026): OFF = today's gallery, ON = the
     // YachtGalleryService merge. Same mechanics as the real-price switches (RealPriceSwitches.galleryExtended).
