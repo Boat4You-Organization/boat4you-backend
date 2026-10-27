@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.contactcenter.service
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Duration
 
@@ -40,11 +41,13 @@ class CcSettings(
         val handoffMinutes: Int = DEFAULT_HANDOFF_MINUTES,
         val backfillEnabled: Boolean = false,
         val retentionIpDays: Int = DEFAULT_RETENTION_IP_DAYS,
+        val trackerEnabled: Boolean = true,
     )
 
     val handoffMinutes: Int get() = snapshot().handoffMinutes
     val backfillEnabled: Boolean get() = snapshot().backfillEnabled
     val retentionIpDays: Int get() = snapshot().retentionIpDays
+    val trackerEnabled: Boolean get() = snapshot().trackerEnabled
 
     /** The current values, reloaded when the cached copy is older than the TTL. Callers that need several values to agree use one snapshot. */
     fun snapshot(): Snapshot {
@@ -79,6 +82,15 @@ class CcSettings(
         return rows
     }
 
+    /**
+     * Keeps the snapshot warm so that a tracker request normally reads the cached copy and never waits on the settings query.
+     * It calls [snapshot], so the TTL still applies: the row is read at most once per [ttl].
+     */
+    @Scheduled(fixedDelay = 5_000)
+    fun refresh() {
+        snapshot()
+    }
+
     private fun fresh(): Snapshot? = loaded?.takeIf { ticker() - it.atNanos < ttl.toNanos() }?.snapshot
 
     private fun loadRows(): Map<String, String?> {
@@ -95,6 +107,8 @@ class CcSettings(
             handoffMinutes = raw[HANDOFF_MINUTES]?.trim()?.toIntOrNull()?.takeIf { it in 1..120 } ?: DEFAULT_HANDOFF_MINUTES,
             backfillEnabled = raw[BACKFILL_ENABLED]?.trim().equals("true", ignoreCase = true),
             retentionIpDays = raw[RETENTION_IP_DAYS]?.trim()?.toIntOrNull()?.takeIf { it in 1..3650 } ?: DEFAULT_RETENTION_IP_DAYS,
+            // On unless the row is a literal `false`: unlike backfillEnabled, a missing or garbled value keeps the tracker running.
+            trackerEnabled = !raw[TRACKER_ENABLED]?.trim().equals("false", ignoreCase = true),
         )
 
     private fun shouldWarn(now: Long): Boolean {
@@ -108,6 +122,7 @@ class CcSettings(
         const val HANDOFF_MINUTES = "cc.handoff.minutes"
         const val BACKFILL_ENABLED = "cc.backfill.enabled"
         const val RETENTION_IP_DAYS = "cc.retention.ip.days"
+        const val TRACKER_ENABLED = "cc.tracker.enabled"
 
         private const val DEFAULT_HANDOFF_MINUTES = 5
         private const val DEFAULT_RETENTION_IP_DAYS = 90

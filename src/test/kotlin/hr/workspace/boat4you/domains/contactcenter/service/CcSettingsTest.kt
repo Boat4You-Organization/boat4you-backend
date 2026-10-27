@@ -55,6 +55,21 @@ class CcSettingsTest {
     }
 
     @Test
+    fun `cc tracker enabled defaults to true and accepts only true or false`() {
+        settings.trackerEnabled shouldBe true
+        put("cc.tracker.enabled", "FALSE")
+        later(11)
+        settings.trackerEnabled shouldBe false
+        put("cc.tracker.enabled", "maybe")
+        later(11)
+        settings.trackerEnabled shouldBe true
+        put("cc.tracker.enabled", null)
+        later(11)
+        settings.trackerEnabled shouldBe true
+        settings.snapshot() shouldBe CcSettings.Snapshot(5, false, 90) // P1a's positional defaults still hold
+    }
+
+    @Test
     fun `disableBackfill switches the row off at once`() {
         put("cc.backfill.enabled", "true")
         settings.backfillEnabled shouldBe true

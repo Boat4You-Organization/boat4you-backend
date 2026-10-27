@@ -29,6 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.sql.Timestamp
 import java.time.Instant
 import java.time.LocalDate
 
@@ -181,6 +182,18 @@ class ContactCenterMappingTest {
             )
         TransactionTemplate(transactionManager).execute { contacts.findById(c.id!!).get().let { it.tags.toSet() to it.status } } shouldBe
             (setOf("vip", "greece") to ContactStatus.NEW)
+    }
+
+    @Test
+    fun `a contact update moves updated_at`() {
+        val id = contacts.save(CcContact().apply { name = "Ana" }).id!!
+        jdbc.update("UPDATE cc_contact SET updated_at = ? WHERE id = ?", Timestamp.from(Instant.parse("2020-01-01T00:00:00Z")), id)
+        TransactionTemplate(transactionManager).execute {
+            contacts.findById(id).get().note = "called back"
+            contacts.flush()
+        }
+        val moved = jdbc.queryForObject("SELECT updated_at FROM cc_contact WHERE id = ?", Timestamp::class.java, id)!!.toInstant()
+        moved.isAfter(Instant.parse("2026-01-01T00:00:00Z")) shouldBe true
     }
 
     @Test
