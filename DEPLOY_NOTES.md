@@ -1,5 +1,12 @@
 # Backend deploy notes
 
+## 2026-10-27 — 🔕 Dnevni digest „Provjere kod partnera“ ugašen prekidačem REVERIFY_DIGEST (Mario: „ajde ugasi da mi ne dolaze vise ovi emailovi“) — ✅ LIVE OBA ČVORA 27.10. 19:52 UTC (jar 7ad61b0 = main 218a086 + prekidač, md5 6dc6608353fb6a6d67103f1746746987; cusma2 19:52:29, cusma3 19:52:54, gate čist); tag live/2026-10-27-digest-off
+
+- Novi prekidač `REVERIFY_DIGEST` (SettingsKeyEnum, RealPriceSwitches.reverifyDigest, OnOff; zadano ON = današnje ponašanje). `ReverifyDigestJob.sendDigest`: uz okidač i ON → mail svim SYSTEM_ADMIN adresama kao dosad; uz OFF → cijeli digest samo u logu cusma3 (INFO, „REVERIFY_DIGEST is OFF … mail skipped“). AdminSettingsService validira kao ostale prekidače (ON/OFF). Bez migracije: red `settings` (id 14) `REVERIFY_DIGEST=OFF` upisan ručno na cusma4 27.10. 19:53 UTC (kao i ostali prekidači 14.10.). Testovi: RealPriceSwitchesTest 17/17 (13 prekidača), ReverifyDigestTriggersTest 15/15.
+- **Vraćanje mailova:** admin Settings → `REVERIFY_DIGEST` = `ON` (bez deploya, čita se unutar 60 s). Pravila okidača (21.10.) nepromijenjena.
+- Deploy tijek: 15:55 i 16:22 UTC „Permission denied“ (prvo hop cusma3→cusma2, pa prijava na cusma3; JIVO CHAT isti obrazac 15:20 i 15:37) — Mario: IP nije blokirana; u 19:51 `both` prošao iz prve. Uzrok prolaznih odbijanja nije utvrđen (sumnja: pam_faillock/rate-limit nakon više sesija istog dana).
+- Isti jar nosi contact-center P1a (V9_100–V9_102, JIVO CHAT 15:31/15:40) — ništa nije vraćeno.
+
 ## 2026-10-27 — 🔗 SM8: ime charter agencije van javne oznake i URL-a broda (V9_99, 4 broda 867–870: proizvođač „Odisej Ltd“ / „Kolotura“ → „Custom Made“ + novi zamrznuti slugovi) — ✅ LIVE OBA ČVORA 27.10.: cusma2 13:28 UTC, cusma3 15:33 UTC (jar bd1a41c, md5 d6cef5700769c7fd10e68e93d5835414; cusma3 gate ABORT 13:28 mmkFreeOfferReverify, 15:13 nausysYachtBackupSync, 15:33 čist); tag live/2026-10-27-sm8 · od 15:40 UTC cusma3 nosi P1a jar 6ab4c28b (main 218a086 = bd1a41c + Contact Center P1a, nadskup; vidi unos ispod)
 
 Mario 27.10.: 11:13 UTC „sredi sve“ (na prijedlog A/B/C za 8 brodova iz SM8 skena sitemapa), 13:03 UTC „nemoj odadav nista u vezi sunsaila i mooringa“ (C van: 20128, 20131, 20133) i „zanemai plovila 4202“ (B van). Opseg = samo A. Pregled i deploy: BOAT4YOU 3 (Mario: „boat4you agentu daj sve da pregleda pa neka on deploy napravi ako je sve ok“); autor grane: sesija „Remove operator names from 5 permanent boat URLs“.
