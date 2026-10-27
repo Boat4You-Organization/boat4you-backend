@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.contactcenter
 
+import hr.workspace.boat4you.domains.contactcenter.service.LiveEntry
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.transaction.PlatformTransactionManager
@@ -68,3 +69,40 @@ class CcTestClock(
         now = now.plus(d)
     }
 }
+
+/**
+ * A human, non-returning, DIRECT / DESKTOP visit as the live registry holds it: started at [lastBeatAt], no country, locale, browser or OS.
+ * Pass [bot] or [staff] for the flagged kinds, [visitKey] to model a resumed visit.
+ */
+@Suppress("LongParameterList") // every field a test may want to set, all with a default
+fun liveEntry(
+    visitKey: String = UUID.randomUUID().toString(),
+    visitorKey: String = UUID.randomUUID().toString(),
+    siteId: String = "boat4you",
+    bot: Boolean = false,
+    staff: Boolean = false,
+    lastBeatAt: Instant = Instant.parse("2026-10-26T10:00:00Z"),
+    visitId: Long = 1,
+    visitorId: Long = 1,
+    ip: String? = null,
+): LiveEntry =
+    LiveEntry(
+        visitId = visitId,
+        visitKey = visitKey,
+        visitorId = visitorId,
+        visitorKey = visitorKey,
+        siteId = siteId,
+        startedAt = lastBeatAt,
+        returning = false,
+        countryCode = null,
+        ip = ip,
+        locale = null,
+        deviceClass = "DESKTOP",
+        browser = null,
+        os = null,
+        channel = "DIRECT",
+        fromSiteId = null,
+        staff = staff,
+        bot = bot,
+        lastBeatAt = lastBeatAt,
+    )
