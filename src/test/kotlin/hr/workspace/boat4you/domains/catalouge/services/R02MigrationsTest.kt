@@ -423,7 +423,8 @@ class R02MigrationsTest {
     @Test
     fun `R02NamePolicyParity - the SQL rule equals YachtNamePolicy on every fixture and on the curated list`() {
         allR02()
-        (YachtNamePolicyFixtures.CASES.map { it.first } + YachtNamePolicy.brandNames).forEach { raw ->
+        // v1 carries the list as V9_87 shipped it; names curated later are in v2 (V9_99, Sm8OperatorLabelsMigrationTest)
+        (YachtNamePolicyFixtures.CASES.map { it.first } + setOf("rhodes yachting", "active cruises")).forEach { raw ->
             withClue(raw) {
                 jdbc.queryForObject("SELECT public.r02_yacht_public_name_v1(?)", String::class.java, raw) shouldBe
                     YachtNamePolicy.publicName(raw)
