@@ -1,5 +1,6 @@
 -- V9_99 SM8 (27.10.2026, Mario „sredi sve“): no charter agency's name in a boat's public label or URL. The SEO regression
--- check SM8 (27.10. 10:07 UTC) found the agency in live sitemap slugs; a full scan of the b4y sitemap (9,970 boats) found 8:
+-- check SM8 (27.10. 10:07 UTC) found the agency in live sitemap slugs; a full scan of the b4y sitemap (9,970 boats) found
+-- 8 boats, 5 of them carry an agency:
 --   * the partner sends the agency as the builder: "Odisej Ltd" (868 M/S Aurum Sky, 869 Anthea, 870 Black Swan) and
 --     "Kolotura" (867 M/S Ad Astra) -> their models move to the builder our other custom-built boats carry, "Custom Made",
 --     and so do the partner builder mappings: a new model of that partner builder is born under "Custom Made" (both syncs
@@ -7,11 +8,9 @@
 --     MMK sets it on a new model only);
 --   * the boat is named after its agency: 4202 "Sea novels" (NauSys agency Sea Novels, Athens) -> public name "Boat4You",
 --     the raw name stays internal in partner_name (R02, V9_87). partner/yacht_name_brand.txt carries it from this jar on,
---     so the syncs keep writing "Boat4You"; r02_yacht_public_name_v2 below is the SQL twin of YachtNamePolicy.publicName;
---   * a charter brand in the model label (owner flag F3, left open 15.10.): "Sunsail 41" (20128 C's The Day) and
---     "Moorings 5000" (20131 Diamond Girl, 20133 Good Vibrations) -> "Boat4You 41" / "Boat4You 5000", rule F1 of 14.10.
---     („Di piše NSS ili SUNSAIL stavi BOAT4YOU tu i gotovo“). partner/brand_model_alias.txt maps the partner label to the
---     renamed row, so a new partner model id with that label lands there instead of creating "Sunsail 41" again.
+--     so the syncs keep writing "Boat4You"; r02_yacht_public_name_v2 below is the SQL twin of YachtNamePolicy.publicName.
+-- The charter-brand model labels the scan also found ("Sunsail 41" 20128, "Moorings 5000" 20131/20133) are not part of
+-- this migration (owner, 27.10.).
 -- URLs: yacht.public_slug is frozen (V9_90, owner rule 16.10.); this is the owner-approved exception. The new slug of each
 -- boat is the one SlugUtils gives the new labels (Sm8OperatorLabelsMigrationTest checks every row against the Kotlin rule;
 -- no SQL twin of the slug rule). A row is written only while it still holds its old slug (or none), so a re-run, or a
@@ -31,7 +30,6 @@
 --   UPDATE model m SET manufacturer_id = b.ref_id FROM ops_sm8_backup_20261027 b WHERE b.kind = 'model_builder' AND b.row_id = m.id;
 --   UPDATE external_mapping e SET system_id = b.ref_id FROM ops_sm8_backup_20261027 b WHERE b.kind = 'builder_mapping' AND b.row_id = e.id;
 --   (a mapping deleted as a duplicate: re-INSERT it from the backup row: ref_id = old system_id, name = external_system_id:external_id)
---   UPDATE model m SET name = b.name FROM ops_sm8_backup_20261027 b WHERE b.kind = 'model_name' AND b.row_id = m.id;
 --   UPDATE yacht y SET name = b.name FROM ops_sm8_backup_20261027 b WHERE b.kind = 'yacht_name' AND b.row_id = y.id;
 --   UPDATE yacht y SET public_slug = b.public_slug FROM ops_sm8_backup_20261027 b WHERE b.kind = 'yacht_slug' AND b.row_id = y.id;
 --   DELETE FROM flyway_schema_history WHERE version = '9.99'; DELETE FROM _sm8_v9_99_done;
@@ -78,10 +76,7 @@ DECLARE
         {"id": 868, "old": "odisej-ltd-ms-custom-aurum-sky-868", "new": "custom-made-ms-custom-aurum-sky-868"},
         {"id": 869, "old": "odisej-ltd-my-custom-anthea-869", "new": "custom-made-my-custom-anthea-869"},
         {"id": 870, "old": "odisej-ltd-my-custom-black-swan-870", "new": "custom-made-my-custom-black-swan-870"},
-        {"id": 4202, "old": "lagoon-42-sea-novels-4202", "new": "lagoon-42-boat4you-4202"},
-        {"id": 20128, "old": "beneteau-sunsail-41-cs-the-day-20128", "new": "beneteau-boat4you-41-cs-the-day-20128"},
-        {"id": 20131, "old": "beneteau-moorings-5000-diamond-girl-20131", "new": "beneteau-boat4you-5000-diamond-girl-20131"},
-        {"id": 20133, "old": "beneteau-moorings-5000-good-vibrations-20133", "new": "beneteau-boat4you-5000-good-vibrations-20133"}
+        {"id": 4202, "old": "lagoon-42-sea-novels-4202", "new": "lagoon-42-boat4you-4202"}
     ]$j$;
 BEGIN
     -- 1. agency-as-builder -> "Custom Made" (models + the partner builder mappings)
@@ -135,37 +130,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- 2. charter-brand model labels -> "Boat4You ..." (F1)
-    IF NOT EXISTS (SELECT 1 FROM public._sm8_v9_99_done WHERE step = 'model_names') THEN
-        attempt := 0;
-        LOOP
-            BEGIN
-                PERFORM set_config('lock_timeout', '3s', true);
-                INSERT INTO public.ops_sm8_backup_20261027 (kind, row_id, name)
-                SELECT 'model_name', m.id, m.name FROM public.model m WHERE m.name IN ('Sunsail 41', 'Moorings 5000')
-                ON CONFLICT (kind, row_id) DO NOTHING;
-                INSERT INTO public.yacht_content_modified AS c (yacht_id, modified_at)
-                SELECT y.id, clock_timestamp() FROM public.yacht y JOIN public.model m ON m.id = y.model_id
-                WHERE m.name IN ('Sunsail 41', 'Moorings 5000')
-                ON CONFLICT (yacht_id) DO UPDATE SET modified_at = EXCLUDED.modified_at WHERE c.modified_at < EXCLUDED.modified_at;
-                UPDATE public.model SET name = public.r02_yacht_public_name_v1(name) WHERE name IN ('Sunsail 41', 'Moorings 5000');
-                GET DIAGNOSTICS n = ROW_COUNT;
-                RAISE NOTICE 'V9_99 model labels renamed: %', n;
-                INSERT INTO public._sm8_v9_99_done (step, rows) VALUES ('model_names', n);
-                EXIT;
-            EXCEPTION
-                WHEN lock_not_available THEN
-                    attempt := attempt + 1;
-                    IF attempt >= 10 THEN
-                        RAISE;
-                    END IF;
-                    RAISE NOTICE 'V9_99 model labels: rows locked (attempt % of 10), retrying in 3 s', attempt;
-                    PERFORM pg_sleep(3);
-            END;
-        END LOOP;
-    END IF;
-
-    -- 3. boats named after their agency -> "Boat4You" (the V9_71 trigger moves their lastmod)
+    -- 2. boats named after their agency -> "Boat4You" (the V9_71 trigger moves their lastmod)
     IF NOT EXISTS (SELECT 1 FROM public._sm8_v9_99_done WHERE step = 'yacht_names') THEN
         attempt := 0;
         LOOP
@@ -199,7 +164,7 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- 4. the new frozen slugs (SlugUtils on the new labels; the test recomputes every row)
+    -- 3. the new frozen slugs (SlugUtils on the new labels; the test recomputes every row)
     IF NOT EXISTS (SELECT 1 FROM public._sm8_v9_99_done WHERE step = 'slugs') THEN
         attempt := 0;
         LOOP

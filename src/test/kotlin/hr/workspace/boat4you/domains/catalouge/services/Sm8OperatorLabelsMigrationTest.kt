@@ -44,7 +44,7 @@ class Sm8OperatorLabelsMigrationTest {
 
         private const val V9_99 = "V9_99__sm8_operator_names_out_of_boat_labels.sql"
         private val LONG_AGO: OffsetDateTime = OffsetDateTime.parse("2000-01-01T00:00:00Z")
-        private val FIXED = listOf(867L, 868L, 869L, 870L, 4202L, 20128L, 20131L, 20133L)
+        private val FIXED = listOf(867L, 868L, 869L, 870L, 4202L)
 
         private val SCHEMA =
             """
@@ -81,7 +81,7 @@ class Sm8OperatorLabelsMigrationTest {
                 (20128, 'C''s The Day', 'C''s The Day', 'beneteau-sunsail-41-cs-the-day-20128', 5542, 'SAILING_YACHT', true),
                 (20131, 'Diamond Girl', 'Diamond Girl', 'beneteau-moorings-5000-diamond-girl-20131', 5543, 'SAILING_YACHT', true),
                 (20133, 'Good Vibrations', 'Good Vibrations', 'beneteau-moorings-5000-good-vibrations-20133', 5543, 'SAILING_YACHT', true),
-                -- controls: an owner-named boat, a boat V9_87 already renamed, a boat on a builder model
+                -- controls: an owner-named boat, a boat V9_87 already renamed, a boat on a builder model; 20128-20133 stay as they are
                 (7, 'Zenith', 'Zenith', 'beneteau-oceanis-41-zenith-7', 301, 'SAILING_YACHT', true),
                 (6, 'Boat4You', 'Rhodes Yachting', 'beneteau-oceanis-41-boat4you-6', 301, 'SAILING_YACHT', true);
             """.trimIndent()
@@ -159,10 +159,10 @@ class Sm8OperatorLabelsMigrationTest {
     }
 
     @Test
-    fun `charter-brand model labels and the agency-named boat get the public Boat4You label, the raw name stays internal`() {
+    fun `the agency-named boat gets the public Boat4You label, the raw name stays internal, model labels stay`() {
         migrate()
         jdbc.queryForList("SELECT name FROM model WHERE id IN (5542, 5543) ORDER BY id", String::class.java) shouldContainExactly
-            listOf("Boat4You 41", "Boat4You 5000")
+            listOf("Sunsail 41", "Moorings 5000")
         jdbc.queryForMap("SELECT name, partner_name FROM yacht WHERE id = 4202") shouldBe mapOf("name" to "Boat4You", "partner_name" to "Sea novels")
         jdbc.queryForList("SELECT name FROM yacht WHERE id IN (6, 7) ORDER BY id", String::class.java) shouldContainExactly listOf("Boat4You", "Zenith")
     }
@@ -177,13 +177,13 @@ class Sm8OperatorLabelsMigrationTest {
             withClue(id) {
                 after[id] shouldBe computed[id]
                 after[id]!! shouldEndWith "-$id"
-                listOf("odisej", "kolotura", "sea-novels", "sunsail", "moorings").forEach { after[id]!! shouldNotContain it }
+                listOf("odisej", "kolotura", "sea-novels").forEach { after[id]!! shouldNotContain it }
             }
         }
         after - FIXED.toSet() shouldBe before - FIXED.toSet()
         after[868] shouldBe "custom-made-ms-custom-aurum-sky-868"
         after[4202] shouldBe "lagoon-42-boat4you-4202"
-        after[20131] shouldBe "beneteau-boat4you-5000-diamond-girl-20131"
+        after[20131] shouldBe "beneteau-moorings-5000-diamond-girl-20131"
     }
 
     @Test
@@ -196,7 +196,7 @@ class Sm8OperatorLabelsMigrationTest {
         bumped() shouldBe emptyList()
         slugs() shouldBe slugs
         jdbc.queryForList("SELECT step || '=' || rows FROM _sm8_v9_99_done ORDER BY step", String::class.java) shouldContainExactly
-            listOf("builders=4", "model_names=2", "slugs=8", "yacht_names=1")
+            listOf("builders=4", "slugs=5", "yacht_names=1")
     }
 
     @Test
@@ -217,12 +217,7 @@ class Sm8OperatorLabelsMigrationTest {
                 "model_builder:9002:MY Custom Anthea:419",
                 "model_builder:9003:MY Custom Black Swan:419",
                 "model_builder:9004:M/S Ad Astra:308",
-                "model_name:5542:Sunsail 41:",
-                "model_name:5543:Moorings 5000:",
                 "yacht_name:4202:Sea novels:",
-                "yacht_slug:20128:beneteau-sunsail-41-cs-the-day-20128:",
-                "yacht_slug:20131:beneteau-moorings-5000-diamond-girl-20131:",
-                "yacht_slug:20133:beneteau-moorings-5000-good-vibrations-20133:",
                 "yacht_slug:4202:lagoon-42-sea-novels-4202:",
                 "yacht_slug:867:kolotura-ms-ad-astra-867:",
                 "yacht_slug:868:odisej-ltd-ms-custom-aurum-sky-868:",
