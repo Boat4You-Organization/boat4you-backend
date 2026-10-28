@@ -440,8 +440,11 @@ class AiChatToolExecutor(
         return amenityIdsByLabel[labelCode]
     }
 
-    /** Tool schemas for the Messages API call. */
-    fun toolDefinitions(): ArrayNode {
+    /**
+     * Tool schemas for the Messages API call. [includeBlog] is false on a site without blog guides: the model is then not
+     * given `show_blog_posts` at all (deterministic per site, so the tools stay a stable cached prefix).
+     */
+    fun toolDefinitions(includeBlog: Boolean = true): ArrayNode {
         val tools = objectMapper.createArrayNode()
         tools.add(tool(
             "search_yachts",
@@ -503,15 +506,17 @@ class AiChatToolExecutor(
         ) {
             it.putObject("reason").put("type", "string").put("description", "Short reason for the handoff")
         })
-        tools.add(tool(
-            "show_blog_posts",
-            "Show the visitor up to 2 boat4you blog guides from the BOAT4YOU GUIDES list as link cards under your " +
-                "reply. Use it whenever a listed guide fits the visitor's question.",
-        ) {
-            it.putObject("slugs").put("type", "array")
-                .put("description", "Guide slugs exactly as listed in BOAT4YOU GUIDES, at most 2")
-                .putObject("items").put("type", "string")
-        })
+        if (includeBlog) {
+            tools.add(tool(
+                "show_blog_posts",
+                "Show the visitor up to 2 boat4you blog guides from the BOAT4YOU GUIDES list as link cards under your " +
+                    "reply. Use it whenever a listed guide fits the visitor's question.",
+            ) {
+                it.putObject("slugs").put("type", "array")
+                    .put("description", "Guide slugs exactly as listed in BOAT4YOU GUIDES, at most 2")
+                    .putObject("items").put("type", "string")
+            })
+        }
         tools.add(tool(
             "save_contact",
             "Store the visitor's name and/or email when they share it, so the team can follow up.",

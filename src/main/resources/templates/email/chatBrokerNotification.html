@@ -48,7 +48,7 @@
 <body style="margin:0; padding:0; background-color:#f4f6fb; font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; color:#0f172a;">
 
   <!-- Preheader (hidden inbox preview text) -->
-  <div th:text="'Posjetitelj čeka odgovor u boat4you chatu.'"
+  <div th:text="'Posjetitelj čeka odgovor u chatu (' + ${siteName} + ').'"
     style="display:none; font-size:0; line-height:0; max-height:0; max-width:0; opacity:0; overflow:hidden; mso-hide:all;">
     We couldn&#39;t approve your cancellation under the agency&#39;s policy.
   </div>
@@ -117,7 +117,7 @@
                             style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:22px; font-weight:700; color:#ffffff; line-height:1.3; letter-spacing:-0.3px; margin:12px 0 0 0;">
                             We couldn&#39;t approve your cancellation, Mario Kuzmanic
                           </div>
-                          <div th:text="'Dok ne odgovorite, AI se ne miješa — klijent odgovor vidi u istom chat prozoru na www.boat4you.com.'"
+                          <div th:text="'Klijent vaš odgovor vidi u istom chat prozoru na ' + ${siteHost} + '.'"
                             style="font-family:'Inter',-apple-system,'Segoe UI',Arial,sans-serif; font-size:14px; color:#ffffff; opacity:0.75; line-height:1.5; margin:8px 0 0 0;">
                             The charter agency operating this yacht doesn&#39;t allow cancellation under their policy. Your booking is still on.
                           </div>

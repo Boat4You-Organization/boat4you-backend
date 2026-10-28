@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.chat.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.sun.net.httpserver.HttpServer
+import hr.workspace.boat4you.domains.branding.BrandRegistry
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.chat.jpa.AiChatMessage
 import hr.workspace.boat4you.domains.chat.jpa.AiChatMessageRepository
@@ -170,6 +171,7 @@ open class ChatTestHarness(
             geoIp = geoIp,
             blogIndex = blogIndex,
             searchRecorder = ChatSearchRecorder(ccSearches),
+            brands = BrandRegistry(),
             transactionManager = txManager,
             notifyEmail = "info@example.com",
         )
