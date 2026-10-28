@@ -11,7 +11,8 @@ class TrackerUrlPolicyTest {
 
     @Test
     fun `host must belong to the claimed site and the stored url is rebuilt from BrandRegistry`() {
-        val ok = policy.clean("boat4you", "https://www.boat4you.com/hr/boat/lagoon-42-5217?startDate=2027-07-17&utm_source=x&gclid=abc&cch=T&cc_src=catamaran-greece") as UrlCheck.Ok
+        val raw = "https://www.boat4you.com/hr/boat/lagoon-42-5217?startDate=2027-07-17&utm_source=x&gclid=abc&cch=T&cc_src=catamaran-greece"
+        val ok = policy.clean("boat4you", raw) as UrlCheck.Ok
         ok.url.path shouldBe "/hr/boat/lagoon-42-5217?startDate=2027-07-17"
         ok.url.url shouldBe "https://www.boat4you.com/hr/boat/lagoon-42-5217?startDate=2027-07-17"
         ok.url.params["utm_source"] shouldBe "x"
@@ -21,24 +22,39 @@ class TrackerUrlPolicyTest {
         policy.clean("catamaran-greece", "https://www.boat4you.com/boat/x") shouldBe UrlCheck.ForeignHost
         policy.clean("boat4you", "https://www.boat4you.com.evil.tld/boat/x") shouldBe UrlCheck.ForeignHost
         listOf(
-            "https://user@www.boat4you.com/", "javascript:alert(1)", "https://www.boat4you.com//evil.tld/x",
-            "ftp://www.boat4you.com/x", "http://www.boat4you.com/x", "https://www.boat4you.com/" + "a".repeat(1000), "https://www.boat4you.com/a b",
+            "https://user@www.boat4you.com/",
+            "javascript:alert(1)",
+            "https://www.boat4you.com//evil.tld/x",
+            "ftp://www.boat4you.com/x",
+            "http://www.boat4you.com/x",
+            "https://www.boat4you.com/" + "a".repeat(1000),
+            "https://www.boat4you.com/a b",
         ).forEach { policy.clean("boat4you", it) shouldBe UrlCheck.Invalid }
     }
 
     @Test
     fun `token pages are never stored`() { // WEB-18
         listOf(
-            "/hr/review/abc?rating=5", "/unsubscribe/tok", "/en/confirm-email-change?token=t", "/custom-offers/h1",
-            "/forgot-password?passwordResetCode=9", "/trip/tok", "/boat/x?token=t",
+            "/hr/review/abc?rating=5",
+            "/unsubscribe/tok",
+            "/en/confirm-email-change?token=t",
+            "/custom-offers/h1",
+            "/forgot-password?passwordResetCode=9",
+            "/trip/tok",
+            "/boat/x?token=t",
         ).forEach { policy.clean("boat4you", "https://www.boat4you.com$it") shouldBe UrlCheck.Secret }
     }
 
     @Test
     fun `SAFE_PAGE stays byte-identical to the chat rule`() { // BACKEND-25
         listOf(
-            "/hr/boat/lagoon-42-5217?startDate=2027-07-17&endDate=2027-07-24", "//evil.tld/x", "/\\evil", "/x y", "/@evil",
-            "/" + "a".repeat(499), "/" + "a".repeat(500),
+            "/hr/boat/lagoon-42-5217?startDate=2027-07-17&endDate=2027-07-24",
+            "//evil.tld/x",
+            "/\\evil",
+            "/x y",
+            "/@evil",
+            "/" + "a".repeat(499),
+            "/" + "a".repeat(500),
         ).forEach { p -> TrackerUrlPolicy.SAFE_PAGE.matches(p) shouldBe AiChatService.safePageUrl(p).isNotEmpty() }
     }
 
