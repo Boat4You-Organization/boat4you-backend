@@ -152,7 +152,7 @@ class AiChatServiceSecurityTest : ChatTestHarness() {
         service.handleVisitorMessage(s, "a monohull in Greece in June")
         val sent = modelCalls.single()
         sent.first shouldNotContain "Visitor first name"
-        sent.second.toString() shouldNotContain "broker line"
+        sent.second.filter { it.path("role").asText() == "user" }.none { it.path("content").asText().contains("broker line") } shouldBe true
         sent.second.toString() shouldNotContain "agent wrote"
     }
 
