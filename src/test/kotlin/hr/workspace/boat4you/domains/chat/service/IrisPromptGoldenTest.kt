@@ -16,6 +16,6 @@ class IrisPromptGoldenTest {
     @Test
     fun `boat4you - the system prompt is today's prompt`() {
         h.service.handleVisitorMessage(h.newSession(name = "Ana"), "catamaran in Croatia in July for 8 people")
-        GoldenFile.check("chat/iris-prompt-boat4you.golden.txt", normalized(h.modelSystems.single()))
+        GoldenFile.check("chat/iris-prompt-boat4you.golden.txt", normalized(h.modelSystems.single().full))
     }
 }

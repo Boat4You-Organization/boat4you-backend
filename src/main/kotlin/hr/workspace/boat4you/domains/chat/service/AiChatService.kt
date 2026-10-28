@@ -453,7 +453,7 @@ class AiChatService(
 
         var rounds = 0
         while (true) {
-            val response = anthropic.createMessage(system, history, tools.toolDefinitions())
+            val response = anthropic.createMessage(AnthropicClient.SystemPrompt(system, ""), history, tools.toolDefinitions())
             val contentBlocks = response.path("content")
             val stopReason = response.path("stop_reason").asText()
 

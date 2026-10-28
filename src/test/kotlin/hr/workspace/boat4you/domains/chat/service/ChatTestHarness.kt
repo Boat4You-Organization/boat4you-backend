@@ -41,11 +41,11 @@ open class ChatTestHarness(
     /** What `countByIpAndFlaggedTrueAndLockedAtAfter` answers: sessions of the visitor's address that are locked. */
     var flaggedFromIp = 0L
 
-    /** Per model call: the system prompt, the messages and the tools, in call order (messages are deep copies). */
-    val modelSystems = mutableListOf<String>()
+    /** Per model call: the system prompt (both parts), the messages and the tools, in call order (messages are deep copies). */
+    val modelSystems = mutableListOf<AnthropicClient.SystemPrompt>()
     val modelMessages = mutableListOf<JsonNode>()
     val modelTools = mutableListOf<JsonNode?>()
-    val modelCalls: List<Pair<String, JsonNode>> get() = modelSystems.zip(modelMessages)
+    val modelCalls: List<Pair<String, JsonNode>> get() = modelSystems.map { it.full }.zip(modelMessages)
     var modelReply: () -> JsonNode = { textReply("Hi, I'm IRIS! Where would you like to sail?") }
     val mails = CopyOnWriteArrayList<InvocationOnMock>()
 
@@ -98,7 +98,7 @@ open class ChatTestHarness(
             when (inv.method.name) {
                 "isEnabled" -> true
                 "createMessage" -> {
-                    modelSystems += inv.arguments[0] as String
+                    modelSystems += inv.arguments[0] as AnthropicClient.SystemPrompt
                     modelMessages.add((inv.arguments[1] as JsonNode).deepCopy())
                     modelTools += inv.arguments[2] as JsonNode?
                     modelReply()
