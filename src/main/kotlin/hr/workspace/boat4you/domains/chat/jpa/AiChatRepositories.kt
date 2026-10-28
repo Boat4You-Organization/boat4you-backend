@@ -35,6 +35,40 @@ interface AiChatSessionRepository : JpaRepository<AiChatSession, Long> {
         @Param("at") at: Instant,
         @Param("by") by: String,
     )
+
+    /** The holding stamp as one conditional UPDATE: 1 when this call stamped, 0 when the session no longer qualifies (ADMIN-8/9). */
+    @Transactional
+    @Modifying
+    @Query(
+        "UPDATE AiChatSession s SET s.handoffHoldingAt = :at WHERE s.id = :id AND s.status = 'HUMAN_REQUESTED' " +
+            "AND s.flagged = false AND s.deletedAt IS NULL AND s.handoffHoldingAt IS NULL",
+    )
+    fun stampHandoffHolding(
+        @Param("id") id: Long,
+        @Param("at") at: Instant,
+    ): Int
+
+    /** HUMAN -> AI as one conditional UPDATE; a flagged, LOCKED or deleted session is never returned (BACKEND-4, ADMIN-9). */
+    @Transactional
+    @Modifying
+    @Query("UPDATE AiChatSession s SET s.status = 'AI', s.aiReturnedAt = :at WHERE s.id = :id AND s.status = 'HUMAN' AND s.flagged = false AND s.deletedAt IS NULL")
+    fun returnToAi(
+        @Param("id") id: Long,
+        @Param("at") at: Instant,
+    ): Int
+
+    /** CcAiWatchdog restart recovery: recent conversations of one status; flagged and deleted ones are never touched. */
+    fun findAllByStatusAndFlaggedFalseAndDeletedAtIsNullAndLastActivityAtAfter(
+        status: String,
+        after: Instant,
+    ): List<AiChatSession>
+
+    /** CcAiWatchdog holding sweep: handoffs requested inside [from, to] that have not had their holding message yet. */
+    fun findAllByStatusAndFlaggedFalseAndDeletedAtIsNullAndHandoffHoldingAtIsNullAndHandoffRequestedAtBetween(
+        status: String,
+        from: Instant,
+        to: Instant,
+    ): List<AiChatSession>
 }
 
 interface AiChatMessageRepository : JpaRepository<AiChatMessage, Long> {
@@ -50,4 +84,7 @@ interface AiChatMessageRepository : JpaRepository<AiChatMessage, Long> {
         sessionId: Long,
         clientMessageId: String,
     ): AiChatMessage?
+
+    /** The newest message of a session (restart recovery: is the last one still an unanswered visitor line). */
+    fun findFirstBySessionIdOrderByIdDesc(sessionId: Long): AiChatMessage?
 }

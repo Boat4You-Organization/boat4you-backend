@@ -101,7 +101,7 @@ class ContactCenterMappingTest {
     @BeforeAll
     fun migrate() {
         jdbc.execute(
-            "DROP TABLE cc_event, cc_page_view, cc_search, cc_visit, cc_contact_tag, cc_visitor, cc_contact, ai_chat_message, ai_chat_session, settings CASCADE",
+            "DROP TABLE cc_security_event, cc_event, cc_page_view, cc_search, cc_visit, cc_contact_tag, cc_visitor, cc_contact, ai_chat_message, ai_chat_session, settings CASCADE",
         )
         ContactCenterTestDb.apply(jdbc, ContactCenterTestDb.CHAT_CHAIN + ContactCenterTestDb.CONTACT_CENTER)
     }

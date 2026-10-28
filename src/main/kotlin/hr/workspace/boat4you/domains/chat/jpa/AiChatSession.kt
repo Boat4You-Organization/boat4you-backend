@@ -127,6 +127,14 @@ open class AiChatSession {
     @Column(name = "ai_return_after_minutes")
     open var aiReturnAfterMinutes: Int? = null
 
+    /** When the holding message ("a person will reply soon, meanwhile I can help") went out after N minutes of HUMAN_REQUESTED; NULL = never. */
+    @Column(name = "handoff_holding_at")
+    open var handoffHoldingAt: Instant? = null
+
+    /** When the AI took a HUMAN conversation back after M minutes; NULL = never. */
+    @Column(name = "ai_returned_at")
+    open var aiReturnedAt: Instant? = null
+
     /**
      * Set only by the missed-conversation job's SQL, never by a session save: a stale in-memory copy must not reset it
      * (so it is neither inserted nor updated by JPA; a new row gets the column default FALSE).
