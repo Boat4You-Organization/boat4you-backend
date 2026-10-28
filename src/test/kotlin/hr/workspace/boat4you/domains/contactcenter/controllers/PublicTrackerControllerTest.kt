@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.contactcenter.controllers
 
+import hr.workspace.boat4you.domains.contactcenter.CcTestClock
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import hr.workspace.boat4you.domains.branding.BrandRegistry
 import hr.workspace.boat4you.domains.contactcenter.CHROME_UA
@@ -36,7 +37,8 @@ class PublicTrackerControllerTest {
 
     // P1a's CcSettings reads the DB; a mock keeps this a pure web test. Mockito's default for a Boolean is false, so stub true.
     private val settings = Mockito.mock(CcSettings::class.java).also { Mockito.`when`(it.trackerEnabled).thenReturn(true) }
-    private val guard = TrackerSurgeGuard(2) // a site budget of 2 visits a minute in this test
+    private val clock = CcTestClock()
+    private val guard = TrackerSurgeGuard(2).also { it.clock = clock } // a site budget of 2 visits a minute in this test; fixed clock so the minute window never rolls mid-test
     private val controller = PublicTrackerController(validator, visits, beats, handoffs, settings, jacksonObjectMapper(), guard)
     private val mvc = MockMvcBuilders.standaloneSetup(controller).build()
     private val key = "a0000000-0000-4000-8000-000000000001"
