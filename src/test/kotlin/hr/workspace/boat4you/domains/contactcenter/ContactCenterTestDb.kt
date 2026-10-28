@@ -27,6 +27,7 @@ object ContactCenterTestDb {
             "V9_100__cc_contact_visitor_visit.sql",
             "V9_101__cc_search.sql",
             "V9_102__ai_chat_contact_center.sql",
+            "V9_103__cc_tracker_visit_key.sql",
         )
 
     private val postgres: PostgreSQLContainer<Nothing> by lazy {
@@ -47,10 +48,10 @@ object ContactCenterTestDb {
     }
 
     /** `CREATE DATABASE cc_<n>` on the shared container; the pools keep no idle connection (minimumIdle = 0). */
-    fun newDatabase(): JdbcTemplate {
+    fun newDatabase(poolSize: Int = 2): JdbcTemplate {
         val name = "cc_${counter.incrementAndGet()}"
         admin.execute("CREATE DATABASE $name")
-        return JdbcTemplate(dataSource(postgres.jdbcUrl.replace("/boat4you_db", "/$name")))
+        return JdbcTemplate(dataSource(postgres.jdbcUrl.replace("/boat4you_db", "/$name"), poolSize))
     }
 
     /** Each file in a transaction like Flyway (`BEGIN; <sql>; COMMIT;`). */
@@ -64,15 +65,17 @@ object ContactCenterTestDb {
         }
     }
 
-    fun ready(): JdbcTemplate = newDatabase().also { apply(it, CHAT_CHAIN + CONTACT_CENTER) }
+    fun ready(poolSize: Int = 2): JdbcTemplate = newDatabase(poolSize).also { apply(it, CHAT_CHAIN + CONTACT_CENTER) }
 
-    private fun dataSource(url: String) =
-        HikariDataSource()
-            .apply {
-                jdbcUrl = url
-                username = postgres.username
-                password = postgres.password
-                maximumPoolSize = 2
-                minimumIdle = 0
-            }.also { synchronized(dataSources) { dataSources += it } }
+    private fun dataSource(
+        url: String,
+        poolSize: Int = 2,
+    ) = HikariDataSource()
+        .apply {
+            jdbcUrl = url
+            username = postgres.username
+            password = postgres.password
+            maximumPoolSize = poolSize
+            minimumIdle = 0
+        }.also { synchronized(dataSources) { dataSources += it } }
 }

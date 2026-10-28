@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.JoinColumn
+import jakarta.persistence.PreUpdate
 import jakarta.persistence.Table
 import java.time.Instant
 
@@ -50,4 +51,10 @@ open class CcContact {
     @CollectionTable(name = "cc_contact_tag", joinColumns = [JoinColumn(name = "contact_id")])
     @Column(name = "tag", length = 40)
     open var tags: MutableSet<String> = mutableSetOf()
+
+    /** Retention deletes a contact 24 months after `updated_at` (ContactCenterRetention), so every update of the row must move it. */
+    @PreUpdate
+    fun touchUpdatedAt() {
+        updatedAt = Instant.now()
+    }
 }
