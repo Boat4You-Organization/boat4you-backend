@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatMessage
 import hr.workspace.boat4you.domains.chat.jpa.AiChatMessageRepository
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
+import hr.workspace.boat4you.domains.contactcenter.SiteIds
 import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
 import hr.workspace.boat4you.domains.contactcenter.service.ConversationMetrics
 import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
@@ -116,11 +117,14 @@ class AiChatService(
      * New anonymous session. An invalid name throws [InvalidNameException]; a name that hits the guard
      * ("<img src=x onerror=...>") creates the session already LOCKED (the name kept as evidence, never shown to the
      * model), and so does a visitor whose IP had [IP_REPEAT_LOCKS] locked sessions in the last 24 h (review B1.6).
+     * [siteId] is the site the visitor chats on, already resolved by `ChatSiteResolver`; a caller that does not know it
+     * (the widget before the per-site chat) gets `boat4you`.
      */
     fun createSession(
         locale: String?,
         name: String? = null,
         ip: String? = null,
+        siteId: String = SiteIds.BOAT4YOU,
     ): AiChatSession {
         val nameCheck = name?.takeIf { it.isNotBlank() }?.let { NameValidator.check(it) }
         if (nameCheck == NameValidator.Result.Invalid) throw InvalidNameException()
@@ -140,6 +144,7 @@ class AiChatService(
                         this.ip = ip?.take(45)
                         this.countryCode = geo?.code
                         this.country = geo?.name
+                        this.siteId = siteId
                     },
                 )
             when {

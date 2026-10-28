@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatMessage
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.service.AiChatService
 import hr.workspace.boat4you.domains.chat.service.ChatSecurityGuard
+import hr.workspace.boat4you.domains.contactcenter.service.ChatSiteResolver
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -37,6 +38,8 @@ class PublicAiChatController(
         val page: String? = null,
         val referrer: String? = null,
         val name: String? = null,
+        /** For a server-to-server call without an `Origin` only; a browser's `Origin` header always decides the site. */
+        val siteId: String? = null,
     )
 
     data class MessageRequest(
@@ -60,7 +63,12 @@ class PublicAiChatController(
         val clientIp = httpRequest.getHeader("X-Real-IP")?.takeIf { it.isNotBlank() } ?: httpRequest.remoteAddr
         val session =
             try {
-                chat.createSession(request?.locale, request?.name, clientIp)
+                chat.createSession(
+                    request?.locale,
+                    request?.name,
+                    clientIp,
+                    ChatSiteResolver.resolve(httpRequest.getHeader("Origin"), request?.siteId),
+                )
             } catch (e: AiChatService.InvalidNameException) {
                 return invalidName()
             }
