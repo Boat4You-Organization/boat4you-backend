@@ -25,9 +25,13 @@ class CcSettings(
     /** Monotonic clock in nanoseconds; replaced in tests. */
     internal var ticker: () -> Long = System::nanoTime
 
-    /** The snapshot with the moment it was loaded, in one object so a reader never pairs a snapshot with another one's age. */
+    /**
+     * The snapshot, the raw `cc.*` rows it was parsed from and the moment it was loaded, in one object so a reader never pairs a
+     * snapshot (or a raw value) with another one's age.
+     */
     private class Loaded(
         val snapshot: Snapshot,
+        val raw: Map<String, String?>,
         val atNanos: Long,
     )
 
@@ -50,24 +54,40 @@ class CcSettings(
     val trackerEnabled: Boolean get() = snapshot().trackerEnabled
 
     /** The current values, reloaded when the cached copy is older than the TTL. Callers that need several values to agree use one snapshot. */
-    fun snapshot(): Snapshot {
+    fun snapshot(): Snapshot = loadedNow().snapshot
+
+    /** The raw value of one `cc.*` row from the same cached read as [snapshot]; null when absent or NULL. */
+    fun string(key: String): String? = loadedNow().raw[key]
+
+    /** Re-reads the rows now, ignoring the TTL; a failed read keeps the previous values, as in [snapshot]. */
+    fun reload() {
+        synchronized(lock) { load() }
+    }
+
+    private fun loadedNow(): Loaded {
         fresh()?.let { return it }
         synchronized(lock) {
             fresh()?.let { return it }
-            val now = ticker()
-            val next =
-                try {
-                    parse(loadRows())
-                } catch (
-                    @Suppress("TooGenericExceptionCaught") e: Exception,
-                ) {
-                    // Never let a settings read break a chat or a job: keep what we had, or the defaults.
-                    if (shouldWarn(now)) log.warn("cc.* settings: read failed, keeping the previous values", e)
-                    loaded?.snapshot ?: Snapshot()
-                }
-            loaded = Loaded(next, now)
-            return next
+            return load()
         }
+    }
+
+    /** Inside [lock] only. */
+    private fun load(): Loaded {
+        val now = ticker()
+        val next =
+            try {
+                val raw = loadRows()
+                Loaded(parse(raw), raw, now)
+            } catch (
+                @Suppress("TooGenericExceptionCaught") e: Exception,
+            ) {
+                // Never let a settings read break a chat or a job: keep what we had, or the defaults.
+                if (shouldWarn(now)) log.warn("cc.* settings: read failed, keeping the previous values", e)
+                Loaded(loaded?.snapshot ?: Snapshot(), loaded?.raw ?: emptyMap(), now)
+            }
+        loaded = next
+        return next
     }
 
     /**
@@ -91,7 +111,7 @@ class CcSettings(
         snapshot()
     }
 
-    private fun fresh(): Snapshot? = loaded?.takeIf { ticker() - it.atNanos < ttl.toNanos() }?.snapshot
+    private fun fresh(): Loaded? = loaded?.takeIf { ticker() - it.atNanos < ttl.toNanos() }
 
     private fun loadRows(): Map<String, String?> {
         val values = HashMap<String, String?>()

@@ -4,6 +4,8 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEvent
 import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEventRepository
+import hr.workspace.boat4you.domains.contactcenter.service.CcSettings
+import hr.workspace.boat4you.domains.contactcenter.service.JdbcCcAiSettings
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import jakarta.persistence.EntityManagerFactory
@@ -22,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -106,5 +109,20 @@ class CcStorageRepositoryTest {
         jdbc.update("UPDATE ai_chat_session SET flagged = FALSE WHERE id = ?", s.id)
         sessions.returnToAi(s.id!!, at) shouldBe 1
         sessions.findById(s.id!!).get().let { it.status shouldBe AiChatSession.STATUS_AI; it.aiReturnedAt shouldBe at; it.handoffHoldingAt shouldBe at }
+    }
+
+    @Test
+    fun `JdbcCcAiSettings writes a row and reads it back at once, through P1a's CcSettings`() {
+        val cc = CcSettings(jdbc, Duration.ofSeconds(10))
+        val s = JdbcCcAiSettings(cc, jdbc)
+        s.update("cc.handoff.minutes", "9") shouldBe true
+        s.update("cc.handoff.minutes", "x") shouldBe false
+        s.current().handoffMinutes shouldBe 9
+        cc.handoffMinutes shouldBe 9 // one key, one cache: P1a's missed-conversation marker sees the same N
+        cc.string("cc.handoff.minutes") shouldBe "9" // string() shares the cached read that update()'s reload() filled
+        cc.string("cc.nope") shouldBe null
+        s.update("cc.takeover.return.minutes", null) shouldBe true
+        s.current().takeoverReturnMinutes shouldBe null
+        jdbc.update("DELETE FROM settings WHERE name LIKE 'cc.%'")
     }
 }

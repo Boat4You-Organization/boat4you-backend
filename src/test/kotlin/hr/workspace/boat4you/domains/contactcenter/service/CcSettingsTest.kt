@@ -86,4 +86,34 @@ class CcSettingsTest {
         later(11)
         settings.handoffMinutes shouldBe 9
     }
+
+    @Test
+    fun `string returns the stored text of a cc row, null when absent, from the cached read`() {
+        settings.string("cc.handoff.minutes") shouldBe null
+        put("cc.handoff.minutes", "7")
+        later(5)
+        settings.string("cc.handoff.minutes") shouldBe null // still the cached read
+        later(6)
+        settings.string("cc.handoff.minutes") shouldBe "7"
+    }
+
+    @Test
+    fun `reload makes an inserted row visible before the TTL`() {
+        settings.snapshot()
+        put("cc.handoff.minutes", "7")
+        settings.handoffMinutes shouldBe 5
+        settings.reload()
+        settings.handoffMinutes shouldBe 7
+        settings.string("cc.handoff.minutes") shouldBe "7"
+    }
+
+    @Test
+    fun `a failed reload keeps the last values`() {
+        put("cc.handoff.minutes", "9")
+        settings.handoffMinutes shouldBe 9
+        jdbc.execute("ALTER TABLE settings RENAME TO settings_gone")
+        settings.reload()
+        settings.handoffMinutes shouldBe 9
+        settings.string("cc.handoff.minutes") shouldBe "9"
+    }
 }
