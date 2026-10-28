@@ -461,7 +461,7 @@ class AiChatService(
         val system =
             AnthropicClient.SystemPrompt(
                 IrisPrompt.cached(site, canary, if (site.blogGuides) blogIndex.posts() else emptyList()),
-                IrisPrompt.tail(LocalDate.now(), session.locale, nameJson, listOfNotNull(tools.pageContext(page))),
+                IrisPrompt.tail(LocalDate.now(), session.locale, nameJson, listOfNotNull(tools.pageContext(page, site, session.locale))),
             )
         val toolDefs = tools.toolDefinitions(includeBlog = site.blogGuides)
 
@@ -532,7 +532,7 @@ class AiChatService(
 
     private fun executeTool(session: AiChatSession, name: String, input: JsonNode): AiChatToolExecutor.ToolOutcome =
         when (name) {
-            "search_yachts" -> tools.searchYachts(input)
+            "search_yachts" -> tools.searchYachts(input, site(session), session.locale)
             "request_human_agent" -> {
                 ConversationMetrics.onHandoffRequested(session, Instant.now())
                 session.status = AiChatSession.STATUS_HUMAN_REQUESTED

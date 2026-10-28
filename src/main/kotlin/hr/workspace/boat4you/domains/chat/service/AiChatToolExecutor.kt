@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import hr.workspace.boat4you.domains.branding.AiSiteProfile
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
@@ -74,7 +75,17 @@ class AiChatToolExecutor(
             y.path("modelName").asText(null),
         )
 
-    fun searchYachts(input: JsonNode): ToolOutcome {
+    /**
+     * [site] is the site the conversation runs on: on a scoped (sister) site the fleet is enforced here, in code (SISTER-1) -
+     * a country or place outside it is refused without a search, a vessel type is clamped to the site's, rows outside the
+     * fleet are dropped - and the links are the sister page plus boat4you's booking page. [locale] picks the links' language
+     * prefix. The unscoped [AiSiteProfile.BOAT4YOU] behaves exactly as before.
+     */
+    fun searchYachts(
+        input: JsonNode,
+        site: AiSiteProfile = AiSiteProfile.BOAT4YOU,
+        locale: String = "en",
+    ): ToolOutcome {
         val countryCode = input.path("countryCode").asText("").trim().uppercase().take(2).takeIf { COUNTRY_CODE.matches(it) } ?: ""
         val startDate = input.path("startDate").asText("")
         val endDate = input.path("endDate").asText("")
@@ -87,6 +98,15 @@ class AiChatToolExecutor(
         val sortByPrice = input.path("sortByPrice").asText("asc").let { if (it == "desc") "desc" else "asc" }
         val limit = input.path("limit").asInt(5).coerceIn(1, 6)
         val equipment = input.path("equipment").mapNotNull { it.asText(null) }.filter { it.isNotBlank() }
+
+        // The vessel types this call asks our API for: on a site that sells every type what the model asked for; on a site
+        // that sells some types the asked one if the site sells it, else all of the site's (clamped, and the model is told).
+        val types =
+            if (site.vesselTypes.isEmpty()) {
+                listOfNotNull(vesselType.ifBlank { null })
+            } else {
+                site.vesselTypes.map { it.name }.let { allowed -> if (vesselType in allowed) listOf(vesselType) else allowed }
+            }
 
         // The whitelisted values this call works with, for the contact center's search log; blank or <= 0 means "not set".
         fun criteria(
@@ -104,7 +124,7 @@ class AiChatToolExecutor(
             minCabins = minCabins.takeIf { it > 0 },
             minPriceEur = minTotalPriceEur.takeIf { it > 0 },
             maxPriceEur = maxTotalPriceEur.takeIf { it > 0 },
-            vesselType = vesselType.takeIf { it.isNotBlank() },
+            vesselType = types.joinToString(",").ifEmpty { null },
             equipment = sentEquipment,
             resultCount = resultCount,
             totalAvailable = totalAvailable,
@@ -124,10 +144,29 @@ class AiChatToolExecutor(
             )
         }
 
+        if (site.scoped && countryCode !in site.countryCodes) {
+            val refusal =
+                objectMapper.createObjectNode().apply {
+                    put("error", "outside this site's fleet")
+                    put("siteCountries", site.countryCodes.joinToString(","))
+                    put("hint", fleetHint(site))
+                }
+            return ToolOutcome(objectMapper.writeValueAsString(refusal), search = criteria(null, emptyList(), 0, null))
+        }
+
         // "Split" must search the Split REGION, not all of Croatia (Mario 20.7.2026:
         // bot answered a Split request with boats from Punat). Resolve the place via
         // the same autocomplete the website's "Where" field uses and pass its did.
-        val resolved = if (location.isBlank()) null else resolveDestination(location, countryCode)
+        val resolution = if (location.isBlank()) null else resolveDestination(location, countryCode, site)
+        resolution?.elsewhereCountry?.let { elsewhere ->
+            val refusal =
+                objectMapper.createObjectNode().apply {
+                    put("error", "'$location' is in $elsewhere, outside this site's fleet")
+                    put("hint", fleetHint(site))
+                }
+            return ToolOutcome(objectMapper.writeValueAsString(refusal), search = criteria(null, emptyList(), 0, null))
+        }
+        val resolved = resolution?.place
         val equipmentIds = equipment.mapNotNull { amenityId(it) }
         val sentEquipment = equipment.filter { amenityId(it) != null }
 
@@ -140,7 +179,7 @@ class AiChatToolExecutor(
             .queryParam("sortBy", sortByPrice)
             .apply {
                 if (resolved != null) queryParam("did", resolved.did) else queryParam("countryCodes", countryCode)
-                if (vesselType.isNotBlank()) queryParam("vesselType", vesselType)
+                if (types.isNotEmpty()) queryParam("vesselType", *types.toTypedArray())
                 if (minCabins > 0) queryParam("minCabins", minCabins)
                 if (minPersons > 0) queryParam("minPersons", minPersons)
                 if (equipmentIds.isNotEmpty()) queryParam("amenities", equipmentIds)
@@ -165,6 +204,7 @@ class AiChatToolExecutor(
         var taken = 0
         for (y in content) {
             if (taken >= limit) break
+            if (!inFleet(site, y)) continue
             val offer = pricedOffer(y, days, startDate, endDate) ?: continue
             val total = offer.total
             if (maxTotalPriceEur in 1 until total) continue
@@ -191,7 +231,12 @@ class AiChatToolExecutor(
                     if (isGulet(y)) put("charter", GULET_CHARTER)
                     val amenities = y.path("amenityKeys").mapNotNull { it.asText(null) }
                     if (amenities.isNotEmpty()) put("topAmenities", amenities.joinToString(","))
-                    put("url", "https://www.boat4you.com/boat/$slug?startDate=${offer.from}&endDate=${offer.to}&currency=EUR")
+                    if (site.scoped) {
+                        put("url", sisterUrl(site, locale, slug, offer.from, offer.to))
+                        put("bookUrl", bookUrl(site, locale, slug, offer.from, offer.to))
+                    } else {
+                        put("url", "https://www.boat4you.com/boat/$slug?startDate=${offer.from}&endDate=${offer.to}&currency=EUR")
+                    }
                 },
             )
             cards.add(
@@ -210,6 +255,11 @@ class AiChatToolExecutor(
                     put("startDate", offer.from)
                     put("endDate", offer.to)
                     put("dates", offer.dates)
+                    // A sister site's widget cannot build its own link from the slug (boat4you's does, WEB-7).
+                    if (site.scoped) {
+                        put("url", sisterUrl(site, locale, slug, offer.from, offer.to))
+                        put("bookUrl", bookUrl(site, locale, slug, offer.from, offer.to))
+                    }
                 },
             )
             taken++
@@ -230,6 +280,9 @@ class AiChatToolExecutor(
             if (equipment.isNotEmpty() && equipmentIds.size < equipment.size) {
                 put("equipmentNote", "some requested equipment filters are unknown and were ignored: " +
                     equipment.filter { amenityId(it) == null }.joinToString(","))
+            }
+            if (vesselType.isNotBlank() && vesselType !in types) {
+                put("vesselNote", "$vesselType is not offered on this site; searched ${site.fleetLabel} instead")
             }
             set<JsonNode>("yachts", forModel)
             if (taken == 0) put("hint", "no results — suggest relaxing filters (dates, budget, cabins, equipment) or a nearby area")
@@ -273,12 +326,19 @@ class AiChatToolExecutor(
     private data class ResolvedPlace(val did: String, val name: String, val type: String)
 
     /**
+     * The result of a place lookup: the best [place] inside the requested country, or, only on a scoped site that has no
+     * such place, the [elsewhereCountry] the name was found in (the search is then refused, not widened).
+     */
+    private data class Resolution(val place: ResolvedPlace?, val elsewhereCountry: String?)
+
+    /**
      * Same lookup the website's "Where" autocomplete uses. Picks the best row for the
      * bot: prefer a REGION (server-side it expands to all its marinas), then a MARINA,
      * then a COUNTRY; rows from another country than the one the visitor asked for are
-     * skipped so "Split" never resolves outside HR when countryCode=HR.
+     * skipped so "Split" never resolves outside HR when countryCode=HR. A row without a
+     * country counts for the unscoped site only: a scoped site must not guess where it is.
      */
-    private fun resolveDestination(query: String, countryCode: String): ResolvedPlace? {
+    private fun resolveDestination(query: String, countryCode: String, site: AiSiteProfile): Resolution {
         val body = try {
             client.get()
                 .uri(
@@ -288,12 +348,13 @@ class AiChatToolExecutor(
                 .retrieve().body(String::class.java)
         } catch (e: Exception) {
             log.warn("chat location resolve failed for '$query': ${e.message}")
-            return null
+            return Resolution(null, null)
         }
-        val rows = objectMapper.readTree(body).path("content")
+        val content = objectMapper.readTree(body).path("content")
+        val rows = content
             .filter { r ->
                 val cc = r.path("countryCode").asText("")
-                cc.isBlank() || countryCode.isBlank() || cc.equals(countryCode, ignoreCase = true)
+                cc.equals(countryCode, ignoreCase = true) || (!site.scoped && (cc.isBlank() || countryCode.isBlank()))
             }
         val best = rows.minByOrNull {
             when (it.path("locationType").asText()) {
@@ -301,23 +362,62 @@ class AiChatToolExecutor(
                 "MARINA" -> 1
                 else -> 2
             }
-        } ?: return null
-        return ResolvedPlace(
-            did = best.path("id").asText(),
-            name = best.path("name").asText(),
-            type = best.path("locationType").asText(),
+        } ?: return Resolution(
+            null,
+            if (site.scoped) content.map { it.path("countryCode").asText("").trim().uppercase() }.firstOrNull { it.isNotBlank() } else null,
         )
+        return Resolution(
+            ResolvedPlace(
+                did = best.path("id").asText(),
+                name = best.path("name").asText(),
+                type = best.path("locationType").asText(),
+            ),
+            null,
+        )
+    }
+
+    /** What the model is told when a search or a place lies outside the fleet of a scoped [site]. */
+    private fun fleetHint(site: AiSiteProfile): String =
+        "${site.siteName} only offers ${site.fleetLabel} in ${site.region}. Tell the visitor honestly and suggest www.boat4you.com, " +
+            "which has boats in 40+ countries; never invent boats."
+
+    /**
+     * False for a boat (a search row or a boat page's detail) that a scoped [site] does not sell: its base country is not
+     * one of the site's, or the site sells only some vessel types and the boat's is not one of them. The sister page of
+     * such a boat is a "not in our fleet" stub or a 404 (SISTER-1), so no link to it may be offered. Always true unscoped.
+     */
+    private fun inFleet(site: AiSiteProfile, y: JsonNode): Boolean =
+        !site.scoped ||
+            (
+                y.path("location").path("countryCode").asText("").uppercase() in site.countryCodes &&
+                    (site.vesselTypes.isEmpty() || site.vesselTypes.any { it.name == y.path("vesselType").asText("") })
+            )
+
+    /** The boat's page on the sister [site] itself, in the visitor's [locale] (English has no prefix); dates are the offer's, when given. */
+    private fun sisterUrl(site: AiSiteProfile, locale: String, slug: String, from: String? = null, to: String? = null): String =
+        "${site.baseUrl}${site.localePrefix(locale)}${site.boatPath}$slug" + if (from != null && to != null) "?startDate=$from&endDate=$to" else ""
+
+    /** boat4you's booking page for the boat, the only place a sister site's visitor can book; `cc_src` names the site that sent them. */
+    private fun bookUrl(site: AiSiteProfile, locale: String, slug: String, from: String? = null, to: String? = null): String {
+        val b4y = AiSiteProfile.BOAT4YOU
+        val dates = if (from != null && to != null) "startDate=$from&endDate=$to&" else ""
+        return "${b4y.baseUrl}${b4y.localePrefix(locale)}${b4y.boatPath}$slug?${dates}currency=EUR&cc_src=${site.siteId}"
     }
 
     /**
      * Compact facts about the yacht page the visitor is on (widget sends its URL with
      * every message), injected into the system prompt so "this boat" questions work.
-     * Non-/boat/ pages and lookup failures return null — the chat just works without
-     * page awareness then.
+     * Pages that are not a boat page of [site] (`/boat/`, or `/catamarans/` and `/yachts/` on a sister site), lookup
+     * failures and, on a scoped site, boats outside its fleet return null — the chat just works without page awareness
+     * then. A sister site's block links the sister page and, for a boat that can be booked, boat4you's booking page.
      */
-    fun pageContext(page: String?): String? {
+    fun pageContext(
+        page: String?,
+        site: AiSiteProfile = AiSiteProfile.BOAT4YOU,
+        locale: String = "en",
+    ): String? {
         if (page.isNullOrBlank()) return null
-        val slug = Regex("/boat/([A-Za-z0-9-]+)").find(page)?.groupValues?.get(1) ?: return null
+        val slug = Regex(Regex.escape(site.boatPath) + "([A-Za-z0-9-]+)").find(page)?.groupValues?.get(1) ?: return null
         val dates = Regex("startDate=(\\d{4}-\\d{2}-\\d{2}).*?endDate=(\\d{4}-\\d{2}-\\d{2})").find(page)
         val body = try {
             client.get().uri("/public/yachts/$slug").retrieve().body(String::class.java)
@@ -328,6 +428,10 @@ class AiChatToolExecutor(
         val y = objectMapper.readTree(body)
         val name = y.path("name").asText("")
         if (name.isBlank()) return null
+        if (!inFleet(site, y)) return null
+        // Brokered by inquiry only: no booking button, no price on the sites (SISTER-18), so the AI must not send them to book.
+        val inquiryOnly =
+            y.path("inquireOnly").asBoolean(false) || y.path("hasBookableFutureOffer").let { it.isBoolean && !it.asBoolean() }
         val label = listOf(y.path("manufacturerName").asText(""), y.path("modelName").asText(""), name)
             .filter { it.isNotBlank() }.distinct().joinToString(" ")
         val amenities = y.path("amenities")
@@ -346,7 +450,15 @@ class AiChatToolExecutor(
                 ?.let { append("- Base: $it\n") }
             if (amenities.isNotEmpty()) append("- Equipment: ${amenities.joinToString(", ")}\n")
             if (dates != null) append("- Dates selected on the page: ${dates.groupValues[1]} to ${dates.groupValues[2]}\n")
-            append("- Page URL: https://www.boat4you.com/boat/$slug")
+            if (inquiryOnly) append("- Booking: on request only - offer the visitor an inquiry, never send them to book online\n")
+            if (!site.scoped) {
+                append("- Page URL: https://www.boat4you.com/boat/$slug")
+            } else {
+                append("- Page URL: ${sisterUrl(site, locale, slug)}")
+                if (!inquiryOnly) {
+                    append("\n- Book online on boat4you: ${bookUrl(site, locale, slug, dates?.groupValues?.get(1), dates?.groupValues?.get(2))}")
+                }
+            }
         }
     }
 
