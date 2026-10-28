@@ -327,7 +327,9 @@ class AiChatToolExecutor(
 
     /**
      * The result of a place lookup: the best [place] inside the requested country, or, only on a scoped site that has no
-     * such place, the [elsewhereCountry] the name was found in (the search is then refused, not widened).
+     * such place, the [elsewhereCountry] the name was found in (the search is then refused, not widened). It is refused
+     * only when every country the name was found in is outside the site's fleet; a name found in another fleet country
+     * falls through to the whole-country search of the requested country with the place-not-found note.
      */
     private data class Resolution(val place: ResolvedPlace?, val elsewhereCountry: String?)
 
@@ -364,7 +366,13 @@ class AiChatToolExecutor(
             }
         } ?: return Resolution(
             null,
-            if (site.scoped) content.map { it.path("countryCode").asText("").trim().uppercase() }.firstOrNull { it.isNotBlank() } else null,
+            if (!site.scoped) {
+                null
+            } else {
+                content.map { it.path("countryCode").asText("").trim().uppercase() }.filter { it.isNotBlank() }.let { codes ->
+                    if (codes.any { it in site.countryCodes }) null else codes.firstOrNull()
+                }
+            },
         )
         return Resolution(
             ResolvedPlace(

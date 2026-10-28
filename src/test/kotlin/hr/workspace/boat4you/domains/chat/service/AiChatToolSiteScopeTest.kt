@@ -103,6 +103,15 @@ class AiChatToolSiteScopeTest {
     }
 
     @Test
+    fun `a place in another country of a multi-country site is not refused - the asked country is searched with the honesty note`() {
+        val out = mapper.readTree(search("""{"countryCode":"GR","location":"Split",$dates}""", ey).resultForModel)
+        out.has("error") shouldBe false
+        yachtsQuery()["countryCodes"] shouldBe listOf("GR")
+        yachtsQuery().containsKey("did") shouldBe false
+        out.path("searchedArea").asText() shouldBe "place 'Split' not found — searched the whole country; tell the visitor honestly"
+    }
+
+    @Test
     fun `a place unknown everywhere still searches the whole country (today's honesty note)`() {
         val out = mapper.readTree(search("""{"countryCode":"GR","location":"Atlantis",$dates}""", gr).resultForModel)
         yachtsQuery()["countryCodes"] shouldBe listOf("GR")
