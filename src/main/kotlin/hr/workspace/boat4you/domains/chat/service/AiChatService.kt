@@ -231,7 +231,7 @@ class AiChatService(
                     runAssistant(session, page, searches)
                 } catch (e: Exception) {
                     log.warn("chat assistant failed for session ${session.id}: ${e.message}")
-                    AssistantResult.Reply(FAILURE_APOLOGY, null)
+                    AssistantResult.Reply(ChatTexts.failureApology(session.locale), null)
                 }
             return tx.execute { finishReply(session, (accepted as Accepted.AskModel).userMsg, reply, searches) }!!
         } finally {
@@ -473,7 +473,7 @@ class AiChatService(
 
             spoken += contentBlocks.filter { it.path("type").asText() == "text" }.map { it.path("text").asText().trim() }.filter { it.isNotBlank() }
             if (stopReason != "tool_use" || rounds >= MAX_TOOL_ROUNDS) {
-                val text = spoken.joinToString("\n").ifBlank { FAILURE_APOLOGY }
+                val text = spoken.joinToString("\n").ifBlank { ChatTexts.failureApology(session.locale) }
                 // Yacht cards and blog links are built here from tool results, never from model text.
                 val payload =
                     if (pendingCards == null && pendingBlogs == null) {
@@ -534,13 +534,15 @@ class AiChatService(
         when (name) {
             "search_yachts" -> tools.searchYachts(input, site(session), session.locale)
             "request_human_agent" -> {
+                // A second call while the first handoff still waits asks again, but the team is mailed once.
+                val alreadyWaiting = session.status == AiChatSession.STATUS_HUMAN_REQUESTED
                 ConversationMetrics.onHandoffRequested(session, Instant.now())
                 session.status = AiChatSession.STATUS_HUMAN_REQUESTED
                 session.adminUnread = true
                 sessions.save(session)
-                notifyBroker(session, lastVisitorLine(session), "Posjetitelj traži živu osobu — chat #${session.id}")
+                if (!alreadyWaiting) notifyBroker(session, lastVisitorLine(session), "Posjetitelj traži živu osobu — chat #${session.id}")
                 AiChatToolExecutor.ToolOutcome(
-                    """{"ok":true,"note":"The boat4you team has been notified and will reply right here in this chat. Tell the visitor that, and ask for their email via save_contact if you do not have it yet."}""",
+                    """{"ok":true,"note":"The team has been notified. Tell the visitor that a person from the team will reply here as soon as possible or contact them by email or phone, and ask for their email or phone number via save_contact if you do not have it yet."}""",
                 )
             }
             "show_blog_posts" -> if (site(session).blogGuides) showBlogPosts(input) else UNKNOWN_TOOL
@@ -548,6 +550,7 @@ class AiChatService(
                 // The model copies what the visitor typed: same name rules as the widget, an email only when it looks like one.
                 NameValidator.validOrNull(input.path("name").asText(""))?.let { session.visitorName = it }
                 input.path("email").asText("").trim().takeIf { EMAIL.matches(it) }?.let { session.visitorEmail = it }
+                input.path("phone").asText("").trim().takeIf { PHONE.matches(it) }?.let { session.phone = it.replace(Regex("\\s+"), " ") }
                 sessions.save(session)
                 AiChatToolExecutor.ToolOutcome("""{"ok":true}""")
             }
@@ -713,8 +716,9 @@ class AiChatService(
         const val MAX_MESSAGES_PER_SESSION = 80
         const val MAX_HISTORY_MESSAGES = 30
         const val MAX_TOOL_ROUNDS = 4
-        const val FAILURE_APOLOGY =
-            "Sorry — I hit a technical hiccup just now. Please try again in a moment, or ask for our team and a person will reply here."
+
+        /** The English apology, kept for existing references; the chat answers with [ChatTexts.failureApology] in the session language. */
+        val FAILURE_APOLOGY = ChatTexts.failureApology("en")
 
         /** Where a lock came from - the first part of lockReason. */
         const val DIR_IN = "IN"
@@ -744,6 +748,9 @@ class AiChatService(
         /** One leading slash, no "//", no backslash, no "@", no whitespace (review B6). */
         private val SAFE_PAGE = Regex("""^/(?![/\\])[A-Za-z0-9/_\-.~%?=&+,]{0,499}$""")
         private val EMAIL = Regex("""^[^\s@<>]{1,64}@[^\s@<>]{1,190}\.[A-Za-z]{2,24}$""")
+
+        /** A phone number the model copied from the visitor: an optional +, then 6-20 digits and spaces and nothing else (spaces are collapsed when stored). */
+        private val PHONE = Regex("""^\+?[0-9][0-9 ]{5,19}$""")
 
         /** Line breaks and other control characters in a logged excerpt would forge log lines. */
         private val LOG_UNSAFE = Regex("""[\p{Cc}\p{Zl}\p{Zp}]""")

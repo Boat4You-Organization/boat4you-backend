@@ -621,8 +621,8 @@ class AiChatToolExecutor(
         tools.add(tool(
             "request_human_agent",
             "Hand the conversation to a human boat4you agent. Use when the visitor explicitly wants a " +
-                "person, has a complaint/payment/legal issue, or you genuinely cannot help. The team " +
-                "replies in this same chat.",
+                "person, has a complaint/payment/legal issue, or you genuinely cannot help. A person from " +
+                "the team replies in this chat as soon as they can or contacts the visitor by email or phone.",
         ) {
             it.putObject("reason").put("type", "string").put("description", "Short reason for the handoff")
         })
@@ -639,10 +639,11 @@ class AiChatToolExecutor(
         }
         tools.add(tool(
             "save_contact",
-            "Store the visitor's name and/or email when they share it, so the team can follow up.",
+            "Store the visitor's name, email and/or phone number when they share it, so the team can follow up.",
         ) {
             it.putObject("name").put("type", "string")
             it.putObject("email").put("type", "string")
+            it.putObject("phone").put("type", "string")
         })
         return tools
     }

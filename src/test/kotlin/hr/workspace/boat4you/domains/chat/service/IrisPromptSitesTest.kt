@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.chat.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import hr.workspace.boat4you.domains.branding.BrandRegistry
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -44,5 +45,16 @@ class IrisPromptSitesTest {
     fun `the tail has no name line without a valid name and appends blocks`() {
         IrisPrompt.tail(LocalDate.parse("2027-07-01"), "de", null, listOf("CURRENT PAGE — x")) shouldBe
             "Today's date: 2027-07-01. Site locale of this visitor: de.\n\nCURRENT PAGE — x"
+    }
+
+    @Test
+    fun `every site says IRIS is an AI and no prompt or tool promises a reply in the chat (spec 2-2, EU AI Act art 50)`() {
+        ids.forEach { id ->
+            val p = IrisPrompt.cached(brands.get(id).ai, canary, emptyList())
+            p shouldContain "you are an AI, not a person"
+            p shouldContain "\"Iris, AI asistentica\""
+            p shouldNotContain "the team replies right here in the chat"
+        }
+        AiChatToolExecutor("http://127.0.0.1:1", ObjectMapper()).toolDefinitions().toString() shouldNotContain "replies in this same chat"
     }
 }
