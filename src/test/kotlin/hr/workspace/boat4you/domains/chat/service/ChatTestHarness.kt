@@ -11,6 +11,10 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import hr.workspace.boat4you.domains.contactcenter.jpa.CcSearch
 import hr.workspace.boat4you.domains.contactcenter.jpa.CcSearchRepository
+import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEvent
+import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEventRepository
+import hr.workspace.boat4you.domains.contactcenter.service.AiCircuitBreaker
+import hr.workspace.boat4you.domains.contactcenter.service.CcAiSettings
 import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
 import org.mockito.Mockito.mock
 import org.mockito.invocation.InvocationOnMock
@@ -160,6 +164,39 @@ open class ChatTestHarness(
                 start()
             }
         }
+
+    /** Every row of the security log, from the breaker and from the chat service. */
+    val events = CopyOnWriteArrayList<CcSecurityEvent>()
+    val securityEvents: CcSecurityEventRepository =
+        mock(CcSecurityEventRepository::class.java) { inv ->
+            when (inv.method.name) {
+                "save" -> (inv.arguments[0] as CcSecurityEvent).also { events += it }
+                "latestBreakerEventPerScope" -> emptyList<CcSecurityEvent>()
+                else -> null
+            }
+        }
+
+    /** What the `cc.*` AI settings answer; the defaults unless a test changes them. */
+    var settingsValues = CcAiSettings.Values()
+    val settings =
+        object : CcAiSettings {
+            override fun current() = settingsValues
+
+            override fun update(
+                key: String,
+                value: String?,
+            ) = false
+        }
+
+    /** The breaker's own mails, so the chat's mail counts ([mails]) stay exact when a test opens it. */
+    val breakerMails = CopyOnWriteArrayList<InvocationOnMock>()
+    private val breakerEmail =
+        mock(EmailService::class.java) { inv ->
+            if (inv.method.name == "sendEmail") breakerMails += inv
+            null
+        }
+    val breaker = AiCircuitBreaker(settings, securityEvents, breakerEmail, "info@example.com").also { it.mailExecutor = { r -> r.run() } }
+
     val service =
         AiChatService(
             sessions = sessions,
@@ -172,6 +209,8 @@ open class ChatTestHarness(
             blogIndex = blogIndex,
             searchRecorder = ChatSearchRecorder(ccSearches),
             brands = BrandRegistry(),
+            breaker = breaker,
+            securityEvents = securityEvents,
             transactionManager = txManager,
             notifyEmail = "info@example.com",
         )

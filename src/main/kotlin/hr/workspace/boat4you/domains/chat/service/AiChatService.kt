@@ -11,6 +11,9 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatMessageRepository
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import hr.workspace.boat4you.domains.contactcenter.SiteIds
+import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEvent
+import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEventRepository
+import hr.workspace.boat4you.domains.contactcenter.service.AiCircuitBreaker
 import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
 import hr.workspace.boat4you.domains.contactcenter.service.ConversationMetrics
 import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
@@ -55,6 +58,8 @@ class AiChatService(
     private val blogIndex: ChatBlogIndex,
     private val searchRecorder: ChatSearchRecorder,
     private val brands: BrandRegistry,
+    private val breaker: AiCircuitBreaker,
+    private val securityEvents: CcSecurityEventRepository,
     transactionManager: PlatformTransactionManager,
     @Value("\${chat.notify-email:info@boat4you.com}")
     private val notifyEmail: String,
@@ -73,8 +78,10 @@ class AiChatService(
 
     /** What became of a visitor message - the controller maps it to 200 / 423 / 409. */
     sealed interface MessageOutcome {
+        /** [aiPaused]: the AI circuit breaker is open for this site, so the model was not asked (design 2.6). */
         data class Replied(
             val messages: List<AiChatMessage>,
+            val aiPaused: Boolean = false,
         ) : MessageOutcome
 
         /** The session is locked (now or earlier): no AI, [handoffText] in the session's language. */
@@ -116,6 +123,9 @@ class AiChatService(
 
     fun isEnabled(): Boolean = anthropic.isEnabled()
 
+    /** True while the AI circuit breaker is open for the session's site: the widget shows that the AI is paused. */
+    fun isAiPaused(session: AiChatSession): Boolean = breaker.isOpen(session.siteId)
+
     /**
      * New anonymous session. An invalid name throws [InvalidNameException]; a name that hits the guard
      * ("<img src=x onerror=...>") creates the session already LOCKED (the name kept as evidence, never shown to the
@@ -150,6 +160,7 @@ class AiChatService(
                         this.siteId = siteId
                     },
                 )
+            breaker.recordNewSession(siteId)
             when {
                 nameCheck is NameValidator.Result.Suspicious -> lock(session, DIR_NAME, nameCheck.hit, name)
                 ip != null && sessions.countByIpAndFlaggedTrueAndLockedAtAfter(ip.take(45), Instant.now().minus(IP_REPEAT_WINDOW)) >= IP_REPEAT_LOCKS ->
@@ -283,6 +294,7 @@ class AiChatService(
         check(messages.countBySessionId(session.id!!) < MAX_MESSAGES_PER_SESSION) { "session message cap reached" }
 
         val userMsg = save(session.id!!, AiChatMessage.ROLE_USER, content, clientMessageId = clientMessageId)
+        breaker.recordVisitorMessage(session.siteId)
         session.lastActivityAt = Instant.now()
         updatePresence(session, page)
 
@@ -312,6 +324,14 @@ class AiChatService(
             sessions.save(session)
             if (firstOfBurst) notifyBroker(session, content, "Nova poruka u chatu #${session.id}")
             return Accepted.Done(MessageOutcome.Replied(listOf(userMsg)))
+        }
+        if (breaker.isOpen(session.siteId)) {
+            // A surge, or Mario switched the AI off (design 2.6): no model call. The message is stored and the team sees
+            // it unread, without a mail; the visitor gets the "AI paused" notice once per open period, then nothing.
+            session.adminUnread = true
+            sessions.save(session)
+            val notice = if (breaker.claimNotice(session.id!!)) save(session.id!!, AiChatMessage.ROLE_SYSTEM, ChatTexts.aiPaused(session.locale)) else null
+            return Accepted.Done(MessageOutcome.Replied(listOfNotNull(userMsg, notice), aiPaused = true))
         }
         sessions.save(session)
         return Accepted.AskModel(userMsg)
@@ -376,6 +396,17 @@ class AiChatService(
         val postHandoff = session.status != AiChatSession.STATUS_HUMAN && session.status != AiChatSession.STATUS_LOCKED
         if (session.status != AiChatSession.STATUS_HUMAN) session.status = AiChatSession.STATUS_LOCKED
         sessions.save(session)
+        if (firstLock) {
+            // Every lock is a row of the security log and counts towards the breaker (design 2.6, BACKEND-2: only a lock does).
+            securityEvents.save(
+                CcSecurityEvent().apply {
+                    type = CcSecurityEvent.TYPE_LOCK
+                    siteId = session.siteId
+                    detail = "session=${session.id} ${session.lockReason}"
+                },
+            )
+            breaker.recordLock(session.siteId)
+        }
         log.warn(
             "CHAT_SECURITY lock session={} ip={} cc={} dir={} cat={} rule={} text={}",
             session.id,

@@ -50,7 +50,15 @@ class PublicAiChatController(
     )
     data class PresenceRequest(val page: String? = null)
     data class MessageDto(val id: Long, val role: String, val content: String, val payload: String?)
-    data class SessionStateDto(val token: String, val status: String, val messages: List<MessageDto>, val visitorName: String? = null)
+
+    /** [aiPaused]: the AI circuit breaker is open for this site; status codes stay as they were (BACKEND-7). */
+    data class SessionStateDto(
+        val token: String,
+        val status: String,
+        val messages: List<MessageDto>,
+        val visitorName: String? = null,
+        val aiPaused: Boolean = false,
+    )
 
     @PostMapping("/sessions")
     @ResponseBody
@@ -73,7 +81,7 @@ class PublicAiChatController(
                 return invalidName()
             }
         chat.updatePresence(session, request?.page, request?.referrer)
-        return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList(), session.visitorName))
+        return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList(), session.visitorName, chat.isAiPaused(session)))
     }
 
     data class NameRequest(val name: String? = null)
@@ -133,7 +141,7 @@ class PublicAiChatController(
     ): ResponseEntity<Any> =
         when (outcome) {
             is AiChatService.MessageOutcome.Replied ->
-                ResponseEntity.ok(SessionStateDto(token, session.status, outcome.messages.map(::dto), session.visitorName))
+                ResponseEntity.ok(SessionStateDto(token, session.status, outcome.messages.map(::dto), session.visitorName, outcome.aiPaused))
             is AiChatService.MessageOutcome.Locked -> locked(outcome.handoffText)
             AiChatService.MessageOutcome.Busy -> ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "busy"))
         }
@@ -145,7 +153,7 @@ class PublicAiChatController(
         if (!chat.isEnabled()) return disabled()
         val session = chat.getSession(token) ?: return notFound()
         val list = chat.messagesAfter(session.id!!, afterId)
-        return ResponseEntity.ok(SessionStateDto(token, session.status, list.map(::dto), session.visitorName))
+        return ResponseEntity.ok(SessionStateDto(token, session.status, list.map(::dto), session.visitorName, chat.isAiPaused(session)))
     }
 
     private fun dto(m: AiChatMessage) = MessageDto(m.id!!, m.role!!, m.content!!, m.payload)
