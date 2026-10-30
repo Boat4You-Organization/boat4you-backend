@@ -65,6 +65,8 @@ class AdminContactCenterControllerSecurityTests {
 
         @Bean fun stats(): StatsQuery = mock(StatsQuery::class.java)
 
+        @Bean fun funnel(): FunnelQuery = mock(FunnelQuery::class.java)
+
         @Bean
         fun adminContactCenterController(
             conversations: ConversationQuery,
@@ -76,7 +78,8 @@ class AdminContactCenterControllerSecurityTests {
             contactQuery: ContactQuery,
             contacts: ContactService,
             stats: StatsQuery,
-        ) = AdminContactCenterController(conversations, linker, sessions, chat, live, proactive, contactQuery, contacts, stats)
+            funnel: FunnelQuery,
+        ) = AdminContactCenterController(conversations, linker, sessions, chat, live, proactive, contactQuery, contacts, stats, funnel)
     }
 
     @Autowired private lateinit var controller: AdminContactCenterController
@@ -99,11 +102,13 @@ class AdminContactCenterControllerSecurityTests {
 
     @Autowired private lateinit var stats: StatsQuery
 
+    @Autowired private lateinit var funnel: FunnelQuery
+
     private val mvc: MockMvc by lazy {
         MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(ApiErrorHandler()).build()
     }
 
-    private fun mocks() = arrayOf(conversations, linker, sessions, chat, live, proactive, contactQuery, contacts, stats)
+    private fun mocks() = arrayOf(conversations, linker, sessions, chat, live, proactive, contactQuery, contacts, stats, funnel)
 
     @BeforeEach
     fun resetMocks() = reset(*mocks())
@@ -133,6 +138,7 @@ class AdminContactCenterControllerSecurityTests {
             mvc.put("/admin/cc/contacts/1/tags", dsl = json("""{"tags":["vip"]}""")),
             mvc.post("/admin/cc/contacts/1/merge", dsl = json("""{"sourceId":2}""")),
             mvc.get("/admin/cc/stats"),
+            mvc.get("/admin/cc/funnel"),
         )
 
     @Test

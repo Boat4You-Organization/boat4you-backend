@@ -256,7 +256,7 @@ class TrackerInputValidator(
     companion object {
         const val MAX_PAGE_VIEWS = 20
         const val MAX_EVENTS = 50
-        val EVENT_TYPES = setOf("CLICK", "SEARCH", "CHAT_OPEN", "GREETING_SHOWN", "QUICK_REPLY", "NUDGE_SHOWN", "NUDGE_CLICK", "NUDGE_CLOSE", "CONSENT")
+        val EVENT_TYPES = setOf("CLICK", "SEARCH", "CHAT_OPEN", "GREETING_SHOWN", "QUICK_REPLY", "NUDGE_SHOWN", "NUDGE_CLICK", "NUDGE_CLOSE", "CONSENT", "INQUIRY")
 
         private val UUID_V4 = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
         private val CLIENT_ID = Regex("^[A-Za-z0-9_-]{8,40}$")

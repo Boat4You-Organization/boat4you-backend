@@ -100,6 +100,7 @@ class TrackerInputValidatorTest {
                     EventDto("ev2-abcdef", "HACK"),
                     EventDto("ev3-abcdef", "SEARCH", payload = mapOf("location" to "Split", "startDate" to "2027-07-17", "persons" to 6, "countryCode" to "HR")),
                     EventDto("ev4-abcdef", "CONSENT", payload = mapOf("analytics" to false)),
+                    EventDto("ev5-abcdef", "INQUIRY", "pv1-abcdef", "Send inquiry"),
                 ),
             ) as Checked.Ok
         ok.value.pageViews.single().let {
@@ -109,7 +110,7 @@ class TrackerInputValidatorTest {
             it.viewedAt shouldBe now
         }
         ok.value.dropped shouldBe 3
-        ok.value.events.map { it.type } shouldBe listOf("CLICK", "SEARCH", "CONSENT")
+        ok.value.events.map { it.type } shouldBe listOf("CLICK", "SEARCH", "CONSENT", "INQUIRY")
         ok.value.events[0].let {
             it.payloadJson shouldBe null
             it.createdAt shouldBe now

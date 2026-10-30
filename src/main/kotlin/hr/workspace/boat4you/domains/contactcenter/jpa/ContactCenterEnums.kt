@@ -13,7 +13,7 @@ enum class DeviceClass { DESKTOP, TABLET, MOBILE }
 enum class PageType { HOME, BOAT, SEARCH, DESTINATION, BLOG, ITINERARY, BOOKING, OTHER }
 
 /** `cc_event.type`, VARCHAR(30). */
-enum class CcEventType { CLICK, SEARCH, CHAT_OPEN, GREETING_SHOWN, QUICK_REPLY, NUDGE_SHOWN, NUDGE_CLICK, NUDGE_CLOSE, CONSENT }
+enum class CcEventType { CLICK, SEARCH, CHAT_OPEN, GREETING_SHOWN, QUICK_REPLY, NUDGE_SHOWN, NUDGE_CLICK, NUDGE_CLOSE, CONSENT, INQUIRY }
 
 /** Which surface a search came from (`cc_search.source`, VARCHAR(20)). */
 enum class SearchSource { AI_CHAT, SITE_SEARCH, FORM }

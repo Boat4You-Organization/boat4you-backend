@@ -13,6 +13,7 @@ import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.http.MediaType
@@ -29,6 +30,7 @@ class AdminContactCenterControllerTest {
     private val sessions = mock(AiChatSessionRepository::class.java)
     private val chat = mock(AiChatService::class.java)
     private val stats = mock(StatsQuery::class.java)
+    private val funnel = mock(FunnelQuery::class.java)
     private val controller =
         AdminContactCenterController(
             conversations,
@@ -40,6 +42,7 @@ class AdminContactCenterControllerTest {
             mock(ContactQuery::class.java),
             mock(ContactService::class.java),
             stats,
+            funnel,
         )
     private val mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(ApiErrorHandler()).build()
 
@@ -86,6 +89,25 @@ class AdminContactCenterControllerTest {
     }
 
     @Test
+    fun `funnel checks site, device, channel and range before reading`() {
+        mvc.get("/admin/cc/funnel?siteId=evil").andExpect { status { isBadRequest() } }
+        mvc.get("/admin/cc/funnel?device=WATCH").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("unknown device") }
+        }
+        mvc.get("/admin/cc/funnel?channel=TV").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("unknown channel") }
+        }
+        mvc.get("/admin/cc/funnel?from=2025-01-01T00:00:00Z&to=2026-03-01T00:00:00Z").andExpect { status { isBadRequest() } }
+        verifyNoInteractions(funnel)
+        val from = Instant.parse("2026-01-01T00:00:00Z")
+        val to = Instant.parse("2026-02-01T00:00:00Z")
+        mvc.get("/admin/cc/funnel?from=$from&to=$to&siteId=catamaran-greece&device=MOBILE&channel=ADS").andExpect { status { isOk() } }
+        verify(funnel).funnel(from, to, "catamaran-greece", "MOBILE", "ADS")
+    }
+
+    @Test
     fun `detail links the contact before reading`() {
         `when`(conversations.detail(anyLong())).thenReturn(null)
         mvc.get("/admin/cc/conversations/9").andExpect { status { isNotFound() } }
@@ -110,6 +132,7 @@ class AdminContactCenterControllerTest {
                 mock(ContactQuery::class.java),
                 mock(ContactService::class.java),
                 stats,
+                funnel,
             )
         MockMvcBuilders
             .standaloneSetup(c)

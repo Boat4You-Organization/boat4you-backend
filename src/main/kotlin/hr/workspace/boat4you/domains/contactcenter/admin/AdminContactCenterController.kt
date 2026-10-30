@@ -5,6 +5,8 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatSessionRepository
 import hr.workspace.boat4you.domains.chat.service.AiChatService
 import hr.workspace.boat4you.domains.contactcenter.SiteIds
 import hr.workspace.boat4you.domains.contactcenter.jpa.ContactStatus
+import hr.workspace.boat4you.domains.contactcenter.jpa.DeviceClass
+import hr.workspace.boat4you.domains.contactcenter.jpa.VisitChannel
 import hr.workspace.boat4you.domains.contactcenter.service.ContactLinker
 import hr.workspace.boat4you.domains.contactcenter.service.ContactService
 import hr.workspace.boat4you.domains.contactcenter.service.ProactiveMessaging
@@ -44,6 +46,7 @@ class AdminContactCenterController(
     private val contactQuery: ContactQuery,
     private val contacts: ContactService,
     private val stats: StatsQuery,
+    private val funnel: FunnelQuery,
 ) {
     /** The visitor's tracker key travels in the body, never in the URL (it would land in the nginx access log). */
     data class MessageRequest(
@@ -236,10 +239,42 @@ class AdminContactCenterController(
         if (siteId != null && !SiteIds.isKnown(siteId)) return bad("unknown site")
         val end = to ?: Instant.now()
         val start = from ?: end.minus(DEFAULT_RANGE)
-        if (!start.isBefore(end)) return bad("empty range")
-        if (Duration.between(start, end) > MAX_RANGE) return bad("range over 400 days")
+        rangeError(start, end)?.let { return bad(it) }
         return ResponseEntity.ok(stats.stats(start, end, siteId))
     }
+
+    /** Inquiry funnel, exit pages and top clicks (P6 R0), with the range rules of [stats]. */
+    @GetMapping("/funnel")
+    @ResponseBody
+    fun funnel(
+        @RequestParam(required = false) from: Instant?,
+        @RequestParam(required = false) to: Instant?,
+        @RequestParam(required = false) siteId: String?,
+        @RequestParam(required = false) device: String?,
+        @RequestParam(required = false) channel: String?,
+    ): ResponseEntity<Any> {
+        val end = to ?: Instant.now()
+        val start = from ?: end.minus(DEFAULT_RANGE)
+        val error =
+            when {
+                siteId != null && !SiteIds.isKnown(siteId) -> "unknown site"
+                device != null && DeviceClass.entries.none { it.name == device } -> "unknown device"
+                channel != null && VisitChannel.entries.none { it.name == channel } -> "unknown channel"
+                else -> rangeError(start, end)
+            }
+        if (error != null) return bad(error)
+        return ResponseEntity.ok(funnel.funnel(start, end, siteId, device, channel))
+    }
+
+    private fun rangeError(
+        start: Instant,
+        end: Instant,
+    ): String? =
+        when {
+            !start.isBefore(end) -> "empty range"
+            Duration.between(start, end) > MAX_RANGE -> "range over 400 days"
+            else -> null
+        }
 
     private fun active(id: Long): AiChatSession? = sessions.findById(id).orElse(null)?.takeIf { it.deletedAt == null }
 
