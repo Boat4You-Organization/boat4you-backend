@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-30 — 🗂️ Contact Center P2: admin API (razgovori, live, kontakti, statistika) — ⏳ NIJE DEPLOYANO
+## 2026-10-30 — 🗂️ Contact Center P2: admin API (razgovori, live, kontakti, statistika) — ✅ cusma2 LIVE 30.10. 11:07 UTC (jar main 666c6b3, md5 b849d56b3c29e22f8ee351672b4291be, start 12,9 s; u istom startu primijenjena V9_111 iz druge sesije); cusma3 kroz gate 13:00 UTC (isti jar nosi i P1c)
 
 Četvrti korak contact centera (plan `infra/docs/superpowers/plans/2026-10-30-p2-contact-center-admin.md`). Grana `feat/contact-center-p2` iz `main` `a0bc04e`. **Nema migracije**, P2 ne mijenja ni jedan stupac.
 
