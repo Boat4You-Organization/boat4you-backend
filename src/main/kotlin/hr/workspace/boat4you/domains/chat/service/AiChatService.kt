@@ -621,7 +621,13 @@ class AiChatService(
             }
         }
         if (arr.firstOrNull()?.path("role")?.asText() == "assistant") {
-            arr.insert(0, objectMapper.createObjectNode().apply { put("role", "user"); put("content", TEAM_OPENED_TURN) })
+            arr.insert(
+                0,
+                objectMapper.createObjectNode().apply {
+                    put("role", "user")
+                    put("content", TEAM_OPENED_TURN)
+                },
+            )
         }
         return ModelTranscript(arr, every.any { it.role == AiChatMessage.ROLE_ADMIN })
     }
