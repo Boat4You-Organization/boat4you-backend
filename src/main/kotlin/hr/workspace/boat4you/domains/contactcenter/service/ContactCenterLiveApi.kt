@@ -17,7 +17,7 @@ interface ProactiveMessaging {
 }
 
 /** P3 calls this from the chat endpoints when the widget sends its visitorKey and visitId (implemented by `VisitService`, Task 10). */
-interface ChatVisitLinker {
+fun interface ChatVisitLinker {
     fun linkChatSession(
         chatSessionId: Long,
         siteId: String,

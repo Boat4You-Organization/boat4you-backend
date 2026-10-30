@@ -1,5 +1,14 @@
 # Backend deploy notes
 
+## 2026-10-30 — 🧩 Contact Center P3 (backend dio): chat sesija zajedničkog widgeta povezuje se s posjetom — ⏳ NIJE DEPLOYANO
+
+Plan `infra/docs/superpowers/plans/2026-10-30-p3-shared-widget.md`, zadatak 9. Grana `feat/contact-center-p3` iz `main` `f67d1ad`. Nema migracije.
+
+- `POST /public/chat/sessions` prima dva nova neobavezna polja `visitorKey` i `visitKey` (UUID v4). Kad su oba ispravna, sesija se povezuje s posjetom kroz `ChatVisitLinker` (P1b: posjet mora biti živ, istog posjetitelja i istog sajta kao sesija). Neuspjeh ili odbijanje se logira (`CC: chat session … not linked`) i ne mijenja odgovor.
+- Današnji `ChatWidget` na boat4you.com ne šalje ta polja i radi kao prije (WEB-12).
+- Uz deploy provjeriti `APPLICATION_CORS_ALLOWED_ORIGINS` na cusma2: svih 7 www i apex hostova (widget na sestrinskim sajtovima zove `/public/chat` i `/public/cc/v1` s njihovog `Origin`).
+- Rollback: `webservice.jar.prev` bez SQL-a.
+
 ## 2026-10-30 — 📞 AI call centar „Nika zove“, faza 1: backend jezgra (V9_112, V9_113) — ✅ cusma2 LIVE 30.10. 11:55 UTC (jar main 2c10840, md5 0a53556a341fb04bc608a8fc6883e57d, V9_112 + V9_113 primijenjene 11:55:01 u 36 ms, start 13,6 s, javni health 200 nakon ~3 s; izvana: `POST /webhooks/elevenlabs` bez potpisa 401, `/admin/calls/settings` bez prijave 403; tag `live/2026-10-30-ai-call-center-p1`); ⏳ cusma3 (dispatch/reconcile jobovi, pozivi ionako isključeni) kroz gate, dogovor s Contact Center sesijom (njen cusma3 deploy 13:00 UTC)
 
 Mario 30.10.: „kreni radi call agenta“ (dizajn `infra/docs/ai-call-center-dizajn-2026-10-27.md` v2, plan `infra/docs/superpowers/plans/2026-10-30-ai-call-center-p1-backend.md`). Sve je iza `calls.enabled` (zadano **false**, i kad red ne postoji) — deploy ovog jara ne zove nikoga.

@@ -11,6 +11,7 @@ import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import io.kotest.matchers.collections.shouldContainInOrder
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
+import hr.workspace.boat4you.domains.contactcenter.service.ChatVisitLinker
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
@@ -58,12 +59,14 @@ class ChatControllersContactCenterTest {
             }
         }
 
+    private val noLinks = ChatVisitLinker { _, _, _, _ -> false }
+
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
 
     @Test
     fun `a retried POST is answered from the store before the session is reopened`() {
-        val res = PublicAiChatController(chat).postMessage("tok-5", PublicAiChatController.MessageRequest("hi", null, " c-0001-abcd "))
+        val res = PublicAiChatController(chat, noLinks).postMessage("tok-5", PublicAiChatController.MessageRequest("hi", null, " c-0001-abcd "))
         res.statusCode shouldBe HttpStatus.OK
         (res.body as PublicAiChatController.SessionStateDto).messages.map { it.id } shouldBe listOf(11L)
         calls shouldNotContain "reopenIfClosed"
@@ -72,7 +75,7 @@ class ChatControllersContactCenterTest {
 
     @Test
     fun `a POST without id goes the usual way (WEB-12)`() {
-        PublicAiChatController(chat).postMessage("tok-5", PublicAiChatController.MessageRequest("hi")).statusCode shouldBe HttpStatus.OK
+        PublicAiChatController(chat, noLinks).postMessage("tok-5", PublicAiChatController.MessageRequest("hi")).statusCode shouldBe HttpStatus.OK
         calls shouldContainInOrder listOf("replayIfDuplicate", "reopenIfClosed", "handleVisitorMessage")
     }
 
