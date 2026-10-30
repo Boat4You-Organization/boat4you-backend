@@ -61,7 +61,10 @@ class TrackerMemoryBudgetTest {
         val delta = usedAfterGc() - before
         println("CC_MEMORY heap_delta_mb=${delta / 1_048_576}")
         delta shouldBeLessThan 48L * 1_048_576
-        listOf(registry.size(), writer.stats().queued, tokens.size()).size shouldBe 3 // keep the structures reachable until here
+        // The fills really reached their caps; reading them here also keeps the structures reachable until after the second measurement.
+        registry.size() shouldBe LiveVisitorRegistry.MAX_ENTRIES
+        writer.stats().queued shouldBe TrackerWriteQueue.CAPACITY
+        tokens.size() shouldBe HandoffTokenStore.MAX_TOKENS
     }
 
     /**
@@ -119,7 +122,12 @@ class TrackerMemoryBudgetTest {
         val delta = usedAfterGc() - before
         println("CC_MEMORY_WIDE heap_delta_mb=${delta / 1_048_576}")
         delta shouldBeLessThan 48L * 1_048_576
-        listOf(registry.size(), writer.stats().queued, tokens.size(), seen.size).size shouldBe 4 // keep the structures reachable until here
+        // The fills really reached their caps; reading them here also keeps the structures reachable until after the second measurement.
+        registry.size() shouldBe LiveVisitorRegistry.MAX_ENTRIES
+        writer.stats().queued shouldBe TrackerWriteQueue.CAPACITY
+        writer.pendingTouches().size shouldBe TrackerWriteQueue.MAX_TOUCHES
+        tokens.size() shouldBe HandoffTokenStore.MAX_TOKENS
+        seen.size shouldBe TrackerWriteQueue.DEDUPE_KEYS
     }
 
     /** [length] characters outside Latin-1 (so two bytes each on the heap) that differ per [tag]. */

@@ -42,6 +42,10 @@ class TrackerUrlPolicyTest {
             "/forgot-password?passwordResetCode=9",
             "/trip/tok",
             "/boat/x?token=t",
+            "/hr/%72eview/abc?rating=5",
+            "/review%2Fabc",
+            "/boat/x?to%6Ben=t",
+            "/boat/x?%74oken=t",
         ).forEach { policy.clean("boat4you", "https://www.boat4you.com$it") shouldBe UrlCheck.Secret }
     }
 
@@ -75,8 +79,15 @@ class TrackerUrlPolicyTest {
         // WEB-18: a same-origin referrer carries the full URL, so a token page keeps only its origin
         policy.referrer("https://www.boat4you.com/trip/abc123") shouldBe CleanReferrer("https://www.boat4you.com/", "www.boat4you.com")
         policy.referrer("https://www.boat4you.com/en/confirm-email-change?token=t") shouldBe CleanReferrer("https://www.boat4you.com/", "www.boat4you.com")
+        policy.referrer("https://www.boat4you.com/hr/%72eview/abc") shouldBe CleanReferrer("https://www.boat4you.com/", "www.boat4you.com")
+        policy.referrer("https://www.boat4you.com/boat/x?to%6Ben=t") shouldBe CleanReferrer("https://www.boat4you.com/", "www.boat4you.com")
         TrackerText.clip("  a\u0000b\nc  ", 200) shouldBe "abc"
         TrackerText.clip("x".repeat(301), 300) shouldBe "x".repeat(300)
         TrackerText.clip(" \n ", 10) shouldBe null
+    }
+
+    @Test
+    fun `an encoded page that is not a token page is stored as sent`() {
+        (policy.clean("boat4you", "https://www.boat4you.com/hr/boat/%C4%8Damac-1") as UrlCheck.Ok).url.path shouldBe "/hr/boat/%C4%8Damac-1"
     }
 }

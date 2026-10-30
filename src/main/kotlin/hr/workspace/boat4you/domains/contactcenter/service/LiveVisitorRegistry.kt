@@ -18,7 +18,7 @@ data class PendingProactive(
 
 /**
  * One visit that is on a site now. Immutable facts are constructor properties; everything that changes while the visit goes on is a
- * `var` below. All mutable fields are written under `synchronized(this)`; [lastBeatAt] and [bot] are also read lock-free (by
+ * `var` below. All mutable fields are written under `synchronized(this)`; [lastBeatAt], [bot] and [staff] are also read lock-free (by
  * [LiveVisitorRegistry.register], [LiveVisitorRegistry.evictExpired] and [LiveVisitorRegistry.liveSnapshot]), hence `@Volatile`.
  */
 @Suppress("LongParameterList") // the immutable facts of one visit, built once by VisitService
@@ -38,7 +38,7 @@ class LiveEntry(
     val os: String?,
     val channel: String,
     val fromSiteId: String?,
-    val staff: Boolean,
+    @Volatile var staff: Boolean,
     @Volatile var bot: Boolean,
     lastBeatAt: Instant,
 ) {
@@ -103,7 +103,7 @@ class LiveVisitorRegistry : LiveVisitorQuery {
 
     /**
      * Adds the visit, or, if its key is already here, refreshes the entry that is (a resumed visit; the new entry may carry a bot reason
-     * the old one did not have). False only when the registry is full of live people: then expired entries go first, then the oldest
+     * or the staff flag the old one did not have). False only when the registry is full of live people: then expired entries go first, then the oldest
      * bot or staff entry, else the visit is refused and counted in [rejected].
      */
     @Synchronized
@@ -121,8 +121,11 @@ class LiveVisitorRegistry : LiveVisitorQuery {
 
     fun get(visitKey: String): LiveEntry? = entries[visitKey]
 
-    /** The visitor's most recent visit here, whatever its flags: the one a proactive message goes to. */
-    fun latestForVisitor(visitorKey: String): LiveEntry? = entries.values.filter { it.visitorKey == visitorKey }.maxByOrNull { it.lastBeatAt }
+    /** The visitor's most recent visit here that is still live (last beat within [EVICT_AFTER], the cut-off [liveSnapshot] uses), whatever its flags: the one a proactive message goes to. */
+    fun latestForVisitor(visitorKey: String): LiveEntry? {
+        val cutoff = clock.instant().minus(EVICT_AFTER)
+        return entries.values.filter { it.visitorKey == visitorKey && !it.lastBeatAt.isBefore(cutoff) }.maxByOrNull { it.lastBeatAt }
+    }
 
     fun remove(visitKey: String) {
         entries[visitKey]?.let { drop(it) }
@@ -218,6 +221,7 @@ class LiveVisitorRegistry : LiveVisitorQuery {
         synchronized(existing) {
             existing.lastBeatAt = resumed.lastBeatAt
             existing.bot = existing.bot || resumed.bot
+            existing.staff = existing.staff || resumed.staff // sticky, like cc_visitor.is_staff (VisitService.upsertVisitor)
         }
     }
 

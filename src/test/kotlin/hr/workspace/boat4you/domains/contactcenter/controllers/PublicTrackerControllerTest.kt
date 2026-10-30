@@ -20,6 +20,7 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
+import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.test.web.servlet.ResultActionsDsl
@@ -163,6 +164,12 @@ class PublicTrackerControllerTest {
     @Test
     fun `a pool timeout is 503, not 500`() {
         Mockito.`when`(visits.startOrResume(any())).thenThrow(CannotCreateTransactionException("pool timeout"))
+        post("visit", visitBody).rejectedWith(503, "unavailable")
+    }
+
+    @Test
+    fun `a database error from the service is 503, not 500`() { // the DataAccessException branch of guarded(); the pool timeout above is a TransactionException
+        Mockito.`when`(visits.startOrResume(any())).thenThrow(DataAccessResourceFailureException("db down"))
         post("visit", visitBody).rejectedWith(503, "unavailable")
     }
 

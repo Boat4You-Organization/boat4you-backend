@@ -43,8 +43,13 @@ class TrackerSurgeGuard(
 
     /** True while [siteId] has visits left in the current clock minute; a refusal is counted. */
     fun allowVisit(siteId: String): Boolean {
-        val minute = clock.instant().epochSecond / SECONDS_PER_MINUTE
-        val window = windows.compute(siteId) { _, w -> if (w == null || w.minute != minute) Window(minute) else w }!!
+        // The clock is read inside the per-key serialised lambda, so a thread held up across a minute boundary cannot put
+        // an older minute's window back over a newer one.
+        val window =
+            windows.compute(siteId) { _, w ->
+                val minute = clock.instant().epochSecond / SECONDS_PER_MINUTE
+                if (w == null || w.minute != minute) Window(minute) else w
+            }!!
         if (window.used.getAndUpdate { if (it < siteVisitsPerMinute) it + 1 else it } < siteVisitsPerMinute) return true
         refused.computeIfAbsent(siteId) { AtomicInteger() }.incrementAndGet()
         return false
