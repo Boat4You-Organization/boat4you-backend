@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.contactcenter.admin
 
 import java.time.Instant
+import java.time.LocalDate
 
 /** Filters of the conversation list (P2); every null or false field is left out of the query. */
 data class ConversationFilter(
@@ -45,4 +46,53 @@ data class ConversationRow(
     val contactStatus: String?,
     val tags: List<String>,
     val visitorId: Long?,
+)
+
+/** One message of a conversation; [authorUserId] is the admin who wrote an ADMIN message. */
+data class MessageView(
+    val id: Long,
+    val role: String,
+    val content: String,
+    val payload: String?,
+    val createdAt: Instant,
+    val authorUserId: Long?,
+)
+
+/** One page the visitor opened, on any of the sites. */
+data class PageViewItem(
+    val siteId: String,
+    val path: String,
+    val title: String?,
+    val pageType: String?,
+    val at: Instant,
+)
+
+/** One search: from the AI chat, the site's search form or an inquiry form. */
+data class SearchItem(
+    val source: String,
+    val siteId: String,
+    val location: String?,
+    val countryCode: String?,
+    val startDate: LocalDate?,
+    val endDate: LocalDate?,
+    val minPersons: Int?,
+    val minCabins: Int?,
+    val vesselType: String?,
+    val resultCount: Int?,
+    val at: Instant,
+)
+
+/** A conversation opened in the admin: messages oldest first, the visitor's navigation and searches, and the response stamps. */
+data class ConversationDetail(
+    val row: ConversationRow,
+    val referrer: String?,
+    val pageTrail: String?,
+    val messages: List<MessageView>,
+    val history: List<PageViewItem>,
+    val searches: List<SearchItem>,
+    val firstResponseAt: Instant?,
+    val firstResponseBy: String?,
+    val takenOverAt: Instant?,
+    val handoffRequestedAt: Instant?,
+    val aiReturnedAt: Instant?,
 )
