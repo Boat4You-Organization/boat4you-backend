@@ -35,6 +35,7 @@ class ConversationQuery(
         filter.from?.let { and("s.last_activity_at >= ?", Timestamp.from(it)) }
         filter.to?.let { and("s.last_activity_at < ?", Timestamp.from(it)) }
         if (!filter.includeSpam) and("(c.status IS NULL OR c.status <> 'SPAM')")
+        filter.contactId?.let { and("s.contact_id = ?", it) }
         filter.q
             ?.trim()
             ?.take(MAX_QUERY)
@@ -164,6 +165,8 @@ class ConversationQuery(
 
         internal fun ResultSet.longOrNull(column: String): Long? = getLong(column).takeUnless { wasNull() }
 
+        internal fun ResultSet.tags(): List<String> = (getArray("tags")?.array as? Array<*>)?.map { it.toString() }.orEmpty()
+
         private fun ResultSet.intOrNull(column: String): Int? = getInt(column).takeUnless { wasNull() }
 
         internal val SEARCH_ROW =
@@ -208,7 +211,7 @@ class ConversationQuery(
                     missed = rs.getBoolean("missed"),
                     contactId = rs.longOrNull("contact_id"),
                     contactStatus = rs.getString("contact_status"),
-                    tags = (rs.getArray("tags")?.array as? Array<*>)?.map { it.toString() }.orEmpty(),
+                    tags = rs.tags(),
                     visitorId = rs.longOrNull("visitor_id"),
                 )
             }

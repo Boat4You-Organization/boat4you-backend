@@ -15,6 +15,8 @@ data class ConversationFilter(
     val to: Instant? = null,
     val q: String? = null,
     val includeSpam: Boolean = true,
+    /** The client card's conversations; not a list filter of the admin screen. */
+    val contactId: Long? = null,
     val before: Instant? = null,
     val beforeId: Long? = null,
     val size: Int = 50,
@@ -95,4 +97,53 @@ data class ConversationDetail(
     val takenOverAt: Instant?,
     val handoffRequestedAt: Instant?,
     val aiReturnedAt: Instant?,
+)
+
+/** One contact in the contacts list; [conversations] and [lastActivityAt] count its non-deleted conversations. */
+data class ContactRow(
+    val id: Long,
+    val name: String?,
+    val email: String?,
+    val phone: String?,
+    val status: String,
+    val tags: List<String>,
+    val conversations: Int,
+    val lastActivityAt: Instant?,
+    val createdAt: Instant,
+)
+
+/** How one visit reached a site: its channel, referrer, campaign and, for a sister site, which one. */
+data class SourceView(
+    val channel: String,
+    val siteId: String,
+    val referrer: String?,
+    val utmSource: String?,
+    val utmMedium: String?,
+    val utmCampaign: String?,
+    val fromSiteId: String?,
+    val landingUrl: String?,
+    val at: Instant,
+)
+
+data class VisitItem(
+    val id: Long,
+    val siteId: String,
+    val startedAt: Instant,
+    val pageCount: Int,
+    val channel: String,
+    val countryCode: String?,
+)
+
+/** The client card: the contact, where they came from, their visits, conversations, searches and boats, and unverified look-alikes. */
+data class ContactCard(
+    val contact: ContactRow,
+    val note: String?,
+    val emailVerified: Boolean,
+    val firstSource: SourceView?,
+    val lastSource: SourceView?,
+    val visits: List<VisitItem>,
+    val conversations: List<ConversationRow>,
+    val searches: List<SearchItem>,
+    val boatsViewed: List<String>,
+    val possibleDuplicates: List<ContactRow>,
 )
