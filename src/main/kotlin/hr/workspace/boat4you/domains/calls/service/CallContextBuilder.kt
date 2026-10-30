@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.calls.CallSite
 import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCall
 import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
+import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import java.time.Instant
 
 /**
@@ -49,20 +50,7 @@ object CallContextBuilder {
         details: Map<String, Any?>,
     ): String {
         val yacht = inquiry.yacht
-        val boat =
-            yacht?.let { y ->
-                val manufacturer = y.model?.manufacturer?.name
-                val model = y.model?.name
-                val head =
-                    if (manufacturer != null && model != null &&
-                        model.startsWith(manufacturer, ignoreCase = true)
-                    ) {
-                        model
-                    } else {
-                        listOfNotNull(manufacturer, model).joinToString(" ")
-                    }
-                listOf(head, y.name).filter { !it.isNullOrBlank() }.joinToString(" ")
-            }
+        val boat = boatLabel(yacht)
         val parts = mutableListOf<String>()
         boat?.takeIf { it.isNotBlank() }?.let { parts += "boat: $it" }
         if (inquiry.dateFrom != null && inquiry.dateTo != null) parts += "dates: ${inquiry.dateFrom} to ${inquiry.dateTo}"
@@ -71,6 +59,20 @@ object CallContextBuilder {
         inquiry.message?.trim()?.takeIf { it.isNotEmpty() }?.let { parts += "message: ${it.take(MESSAGE_MAX)}" }
         return parts.joinToString("; ")
     }
+
+    /** Manufacturer, model and name of the boat ("Lagoon 46 Anthea"); never the agency or owner. */
+    fun boatLabel(yacht: Yacht?): String? =
+        yacht?.let { y ->
+            val manufacturer = y.model?.manufacturer?.name
+            val model = y.model?.name
+            val head =
+                if (manufacturer != null && model != null && model.startsWith(manufacturer, ignoreCase = true)) {
+                    model
+                } else {
+                    listOfNotNull(manufacturer, model).joinToString(" ")
+                }
+            listOf(head, y.name).filter { !it.isNullOrBlank() }.joinToString(" ").ifBlank { null }
+        }
 
     private fun label(key: String) =
         when (key) {

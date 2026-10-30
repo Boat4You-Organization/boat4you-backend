@@ -61,8 +61,27 @@ class CallsSettings(
         }
     }
 
-    /** The current raw values of the known keys (absent keys omitted), for the admin settings page. */
-    fun raw(): Map<String, String?> = loadRows().filterKeys { it in KEYS }
+    /** Every key with the value in effect (stored or default), as the admin settings page shows it. */
+    fun effective(): Map<String, String> {
+        val s = snapshot()
+        return linkedMapOf(
+            ENABLED to s.enabled.toString(),
+            TEST_NUMBERS to s.testNumbers.joinToString(", "),
+            WINDOW_START to s.windowStart.toString(),
+            WINDOW_END to s.windowEnd.toString(),
+            FIRST_DELAY_MINUTES to s.firstDelay.toMinutes().toString(),
+            FOLLOW_UP_DELAY_HOURS to s.followUpDelay.toHours().toString(),
+            MAX_ATTEMPTS to s.maxAttempts.toString(),
+            TRANSFER_DAYS to s.transferDays.sorted().joinToString(",") { it.name.take(3) },
+            TRANSFER_START to s.transferStart.toString(),
+            TRANSFER_END to s.transferEnd.toString(),
+            TRANSFER_AVAILABLE to s.transferAvailable.toString(),
+            TRANSFER_NUMBER to (s.transferNumber ?: ""),
+            DAILY_LIMIT to s.dailyLimit.toString(),
+            MONTHLY_LIMIT to s.monthlyLimit.toString(),
+            AUDIO_RETENTION_DAYS to s.audioRetentionDays.toString(),
+        )
+    }
 
     /**
      * Validates all [values] (each key known, each value in range, window start before end), then upserts them and reloads.
