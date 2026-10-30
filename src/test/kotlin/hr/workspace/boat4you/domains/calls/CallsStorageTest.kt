@@ -4,7 +4,6 @@ import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
 import hr.workspace.boat4you.domains.calls.jpa.CallWebhookEventRepository
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCall
-import hr.workspace.boat4you.domains.calls.jpa.InquiryCallRepository
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.nulls.shouldBeNull
@@ -12,23 +11,9 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import jakarta.persistence.EntityManagerFactory
 import org.hibernate.SessionFactory
-import org.junit.jupiter.api.BeforeAll
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.TestInstance
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection
-import org.springframework.core.io.ClassPathResource
-import org.springframework.jdbc.core.JdbcTemplate
-import org.springframework.transaction.PlatformTransactionManager
-import org.springframework.transaction.annotation.Propagation
-import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
-import org.testcontainers.containers.PostgreSQLContainer
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
@@ -36,73 +21,12 @@ import java.util.concurrent.TimeUnit
 
 /**
  * AI call center storage (V9_112 inquiry columns, V9_113 inquiry_call + call_webhook_event) through the real Hibernate
- * mappings on PostgreSQL 18: Hibernate builds the schema from the entities, then the parts the two migrations own are
- * dropped and the real migration files replace them, so `validateMappedObjects` proves column types match (V9_94 lesson).
+ * mappings: `validateMappedObjects` proves the column types match the migrations (V9_94 lesson).
  */
-@DataJpaTest(
-    properties = [
-        "spring.flyway.enabled=false",
-        "spring.jpa.hibernate.ddl-auto=create",
-        "spring.jpa.database-platform=hr.workspace.boat4you.domains.catalouge.jpa.SerialIdPostgreSQLDialect",
-    ],
-)
-@Testcontainers
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Transactional(propagation = Propagation.NOT_SUPPORTED)
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class CallsStorageTest {
-    companion object {
-        @Container
-        @ServiceConnection
-        @JvmStatic
-        val postgres: PostgreSQLContainer<Nothing> =
-            PostgreSQLContainer<Nothing>("postgres:18-alpine").apply {
-                withDatabaseName("boat4you_db")
-                withInitScript("init/00_roles.sql")
-            }
-
-        val INQUIRY_COLUMNS =
-            listOf(
-                "site",
-                "locale",
-                "contact_consent",
-                "consent_text_version",
-                "consent_at",
-                "phone_e164",
-                "details",
-                "do_not_call",
-                "offer_sent_at",
-                "offer_note",
-                "human_takeover_at",
-            )
-    }
-
-    @Autowired private lateinit var jdbc: JdbcTemplate
-
+class CallsStorageTest : CallsJpaTest() {
     @Autowired private lateinit var entityManagerFactory: EntityManagerFactory
 
-    @Autowired private lateinit var calls: InquiryCallRepository
-
     @Autowired private lateinit var events: CallWebhookEventRepository
-
-    @Autowired private lateinit var txManager: PlatformTransactionManager
-
-    private fun migration(file: String) = ClassPathResource("db/migration/$file").inputStream.bufferedReader().readText()
-
-    @BeforeAll
-    fun migrate() {
-        jdbc.execute("DROP TABLE IF EXISTS inquiry_call, call_webhook_event CASCADE")
-        // The test dialect makes the Hibernate-built inquiry.yacht_id a NOT NULL serial; in prod (V1_03) it is a nullable FK.
-        jdbc.execute("ALTER TABLE inquiry ALTER COLUMN yacht_id DROP NOT NULL, ALTER COLUMN yacht_id DROP DEFAULT")
-        INQUIRY_COLUMNS.forEach { jdbc.execute("ALTER TABLE inquiry DROP COLUMN IF EXISTS $it") }
-        jdbc.execute("BEGIN; ${migration("V9_112__calls_inquiry_columns.sql")}; COMMIT;")
-        jdbc.execute("BEGIN; ${migration("V9_113__calls_tables.sql")}; COMMIT;")
-    }
-
-    @BeforeEach
-    fun clean() {
-        jdbc.execute("TRUNCATE inquiry_call, call_webhook_event, inquiry RESTART IDENTITY CASCADE")
-    }
 
     private fun inquiryId(): Long =
         jdbc.queryForObject(

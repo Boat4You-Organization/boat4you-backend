@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.domains.branding.BrandResolver
+import hr.workspace.boat4you.domains.calls.service.CallPlanner
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryDto
 import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
@@ -10,6 +11,8 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers.any
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
@@ -20,7 +23,9 @@ import java.time.temporal.ChronoUnit
 class InquiryConsentTest {
     private val inquiries = mock(InquiryRepository::class.java)
     private val emails = mock(InquiryEmailService::class.java)
-    private val service = InquiryMutationService(inquiries, mock(YachtRepository::class.java), emails, mock(BrandResolver::class.java))
+    private val planner = mock(CallPlanner::class.java)
+    private val service =
+        InquiryMutationService(inquiries, mock(YachtRepository::class.java), emails, mock(BrandResolver::class.java), planner)
 
     private fun dto(
         site: String? = null,
@@ -96,5 +101,20 @@ class InquiryConsentTest {
         val inquiry = saved()
         verify(emails).sendNewInquiryNotification(inquiry, null)
         verify(emails).sendInquiryClientAcknowledgement(inquiry, null)
+    }
+
+    @Test
+    fun `every saved inquiry is handed to the call planner`() {
+        service.createNewInquiry(dto(site = "italy", consent = true))
+        val inquiry = saved()
+        verify(planner).onInquiryCreated(inquiry)
+    }
+
+    @Test
+    fun `a call planner failure never stops the inquiry or its e-mails`() {
+        doThrow(IllegalStateException("boom")).`when`(planner).onInquiryCreated(any(Inquiry::class.java) ?: Inquiry())
+        service.createNewInquiry(dto(consent = true))
+        val inquiry = saved()
+        verify(emails).sendNewInquiryNotification(inquiry, null)
     }
 }

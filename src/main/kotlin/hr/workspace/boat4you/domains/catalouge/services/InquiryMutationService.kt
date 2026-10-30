@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.catalouge.services
 import hr.workspace.boat4you.domains.branding.Brand
 import hr.workspace.boat4you.domains.branding.BrandResolver
 import hr.workspace.boat4you.domains.calls.CallSite
+import hr.workspace.boat4you.domains.calls.service.CallPlanner
 import hr.workspace.boat4you.domains.calls.service.PhoneNormalizer
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryDto
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryUpdateDto
@@ -15,6 +16,8 @@ import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
@@ -26,6 +29,7 @@ class InquiryMutationService(
     private val yachtRepository: YachtRepository,
     private val inquiryEmailService: InquiryEmailService,
     private val brandResolver: BrandResolver,
+    private val callPlanner: CallPlanner,
 ) {
     private val log = LoggerFactory.getLogger(InquiryMutationService::class.java)
 
@@ -101,6 +105,7 @@ class InquiryMutationService(
         applyCallFields(inquiry, inquiryDto)
 
         inquiryRepository.saveAndFlush(inquiry)
+        planCallAfterCommit(inquiry)
 
         // Sent inline, as before: EmailService.sendEmail already defers the SMTP submit to this transaction's
         // afterCommit, so a rolled-back save notifies nobody. Do NOT wrap this in an afterCommit of our own —
@@ -110,6 +115,29 @@ class InquiryMutationService(
         // A sister site sends its own inquiry e-mails (nodemailer) and posts here only so the call center has the row.
         if (inquiryDto.emailAlreadySent != true) {
             sendInquiryEmails(inquiry, request?.let(brandResolver::resolve))
+        }
+    }
+
+    /**
+     * Hands the inquiry to the AI call center once it is committed, in the planner's own transaction (the planner's FK needs
+     * the committed row). A planner failure is logged and never touches the inquiry or its e-mails. Outside a transaction
+     * (unit tests) it runs at once.
+     */
+    private fun planCallAfterCommit(inquiry: Inquiry) {
+        val plan = {
+            runCatching { callPlanner.onInquiryCreated(inquiry) }
+                .onFailure { log.error("AI call planning failed for inquiry id=${inquiry.id}", it) }
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() {
+                        plan()
+                    }
+                },
+            )
+        } else {
+            plan()
         }
     }
 
