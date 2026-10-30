@@ -44,14 +44,14 @@ class PublicEndpointRateLimiterTest {
 
     private fun hit(
         uri: String,
-        xri: String = "203.0.113.7",
+        xri: String? = "203.0.113.7",
         xff: String = "1.1.1.1",
         method: String = "POST",
     ): MockHttpServletResponse {
         val req =
             MockHttpServletRequest(method, uri).apply {
                 remoteAddr = "127.0.0.1"
-                addHeader("X-Real-IP", xri)
+                xri?.let { addHeader("X-Real-IP", it) }
                 addHeader("X-Forwarded-For", xff)
             }
         return MockHttpServletResponse().also { limiter.doFilter(req, it, MockFilterChain()) }
@@ -65,10 +65,18 @@ class PublicEndpointRateLimiterTest {
             it.status shouldBe 429
             it.getHeader("Retry-After") shouldBe "600"
         }
+        hit("/public/cc/v1/%76isit").status shouldBe 429 // F1-022: the encoded spelling reaches the same controller, so it spends the same budget
         repeat(600) { hit("/public/cc/v1/beat").status shouldBe 200 }
         hit("/public/cc/v1/beat").status shouldBe 429
         repeat(10) { hit("/public/cc/v1/handoff").status shouldBe 200 }
         hit("/public/cc/v1/handoff").status shouldBe 429
+    }
+
+    @Test
+    fun `without a usable X-Real-IP the realIp rules key on the socket address, a forged X-Forwarded-For buys nothing`() {
+        limiter.clock = CcTestClock() // frozen, so the rule does not refill while the loop runs
+        repeat(5) { hit("/public/chat/sessions", xri = null, xff = "10.0.0.$it").status shouldBe 200 }
+        hit("/public/chat/sessions", xri = null, xff = "10.9.9.9").status shouldBe 429
     }
 
     @Test

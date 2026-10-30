@@ -75,7 +75,8 @@ class TrackerUrlPolicy(
         if (!dev && siteOfHost(host) != siteId) return UrlCheck.ForeignHost
         val path = uri.rawPath?.ifEmpty { "/" } ?: "/"
         val pairs = uri.rawQuery.orEmpty().split('&').filter { it.isNotEmpty() }.map { it.substringBefore('=') to it.substringAfter('=', "") }
-        if (SECRET_PATH.containsMatchIn(path) || pairs.any { it.first in SECRET_PARAMS }) return UrlCheck.Secret
+        val decodedPath = uri.path.orEmpty() // the path as the page's server routes it: /hr/%72eview is /hr/review, /review%2Fabc is /review/abc
+        if (SECRET_PATH.containsMatchIn(path) || SECRET_PATH.containsMatchIn(decodedPath) || pairs.any { isSecretParam(it.first) }) return UrlCheck.Secret
         val kept = pairs.filter { it.first !in STRIPPED_PARAMS }.joinToString("&") { (k, v) -> if (v.isEmpty()) k else "$k=$v" }
         val pathAndQuery = if (kept.isEmpty() || path.length + 1 + kept.length > MAX_PATH) path else "$path?$kept"
         if (!SAFE_PAGE.matches(pathAndQuery)) return UrlCheck.Invalid
@@ -99,9 +100,17 @@ class TrackerUrlPolicy(
         val host = u.host.lowercase()
         val isTokenPage =
             SECRET_PATH.containsMatchIn(u.rawPath.orEmpty()) ||
-                u.rawQuery.orEmpty().split('&').any { it.substringBefore('=') in SECRET_PARAMS }
+                SECRET_PATH.containsMatchIn(u.path.orEmpty()) ||
+                u.rawQuery.orEmpty().split('&').any { isSecretParam(it.substringBefore('=')) }
         return if (isTokenPage) CleanReferrer("${u.scheme}://$host/", host) else CleanReferrer(r, host)
     }
+
+    /**
+     * WEB-18 on what the browser routes to: a query parameter name as the page's server reads it, `to%6Ben` and `%74oken` are `token`.
+     * `URI(...)` has already refused a malformed %-escape, so decoding cannot throw here; a name that still does not decode is tested as sent.
+     */
+    private fun isSecretParam(rawName: String): Boolean =
+        rawName in SECRET_PARAMS || runCatching { URLDecoder.decode(rawName, Charsets.UTF_8) }.getOrDefault(rawName) in SECRET_PARAMS
 
     companion object {
         /** Copied character for character from the private `SAFE_PAGE` of `AiChatService` (BACKEND-25); a test keeps the two in step. */

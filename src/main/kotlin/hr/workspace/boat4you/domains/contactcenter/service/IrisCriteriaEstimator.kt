@@ -16,9 +16,9 @@ import java.util.Locale
 object IrisCriteriaEstimator {
     private val PERSONS =
         Regex(
-            """(\d{1,2})\s*(?:people|persons?|pax|guests|adults|osob[ae]?|ljudi|personen|personnes|persone|personas|pessoas|osób|osoby)""",
+            """(?<!\d)(\d{1,2})\s*(?:people|persons?|pax|guests|adults|osob[ae]?|ljudi|personen|personnes|persone|personas|pessoas|osób|osoby)""",
         )
-    private val CABINS = Regex("""(\d{1,2})\s*(?:cabins?|kabin[ae]?|kabinen|cabines|cabine|camarotes?|kajut[y]?)""")
+    private val CABINS = Regex("""(?<!\d)(\d{1,2})\s*(?:cabins?|kabin[ae]?|kabinen|cabines|cabine|camarotes?|kajut[y]?)""")
     private val BUDGET =
         Regex(
             """(?:€|eur(?:o|a)?)\s*(\d{1,3}(?:[.,\s]\d{3})+|\d{3,7})|(\d{1,3}(?:[.,\s]\d{3})+|\d{3,7})\s*(?:€|eur(?:o|a)?\b)""",

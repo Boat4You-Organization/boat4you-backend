@@ -192,6 +192,7 @@ class ProactiveMessageServiceDbTest {
         service.enqueueProactive(key, "Bok", 7)
         service.deliver(entry)
         clock.advance(Duration.ofMinutes(10))
+        entry.lastBeatAt = clock.now // the widget kept beating; a visit silent for 10 minutes is no longer live
         service.enqueueProactive(key, "Evo me opet", 7)
         service.deliver(entry)
         jdbc

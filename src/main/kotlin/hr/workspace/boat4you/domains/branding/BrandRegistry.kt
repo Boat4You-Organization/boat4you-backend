@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.branding
 
+import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import org.openapitools.model.LanguageEnum
 import org.springframework.stereotype.Component
 
@@ -36,6 +37,7 @@ class BrandRegistry {
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png",
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.EN,
+                ai = AiSiteProfile.BOAT4YOU,
             ),
             // ───────── Catamaran Croatia Charter — TODO: real assets ─────────
             // Front-end: catamaran-croatia-charter.com (front-end repo:
@@ -49,12 +51,25 @@ class BrandRegistry {
                 tagline = null,
                 fromAddress = "info@boat4you.com", // TODO replace once mailbox provisioned
                 recipientAddress = "info@boat4you.com", // TODO
-                websiteUrl = "https://catamaran-croatia-charter.com",
+                websiteUrl = "https://www.catamaran-croatia-charter.com",
                 supportEmail = "info@boat4you.com", // TODO
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO replace with brand logo
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.HR, // Croatian-managed brand → admins read inquiry email in Croatian
+                ai =
+                    AiSiteProfile(
+                        siteId = "catamaran-croatia",
+                        siteName = "Catamaran Charter Croatia",
+                        baseUrl = "https://www.catamaran-croatia-charter.com",
+                        boatPath = "/catamarans/",
+                        region = "Croatia",
+                        countryCodes = listOf("HR"),
+                        vesselTypes = CATAMARAN_TYPES,
+                        fleetLabel = "catamarans and power catamarans",
+                        blogGuides = false,
+                        prefixedLocales = SISTER_LOCALES,
+                    ),
             ),
             // ───────── Catamaran Charter Greece — TODO ─────────
             Brand(
@@ -63,12 +78,25 @@ class BrandRegistry {
                 tagline = null,
                 fromAddress = "info@boat4you.com", // TODO
                 recipientAddress = "info@boat4you.com", // TODO
-                websiteUrl = "https://catamaran-charter-greece.com",
+                websiteUrl = "https://www.catamaran-charter-greece.com",
                 supportEmail = "info@boat4you.com", // TODO
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.EN, // Greek not in our locale set → admins read in EN until staff confirms preference
+                ai =
+                    AiSiteProfile(
+                        siteId = "catamaran-greece",
+                        siteName = "Catamaran Charter Greece",
+                        baseUrl = "https://www.catamaran-charter-greece.com",
+                        boatPath = "/catamarans/",
+                        region = "Greece",
+                        countryCodes = listOf("GR"),
+                        vesselTypes = CATAMARAN_TYPES,
+                        fleetLabel = "catamarans and power catamarans",
+                        blogGuides = false,
+                        prefixedLocales = SISTER_LOCALES,
+                    ),
             ),
             // ───────── Catamaran Charter Italy — TODO ─────────
             Brand(
@@ -83,6 +111,19 @@ class BrandRegistry {
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.IT,
+                ai =
+                    AiSiteProfile(
+                        siteId = "catamaran-italy",
+                        siteName = "Catamaran Charter Italy",
+                        baseUrl = "https://www.catamarancharteritaly.com",
+                        boatPath = "/catamarans/",
+                        region = "Italy",
+                        countryCodes = listOf("IT"),
+                        vesselTypes = CATAMARAN_TYPES,
+                        fleetLabel = "catamarans and power catamarans",
+                        blogGuides = false,
+                        prefixedLocales = SISTER_LOCALES,
+                    ),
             ),
             // ───────── Catamaran Charter Caribbean — TODO ─────────
             Brand(
@@ -91,12 +132,25 @@ class BrandRegistry {
                 tagline = null,
                 fromAddress = "info@boat4you.com", // TODO
                 recipientAddress = "info@boat4you.com", // TODO
-                websiteUrl = "https://catamaran-charter-caribbean.com",
+                websiteUrl = "https://www.catamaran-charter-caribbean.com",
                 supportEmail = "info@boat4you.com", // TODO
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.EN,
+                ai =
+                    AiSiteProfile(
+                        siteId = "catamaran-caribbean",
+                        siteName = "Catamaran Charter Caribbean",
+                        baseUrl = "https://www.catamaran-charter-caribbean.com",
+                        boatPath = "/catamarans/",
+                        region = "the Caribbean",
+                        countryCodes = listOf("AG", "BS", "BZ", "BQ", "CU", "GD", "GP", "MQ", "LC", "MF", "VC", "SX", "VG", "VI"),
+                        vesselTypes = CATAMARAN_TYPES,
+                        fleetLabel = "catamarans and power catamarans",
+                        blogGuides = false,
+                        prefixedLocales = SISTER_LOCALES,
+                    ),
             ),
             // ───────── Europe Yachts — TODO ─────────
             // Already unpacked at /europe-yachts/europe-yachts-web-main and
@@ -108,12 +162,25 @@ class BrandRegistry {
                 tagline = null,
                 fromAddress = "info@boat4you.com", // TODO replace once mailbox confirmed
                 recipientAddress = "info@boat4you.com", // TODO
-                websiteUrl = "https://europe-yachts.com",
+                websiteUrl = "https://www.europe-yachts.com",
                 supportEmail = "info@boat4you.com", // TODO
                 supportPhone = null,
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO
                 accentColor = "#ffd24a",
                 defaultLanguage = LanguageEnum.EN,
+                ai =
+                    AiSiteProfile(
+                        siteId = "europe-yachts",
+                        siteName = "Europe Yachts Charter",
+                        baseUrl = "https://www.europe-yachts.com",
+                        boatPath = "/yachts/",
+                        region = "Croatia, Greece, Italy, Spain and Türkiye",
+                        countryCodes = listOf("HR", "GR", "IT", "ES", "TR"),
+                        vesselTypes = emptyList(),
+                        fleetLabel = "sailing yachts, catamarans, motor yachts and gulets",
+                        blogGuides = false,
+                        prefixedLocales = SISTER_LOCALES,
+                    ),
             ),
             // ───────── Croatia Yachting — real site data, shared boat4you mailbox ─────────
             // Name, tagline, site URL and accent colour: croatia-yachting-web-main
@@ -132,6 +199,19 @@ class BrandRegistry {
                 logoMarkClasspath = "data/images/boat4you-logo-mark.png", // TODO replace with brand logo
                 accentColor = "#0e63a8",
                 defaultLanguage = LanguageEnum.EN,
+                ai =
+                    AiSiteProfile(
+                        siteId = "croatia-yachting",
+                        siteName = "Yacht Charter Croatia",
+                        baseUrl = "https://www.croatia-yachting.com",
+                        boatPath = "/yachts/",
+                        region = "Croatia",
+                        countryCodes = listOf("HR"),
+                        vesselTypes = emptyList(),
+                        fleetLabel = "sailing yachts, catamarans, motor yachts and gulets",
+                        blogGuides = false,
+                        prefixedLocales = SISTER_LOCALES,
+                    ),
             ),
         ).associateBy { it.id }
 
@@ -143,5 +223,11 @@ class BrandRegistry {
 
     companion object {
         const val DEFAULT_ID = "boat4you"
+
+        /** The two catalogue types the catamaran sites sell (`ALLOWED_VESSEL_TYPES` in their yacht actions). */
+        private val CATAMARAN_TYPES = listOf(VesselType.CATAMARAN, VesselType.POWER_CATAMARAN)
+
+        /** Locales the six sister sites put in front of their paths; English is served without a prefix. */
+        private val SISTER_LOCALES = setOf("de", "fr", "pt", "it", "es")
     }
 }

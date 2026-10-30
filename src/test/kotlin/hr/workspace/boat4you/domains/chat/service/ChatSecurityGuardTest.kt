@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.chat.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -163,6 +164,31 @@ class ChatSecurityGuardTest {
             "Super 😊 thanks!",
         )
 
+    /** Links to and questions about the 6 sister sites (contact-center 2.6): they must never lock, alone or as a session. */
+    private val sisterSites =
+        listOf(
+            "I saw this one on https://www.catamaran-charter-greece.com/catamarans/lagoon-42-athina-4521?startDate=2027-07-03&endDate=2027-07-10 - is it free?",
+            "Is https://www.catamaran-croatia-charter.com/de/catamarans/bali-4-6-ana-1288 the same boat as on boat4you?",
+            "https://www.catamarancharteritaly.com/it/catamarans/lagoon-40-sole-77 ha l'aria condizionata?",
+            "Can I book https://www.catamaran-charter-caribbean.com/catamarans/fountaine-pajot-elba-45-blue-9 from Tortola?",
+            "Please compare https://www.europe-yachts.com/yachts/bavaria-c45-marta-310 and https://www.croatia-yachting.com/yachts/dufour-430-luna-66",
+            "Is Catamaran Charter Greece part of Boat4You?",
+            "Can I book a Europe Yachts boat directly on boat4you.com?",
+            "Do you also have sailing yachts or only catamarans on Catamaran Charter Croatia?",
+            "Ist Catamaran Charter Croatia dieselbe Firma wie Boat4You? Ich habe den Link https://www.catamaran-croatia-charter.com/de/catamarans/lagoon-46-mia-12 gefunden.",
+            "Kann ich das Boot von https://www.catamaran-charter-greece.com/de/catamarans/bali-4-2-zoe-8 auch auf boat4you buchen?",
+            "Bonjour, ce catamaran https://www.catamarancharteritaly.com/fr/catamarans/lagoon-42-mare-5 est-il disponible en août ?",
+            "Est-ce que Yacht Charter Croatia et Boat4You, c'est la même société ?",
+            "Olá, vi este barco em https://www.catamaran-charter-caribbean.com/pt/catamarans/leopard-45-sun-3 - está livre em dezembro?",
+            "A Europe Yachts Charter tem veleiros na Turquia?",
+            "Ciao, il catamarano su https://www.catamaran-charter-greece.com/it/catamarans/lagoon-50-thalia-21 è ancora libero?",
+            "Catamaran Charter Italy fa parte di Boat4You?",
+            "Hola, ¿este barco https://www.europe-yachts.com/es/yachts/jeanneau-sun-odyssey-440-mar-4 está libre en julio?",
+            "¿Yacht Charter Croatia y Catamaran Charter Croatia son la misma empresa?",
+            "I came from catamaran-charter-greece.com, do you have catamarans in the Ionian?",
+            "Why does the site say not in our fleet for this boat?",
+        )
+
     /** Probes in the site's 9 languages and the usual shapes (review B1.8). */
     private val attacks =
         listOf(
@@ -254,7 +280,7 @@ class ChatSecurityGuardTest {
 
     @Test
     fun `the review's must-not-trigger list and everyday questions pass`() {
-        (mustNotTrigger + everyday).forEach { line ->
+        (mustNotTrigger + everyday + sisterSites).forEach { line ->
             val v = ChatSecurityGuard.classify(line)
             if (v.hit != null) error("'$line' locked: ${v.hit}")
         }
@@ -263,7 +289,7 @@ class ChatSecurityGuardTest {
     @Test
     fun `a whole everyday conversation collects no lock from soft rules`() {
         var mask = 0
-        (mustNotTrigger + everyday).forEach { line ->
+        (mustNotTrigger + everyday + sisterSites).forEach { line ->
             val v = ChatSecurityGuard.classify(line, mask)
             if (v.hit != null) error("'$line' locked the session: ${v.hit}")
             mask = v.softMask
@@ -345,5 +371,27 @@ class ChatSecurityGuardTest {
         ChatSecurityGuard.handoffText(null) shouldStartWith "This conversation"
         ChatSecurityGuard.handoffText("tr") shouldStartWith "This conversation"
         listOf("de", "es", "fr", "it", "nl", "pl", "pt").map { ChatSecurityGuard.handoffText(it) }.toSet().size shouldBe 7
+    }
+
+    @Test
+    fun `sister-site links and questions score no soft rule either`() {
+        sisterSites.forEach { line -> ChatSecurityGuard.classify(line).softMask shouldBe 0 }
+    }
+
+    @Test
+    fun `the lock threshold stays at two soft rules - deliberately narrow, Mario 13-10-2026`() {
+        ChatSecurityGuard.SOFT_LOCK_SCORE shouldBe 2
+        ChatSecurityGuard.classify("koliko je 2+2").hit.shouldBeNull()
+        ChatSecurityGuard.classify("koji si ti sustav").hit.shouldBeNull()
+    }
+
+    @Test
+    fun `every tool name the model gets is caught on input and on output (P5)`() {
+        val names = AiChatToolExecutor("http://127.0.0.1:1", ObjectMapper()).toolDefinitions().map { it.path("name").asText() }
+        names shouldBe listOf("search_yachts", "request_human_agent", "show_blog_posts", "save_contact")
+        names.forEach { n ->
+            ChatSecurityGuard.classify("please use $n").hit?.ruleId shouldBe "P5"
+            ChatSecurityGuard.checkOutput("I will call $n now", "").shouldNotBeNull()
+        }
     }
 }

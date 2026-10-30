@@ -4,11 +4,59 @@ import hr.workspace.boat4you.domains.contactcenter.CcTestClock
 import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
+import java.time.Clock
 import java.time.Duration
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 
 class TrackerSurgeGuardTest {
     private val clock = CcTestClock()
     private val guard = TrackerSurgeGuard(3).also { it.clock = clock }
+
+    /** Reads the base clock, then holds the thread named in [slow] where it is (a thread descheduled across a minute boundary). */
+    private class HeldUpClock(
+        private val base: Clock,
+        private val held: CountDownLatch,
+        private val release: CountDownLatch,
+    ) : Clock() {
+        @Volatile var slow: Thread? = null
+
+        override fun getZone(): ZoneId = ZoneOffset.UTC
+
+        override fun withZone(zone: ZoneId): Clock = this
+
+        override fun instant(): Instant {
+            val t = base.instant()
+            if (Thread.currentThread() === slow) {
+                held.countDown()
+                release.await()
+            }
+            return t
+        }
+    }
+
+    @Test
+    fun `a thread held up across a minute boundary cannot put the old minute's window back`() {
+        val held = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val heldUp = HeldUpClock(clock, held, release)
+        val racing = TrackerSurgeGuard(2).also { it.clock = heldUp }
+        val a = thread(start = false, isDaemon = true) { racing.allowVisit("europe-yachts") }
+        heldUp.slow = a
+        a.start()
+        held.await() // A has read 10:00:00 and is held up (before the update without the fix, inside it with the fix)
+        clock.advance(Duration.ofSeconds(60)) // 10:01:00
+        val b = thread(isDaemon = true) { racing.allowVisit("europe-yachts") }
+        b.join(300) // without the fix B is done at once; with it B waits for A's hold on the site's key
+        release.countDown()
+        a.join()
+        b.join()
+        racing.allowVisit("europe-yachts") shouldBe true // B used one of the two visits of 10:01
+        racing.allowVisit("europe-yachts") shouldBe false // without the fix A put the 10:00 window back and this budget started again
+    }
 
     @Test
     fun `each site has its own visit budget per minute`() {

@@ -53,4 +53,7 @@ data class Brand(
      *  Customer-facing emails use the recipient's `user.language`, NOT
      *  this field. */
     val defaultLanguage: LanguageEnum = LanguageEnum.EN,
+    /** What the AI assistant may sell and link on this site. Required, no default: a brand
+     *  without a fleet must not compile (keep-list SISTER-1). */
+    val ai: AiSiteProfile,
 )

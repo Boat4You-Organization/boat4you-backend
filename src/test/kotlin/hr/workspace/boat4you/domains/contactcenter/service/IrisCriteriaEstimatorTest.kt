@@ -91,6 +91,19 @@ class IrisCriteriaEstimatorTest {
     }
 
     @Test
+    fun `the tail of a longer number is not a person or cabin count (P1a carry-forward, left digit boundary)`() {
+        estimate(cards, "150 people, 112 cabins")!!.let {
+            it.minPersons.shouldBeNull() // 50 without the boundary
+            it.minCabins.shouldBeNull() // 12 without the boundary
+        }
+        estimate(cards, "150 people or 6 people")!!.minPersons shouldBe 6
+        estimate(cards, "Lagoon 450 for 8 people, 4 cabins")!!.let {
+            it.minPersons shouldBe 8
+            it.minCabins shouldBe 4
+        }
+    }
+
+    @Test
     fun `no cards, no estimate`() {
         listOf("""{"blogs":[{"title":"x","url":"/blog/x"}]}""", "not json", null, """{"yachts":[]}""").forEach {
             estimate(it, "Croatia").shouldBeNull()

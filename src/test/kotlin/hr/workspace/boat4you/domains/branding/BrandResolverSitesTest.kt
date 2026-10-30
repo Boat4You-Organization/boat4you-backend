@@ -52,6 +52,7 @@ class BrandResolverSitesTest {
                 "data/images/boat4you-logo-mark.png",
                 "#ffd24a",
                 LanguageEnum.EN,
+                registry.get("boat4you").ai,
             )
         registry.get(null).id shouldBe "boat4you"
         registry.get("catamaran-italy").websiteUrl shouldBe "https://www.catamarancharteritaly.com"
@@ -68,6 +69,7 @@ class BrandResolverSitesTest {
                 "data/images/boat4you-logo-mark.png",
                 "#0e63a8",
                 LanguageEnum.EN,
+                registry.get("croatia-yachting").ai,
             )
         registry.byId.values.map { it.recipientAddress }.distinct() shouldBe listOf("info@boat4you.com") // leads keep landing in info@
     }

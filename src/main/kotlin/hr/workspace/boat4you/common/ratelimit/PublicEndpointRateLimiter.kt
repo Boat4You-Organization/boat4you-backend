@@ -11,6 +11,7 @@ import org.springframework.core.annotation.Order
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
+import org.springframework.web.util.UriUtils
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -234,15 +235,19 @@ class PublicEndpointRateLimiter(
         filterChain.doFilter(request, response)
     }
 
-    private fun matchingRule(request: HttpServletRequest): Rule? =
-        rules.firstOrNull {
+    private fun matchingRule(request: HttpServletRequest): Rule? {
+        // The path as the container routes it: /public/cc/v1/%76isit is /public/cc/v1/visit. Tomcat refuses a malformed escape with 400
+        // before any filter; another container might not, so a path that does not decode is matched as sent.
+        val uri = runCatching { UriUtils.decode(request.requestURI, Charsets.UTF_8) }.getOrDefault(request.requestURI)
+        return rules.firstOrNull {
             it.method == request.method &&
                 when {
-                    it.pattern != null -> it.pattern.matches(request.requestURI)
-                    it.prefix -> request.requestURI.startsWith(it.path)
-                    else -> it.path == request.requestURI
+                    it.pattern != null -> it.pattern.matches(uri)
+                    it.prefix -> uri.startsWith(it.path)
+                    else -> it.path == uri
                 }
         }
+    }
 
     private fun acquire(rule: Rule, ip: String): Boolean {
         val key = "${rule.label}:$ip"

@@ -112,6 +112,27 @@ class LiveVisitorRegistryTest {
     }
 
     @Test
+    fun `an entry silent for more than 60 s is not the latest of its visitor, though it is not swept yet`() {
+        val e = liveEntry(lastBeatAt = clock.now).also { reg.register(it) }
+        clock.advance(Duration.ofSeconds(60))
+        reg.latestForVisitor(e.visitorKey) shouldBe e // exactly 60 s is still live, as in liveSnapshot
+        clock.advance(Duration.ofSeconds(1))
+        reg.latestForVisitor(e.visitorKey) shouldBe null // no message is queued for it (NOT_LIVE) ...
+        reg.get(e.visitKey) shouldBe e // ... although evictExpired (every 10 s) has not dropped it yet
+    }
+
+    @Test
+    fun `a re-registered visit keeps a new staff flag, which no later call clears`() {
+        val e = liveEntry(lastBeatAt = clock.now).also { reg.register(it) }
+        reg.liveSnapshot().map { it.visitKey } shouldBe listOf(e.visitKey)
+        reg.register(liveEntry(visitKey = e.visitKey, staff = true, lastBeatAt = clock.now)) shouldBe true // the staff cookie arrived mid-visit
+        e.staff shouldBe true
+        reg.liveSnapshot() shouldBe emptyList()
+        reg.register(liveEntry(visitKey = e.visitKey, staff = false, lastBeatAt = clock.now)) shouldBe true
+        e.staff shouldBe true
+    }
+
+    @Test
     fun `no bot count is lost while it is drained`() {
         val total = AtomicInteger()
         val drainedSum = AtomicInteger()

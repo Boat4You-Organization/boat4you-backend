@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatMessage
 import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.service.AiChatService
 import hr.workspace.boat4you.domains.chat.service.ChatSecurityGuard
+import hr.workspace.boat4you.domains.contactcenter.service.ChatSiteResolver
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -37,6 +38,8 @@ class PublicAiChatController(
         val page: String? = null,
         val referrer: String? = null,
         val name: String? = null,
+        /** For a server-to-server call without an `Origin` only; a browser's `Origin` header always decides the site. */
+        val siteId: String? = null,
     )
 
     data class MessageRequest(
@@ -47,7 +50,15 @@ class PublicAiChatController(
     )
     data class PresenceRequest(val page: String? = null)
     data class MessageDto(val id: Long, val role: String, val content: String, val payload: String?)
-    data class SessionStateDto(val token: String, val status: String, val messages: List<MessageDto>, val visitorName: String? = null)
+
+    /** [aiPaused]: the AI circuit breaker is open for this site; status codes stay as they were (BACKEND-7). */
+    data class SessionStateDto(
+        val token: String,
+        val status: String,
+        val messages: List<MessageDto>,
+        val visitorName: String? = null,
+        val aiPaused: Boolean = false,
+    )
 
     @PostMapping("/sessions")
     @ResponseBody
@@ -60,12 +71,17 @@ class PublicAiChatController(
         val clientIp = httpRequest.getHeader("X-Real-IP")?.takeIf { it.isNotBlank() } ?: httpRequest.remoteAddr
         val session =
             try {
-                chat.createSession(request?.locale, request?.name, clientIp)
+                chat.createSession(
+                    request?.locale,
+                    request?.name,
+                    clientIp,
+                    ChatSiteResolver.resolve(httpRequest.getHeader("Origin"), request?.siteId),
+                )
             } catch (e: AiChatService.InvalidNameException) {
                 return invalidName()
             }
         chat.updatePresence(session, request?.page, request?.referrer)
-        return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList(), session.visitorName))
+        return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList(), session.visitorName, chat.isAiPaused(session)))
     }
 
     data class NameRequest(val name: String? = null)
@@ -125,7 +141,7 @@ class PublicAiChatController(
     ): ResponseEntity<Any> =
         when (outcome) {
             is AiChatService.MessageOutcome.Replied ->
-                ResponseEntity.ok(SessionStateDto(token, session.status, outcome.messages.map(::dto), session.visitorName))
+                ResponseEntity.ok(SessionStateDto(token, session.status, outcome.messages.map(::dto), session.visitorName, outcome.aiPaused))
             is AiChatService.MessageOutcome.Locked -> locked(outcome.handoffText)
             AiChatService.MessageOutcome.Busy -> ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "busy"))
         }
@@ -137,7 +153,7 @@ class PublicAiChatController(
         if (!chat.isEnabled()) return disabled()
         val session = chat.getSession(token) ?: return notFound()
         val list = chat.messagesAfter(session.id!!, afterId)
-        return ResponseEntity.ok(SessionStateDto(token, session.status, list.map(::dto), session.visitorName))
+        return ResponseEntity.ok(SessionStateDto(token, session.status, list.map(::dto), session.visitorName, chat.isAiPaused(session)))
     }
 
     private fun dto(m: AiChatMessage) = MessageDto(m.id!!, m.role!!, m.content!!, m.payload)
