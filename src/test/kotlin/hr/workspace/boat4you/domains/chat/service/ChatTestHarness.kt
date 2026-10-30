@@ -61,6 +61,9 @@ open class ChatTestHarness(
     val sessionSavedInTx = mutableListOf<Int>()
     val firstResponseStamps = mutableListOf<List<Any?>>()
 
+    /** Names of the broker-reply UPDATEs adminReply ran, in order (P2). */
+    val humanReplyUpdates = mutableListOf<String>()
+
     /** Every `cc_search` row the recorder saves, with the number of the transaction it was saved in. */
     val recorded = mutableListOf<Pair<Int, CcSearch>>()
 
@@ -104,6 +107,25 @@ open class ChatTestHarness(
                     } else {
                         0
                     }
+                }
+                // P2: take over, the broker reply's own UPDATE and its response stamps, same WHERE and SET as the queries.
+                "takeOver" -> {
+                    val s = sessionStore[inv.arguments[0] as Long]
+                    if (s != null && s.status in TAKE_OVER_FROM && s.deletedAt == null) {
+                        s.status = AiChatSession.STATUS_HUMAN
+                        if (s.takenOverAt == null) s.takenOverAt = inv.arguments[1] as Instant
+                        1
+                    } else {
+                        0
+                    }
+                }
+                "markHumanReply" -> {
+                    humanReplyUpdates += inv.method.name
+                    1
+                }
+                "stampHumanReply" -> {
+                    humanReplyUpdates += inv.method.name
+                    1
                 }
                 "stampFirstResponse" -> {
                     firstResponseStamps += inv.arguments.toList()
@@ -304,3 +326,6 @@ open class ChatTestHarness(
         fleet?.stop(0)
     }
 }
+
+/** Statuses [AiChatSessionRepository.takeOver] takes a conversation from. */
+private val TAKE_OVER_FROM = setOf("AI", "HUMAN_REQUESTED", "HUMAN", "CLOSED")

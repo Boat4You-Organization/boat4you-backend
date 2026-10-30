@@ -96,13 +96,15 @@ open class AiChatSession {
     @Column(name = "site_id", length = 40, nullable = false)
     open var siteId: String = SiteIds.BOAT4YOU
 
-    @Column(name = "visitor_id")
+    // The three Contact Center links are written only by JDBC (VisitService, ContactLinker, ContactService). Read-only
+    // here, so a whole-row save of a session loaded earlier can never write back a stale or deleted link (P2 review I-2).
+    @Column(name = "visitor_id", insertable = false, updatable = false)
     open var visitorId: Long? = null
 
-    @Column(name = "visit_id")
+    @Column(name = "visit_id", insertable = false, updatable = false)
     open var visitId: Long? = null
 
-    @Column(name = "contact_id")
+    @Column(name = "contact_id", insertable = false, updatable = false)
     open var contactId: Long? = null
 
     @Column(name = "phone", length = 40)
