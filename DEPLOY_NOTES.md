@@ -1,5 +1,69 @@
 # Backend deploy notes
 
+## 2026-10-30 — 🤖 Contact Center P1c: AI po sajtu i sigurnost — ⏸ NIJE DEPLOYANO (čeka Marijev go; grana feat/contact-center-p1c)
+
+Treći korak contact centera (dizajn `infra/docs/contact-center-dizajn-2026-10-25.md` §2.2, §2.6, §6.6–6.7; plan `infra/docs/superpowers/plans/2026-10-26-p1c-ai-per-site-safety.md`). Grana iz `main` `b903099` (P1a + P1b), 21 commit (`7a66e8a` … ovaj); ništa nije mergeano ni deployano. Zadaci 1–10 28.10. (s pregledom po zadatku), 11–18 30.10. (bez agenata, Marijevo pravilo o tokenima od 29.10.). **Prije mergea: jedan završni pregled cijele grane uz Marijev „da“.**
+
+**1. Migracije V9_107, V9_108** (P1c drži V9_107–V9_110)
+- V9_107: `cc_security_event` (`type` LOCK / BREAKER_OPEN / BREAKER_CLOSE / SURGE_DROPPED / BOT_BURST, `site_id` NULL = globalno, `detail`, `created_at`); nijedan job je ne briše (dokaz).
+- V9_108: `ai_chat_session.handoff_holding_at`, `ai_chat_session.ai_returned_at` (oba nullable).
+- Stari jar radi na migriranoj shemi: nova tablica i nullable stupci, `ddl-auto: validate` gleda samo mapirane stupce, novije verzije stari jar preskače (`*:future`).
+
+**2. Ključevi `cc.*`** (tablica `settings`; nijedan redak nije potreban; nema retka ili vrijednost izvan raspona = zadano; mijenjaju se kroz `PUT /admin/cc/ai/settings` s provjerom raspona)
+- `cc.handoff.minutes` 5 (1–120, iz P1a): koliko čeka zahtjev za osobu prije holding poruke.
+- `cc.takeover.return.minutes` prazno (1–1440): prazno = današnje pravilo, nakon Marijevog preuzimanja AI se nikad sam ne vraća.
+- `cc.breaker.global.messages.per.min` 50, `cc.breaker.global.sessions.per.min` 20, `cc.breaker.global.locks.per.min` 5 (1–10000).
+- `cc.breaker.site.messages.per.min` 30, `cc.breaker.site.sessions.per.min` 10, `cc.breaker.site.locks.per.min` 3 (1–10000).
+- `cc.breaker.cooldown.minutes` 5 (1–60).
+- Spring svojstvo `cc.ai.watchdog-ms` 15000 (okolina).
+
+**3. Što se mijenja u radu IRIS-a**
+- Prompt po sajtu: statički dio po sajtu (s `cache_control`) + kratki rep (datum, ime, stranica). boat4you prompt je bajt-identičan današnjem osim **dvije namjerne promjene (zadatak 10), za Marija prije go-a**:
+  - „Your name is IRIS and you are an AI, not a person: in your first greeting introduce yourself as IRIS, the AI assistant of boat4you, in the visitor's language (in Croatian: "Iris, AI asistentica"). Never claim that a person or "our team" is writing.“
+  - handoff: „call request_human_agent — a person from the team replies here as soon as they can or contacts the visitor by email or phone. Ask for their email or phone number (save_contact) if you do not have it yet.“ i „When the visitor shares their name, email or phone number at any point, call save_contact.“
+- Flota po sajtu na serveru (`search_yachts` samo države i tipovi sajta), linkovi sestrinskog sajta na njegove stranice brodova, „rezerviraj odmah“ vodi na boat4you s `cc_src`.
+- Sesija zna svoj sajt iz `Origin` (poziv bez `Origin` može poslati `siteId`); stari ChatWidget je nepromijenjen i sve sesije s boat4you.com ostaju `boat4you`.
+- Isprika, holding poruka i „AI pauziran“ u 9 jezika; telefon u `save_contact`; broker mail imenuje sajt razgovora.
+- Marijeve poruke model sada vidi kao asistentske redove `[Team reply] …` (review B3); posjetitelj tu oznaku ne može krivotvoriti, a „[boat4you agent wrote]:“ i dalje zaključava (R2).
+- **Nikad ne šuti:** zahtjev za osobu koji čeka `cc.handoff.minutes` dobije jednu holding poruku (traži email ili telefon ako ga nema), a AI nakon toga nastavlja odgovarati na jednostavna pitanja; broker i dalje dobije jedan mail po naletu poruka. Flagirana sesija nikad ne dobije AI natrag (ADMIN-9).
+- **AI prekidač (dizajn 2.6):** globalno i po sajtu, pragovi iz točke 2. Dok je otvoren: poruka se sprema, Mario je vidi nepročitanu (bez maila), posjetitelj jednom dobije „AI pauziran“, model se ne zove; guard i dalje radi prvi. Automatsko otvaranje šalje mail (najviše 5 na sat) i zatvara se nakon `cc.breaker.cooldown.minutes` kad navala prođe; ručno otvaranje traje do ručnog zatvaranja i preživi restart.
+- Svako zaključavanje upisuje `LOCK` (sajt, sesija, razlog) u `cc_security_event` i broji se u prekidač; pitanje izvan teme („2+2“) nije događaj (BACKEND-2).
+- Oporavak nakon restarta: AI sesije čija je zadnja poruka neodgovorena poruka posjetitelja iz zadnjih 5 min dobiju odgovor (single-flight, guard, prekidač).
+- `/public/chat` odgovori dobivaju aditivno polje `aiPaused`; statusni kodovi isti (BACKEND-7).
+
+**4. Admin API** `/admin/cc/ai` (samo SYSTEM_ADMIN, BACKEND-27; bez UI-ja, P2 gradi ekrane na njemu)
+- `GET /breaker` stanje opsega; `POST /breaker/open` i `/breaker/close` s `{"siteId": …}` (bez sajta = globalno; nepoznat sajt → 400); `GET`/`PUT /settings` (`{"key","value"}`, odbijena vrijednost → 400); `GET /security-events?limit=` (1–500, najnoviji prvi).
+
+**5. Predaje iz P1b, popravljene (zadatak 17; nijedan budžet ni pravilo se ne mijenja, putanja bez `%` radi kao prije)**
+- App limiter uspoređuje dekodiranu putanju: `/public/cc/v1/%76isit` troši budžet `/visit` (F1-022 zatvoren).
+- Tracker odbacuje stranice s tokenom i u percent-kodiranom obliku (`/hr/%72eview/<token>`, `/review%2F…`, `?to%6Ben=`, `?%74oken=`), u `clean()` i u `referrer()` (WEB-18); spremljena putanja ostaje sirova. Izuzeće po route grupi ostaje za P2.
+- `TrackerSurgeGuard`: minuta se čita unutar `compute`, pa zakašnjela nit ne može vratiti stari prozor (jedan dodatni budžet po utrci).
+- `LiveVisitorRegistry`: proaktivna poruka ide samo posjetu koji se javio u zadnjih 60 s (tišina → `NOT_LIVE`); oznaka osoblja postavljena usred posjeta vrijedi od sljedećeg poziva tog posjeta.
+- Novi testovi: 503 za grešku baze, ključ po socket adresi bez `X-Real-IP` (krivotvoreni XFF ne pomaže), memorijski test provjerava stvarne kapacitete (`CC_MEMORY` 23 MB, `CC_MEMORY_WIDE` 43 MB, granica 48).
+
+**6. Ostalo**
+- `IrisCriteriaEstimator` više ne čita zadnje znamenke („150 people“ → 50, „112 cabins“ → 12; P1a carry-forward). `cc.backfill.enabled` ostaje `false` dok ovaj jar nije live; ako je Mario već pustio backfill na P1a jaru, nakon ovog deploya pusti ga još jednom: `UPDATE settings SET value = 'true', modified = now() WHERE name = 'cc.backfill.enabled'` (svaki run briše i iznova piše samo `estimated` retke).
+- `websiteUrl` za catamaran-croatia, catamaran-greece, catamaran-caribbean i europe-yachts sada je kanonski `https://www.…` (URL-ovi koje tracker sprema i linkovi u mailovima upita; apex već preusmjerava na www).
+- `CcAiWatchdog` (holding poruke, povratak AI-ja, oporavak, provjera prekidača svakih 15 s) radi samo bez `data-sync`, dakle na cusma2.
+- Od V9_107 P1b-ov WARN „cc security log: … row not written“ prestaje; `SELECT type, count(*) FROM cc_security_event GROUP BY type` pokazuje P1b-ove `SURGE_DROPPED` / `BOT_BURST` uz `LOCK` / `BREAKER_*` (P1b točka 7).
+
+**7. Čvorovi i rollback**
+- cusma2 prvi (Flyway primjenjuje V9_107/V9_108 na startu), cusma3 kroz gate tek kad su obje u bazi (`AiChatSession` mapira `handoff_holding_at` i `ai_returned_at`). Na cusma3 `CcAiWatchdog` ne postoji; `AiCircuitBreaker` postoji, ali ne broji ništa jer sav chat promet ide na cusma2.
+- Rollback = `webservice.jar.prev` (P1b jar) na migriranoj shemi, bez SQL-a. Stari jar nema prekidač ni watchdog, pa ručna pauza AI-ja nakon rollbacka ne vrijedi. `cc.*` redci ne ruše `GET /admin/settings` (oba jara čitaju `findAllByNameIn`).
+- Stanje prekidača je u memoriji cusma2: restart vraća samo ručno otvaranje (najnoviji `BREAKER_OPEN` po opsegu s detaljem „manual …“); automatsko se zaboravi i ponovno otvori ako navala traje.
+
+**8. Provjere uz deploy**
+- [ ] Poslije cusma2: journal ima „CC_AI recovery answered N sessions“.
+- [ ] Prompt caching: `AnthropicClient` logger na DEBUG jednu minutu; ista poruka na www.boat4you.com dvaput unutar 5 min → druga linija „Anthropic usage“ ima `cache_read_input_tokens > 0` (prva `cache_creation_input_tokens > 0` ili već read). Ponoviti na sestrinskom sajtu (sesija sa `siteId` `catamaran-greece`, bez `Origin`). Veličine upisati ovdje. Ako su oba brojača 0 bez greške: provjeriti `CHAT_ASSISTANT_MODEL=claude-sonnet-5` u `/home/cusma2/boat4you/boat4you_vars.env` (minimum 1024 tokena; fallback model traži 4096) i pročitati `input_tokens`. Caching je samo ušteda, ništa ne puca bez njega.
+- [ ] `GET /admin/settings` i dalje odgovara; `GET /admin/cc/ai/breaker` sve zatvoreno.
+- [ ] Probe iz `ChatSecurityGuardTest.prodAttacks` i dalje vraćaju 423.
+- [ ] Šest brzih `POST /public/chat/sessions` s jednog IP-a s različitim `X-Forwarded-For` → 429 na šestom (pet testnih sesija soft-deletati u adminu).
+- [ ] `SELECT type, count(*) FROM cc_security_event GROUP BY type` radi.
+
+**9. Testovi** (puni run `./gradlew test`, 30.10.2026): 1504 testova, **31 pad — isti 31 kao na `main`** (`ReservationPaymentPhasesServiceTest` ×26, `ReservationOptionsCombinationProviderTests` ×2, `NauSysDateTimeWrapperTests`, `MatchersTests`, `Boat4youWsApplicationTests` bez baze), 3 preskočena (`LayoutDetectorCalibrationTest` kao na mainu, `PartnerTextSanitizerTest` zbog putanje worktreeja, `TrackerLoadRssTest` bez `CC_LOAD=1`), 0 novih padova (main `b903099`: 1423). Tijela 19 testova `AiChatServiceSecurityTest` i 24 `AiChatContactCenterTest` usporedena s `main`: točno jedan namjerno promijenjen redak (`broker lines and invalid names never reach the model`, zadatak 11), ostalo identično. ktlint: 0 nalaza u novim datotekama i na dodanim redcima zadataka 11–17. Testovi s bazom traže upaljen Docker (Testcontainers).
+
+**Nije u P1c (namjerno):** push obavijesti i tihi sati (P4); gumb „Vrati AI-ju“, ekrani postavki i „Sigurnost“ (P2, na API-ju iz točke 4); ručno otključavanje flagirane sesije (P2, Marijeva odluka); obrazac „ostavi email“ na `aiPaused`, ponovni pokušaj na 409 i `cc_src` atribucija (P3); dnevni brojač troška AI-ja (nema vlasnika u roadmapu, odluka za Marija); isprika se i dalje broji kao prvi odgovor i P1a-ini spremanja cijelog retka sesije (P2).
+
 ## 2026-10-27 — 🔕 Dnevni digest „Provjere kod partnera“ ugašen prekidačem REVERIFY_DIGEST (Mario: „ajde ugasi da mi ne dolaze vise ovi emailovi“) — ✅ LIVE OBA ČVORA 27.10. 19:52 UTC (jar 7ad61b0 = main 218a086 + prekidač, md5 6dc6608353fb6a6d67103f1746746987; cusma2 19:52:29, cusma3 19:52:54, gate čist); tag live/2026-10-27-digest-off
 
 - Novi prekidač `REVERIFY_DIGEST` (SettingsKeyEnum, RealPriceSwitches.reverifyDigest, OnOff; zadano ON = današnje ponašanje). `ReverifyDigestJob.sendDigest`: uz okidač i ON → mail svim SYSTEM_ADMIN adresama kao dosad; uz OFF → cijeli digest samo u logu cusma3 (INFO, „REVERIFY_DIGEST is OFF … mail skipped“). AdminSettingsService validira kao ostale prekidače (ON/OFF). Bez migracije: red `settings` (id 14) `REVERIFY_DIGEST=OFF` upisan ručno na cusma4 27.10. 19:53 UTC (kao i ostali prekidači 14.10.). Testovi: RealPriceSwitchesTest 17/17 (13 prekidača), ReverifyDigestTriggersTest 15/15.
@@ -43,7 +107,7 @@ Drugi korak contact centera (dizajn `infra/docs/contact-center-dizajn-2026-10-25
 - nginx: **samo pregledani snippet, nije primijenjen** — `infra/docs/nginx/cc-tracker-2026-10-26.conf` (infra repo, grana `feat/contact-center-p1b`, `4504945`): vlastita zona `cc_tracker_zone` samo za POST, `90r/m burst=30 nodelay`, `limit_req_status 429`, `deny 31.22.91.227`, `client_max_body_size 32k`, vlastiti `location /public/cc/` s `X-Real-IP $remote_addr`. Primjena: kopija ŽIVE datoteke prvo (13.10. `deny` postoji samo na poslužitelju), dio A uz `chat_msg_zone`, dio B u `server` bloku api.boat4you.com prije `location / {`, `nginx -t`, reload.
 - **Odstupanje od dizajna, odluka Marija.** Tracker budžeti (aplikacija 60/600/10 po 600 s, nginx 90r/m burst 30) namjerno NISU „donja granica“ iz dizajna §5 l. 625 i FACTS-9 (novi endpointi barem jednako strogi kao chat, 10 POST/min): beat od 15 s po tabu ne stane u 10 POST/min već s 3 taba, a dizajn §2.2/§2.3 traži beat od 10–15 s. Brojke su prijedlog buildera, ne vrijednost iz dizajna (dizajn l. 499 prepušta builderu samo pragove AI breakera). **Mario odlučuje prije nego se nginx snippet primijeni i prije nego P3 ode live.** Ako odbije, mijenjaju se tri `@Value` zadane vrijednosti i jedan redak snippeta u jednom commitu, bez učinka na podatke. Chat budžeti se ne diraju.
 - Prije primjene snippeta, za Marija: `grep -n 'X-Real-IP' /etc/nginx/conf.d/boat4you.conf` na cusma2 mora pokazati `$remote_addr` u `location /public/chat/` i u novom `location /public/cc/`. Backup od 10.10. ima redak u sva četiri proxy locationa, ali je živa datoteka od tada mijenjana; kad bi chat location ostao bez retka, `chat-session` bi odmah postao 5 po 10 min za cijeli sajt (pouka 20.7.2026).
-- Poznati F1-022 rod: app limiter uspoređuje sirovi (nekodirani) URI, pa `%76isit` zaobilazi aplikacijska pravila; nginx zone i per-site budžet i dalje vrijede; popravak (2 retka) čeka Marija ili sljedeći plan. Što točno: u `PublicEndpointRateLimiter.matchingRule` `val uri = UriUtils.decode(request.requestURI, StandardCharsets.UTF_8)` (uvoz `org.springframework.web.util.UriUtils`; Tomcat vraća 400 na neispravan %-niz prije filtra) i tri čitanja `request.requestURI` postaju `uri`, plus redak u testu `tracker budgets per IP`: `hit("/public/cc/v1/%76isit").status shouldBe 429`. Pravilo je na `main` od prvih pravila limitera (19.4.2026), P1b ga ne mijenja.
+- ✅ Popravljeno u P1c (zadatak 17): ~~Poznati F1-022 rod: app limiter uspoređuje sirovi (nekodirani) URI, pa `%76isit` zaobilazi aplikacijska pravila; nginx zone i per-site budžet i dalje vrijede; popravak (2 retka) čeka Marija ili sljedeći plan. Što točno: u `PublicEndpointRateLimiter.matchingRule` `val uri = UriUtils.decode(request.requestURI, StandardCharsets.UTF_8)` (uvoz `org.springframework.web.util.UriUtils`; Tomcat vraća 400 na neispravan %-niz prije filtra) i tri čitanja `request.requestURI` postaju `uri`, plus redak u testu `tracker budgets per IP`: `hit("/public/cc/v1/%76isit").status shouldBe 429`. Pravilo je na `main` od prvih pravila limitera (19.4.2026), P1b ga ne mijenja.~~
 
 **4. Prekidač `cc.tracker.enabled`** (u `settings`, čita se najviše svakih 10 s; nema retka ili neispravna vrijednost = uključeno; samo `false` isključuje). `settings.name` je unique, pa: `INSERT INTO settings (name, value, created, entity_status) VALUES ('cc.tracker.enabled', 'false', now(), 'ACTIVE') ON CONFLICT (name) DO UPDATE SET value = EXCLUDED.value, modified = now()` gasi prijem unutar 10 s (sva tri endpointa vraćaju 204 bez čitanja tijela), a isti upit s `'true'` ga pali. Ostatak sajta i bookinga se time ne dira.
 
@@ -82,10 +146,10 @@ Drugi korak contact centera (dizajn `infra/docs/contact-center-dizajn-2026-10-25
 **Opterećenje (`CC_LOAD=1 ./gradlew test --tests '*TrackerLoadRssTest'`, 3 runa, macOS/ms-21.0.10, Testcontainers PG 18, pool 8, `max_heap_mb=512`):** `CC_LOAD rss_before_kb=268656–284816 rss_peak_kb=288192–302992` (delta 12–19 MB, granica 200 MB) `heap_after_gc_mb=36–37 beat_p95_ms=0.0185–0.0203` (granica 5 ms) `dropped=135800–137000 failed=0`; `CC_LOAD_CONTEXT written=18200–19400 queued=4800`. 2000 posjetitelja × (1 `startOrResume` + 10 beatova × (3 pregleda + 5 klikova)) = 160 000 redaka u jednom naletu na 16 niti bez pauze od 15 s među beatovima; red od 5000 se puni brže nego što ga pisač prazni u batchevima od 200, pa se ~85 % redaka odbacuje po dizajnu (zahtjev nikad ne blokira; plan tvrdi samo `failed == 0`), a `stop()` ispiše jedan batch i ostavi 4800 u redu (točka 1). Pri stvarnom beatu od 15 s po tabu isti broj posjetitelja daje ~0,5 % tog toka. Brojke su s razvojnog Maca, ne s cusma2: mjerenje RSS-a na poslužitelju je P3 gate prije faze 3 (dizajn §4); limiter po sajtu i bulkhead nisu u mjerenju (servisi se zovu izravno).
 
 **12. Poznata ograničenja** (svjesno ostavljeno; ništa nije sigurnosni ili podatkovni rizik za druge posjetitelje)
-- Token u percent-kodiranoj putanji (`/hr/%72eview/<token>`): `TrackerUrlPolicy` provjerava `SECRET_PATH` na sirovoj putanji, pa takav URL prolazi kao stranica; jednako je jak kao WEB-18 stražar na webu (isti doslovni regex nad `usePathname()`), a token može upisati samo njegov vlasnik. Popravak za onoga tko sljedeći dira `TrackerUrlPolicy.kt`: provjeriti `SECRET_PATH` i nad dekodiranom putanjom, `SECRET_PARAMS` nad dekodiranim imenom, plus testni redak `/hr/%72eview/abc` → Secret. P2 neka tracker izuzme po (jednostavnoj) route grupi i trip root layoutu, ne po regexu nad putanjom.
+- ✅ Popravljeno u P1c (zadatak 17; izuzeće po route grupi ostaje za P2): ~~Token u percent-kodiranoj putanji (`/hr/%72eview/<token>`): `TrackerUrlPolicy` provjerava `SECRET_PATH` na sirovoj putanji, pa takav URL prolazi kao stranica; jednako je jak kao WEB-18 stražar na webu (isti doslovni regex nad `usePathname()`), a token može upisati samo njegov vlasnik. Popravak za onoga tko sljedeći dira `TrackerUrlPolicy.kt`: provjeriti `SECRET_PATH` i nad dekodiranom putanjom, `SECRET_PARAMS` nad dekodiranim imenom, plus testni redak `/hr/%72eview/abc` → Secret. P2 neka tracker izuzme po (jednostavnoj) route grupi i trip root layoutu, ne po regexu nad putanjom.~~
 - Neuspjeli batch pisača gubi i svoje čekajuće `last_seen_at`/bot oznake (nema ponovnog pokušaja; gubitak beacona je prihvaćen). Dovoljan je jedan odbijeni redak da posjeti iz tog prozora ostanu bez `last_seen_at` do sljedećeg beata.
-- `LiveEntry.staff` je konstanta posjeta: kad `cc_visitor.is_staff` postane true usred posjeta, taj posjet ostaje u živoj listi do prve pauze od 60 s (jednom po pregledniku); baza i statistika su ispravni od prvog označenog poziva.
-- `latestForVisitor` nema ograničenje od 60 s, pa se u prozoru do 10 s nakon što posjetitelj ispadne iz žive liste poruka još prihvati kao QUEUED i odbaci s unosom.
+- ✅ Popravljeno u P1c (zadatak 17): ~~`LiveEntry.staff` je konstanta posjeta: kad `cc_visitor.is_staff` postane true usred posjeta, taj posjet ostaje u živoj listi do prve pauze od 60 s (jednom po pregledniku); baza i statistika su ispravni od prvog označenog poziva.~~
+- ✅ Popravljeno u P1c (zadatak 17): ~~`latestForVisitor` nema ograničenje od 60 s, pa se u prozoru do 10 s nakon što posjetitelj ispadne iz žive liste poruka još prihvati kao QUEUED i odbaci s unosom.~~
 - Memorija i brojke: vidi točku 11 (najgori slučaj s punim redom SEARCH događaja izvan Latin-1 mjeren je iznad 48 MB).
 
 **Napomene**
