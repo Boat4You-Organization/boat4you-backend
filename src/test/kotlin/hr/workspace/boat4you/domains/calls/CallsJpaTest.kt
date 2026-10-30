@@ -85,6 +85,10 @@ abstract class CallsJpaTest {
         // The test dialect makes the Hibernate-built inquiry.yacht_id a NOT NULL serial; in prod (V1_03) it is a nullable FK.
         jdbc.execute("ALTER TABLE inquiry ALTER COLUMN yacht_id DROP NOT NULL, ALTER COLUMN yacht_id DROP DEFAULT")
         INQUIRY_COLUMNS.forEach { jdbc.execute("ALTER TABLE inquiry DROP COLUMN IF EXISTS $it") }
+        // Prod shape of settings (V1_17): one row per name, which CallsSettings.write upserts on.
+        jdbc.execute("CREATE UNIQUE INDEX IF NOT EXISTS uidx_settings_name ON settings (name)")
+        // Hibernate adds a CHECK of the SettingsKeyEnum names; prod has none (cc.* and calls.* rows live there).
+        jdbc.execute("ALTER TABLE settings DROP CONSTRAINT IF EXISTS settings_name_check")
         jdbc.execute("BEGIN; ${migration("V9_112__calls_inquiry_columns.sql")}; COMMIT;")
         jdbc.execute("BEGIN; ${migration("V9_113__calls_tables.sql")}; COMMIT;")
     }
