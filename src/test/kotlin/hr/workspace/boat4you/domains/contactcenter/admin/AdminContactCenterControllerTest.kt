@@ -114,9 +114,9 @@ class AdminContactCenterControllerTest {
         MockMvcBuilders
             .standaloneSetup(c)
             .build()
-            .post("/admin/cc/live/k/message") {
+            .post("/admin/cc/live/message") {
                 contentType = MediaType.APPLICATION_JSON
-                content = """{"text":"   "}"""
+                content = """{"visitorKey":"k","text":"   "}"""
             }.andExpect {
                 status { isBadRequest() }
                 jsonPath("$.result") { value("INVALID_TEXT") }

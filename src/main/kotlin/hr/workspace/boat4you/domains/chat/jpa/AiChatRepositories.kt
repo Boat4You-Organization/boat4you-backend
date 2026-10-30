@@ -101,6 +101,24 @@ interface AiChatSessionRepository : JpaRepository<AiChatSession, Long> {
         @Param("at") at: Instant,
     ): Int
 
+    /**
+     * The widget heartbeat writes only its own columns. A whole-row save of the session loaded at the start of the request
+     * could undo a takeover, a reply, a lock or a flag written in the meantime (P2 review I-2).
+     */
+    @Transactional
+    @Modifying
+    @Query(
+        "UPDATE AiChatSession s SET s.lastSeenAt = :lastSeenAt, s.currentPage = :currentPage, s.pageTrail = :pageTrail, " +
+            "s.referrer = :referrer WHERE s.id = :id",
+    )
+    fun updatePresence(
+        @Param("id") id: Long,
+        @Param("lastSeenAt") lastSeenAt: Instant,
+        @Param("currentPage") currentPage: String?,
+        @Param("pageTrail") pageTrail: String?,
+        @Param("referrer") referrer: String?,
+    )
+
     /** CcAiWatchdog restart recovery: recent conversations of one status; flagged and deleted ones are never touched. */
     fun findAllByStatusAndFlaggedFalseAndDeletedAtIsNullAndLastActivityAtAfter(
         status: String,

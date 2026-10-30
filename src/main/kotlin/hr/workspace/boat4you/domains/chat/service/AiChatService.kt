@@ -826,7 +826,7 @@ class AiChatService(
             if (trail.lastOrNull() != cleanPage) trail.add(cleanPage)
             session.pageTrail = objectMapper.writeValueAsString(trail.takeLast(PAGE_TRAIL_CAP))
         }
-        sessions.save(session)
+        sessions.updatePresence(session.id!!, session.lastSeenAt!!, session.currentPage, session.pageTrail, session.referrer)
     }
 
     /**

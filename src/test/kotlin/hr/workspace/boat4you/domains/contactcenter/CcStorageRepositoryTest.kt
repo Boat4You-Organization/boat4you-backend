@@ -150,6 +150,26 @@ class CcStorageRepositoryTest {
     }
 
     @Test
+    fun `a stale whole-row save keeps the JDBC links and the heartbeat writes only its own columns`() {
+        val s = sessions.save(AiChatSession().apply { token = "t-stale" })
+        val id = s.id!!
+        val stale = sessions.findById(id).get()
+        val contact = jdbc.queryForObject("INSERT INTO cc_contact (name) VALUES ('Ana') RETURNING id", Long::class.java)!!
+        jdbc.update("UPDATE ai_chat_session SET contact_id = ?, status = 'HUMAN', flagged = TRUE WHERE id = ?", contact, id)
+        val at = Instant.parse("2027-01-01T10:00:00Z")
+        sessions.updatePresence(id, at, "/en/yachts", """["/en/yachts"]""", "https://www.google.com/")
+        jdbc.queryForMap("SELECT contact_id, status, flagged, current_page, last_seen_at FROM ai_chat_session WHERE id = ?", id).let {
+            it["contact_id"] shouldBe contact
+            it["status"] shouldBe "HUMAN"
+            it["flagged"] shouldBe true
+            it["current_page"] shouldBe "/en/yachts"
+        }
+        stale.visitorName = "Ana"
+        sessions.save(stale)
+        jdbc.queryForObject("SELECT contact_id FROM ai_chat_session WHERE id = ?", Long::class.java, id) shouldBe contact
+    }
+
+    @Test
     fun `JdbcCcAiSettings writes a row and reads it back at once, through P1a's CcSettings`() {
         val cc = CcSettings(jdbc, Duration.ofSeconds(10))
         val s = JdbcCcAiSettings(cc, jdbc)

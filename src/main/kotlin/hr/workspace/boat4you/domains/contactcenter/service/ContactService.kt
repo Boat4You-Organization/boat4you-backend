@@ -109,6 +109,13 @@ class ContactService(
                 targetId,
                 sourceId,
             )
+            // A `spam` tag that came with the source marks the target SPAM, as setTags does (P2 review M-8).
+            jdbc.update(
+                "UPDATE cc_contact SET status = 'SPAM' WHERE id = ? AND EXISTS (SELECT 1 FROM cc_contact_tag WHERE contact_id = ? AND tag = ?)",
+                targetId,
+                targetId,
+                SPAM_TAG,
+            )
             jdbc.update("DELETE FROM cc_contact WHERE id = ?", sourceId)
             true
         }!!

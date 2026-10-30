@@ -113,6 +113,15 @@ class ContactServiceDbTest {
     }
 
     @Test
+    fun `a spam tag that comes with the source marks the target SPAM`() {
+        val target = contact(name = "Ana", status = "REPLIED")
+        val source = contact(name = "Bot")
+        service.setTags(source, listOf("spam"))
+        service.merge(target, source) shouldBe true
+        row(target)["status"] shouldBe "SPAM"
+    }
+
+    @Test
     fun `merging a contact into itself or a missing one is refused`() {
         val id = contact(name = "Ana")
         service.merge(id, id) shouldBe false

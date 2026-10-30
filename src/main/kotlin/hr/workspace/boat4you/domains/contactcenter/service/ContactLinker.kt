@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.contactcenter.service
 
 import hr.workspace.boat4you.domains.chat.service.NameValidator
+import org.slf4j.LoggerFactory
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
@@ -18,6 +19,7 @@ class ContactLinker(
     transactionManager: PlatformTransactionManager,
 ) {
     private val tx = TransactionTemplate(transactionManager)
+    private val log = LoggerFactory.getLogger(javaClass)
 
     /** One pass of [linkPending]: sessions looked at, contacts given, and the last session id for the next pass. */
     data class LinkBatch(
@@ -39,7 +41,21 @@ class ContactLinker(
      * Contact of this conversation: the existing one, the one of its visitor, or a new one from the session's name, email
      * and phone; null when the session has none of the three, is deleted, or does not exist.
      */
-    fun ensureForSession(sessionId: Long): Long? = tx.execute { link(sessionId) }
+    fun ensureForSession(sessionId: Long): Long? {
+        // The common case (the admin polls an open conversation every 4 s): already linked, read without a lock.
+        val linked =
+            jdbc
+                .query(
+                    "SELECT contact_id, visitor_id FROM ai_chat_session WHERE id = ? AND deleted_at IS NULL AND contact_id IS NOT NULL",
+                    { rs, _ -> rs.getLong("contact_id") to rs.getLong("visitor_id").takeUnless { rs.wasNull() } },
+                    sessionId,
+                ).firstOrNull()
+        if (linked != null) {
+            linked.second?.let { claimVisitor(it, linked.first) }
+            return linked.first
+        }
+        return tx.execute { link(sessionId) }
+    }
 
     /** Links the next [batch] sessions after [afterId] that have a name, email or phone but no contact; keyset by id. */
     fun linkPending(
@@ -54,7 +70,13 @@ class ContactLinker(
                 afterId,
                 batch,
             )
-        val linked = ids.count { ensureForSession(it) != null }
+        // One session that fails (a deadlock with a merge, a lost connection) is logged and skipped, never the whole run.
+        val linked =
+            ids.count { id ->
+                runCatching { ensureForSession(id) }
+                    .onFailure { log.warn("CC contacts: session {} not linked: {}", id, it.toString()) }
+                    .getOrNull() != null
+            }
         return LinkBatch(ids.size, linked, ids.lastOrNull() ?: afterId)
     }
 

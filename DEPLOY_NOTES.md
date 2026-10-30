@@ -7,13 +7,16 @@
 **1. Novi API** `/admin/cc` (samo SYSTEM_ADMIN, BACKEND-27; postojeći `/admin/chat/**` i `/admin/cc/ai/**` nepromijenjeni)
 - `GET /conversations` (filteri `siteId`, `status`, `needsHuman`, `flaggedOnly`, `contactStatus`, `tag`, `from`, `to`, `q`, `includeSpam`, keyset `before` + `beforeId`, `size` 1–200); `GET /conversations/unread-count`.
 - `GET /conversations/{id}` (prije čitanja poveže kontakt), `POST /{id}/read`, `POST /{id}/take-over` (409 za LOCKED), `POST /{id}/return-to-ai` (409 za flagged, LOCKED, ne-HUMAN).
-- `GET /live`, `POST /live/{visitorKey}/message` `{"text"}`.
+- `GET /live`, `POST /live/message` `{"visitorKey","text"}` (ključ posjetitelja u tijelu, ne u URL-u ni u nginx logu).
 - `GET /contacts`, `GET /contacts/{id}`, `PATCH /contacts/{id}` (null = bez promjene, prazno = briše), `PUT /contacts/{id}/tags` (`spam` = status SPAM), `POST /contacts/{id}/merge` `{"sourceId"}` (samo ručno).
 - `GET /stats?from&to&siteId` (zadano zadnjih 30 dana, najviše 400 dana).
 
 **2. Promjene ponašanja postojećeg koda**
 - `adminReply` više ne sprema cijeli red sesije: dva uvjetna UPDATE-a (status, nepročitano, aktivnost, preuzimanje; pečati odgovora samo kad je posjetitelj pisao). AI pečat ili zastavica upisani u međuvremenu ostaju.
 - Proaktivna poruka gubi kontrolne znakove (NUL bi rušio svaku dostavu); novi red ostaje.
+- Heartbeat widgeta (`/public/chat/sessions/{token}/presence`) više ne sprema cijeli red sesije: piše samo `last_seen_at`, `current_page`, `page_trail`, `referrer`. Do sada je u prozoru od par ms mogao poništiti preuzimanje, odgovor ili zaključavanje (završni pregled P2, I-2).
+- `visitor_id`, `visit_id`, `contact_id` na `AiChatSession` su za JPA samo za čitanje (pišu ih samo JDBC servisi), pa nijedno spremanje starije kopije sesije ne vraća stari ili obrisani kontakt.
+- Poznato ograničenje: spajanje kontakata u istom trenutku kad job na cusma3 povezuje razgovor istog posjetitelja može završiti PostgreSQL deadlockom; jedna strana dobije grešku (spajanje → poruka u adminu, ponoviti; job preskoči tu sesiju i uzme je sljedeći put).
 
 **3. Novi job na cusma3:** `ContactLinkJob` (`ccContactLink`, svakih 5 min, `cc.contacts.link-ms`). Prvi run poveže sve stare IRIS razgovore s imenom, emailom ili telefonom s kontaktom (isti posjetitelj = isti kontakt; isti email drugog posjetitelja se NE spaja). Na cusma2 se kontakt stvara kad Mario otvori razgovor.
 

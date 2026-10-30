@@ -45,7 +45,9 @@ class AdminContactCenterController(
     private val contacts: ContactService,
     private val stats: StatsQuery,
 ) {
-    data class TextRequest(
+    /** The visitor's tracker key travels in the body, never in the URL (it would land in the nginx access log). */
+    data class MessageRequest(
+        val visitorKey: String? = null,
         val text: String? = null,
     )
 
@@ -148,12 +150,12 @@ class AdminContactCenterController(
     @ResponseBody
     fun live(): List<LiveRow> = live.rows()
 
-    @PostMapping("/live/{visitorKey}/message")
+    @PostMapping("/live/message")
     @ResponseBody
     fun message(
-        @PathVariable visitorKey: String,
-        @RequestBody req: TextRequest,
+        @RequestBody req: MessageRequest,
     ): ResponseEntity<Any> {
+        val visitorKey = req.visitorKey?.trim()?.takeIf { it.isNotEmpty() } ?: return bad("visitorKey missing")
         val result = proactive.enqueueProactive(visitorKey, req.text.orEmpty(), getAuthenticatedUserId())
         val body = mapOf("result" to result.name)
         return if (result == ProactiveResult.INVALID_TEXT) ResponseEntity.badRequest().body(body) else ResponseEntity.ok(body)

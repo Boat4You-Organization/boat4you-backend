@@ -126,7 +126,7 @@ class AdminContactCenterControllerSecurityTests {
             mvc.post("/admin/cc/conversations/1/take-over"),
             mvc.post("/admin/cc/conversations/1/return-to-ai"),
             mvc.get("/admin/cc/live"),
-            mvc.post("/admin/cc/live/a0000000-0000-4000-8000-00000000000a/message", dsl = json("""{"text":"Bok"}""")),
+            mvc.post("/admin/cc/live/message", dsl = json("""{"visitorKey":"a0000000-0000-4000-8000-00000000000a","text":"Bok"}""")),
             mvc.get("/admin/cc/contacts"),
             mvc.get("/admin/cc/contacts/1"),
             mvc.patch("/admin/cc/contacts/1", dsl = json("""{"name":"Ana"}""")),
