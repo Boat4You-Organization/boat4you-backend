@@ -1,5 +1,15 @@
 # Backend deploy notes
 
+## 2026-10-30 — 🧾 Admin Invoices: kartice godina (`GET /admin/invoices/years`) — ⏳ čeka Mariov „da“ za cusma2
+
+Grana `fix/invoice-years` iz `main` `367c367`. Nema migracije. Nađeno usput u logu cusma2 (30.10. 14:43 UTC): `ERROR: function pg_catalog.extract(unknown, character varying) does not exist`, admin stranica Invoices ne dobiva kartice godina od uvođenja upita (`0e48cb1`, 26.8.).
+
+- Uzrok: `invoice.invoice_date` je `VARCHAR(255)` (V1_27), a Hibernate u njega sprema `LocalDate` kao tekst s pomakom JVM zone. Prod 30.10. (read-only upit na cusma4): svih 110 redova oblika `2026-04-04 +00`, sve 2026. `EXTRACT(YEAR FROM varchar)` u Postgresu ne postoji.
+- Popravak: `InvoiceRepository.findDistinctYears` čita godinu iz prve četiri znamenke (`left(invoice_date, 4)`), redove koji ne počinju s `YYYY-` preskače.
+- Filtar po godini u popisu (`yearCriteria`, `between` nad tekstom) radio je i prije: parametri se vežu u istom tekstualnom obliku, a ISO poredak je isti kao abecedni. Nije mijenjan.
+- Test `InvoiceRepositoryYearsTest` (Testcontainers PG18, shema iz entiteta s prod tipom stupca): prije popravka sva 3 testa padaju s istom greškom kao na produkciji, nakon popravka prolaze.
+- Rollback: `webservice.jar.prev` bez SQL-a. cusma3 ne treba (endpoint služi samo cusma2), dobiva ga s idućim jarom kroz gate.
+
 ## 2026-10-30 — 🧩 Contact Center P3 (backend dio): chat sesija zajedničkog widgeta povezuje se s posjetom — ✅ cusma2 LIVE 30.10. 13:43:09 UTC (jar main 9b37774, md5 c89a37033a9adb4a0220ab6b1a7de9bb; tag `live/2026-10-30-contact-center-p3`); cusma3 ga ne treba (P3 nema jobova), dobiva ga s idućim jarom kroz gate
 
 Plan `infra/docs/superpowers/plans/2026-10-30-p3-shared-widget.md`, zadatak 9. Grana `feat/contact-center-p3` iz `main` `f67d1ad`. Nema migracije.
