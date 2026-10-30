@@ -19,7 +19,7 @@ Mario 30.10.: „kreni radi call agenta“ (dizajn `infra/docs/ai-call-center-di
 - **Rollback:** `calls.enabled=false`; jar natrag ne traži nikakvu migraciju (stupci/tablice ostaju neiskorištene).
 - Testovi: 150 testova u `hr.workspace.boat4you.domains.calls.*` + `InquiryConsentTest` (Testcontainers PG18, prave migracije, `validateMappedObjects`, istovremeni događaji s pravim zaključavanjem redova, put upita kroz prave Spring transakcije). Završni neovisni pregled 30.10.: 3 kritična i 6 važnih nalaza popravljeno, svaki s testom koji je prvo pao.
 
-## 2026-10-30 — 🗂️ Contact Center P2: admin API (razgovori, live, kontakti, statistika) — ✅ cusma2 LIVE 30.10. 11:07 UTC (jar main 666c6b3, md5 b849d56b3c29e22f8ee351672b4291be, start 12,9 s; u istom startu primijenjena V9_111 iz druge sesije); cusma3 kroz gate 13:00 UTC (isti jar nosi i P1c)
+## 2026-10-30 — 🗂️ Contact Center P2: admin API (razgovori, live, kontakti, statistika) — ✅ LIVE OBA ČVORA (cusma2 30.10. 11:07 UTC, cusma3 30.10. 13:00 UTC kroz gate; jar main 666c6b3, md5 b849d56b3c29e22f8ee351672b4291be; od 11:55 UTC cusma2 drži 2c10840 iz sesije call centra, koji sadrži P2)
 
 Četvrti korak contact centera (plan `infra/docs/superpowers/plans/2026-10-30-p2-contact-center-admin.md`). Grana `feat/contact-center-p2` iz `main` `a0bc04e`. **Nema migracije**, P2 ne mijenja ni jedan stupac.
 
@@ -45,7 +45,7 @@ Mario 30.10.: „kreni radi call agenta“ (dizajn `infra/docs/ai-call-center-di
 - cusma2: `GET /admin/cc/conversations` i `/admin/cc/conversations/unread-count` iz admina (200), `GET /admin/cc/stats` (200, nule za posjetitelje prije P3).
 - cusma3: nakon ~5 min `SELECT name, lock_until FROM shedlock WHERE name = 'ccContactLink'` ima red; `SELECT count(*) FROM cc_contact` raste jednom pa stoji; journal `CC contacts: N conversations linked`.
 
-## 2026-10-30 — 🤖 Contact Center P1c: AI po sajtu i sigurnost — ✅ cusma2 LIVE 30.10. 08:46 UTC (jar main 9cf7ce5, md5 e9bd2a921a5b4453f3d84160368d8acf, V9_107 + V9_108 primijenjene 08:45:55 u 18 ms, start 13,3 s, lokalni health 200 nakon ~16 s, javni 200); ⏳ cusma3 čeka gate prozor 13:00–14:10 UTC (rezerva 15:10–16:15). Mario 30.10.: „Da, pregled“ = završni pregled, merge, push i deploy.
+## 2026-10-30 — 🤖 Contact Center P1c: AI po sajtu i sigurnost — ✅ LIVE OBA ČVORA (cusma2 30.10. 08:46 UTC, jar 9cf7ce5; cusma3 30.10. 13:00 UTC kroz gate, jar 666c6b3 koji nosi P1c i P2)
 
 Treći korak contact centera (dizajn `infra/docs/contact-center-dizajn-2026-10-25.md` §2.2, §2.6, §6.6–6.7; plan `infra/docs/superpowers/plans/2026-10-26-p1c-ai-per-site-safety.md`). Grana iz `main` `b903099` (P1a + P1b), 21 commit (`7a66e8a` … ovaj); ništa nije mergeano ni deployano. Zadaci 1–10 28.10. (s pregledom po zadatku), 11–18 30.10. (bez agenata, Marijevo pravilo o tokenima od 29.10.). **Završni pregled cijele grane (30.10., jedan Opus agent):** jedan važan nalaz (jedna IP adresa mogla je zaključavanjima otvoriti prekidač za sve posjetitelje) i šest manjih; važan i četiri manja popravljena u ovom commitu, dva manja zapisana kao poznata ograničenja (dno unosa).
 
