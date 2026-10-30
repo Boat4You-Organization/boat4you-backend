@@ -59,6 +59,13 @@ class ProactiveMessageServiceDbTest {
     }
 
     @Test
+    fun `control characters are stripped from a proactive message, line breaks stay`() {
+        service.enqueueProactive(key, "\u0000\u0007 ", 7) shouldBe ProactiveResult.INVALID_TEXT
+        service.enqueueProactive(key, "Bok\u0000\u2028!\nKako mogu pomoći?", 7) shouldBe ProactiveResult.QUEUED
+        service.deliver(entry)!!.messages.single().text shouldBe "Bok!\nKako mogu pomoći?"
+    }
+
+    @Test
     fun `no session yet - a HUMAN session is created and the token returned`() {
         service.enqueueProactive(key, "  Bok! " + "x".repeat(1500), 7)
         val d = service.deliver(entry)!!
