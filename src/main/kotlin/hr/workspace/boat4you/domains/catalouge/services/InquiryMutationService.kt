@@ -1,7 +1,12 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.branding.Brand
 import hr.workspace.boat4you.domains.branding.BrandResolver
+import hr.workspace.boat4you.domains.calls.CallSite
+import hr.workspace.boat4you.domains.calls.service.CallPlanner
+import hr.workspace.boat4you.domains.calls.service.PhoneNormalizer
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryDto
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryUpdateDto
 import hr.workspace.boat4you.domains.catalouge.enums.InquiryStatus
@@ -13,7 +18,10 @@ import jakarta.servlet.http.HttpServletRequest
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -23,10 +31,15 @@ class InquiryMutationService(
     private val yachtRepository: YachtRepository,
     private val inquiryEmailService: InquiryEmailService,
     private val brandResolver: BrandResolver,
+    private val callPlanner: CallPlanner,
 ) {
     private val log = LoggerFactory.getLogger(InquiryMutationService::class.java)
 
     companion object {
+        /** The AI call center's `details` (public form, read into Nika's context) are refused above this many JSON characters. */
+        const val DETAILS_MAX = 4000
+        private val DETAILS_JSON = jacksonObjectMapper()
+
         /** A second identical submit inside this window is the same inquiry (double tap, retry, back button). */
         val DUPLICATE_WINDOW: Duration = Duration.ofMinutes(10)
 
@@ -62,6 +75,11 @@ class InquiryMutationService(
         inquiryDto: InquiryDto,
         request: HttpServletRequest? = null,
     ) {
+        inquiryDto.details?.let {
+            if (DETAILS_JSON.writeValueAsString(it).length > DETAILS_MAX) {
+                throw ParameterValidationException(mapOf("details" to "at most $DETAILS_MAX characters"))
+            }
+        }
         val key =
             submitKey(
                 inquiryDto.email, inquiryDto.yachtId, inquiryDto.dateFrom, inquiryDto.dateTo,
@@ -95,15 +113,59 @@ class InquiryMutationService(
         inquiry.phone = inquiryDto.phone
         inquiry.message = inquiryDto.message
         inquiry.status = InquiryStatus.NEW
+        applyCallFields(inquiry, inquiryDto)
 
         inquiryRepository.saveAndFlush(inquiry)
+        planCallAfterCommit(inquiry)
 
         // Sent inline, as before: EmailService.sendEmail already defers the SMTP submit to this transaction's
         // afterCommit, so a rolled-back save notifies nobody. Do NOT wrap this in an afterCommit of our own —
         // EmailService would then register its deferral inside afterCommit, which Spring never runs, and no
         // inquiry e-mail would go out (review 29.9.2026). The advisory lock is released at commit, after this row
         // is written, so a concurrent duplicate finds it.
-        sendInquiryEmails(inquiry, request?.let(brandResolver::resolve))
+        // A sister site sends its own inquiry e-mails (nodemailer) and posts here only so the call center has the row.
+        if (inquiryDto.emailAlreadySent != true) {
+            sendInquiryEmails(inquiry, request?.let(brandResolver::resolve))
+        }
+    }
+
+    /**
+     * Hands the inquiry to the AI call center once it is committed, in the planner's own transaction (the planner's FK needs
+     * the committed row). A planner failure is logged and never touches the inquiry or its e-mails. Outside a transaction
+     * (unit tests) it runs at once.
+     */
+    private fun planCallAfterCommit(inquiry: Inquiry) {
+        val plan = {
+            runCatching { callPlanner.onInquiryCreated(inquiry) }
+                .onFailure { log.error("AI call planning failed for inquiry id=${inquiry.id}", it) }
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() {
+                        plan()
+                    }
+                },
+            )
+        } else {
+            plan()
+        }
+    }
+
+    /** The AI call center fields (design §2.6): site, language, consent with its text version and time, E.164 phone, details. */
+    private fun applyCallFields(
+        inquiry: Inquiry,
+        dto: InquiryDto,
+    ) {
+        inquiry.site = CallSite.fromKey(dto.site)?.key
+        inquiry.locale = dto.locale?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        if (dto.contactConsent == true) {
+            inquiry.contactConsent = true
+            inquiry.consentTextVersion = dto.consentTextVersion?.trim()?.takeIf { it.isNotEmpty() }
+            inquiry.consentAt = Instant.now()
+        }
+        inquiry.phoneE164 = PhoneNormalizer.toE164(dto.phone)
+        inquiry.details = dto.details?.takeIf { it.isNotEmpty() }
     }
 
     private fun sendInquiryEmails(

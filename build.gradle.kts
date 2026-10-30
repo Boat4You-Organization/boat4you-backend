@@ -72,6 +72,8 @@ dependencies {
         exclude("commons-digester", "commons-digester")
     }
     implementation("com.googlecode.libphonenumber:libphonenumber:$libPhoneNumberVersion")
+    // AI call center: client time zone from the E.164 number (PhoneNumberToTimeZonesMapper); 3.23 pairs with 9.0.23.
+    implementation("com.googlecode.libphonenumber:geocoder:3.23")
     implementation("com.stripe:stripe-java:$stripeSdkVersion")
     // Web-push (VAPID) for Boat4You Trip hub reminders. Exclude its bundled
     // bcprov-jdk15on — we already ship bcprov-jdk18on and two BC providers on

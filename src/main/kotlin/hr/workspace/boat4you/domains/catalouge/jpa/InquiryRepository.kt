@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
+import java.time.LocalDateTime
 
 interface InquiryRepository : JpaRepository<Inquiry, Long> {
     // `CAST(:search AS string)` is REQUIRED, not cosmetic. When :search is
@@ -99,5 +100,16 @@ interface InquiryRepository : JpaRepository<Inquiry, Long> {
     fun findRecentByEmail(
         @Param("email") email: String,
         @Param("since") since: java.time.LocalDateTime,
+    ): List<Inquiry>
+
+    /** The person's other inquiries (same E.164 phone) since [since], not archived, oldest first: Nika mentions them (call center §2.2). */
+    @Query(
+        "SELECT i FROM Inquiry i WHERE i.phoneE164 = :phone AND i.id <> :id AND i.createdAt >= :since " +
+            "AND i.status <> hr.workspace.boat4you.domains.catalouge.enums.InquiryStatus.ARCHIVED ORDER BY i.createdAt",
+    )
+    fun findOtherRecentByPhone(
+        @Param("phone") phoneE164: String,
+        @Param("id") id: Long,
+        @Param("since") since: LocalDateTime,
     ): List<Inquiry>
 }

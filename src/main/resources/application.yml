@@ -301,3 +301,13 @@ chat:
   anthropic-base-url: ${ANTHROPIC_BASE_URL:https://api.anthropic.com}
   model: ${CHAT_ASSISTANT_MODEL:claude-haiku-4-5-20251001}
   self-base-url: ${CHAT_SELF_BASE_URL:http://127.0.0.1:8080}
+
+# AI call center "Nika zove" (design infra/docs/ai-call-center-dizajn-2026-10-27.md). Keys live in the env files on
+# cusma2/cusma3 (read at JVM start); blank = not configured, nothing is called. Switches are calls.* rows in `settings`.
+calls:
+  elevenlabs:
+    base-url: ${ELEVENLABS_BASE_URL:https://api.elevenlabs.io}
+    api-key: ${ELEVENLABS_API_KEY:}
+    agent-id: ${ELEVENLABS_AGENT_ID:}
+    phone-number-id: ${ELEVENLABS_PHONE_NUMBER_ID:}
+    webhook-secret: ${ELEVENLABS_WEBHOOK_SECRET:}
