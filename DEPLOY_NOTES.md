@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-30 — 🧩 Contact Center P3 (backend dio): chat sesija zajedničkog widgeta povezuje se s posjetom — ⏳ NIJE DEPLOYANO
+## 2026-10-30 — 🧩 Contact Center P3 (backend dio): chat sesija zajedničkog widgeta povezuje se s posjetom — ✅ cusma2 LIVE 30.10. 13:43:09 UTC (jar main 9b37774, md5 c89a37033a9adb4a0220ab6b1a7de9bb; tag `live/2026-10-30-contact-center-p3`); cusma3 ga ne treba (P3 nema jobova), dobiva ga s idućim jarom kroz gate
 
 Plan `infra/docs/superpowers/plans/2026-10-30-p3-shared-widget.md`, zadatak 9. Grana `feat/contact-center-p3` iz `main` `f67d1ad`. Nema migracije.
 
@@ -9,6 +9,8 @@ Plan `infra/docs/superpowers/plans/2026-10-30-p3-shared-widget.md`, zadatak 9. G
 - CORS preflight se u pregledniku sada pamti sat vremena (`maxAge` 3600 za sve putanje): widget sa sestrinskih sajtova inače bi uz svaki beat i poruku slao i OPTIONS (završni pregled P3, M8).
 - Uz deploy provjeriti `APPLICATION_CORS_ALLOWED_ORIGINS` na cusma2: svih 7 www i apex hostova (widget na sestrinskim sajtovima zove `/public/chat` i `/public/cc/v1` s njihovog `Origin`).
 - Rollback: `webservice.jar.prev` bez SQL-a.
+- **Provjereno 30.10.:** health 200; preflight s Greece origina (www i apex) 200 s `access-control-max-age: 3600`, strani origin 403.
+- **nginx na cusma2 (30.10. 13:53 UTC):** primijenjen pregledani P1b snippet `infra/docs/nginx/cc-tracker-2026-10-26.conf` (vlastita zona `cc_tracker_zone` 90 r/min po IP-u za POST, `location /public/cc/` s istim `deny` kao chat, 32 KB tijelo, `X-Real-IP`). Polazište je bila ŽIVA datoteka, backup `/etc/nginx/conf.d/boat4you.conf.bak-20261030-cctracker`; `nginx -t` prošao, reload. Izvana: `OPTIONS /public/cc/v1/visit` i `/beat` 200, `POST /public/cc/v1/visit` s praznim tijelom 400 (aplikacija), chat preflight 200.
 
 ## 2026-10-30 — 📞 AI call centar „Nika zove“, faza 1: backend jezgra (V9_112, V9_113) — ✅ cusma2 LIVE 30.10. 11:55 UTC (jar main 2c10840, md5 0a53556a341fb04bc608a8fc6883e57d, V9_112 + V9_113 primijenjene 11:55:01 u 36 ms, start 13,6 s, javni health 200 nakon ~3 s; izvana: `POST /webhooks/elevenlabs` bez potpisa 401, `/admin/calls/settings` bez prijave 403; tag `live/2026-10-30-ai-call-center-p1`); ⏳ cusma3 (dispatch/reconcile jobovi, pozivi ionako isključeni) kroz gate, dogovor s Contact Center sesijom (njen cusma3 deploy 13:00 UTC)
 
