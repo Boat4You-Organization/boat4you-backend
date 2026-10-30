@@ -6,7 +6,7 @@ Mario 30.10.: „kreni radi call agenta“ (dizajn `infra/docs/ai-call-center-di
 
 - **V9_112** (samo dodani stupci s defaultom na `inquiry`: `site`, `locale`, `contact_consent`, `consent_text_version`, `consent_at`, `phone_e164`, `details` JSONB, `do_not_call`, `offer_sent_at`, `offer_note`, `human_takeover_at`; `SET lock_timeout = '5s'`) i **V9_113** (nove tablice `inquiry_call`, `call_webhook_event`, GRANT za boat4you_app). Stari jar radi nad novom shemom → cusma2 smije prije cusma3. Brojevi iza V9_111; **V9_109/V9_110 (rezervirani za Contact Center P1c) više se ne smiju koristiti nakon što V9_112 ode live** (prod Flyway bez out-of-order) — P1c tada uzima V9_114+.
 - **Upit:** `POST /public/inquiries` prima opcionalno `site` (7 ključeva: boat4you, cc, greece, italy, caribbean, cy, ey), `locale`, `contactConsent`, `consentTextVersion`, `emailAlreadySent`, `details` (JSON najviše 4000 znakova, inače 400); telefon se normalizira u E.164 (samo s „+“, inače NULL = nikad se ne zove). `emailAlreadySent=true` preskače backend e-mailove (sestre šalju svoje). Današnje forme ne šalju ništa od toga → ponašanje nepromijenjeno. Prvi poziv se planira **nakon commita upita** u vlastitoj transakciji; greška planiranja se logira i nikad ne dira upit ni e-mail.
-- **Ovaj jar nosi i V9_111** (fotke marina, batch 2; ručno primijenjena na cusma4 28.10. 09:30 UTC, vidi njezin unos): preflight je pokazao 9.111, 9.112, 9.113 kao neprimijenjene. Prije deploya ponovno provjeriti `flyway_schema_history` (od 30.10. na prodi su i 9.107 i 9.108 iz Contact Center P1c).
+- **Flyway na prodi:** 9.107, 9.108 (P1c) i 9.111 (marina, primijenjena 30.10. 11:07 UTC s P2 jarom) već su tu; ovaj jar dodaje samo **9.112 i 9.113**. Isti jar nosi i P1c + P2 (main) — cusma3 ga smije dobiti tek nakon što Contact Center sesija završi svoj cusma3 deploy kroz gate.
 - **cusma3 (`data-sync`):** `CallDispatchJob` svake minute (ShedLock `callDispatch`, najviše 5 poziva po minuti, svaki red u svojoj transakciji pa jedan pokvaren red ne zaustavlja ostale), `CallReconcileJob` svakih 10 min (`callReconcile`: izgubljeni webhookovi do 2 dana i pozivi > 30 min) i 03:45 UTC (`callRetention`: audio 30 dana, događaji 90 dana; snimka se iz događaja briše odmah nakon obrade, iz neobrađenog nakon 2 dana).
 - **Dvostruko biranje:** red DIALING se commita prije poziva ElevenLabsa, pa pad procesa nikad ne bira dvaput. Kad ElevenLabs **sigurno** nije pokrenuo poziv (4xx, `success:false`, nedostupan) → FAILED i jedan ponovni pokušaj za 15 min. Kad je **nejasno** (timeout, 5xx) → red ostaje DIALING i **nikad se automatski ne bira ponovno**: webhook ga nađe preko `call_id` (dinamička varijabla koju ElevenLabs vraća), inače nakon 2 h postaje FAILED „lost“ i Mario dobije e-mail (bez ponovnog poziva, jer je klijent možda već zvonio).
 - **Pravila po osobi (isti E.164 broj):** „Ne zvati“ na bilo kojem upitu vrijedi za svaki novi upit te osobe; samo jedan otvoreni potvrdni poziv po osobi (drugi upit = SKIPPED `SAME_PERSON` ili `RECENT_CONFIRMATION`, a Nika ga spominje kroz varijablu `other_inquiries`); nikad dva poziva istoj osobi istovremeno (drugi čeka 30 min). Broj s više mogućih zona mora biti u prozoru u svakoj (španjolski mobitel i Kanari, Australija i Božićni otok); ruski mobitel (11 zona) se nikad ne zove automatski (`TIMEZONE_UNCLEAR`). Besplatni i premium brojevi nikad nisu pozivljivi. Poziv koji je čekao > 24 h (bio isključen sustav) ne zvoni, ni Marijev ručni.
@@ -18,6 +18,32 @@ Mario 30.10.: „kreni radi call agenta“ (dizajn `infra/docs/ai-call-center-di
 - **Uključivanje (Mario):** prvo `calls.test.numbers` = Marijev broj, zatim `calls.enabled=true` (admin Postavke ili `PUT /admin/calls/settings`). Gašenje = `calls.enabled=false` (bez restarta, ≤ 10 s).
 - **Rollback:** `calls.enabled=false`; jar natrag ne traži nikakvu migraciju (stupci/tablice ostaju neiskorištene).
 - Testovi: 150 testova u `hr.workspace.boat4you.domains.calls.*` + `InquiryConsentTest` (Testcontainers PG18, prave migracije, `validateMappedObjects`, istovremeni događaji s pravim zaključavanjem redova, put upita kroz prave Spring transakcije). Završni neovisni pregled 30.10.: 3 kritična i 6 važnih nalaza popravljeno, svaki s testom koji je prvo pao.
+
+## 2026-10-30 — 🗂️ Contact Center P2: admin API (razgovori, live, kontakti, statistika) — ✅ cusma2 LIVE 30.10. 11:07 UTC (jar main 666c6b3, md5 b849d56b3c29e22f8ee351672b4291be, start 12,9 s; u istom startu primijenjena V9_111 iz druge sesije); cusma3 kroz gate 13:00 UTC (isti jar nosi i P1c)
+
+Četvrti korak contact centera (plan `infra/docs/superpowers/plans/2026-10-30-p2-contact-center-admin.md`). Grana `feat/contact-center-p2` iz `main` `a0bc04e`. **Nema migracije**, P2 ne mijenja ni jedan stupac.
+
+**1. Novi API** `/admin/cc` (samo SYSTEM_ADMIN, BACKEND-27; postojeći `/admin/chat/**` i `/admin/cc/ai/**` nepromijenjeni)
+- `GET /conversations` (filteri `siteId`, `status`, `needsHuman`, `flaggedOnly`, `contactStatus`, `tag`, `from`, `to`, `q`, `includeSpam`, keyset `before` + `beforeId`, `size` 1–200); `GET /conversations/unread-count`.
+- `GET /conversations/{id}` (prije čitanja poveže kontakt), `POST /{id}/read`, `POST /{id}/take-over` (409 za LOCKED), `POST /{id}/return-to-ai` (409 za flagged, LOCKED, ne-HUMAN).
+- `GET /live`, `POST /live/message` `{"visitorKey","text"}` (ključ posjetitelja u tijelu, ne u URL-u ni u nginx logu).
+- `GET /contacts`, `GET /contacts/{id}`, `PATCH /contacts/{id}` (null = bez promjene, prazno = briše), `PUT /contacts/{id}/tags` (`spam` = status SPAM), `POST /contacts/{id}/merge` `{"sourceId"}` (samo ručno).
+- `GET /stats?from&to&siteId` (zadano zadnjih 30 dana, najviše 400 dana).
+
+**2. Promjene ponašanja postojećeg koda**
+- `adminReply` više ne sprema cijeli red sesije: dva uvjetna UPDATE-a (status, nepročitano, aktivnost, preuzimanje; pečati odgovora samo kad je posjetitelj pisao). AI pečat ili zastavica upisani u međuvremenu ostaju.
+- Proaktivna poruka gubi kontrolne znakove (NUL bi rušio svaku dostavu); novi red ostaje.
+- Heartbeat widgeta (`/public/chat/sessions/{token}/presence`) više ne sprema cijeli red sesije: piše samo `last_seen_at`, `current_page`, `page_trail`, `referrer`. Do sada je u prozoru od par ms mogao poništiti preuzimanje, odgovor ili zaključavanje (završni pregled P2, I-2).
+- `visitor_id`, `visit_id`, `contact_id` na `AiChatSession` su za JPA samo za čitanje (pišu ih samo JDBC servisi), pa nijedno spremanje starije kopije sesije ne vraća stari ili obrisani kontakt.
+- Poznato ograničenje: spajanje kontakata u istom trenutku kad job na cusma3 povezuje razgovor istog posjetitelja može završiti PostgreSQL deadlockom; jedna strana dobije grešku (spajanje → poruka u adminu, ponoviti; job preskoči tu sesiju i uzme je sljedeći put).
+
+**3. Novi job na cusma3:** `ContactLinkJob` (`ccContactLink`, svakih 5 min, `cc.contacts.link-ms`). Prvi run poveže sve stare IRIS razgovore s imenom, emailom ili telefonom s kontaktom (isti posjetitelj = isti kontakt; isti email drugog posjetitelja se NE spaja). Na cusma2 se kontakt stvara kad Mario otvori razgovor.
+
+**4. Rollback:** `webservice.jar.prev` bez SQL-a. Kontakti koje je job napravio ostaju i bezopasni su (stari jar ih ne čita osim kroz `contact_id`).
+
+**5. Provjere uz deploy**
+- cusma2: `GET /admin/cc/conversations` i `/admin/cc/conversations/unread-count` iz admina (200), `GET /admin/cc/stats` (200, nule za posjetitelje prije P3).
+- cusma3: nakon ~5 min `SELECT name, lock_until FROM shedlock WHERE name = 'ccContactLink'` ima red; `SELECT count(*) FROM cc_contact` raste jednom pa stoji; journal `CC contacts: N conversations linked`.
 
 ## 2026-10-30 — 🤖 Contact Center P1c: AI po sajtu i sigurnost — ✅ cusma2 LIVE 30.10. 08:46 UTC (jar main 9cf7ce5, md5 e9bd2a921a5b4453f3d84160368d8acf, V9_107 + V9_108 primijenjene 08:45:55 u 18 ms, start 13,3 s, lokalni health 200 nakon ~16 s, javni 200); ⏳ cusma3 čeka gate prozor 13:00–14:10 UTC (rezerva 15:10–16:15). Mario 30.10.: „Da, pregled“ = završni pregled, merge, push i deploy.
 

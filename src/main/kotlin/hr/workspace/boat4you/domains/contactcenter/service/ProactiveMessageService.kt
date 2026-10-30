@@ -61,7 +61,8 @@ class ProactiveMessageService(
         text: String,
         adminUserId: Long,
     ): ProactiveResult {
-        val t = text.trim().take(AiChatService.MAX_MESSAGE_CHARS)
+        // No control characters (a NUL would fail every delivery and loop back into the queue); line breaks stay, as in a reply.
+        val t = text.replace(UNSAFE_TEXT, "").trim().take(AiChatService.MAX_MESSAGE_CHARS)
         if (t.isBlank()) return ProactiveResult.INVALID_TEXT
         val entry = registry.latestForVisitor(visitorKey)
         return if (entry == null) ProactiveResult.NOT_LIVE else registry.offerPending(entry, PendingProactive(t, adminUserId, clock.instant()))
@@ -144,6 +145,9 @@ class ProactiveMessageService(
     }
 
     private companion object {
+        /** Control, line-separator and paragraph-separator characters except the line feed. */
+        val UNSAFE_TEXT = Regex("[\\p{Cc}\\p{Zl}\\p{Zp}&&[^\\n]]")
+
         val SESSION_MAPPER = RowMapper { rs, _ -> ChatSession(rs.getLong("id"), rs.getString("token")) }
 
         const val DEFAULT_LOCALE = "en"
