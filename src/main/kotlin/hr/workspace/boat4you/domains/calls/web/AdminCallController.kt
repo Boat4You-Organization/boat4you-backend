@@ -3,7 +3,6 @@ package hr.workspace.boat4you.domains.calls.web
 import hr.workspace.boat4you.domains.calls.dto.CallDetailDto
 import hr.workspace.boat4you.domains.calls.dto.CallInquiryListItemDto
 import hr.workspace.boat4you.domains.calls.dto.CallListItemDto
-import hr.workspace.boat4you.domains.calls.dto.CallNowRequest
 import hr.workspace.boat4you.domains.calls.dto.OfferSentRequest
 import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.enums.CallOutcome
@@ -77,10 +76,9 @@ class AdminCallController(
     @PostMapping("/inquiries/{inquiryId}/call-now")
     fun callNow(
         @PathVariable inquiryId: Long,
-        @RequestBody(required = false) body: CallNowRequest?,
     ): ResponseEntity<Any> =
         try {
-            ResponseEntity.ok(service.callNow(inquiryId, body?.confirmOutsideWindow ?: false))
+            ResponseEntity.ok(service.callNow(inquiryId))
         } catch (e: NoSuchElementException) {
             ResponseEntity.notFound().build()
         } catch (e: CallRefusedException) {

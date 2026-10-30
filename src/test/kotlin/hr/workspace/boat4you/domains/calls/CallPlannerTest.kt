@@ -2,14 +2,19 @@ package hr.workspace.boat4you.domains.calls
 
 import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
+import hr.workspace.boat4you.domains.calls.enums.SkipReason
 import hr.workspace.boat4you.domains.calls.service.CallPlanner
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 
 /** Planning from inquiries and Mario's admin actions (design §2.2, §2.3, §2.5). 3.11.2026 13:00 UTC = Tuesday 14:00 Zagreb. */
 class CallPlannerTest : CallsJpaTest() {
@@ -61,7 +66,8 @@ class CallPlannerTest : CallsJpaTest() {
         val a = inquiry()
         val b = inquiry()
         val other = inquiry(phone = "+385981111111")
-        listOf(a, b, other).forEach { planner.onInquiryCreated(it) }
+        listOf(a, other).forEach { planner.onInquiryCreated(it) }
+        call(b, kind = CallKind.FOLLOW_UP) // b's own confirmation would be SKIPPED as SAME_PERSON; its follow-up is scheduled
         planner.markDoNotCall("+385912345678")
         (callsOf(a.id!!) + callsOf(b.id!!)).map { it.status }.toSet() shouldBe setOf(CallStatus.CANCELLED)
         callsOf(other.id!!).single().status shouldBe CallStatus.SCHEDULED
@@ -82,12 +88,11 @@ class CallPlannerTest : CallsJpaTest() {
     }
 
     @Test
-    fun `a manual call goes now inside the window and at the next slot outside it unless confirmed`() {
+    fun `a manual call goes now inside the window and otherwise at the client's next slot, never outside it`() {
         val i = inquiry()
-        planner.scheduleManual(i.id!!, now, false).scheduledAt shouldBe now
+        planner.scheduleManual(i.id!!, now).scheduledAt shouldBe now
         val night = Instant.parse("2026-11-03T22:00:00Z")
-        planner.scheduleManual(i.id!!, night, false).scheduledAt shouldBe Instant.parse("2026-11-04T08:30:00Z")
-        planner.scheduleManual(i.id!!, night, true).scheduledAt shouldBe night
+        planner.scheduleManual(i.id!!, night).scheduledAt shouldBe Instant.parse("2026-11-04T08:30:00Z")
     }
 
     @Test
@@ -101,5 +106,65 @@ class CallPlannerTest : CallsJpaTest() {
         val third = call(i, status = CallStatus.NO_ANSWER, attempt = 3)
         planner.scheduleRetry(third, CallStatus.NO_ANSWER, now)
         callsOf(i.id!!).filter { it.attempt == 4 }.shouldBeEmpty()
+    }
+
+    @Test
+    fun `a second inquiry of the same phone gets no call of its own while the first one's call is open`() {
+        val first = inquiry()
+        planner.onInquiryCreated(first)
+        val second = inquiry()
+        planner.onInquiryCreated(second)
+        callsOf(first.id!!).single().status shouldBe CallStatus.SCHEDULED
+        val skipped = callsOf(second.id!!).single()
+        skipped.status shouldBe CallStatus.SKIPPED
+        skipped.skipReason shouldBe SkipReason.SAME_PERSON
+    }
+
+    @Test
+    fun `a new inquiry within 7 days of a finished confirmation of the same phone gets no call`() {
+        call(inquiry(), status = CallStatus.DONE) { endedAt = now.minus(Duration.ofDays(1)) }
+        val second = inquiry()
+        planner.onInquiryCreated(second)
+        callsOf(second.id!!).single().skipReason shouldBe SkipReason.RECENT_CONFIRMATION
+    }
+
+    @Test
+    fun `a new inquiry of a phone that said do not call is marked too and gets no call`() {
+        inquiry { doNotCall = true }
+        val second = inquiry()
+        planner.onInquiryCreated(second)
+        callsOf(second.id!!) shouldBe emptyList()
+        inquiries.findById(second.id!!).get().doNotCall shouldBe true
+    }
+
+    @Test
+    fun `a number whose time zones share no window gets no automatic call`() {
+        val i = inquiry(phone = "+79161234567")
+        planner.onInquiryCreated(i)
+        callsOf(i.id!!).single().skipReason shouldBe SkipReason.TIMEZONE_UNCLEAR
+    }
+
+    @Test
+    fun `offer sent never cancels a call the dialler has just started`() {
+        val i = inquiry()
+        val c = call(i, scheduledAt = now)
+        val dialling = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val dialler =
+            thread {
+                TransactionTemplate(txManager).executeWithoutResult {
+                    jdbc.queryForList("SELECT id FROM inquiry_call WHERE id = ? FOR UPDATE", c.id)
+                    jdbc.update("UPDATE inquiry_call SET status = 'DIALING', started_at = now() WHERE id = ?", c.id)
+                    dialling.countDown()
+                    release.await()
+                }
+            }
+        dialling.await()
+        val offer = thread { TransactionTemplate(txManager).executeWithoutResult { planner.onOfferSent(i.id!!, "Lagoon 46") } }
+        Thread.sleep(500) // the offer has read the row and waits for the dialler's lock
+        release.countDown()
+        dialler.join()
+        offer.join()
+        calls.findById(c.id!!).get().status shouldBe CallStatus.DIALING
     }
 }

@@ -70,7 +70,7 @@ class CallEligibilityTest : CallsJpaTest() {
     @Test
     fun `a confirmation scheduled 25 h ago while calls were disabled is skipped as STALE`() {
         check(inquiry(), scheduledAt = now.minus(Duration.ofHours(25))) shouldBe SkipReason.STALE
-        check(inquiry(), scheduledAt = now.minus(Duration.ofHours(23))).shouldBeNull()
+        check(inquiry(phone = "+385981111111"), scheduledAt = now.minus(Duration.ofHours(23))).shouldBeNull() // another person
     }
 
     @Test
@@ -88,6 +88,7 @@ class CallEligibilityTest : CallsJpaTest() {
         val first = inquiry()
         call(first, status = CallStatus.DONE) { endedAt = now.minus(Duration.ofDays(2)) }
         check(inquiry()) shouldBe SkipReason.RECENT_CONFIRMATION
+        jdbc.update("UPDATE inquiry_call SET status = 'SKIPPED' WHERE status = 'SCHEDULED'") // as the dialler leaves that probe
         jdbc.update("UPDATE inquiry_call SET ended_at = ? WHERE inquiry_id = ?", java.sql.Timestamp.from(now.minus(Duration.ofDays(8))), first.id)
         check(inquiry()).shouldBeNull()
     }
@@ -114,5 +115,31 @@ class CallEligibilityTest : CallsJpaTest() {
         eligibility.limitReached(now, s.copy(dailyLimit = 1)) shouldBe true
         eligibility.limitReached(now, s.copy(dailyLimit = 2)) shouldBe false
         eligibility.limitReached(now, s.copy(dailyLimit = 40, monthlyLimit = 1)) shouldBe true
+    }
+
+    @Test
+    fun `do not call said on an earlier inquiry also stops a new inquiry of the same phone`() {
+        inquiry { doNotCall = true }
+        check(inquiry()) shouldBe SkipReason.DO_NOT_CALL
+    }
+
+    @Test
+    fun `a second inquiry is not called while a confirmation of an earlier inquiry of the same phone is open`() {
+        val first = inquiry()
+        val firstCall = call(first)
+        val second = inquiry()
+        val secondCall = call(second)
+        eligibility.check(secondCall, second, now, s) shouldBe SkipReason.SAME_PERSON
+        eligibility.check(firstCall, first, now, s).shouldBeNull()
+    }
+
+    @Test
+    fun `a number whose possible time zones share no window is skipped as TIMEZONE_UNCLEAR`() {
+        check(inquiry(phone = "+79161234567")) shouldBe SkipReason.TIMEZONE_UNCLEAR
+    }
+
+    @Test
+    fun `Mario's manual call that waited more than 24 h is STALE too`() {
+        check(inquiry(), kind = CallKind.MANUAL, scheduledAt = now.minus(Duration.ofHours(25))) shouldBe SkipReason.STALE
     }
 }

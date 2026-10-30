@@ -14,4 +14,13 @@ enum class SkipReason {
     NOT_ON_TEST_LIST,
     STALE,
     MAX_ATTEMPTS,
+
+    /** Another inquiry of the same phone already has its confirmation call; this one is mentioned in that call (design §2.2). */
+    SAME_PERSON,
+
+    /** The number may be in time zones too far apart to share a calling window (a Russian mobile): never called automatically. */
+    TIMEZONE_UNCLEAR,
+
+    /** Refusal of Mario's "Nazovi sad" while calls are switched off; never stored on a call. */
+    CALLS_OFF,
 }

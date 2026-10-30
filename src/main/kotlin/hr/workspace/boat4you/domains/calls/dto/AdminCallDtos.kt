@@ -71,10 +71,6 @@ data class CallInquiryListItemDto(
     val nextScheduledAt: Instant?,
 )
 
-data class CallNowRequest(
-    val confirmOutsideWindow: Boolean = false,
-)
-
 data class OfferSentRequest(
     val note: String? = null,
 )

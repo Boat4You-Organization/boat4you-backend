@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.calls.service.CallNotifier
 import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
+import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -81,5 +82,24 @@ class CallNotifierTest {
         `when`(users.findAllAdminEmailAddresses()).thenReturn(emptyList())
         notifier.outcome(call, inquiry)
         mails.size shouldBe 0
+    }
+
+    @Test
+    fun `a failing mail never breaks the caller, so the call result is still stored`() {
+        val failing = CallNotifier(mock(EmailService::class.java), users).also { it.send = { _, _, _, _ -> throw IllegalStateException("smtp down") } }
+        shouldNotThrowAny {
+            failing.outcome(call, inquiry)
+            failing.technicalFailure(call, inquiry)
+            failing.lost(call, inquiry)
+            failing.limitReached(LocalDate.of(2026, 11, 5))
+        }
+    }
+
+    @Test
+    fun `a lost call tells Mario it was not dialled again`() {
+        notifier.lost(call, inquiry)
+        val mail = mails.single()
+        mail.subject shouldContain "poziv bez rezultata"
+        mail.vars["summary"].toString() shouldContain "Nazovi sad"
     }
 }

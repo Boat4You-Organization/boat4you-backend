@@ -1,7 +1,6 @@
 package hr.workspace.boat4you.domains.calls.service
 
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsApi
-import hr.workspace.boat4you.domains.calls.enums.CallStatus
 import hr.workspace.boat4you.domains.calls.jpa.CallWebhookEventRepository
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCall
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCallRepository
@@ -11,9 +10,10 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * No call stays "in progress" for ever (design §4): webhook events that were not applied (the call had no conversation id
- * yet, or processing failed) are retried, and calls still DIALING / IN_PROGRESS after 30 minutes are completed from the
- * ElevenLabs conversation API; one older than 2 hours that is still not finished is FAILED as lost and retried once.
+ * No call stays "in progress" for ever (design §4): webhook events that were not applied (the call could not be found yet, or
+ * processing failed) are retried for 2 days, and calls still DIALING / IN_PROGRESS after 30 minutes are completed from the
+ * ElevenLabs conversation API; one older than 2 hours that is still not finished is FAILED as lost and Mario is told. A lost
+ * call is never dialled again: it may have rung. One call that fails here never stops the others.
  */
 @Service
 class CallReconciler(
@@ -22,16 +22,14 @@ class CallReconciler(
     private val processor: CallWebhookProcessor,
     private val outcomes: CallOutcomeService,
     private val elevenLabs: ElevenLabsApi,
-    private val planner: CallPlanner,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     fun runOnce(now: Instant) {
-        events
-            .findUnprocessedOlderThan(now.minus(EVENT_GRACE))
-            .filter { it.receivedAt.isAfter(now.minus(EVENT_GIVE_UP)) }
-            .forEach { processor.process(it.id!!) }
-        calls.findStuck(now.minus(STUCK_AFTER)).forEach { reconcile(it, now) }
+        events.findUnprocessedBetween(now.minus(EVENT_GIVE_UP), now.minus(EVENT_GRACE)).forEach { processor.process(it.id!!) }
+        calls.findStuck(now.minus(STUCK_AFTER)).forEach { call ->
+            runCatching { reconcile(call, now) }.onFailure { log.error("Call {} not reconciled", call.id, it) }
+        }
     }
 
     private fun reconcile(
@@ -46,21 +44,12 @@ class CallReconciler(
             }
         when {
             data != null && data.status in FINISHED -> outcomes.applyTranscription(call, data)
-            old -> lost(call, now)
+            old -> {
+                log.warn("Call {} lost (no result after {}), marked FAILED", call.id, LOST_AFTER)
+                outcomes.applyLost(call)
+            }
             else -> Unit
         }
-    }
-
-    private fun lost(
-        call: InquiryCall,
-        now: Instant,
-    ) {
-        log.warn("Call {} lost (no result after {}), marked FAILED", call.id, LOST_AFTER)
-        call.status = CallStatus.FAILED
-        call.endedAt = now
-        call.error = "lost"
-        calls.save(call)
-        planner.scheduleRetry(call, CallStatus.FAILED, now)
     }
 
     companion object {

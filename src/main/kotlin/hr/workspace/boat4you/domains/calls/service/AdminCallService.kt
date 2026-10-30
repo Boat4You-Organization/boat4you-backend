@@ -158,12 +158,12 @@ class AdminCallService(
         return PageImpl(rows, PageRequest.of(p, s), total)
     }
 
-    /** Mario's "Nazovi sad"; refused with the reason when the rules forbid the call. */
+    /**
+     * Mario's "Nazovi sad": now when the client's window is open, else the client's next slot (the answer says which); refused
+     * with the reason when calls are switched off or the rules forbid the call.
+     */
     @Transactional
-    fun callNow(
-        inquiryId: Long,
-        confirmOutsideWindow: Boolean,
-    ): CallListItemDto {
+    fun callNow(inquiryId: Long): CallListItemDto {
         val inquiry = inquiries.findById(inquiryId).orElseThrow { NoSuchElementException("inquiry $inquiryId") }
         val now = clock.instant()
         val probe =
@@ -173,8 +173,10 @@ class AdminCallService(
                 scheduledAt = now
                 toNumber = inquiry.phoneE164 ?: ""
             }
-        eligibility.check(probe, inquiry, now, settings.snapshot())?.let { throw CallRefusedException(it) }
-        return item(planner.scheduleManual(inquiryId, now, confirmOutsideWindow), inquiry)
+        val s = settings.snapshot()
+        if (!s.enabled) throw CallRefusedException(SkipReason.CALLS_OFF)
+        eligibility.check(probe, inquiry, now, s)?.let { throw CallRefusedException(it) }
+        return item(planner.scheduleManual(inquiryId, now), inquiry)
     }
 
     @Transactional

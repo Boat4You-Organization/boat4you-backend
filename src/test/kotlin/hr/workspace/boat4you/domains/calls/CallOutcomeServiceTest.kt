@@ -28,12 +28,15 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import org.springframework.transaction.support.TransactionTemplate
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.Base64
+import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
 
 /** Call results from ElevenLabs into our rows (design §2.2-§2.5, §6.2). 3.11.2026 09:00 UTC = Tuesday 10:00 Zagreb. */
 class CallOutcomeServiceTest : CallsJpaTest() {
@@ -190,5 +193,44 @@ class CallOutcomeServiceTest : CallsJpaTest() {
     fun `a confirmed call notifies nobody`() {
         service.applyTranscription(dialling(), data())
         verify(notifier, never()).outcome(any(InquiryCall::class.java) ?: InquiryCall(), any() ?: inquiries.findAll().first())
+    }
+
+    @Test
+    fun `a transcription and the recording of one call processed at the same time both stick`() {
+        val c = dialling()
+        val mp3 = Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3))
+        val applied = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val tx = TransactionTemplate(txManager)
+        val transcription =
+            thread {
+                tx.executeWithoutResult {
+                    service.applyTranscription(calls.findById(c.id!!).get(), data())
+                    applied.countDown()
+                    release.await()
+                }
+            }
+        applied.await()
+        val recording = thread { tx.executeWithoutResult { service.applyAudio(calls.findById(c.id!!).get(), mp3) } }
+        recording.join(1000) // before the fix it is done here; with the row lock it waits for the transcription
+        release.countDown()
+        transcription.join()
+        recording.join()
+        val saved = calls.findById(c.id!!).get()
+        saved.status shouldBe CallStatus.DONE
+        saved.audioPath.shouldNotBeNull()
+    }
+
+    @Test
+    fun `a second technical start failure reported by webhook tells Mario`() {
+        val i = inquiry { name = "Ana" }
+        call(i, status = CallStatus.FAILED, attempt = 1) { endedAt = now.minusSeconds(900) }
+        val second =
+            call(i, status = CallStatus.DIALING, attempt = 2) {
+                startedAt = now.minusSeconds(30)
+                elevenlabsConversationId = "conv-tf-${System.nanoTime()}"
+            }
+        service.applyInitiationFailure(second, "unknown")
+        verify(notifier, times(1)).technicalFailure(any() ?: second, any() ?: i)
     }
 }

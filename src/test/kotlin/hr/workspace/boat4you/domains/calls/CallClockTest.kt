@@ -47,6 +47,52 @@ class CallClockTest {
     }
 
     @Test
+    fun `a Spanish mobile may be on the Canaries, so the morning call waits for 09_30 there too`() {
+        // November: Madrid UTC+1, Canary UTC+0. 08:15 UTC = 09:15 Madrid but 08:15 Canary -> 09:30 Canary = 10:30 Madrid.
+        CallClock.nextSlot(z("2026-11-03T08:15:00Z"), CallClock.clientZones("+34612345678"), s) shouldBe z("2026-11-03T09:30:00Z")
+    }
+
+    @Test
+    fun `a Spanish mobile is not called after the last start in Madrid even though the Canaries are an hour earlier`() {
+        // 17:55 UTC = 18:55 Madrid (past 18:52) -> the next morning, 09:30 Canary = 10:30 Madrid
+        CallClock.nextSlot(z("2026-11-03T17:55:00Z"), CallClock.clientZones("+34612345678"), s) shouldBe z("2026-11-04T09:30:00Z")
+    }
+
+    @Test
+    fun `a Portuguese mobile may be on the Azores, so it waits for 09_30 there`() {
+        // November: Lisbon UTC+0, Azores UTC-1. 09:00 UTC = 09:00 Lisbon, 08:00 Azores -> 09:30 Azores = 10:30 UTC
+        CallClock.nextSlot(z("2026-11-03T09:00:00Z"), CallClock.clientZones("+351912345678"), s) shouldBe z("2026-11-03T10:30:00Z")
+    }
+
+    @Test
+    fun `an Australian mobile is called only when it is daytime from Christmas Island to Sydney`() {
+        // Australian mobiles may also be on Christmas Island (UTC+7): 22:00 UTC = 09:00 Sydney (AEDT) but 05:00 there
+        // -> 09:30 Christmas Island = 02:30 UTC = 13:30 Sydney, 10:30 Perth
+        CallClock.nextSlot(z("2026-11-03T22:00:00Z"), CallClock.clientZones("+61412345678"), s) shouldBe z("2026-11-04T02:30:00Z")
+    }
+
+    @Test
+    fun `a Russian mobile spans too many time zones for one window, so it is never called automatically`() {
+        CallClock.nextSlot(z("2026-11-03T09:00:00Z"), CallClock.clientZones("+79161234567"), s).shouldBeNull()
+    }
+
+    @Test
+    fun `Nika is told the main time zone of a country with several`() {
+        CallClock.clientZone("+34612345678") shouldBe ZoneId.of("Europe/Madrid")
+        CallClock.clientZone("+351912345678") shouldBe ZoneId.of("Europe/Lisbon")
+        CallClock.clientZones("+385912345678") shouldBe listOf(zagreb)
+    }
+
+    @Test
+    fun `retries keep to the window of every possible zone`() {
+        // No answer at 16:00 Madrid on a Spanish mobile: +2 h = 18:00 Madrid / 17:00 Canary -> fits both
+        val zones = CallClock.clientZones("+34612345678")
+        CallClock.retryAt(CallStatus.NO_ANSWER, 1, z("2026-11-03T15:00:00Z"), zones, s) shouldBe z("2026-11-03T17:00:00Z")
+        // the next-day attempt is 09:30 Canary = 10:30 Madrid
+        CallClock.retryAt(CallStatus.NO_ANSWER, 2, z("2026-11-03T15:00:00Z"), zones, s) shouldBe z("2026-11-04T09:30:00Z")
+    }
+
+    @Test
     fun `no answer retries in 2 hours, then the next morning, then stops`() {
         val now = z("2026-11-03T09:00:00Z") // 10:00 Zagreb
         CallClock.retryAt(CallStatus.NO_ANSWER, 1, now, zagreb, s) shouldBe z("2026-11-03T11:00:00Z")

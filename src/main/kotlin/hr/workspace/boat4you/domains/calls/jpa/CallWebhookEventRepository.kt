@@ -19,8 +19,12 @@ interface CallWebhookEventRepository : JpaRepository<CallWebhookEvent, Long> {
         @Param("payload") payloadJson: String,
     ): Long?
 
-    @Query("SELECT e FROM CallWebhookEvent e WHERE e.processedAt IS NULL AND e.receivedAt < :before ORDER BY e.receivedAt")
-    fun findUnprocessedOlderThan(
+    /** Unprocessed events received in (after, before): older ones are given up (their payload may hold a recording). */
+    @Query(
+        "SELECT e FROM CallWebhookEvent e WHERE e.processedAt IS NULL AND e.receivedAt > :after AND e.receivedAt < :before ORDER BY e.receivedAt",
+    )
+    fun findUnprocessedBetween(
+        @Param("after") after: Instant,
         @Param("before") before: Instant,
     ): List<CallWebhookEvent>
 }

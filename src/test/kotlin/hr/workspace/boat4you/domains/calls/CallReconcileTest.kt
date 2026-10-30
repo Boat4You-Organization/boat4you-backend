@@ -19,8 +19,14 @@ import hr.workspace.boat4you.domains.calls.service.CallWebhookProcessor
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldNotContain
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.any
+import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
 import org.springframework.beans.factory.annotation.Autowired
 import java.nio.file.Files
 import java.sql.Timestamp
@@ -53,10 +59,16 @@ class CallReconcileTest : CallsJpaTest() {
     private val api = FakeApi()
     private val planner by lazy { CallPlanner(calls, inquiries, settings, jdbc, clock) }
     private val audio by lazy { CallAudioStore(uploadDir.toString()) }
-    private val outcomes by lazy { CallOutcomeService(calls, inquiries, planner, mock(CallNotifier::class.java), audio, clock) }
+    private val notifier: CallNotifier = mock(CallNotifier::class.java)
+    private val outcomes by lazy { CallOutcomeService(calls, inquiries, planner, notifier, audio, clock) }
     private val processor by lazy { CallWebhookProcessor(events, calls, outcomes, txManager, jacksonObjectMapper()) }
-    private val reconciler by lazy { CallReconciler(calls, events, processor, outcomes, api, planner) }
+    private val reconciler by lazy { CallReconciler(calls, events, processor, outcomes, api) }
     private val retention by lazy { CallRetention(calls, audio, settings, jdbc) }
+
+    @BeforeEach
+    fun resetApi() {
+        api.status = "done"
+    }
 
     private fun stuck(
         startedAgo: Duration,
@@ -85,14 +97,16 @@ class CallReconcileTest : CallsJpaTest() {
     }
 
     @Test
-    fun `a lost call older than 2 h becomes FAILED and is retried once`() {
+    fun `a lost call older than 2 h becomes FAILED, is not dialled again (it may have rung) and Mario is told`() {
+        clearInvocations(notifier)
         api.status = "in-progress"
         val c = stuck(Duration.ofHours(3))
         reconciler.runOnce(now)
         val saved = calls.findById(c.id!!).get()
         saved.status shouldBe CallStatus.FAILED
         saved.error shouldBe "lost"
-        calls.findByInquiryIdOrderByCreatedAtDesc(c.inquiryId!!).count { it.status == CallStatus.SCHEDULED } shouldBe 1
+        calls.findByInquiryIdOrderByCreatedAtDesc(c.inquiryId!!).count { it.status == CallStatus.SCHEDULED } shouldBe 0
+        verify(notifier, times(1)).lost(any() ?: c, any() ?: inquiries.findById(c.inquiryId!!).get())
     }
 
     @Test
@@ -129,5 +143,46 @@ class CallReconcileTest : CallsJpaTest() {
         retention.runOnce(now)
         events.findById(oldId).isPresent shouldBe false
         events.findById(newId).isPresent shouldBe true
+    }
+
+    @Test
+    fun `a webhook for a call whose start was unclear is matched by the call id it carries`() {
+        val c = stuck(Duration.ofMinutes(1), conversation = null)
+        val body =
+            """{"type":"post_call_transcription","data":{"conversation_id":"conv-unclear","status":"done","transcript":[],""" +
+                """"metadata":{"call_duration_secs":60},"analysis":{"call_successful":"success"},""" +
+                """"conversation_initiation_client_data":{"dynamic_variables":{"call_id":"${c.id}"}}}}"""
+        val id = processor.store("conv-unclear", "post_call_transcription", body)!!
+        processor.process(id)
+        val saved = calls.findById(c.id!!).get()
+        saved.status shouldBe CallStatus.DONE
+        saved.elevenlabsConversationId shouldBe "conv-unclear"
+    }
+
+    @Test
+    fun `unprocessed webhook events older than 2 days are not loaded again`() {
+        val oldId = processor.store("c-2d-old", "post_call_audio", """{"type":"post_call_audio","data":{}}""")!!
+        val newId = processor.store("c-2d-new", "post_call_audio", """{"type":"post_call_audio","data":{}}""")!!
+        jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(3))), oldId)
+        jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofMinutes(10))), newId)
+        events.findUnprocessedBetween(now.minus(Duration.ofDays(2)), now.minus(Duration.ofMinutes(2))).map { it.id } shouldBe listOf(newId)
+    }
+
+    @Test
+    fun `a processed recording is not kept in the stored event`() {
+        val c = stuck(Duration.ofMinutes(1), conversation = "conv-audio-strip")
+        val b64 = java.util.Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3))
+        val id = processor.store("conv-audio-strip", "post_call_audio", """{"type":"post_call_audio","data":{"conversation_id":"conv-audio-strip","full_audio":"$b64"}}""")!!
+        processor.process(id)
+        calls.findById(c.id!!).get().audioPath.shouldNotBeNull()
+        events.findById(id).get().payload!! shouldNotContain "full_audio"
+    }
+
+    @Test
+    fun `an unprocessed recording older than 2 days is stripped by retention`() {
+        val id = processor.store("c-orphan-audio", "post_call_audio", """{"type":"post_call_audio","data":{"full_audio":"AAEC"}}""")!!
+        jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(3))), id)
+        retention.runOnce(now)
+        events.findById(id).get().payload!! shouldNotContain "full_audio"
     }
 }

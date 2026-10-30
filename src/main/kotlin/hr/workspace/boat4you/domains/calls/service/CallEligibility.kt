@@ -16,7 +16,8 @@ import java.time.ZoneId
 
 /**
  * The rules checked right before a call is dialled (design §2.1-§2.3, §4: never on schedule time only). [check] returns why
- * the call must not happen, or null when it may.
+ * the call must not happen, or null when it may. "Do not call" and "already being called" are rules of the person (the phone),
+ * not of one inquiry; a call that waited more than [STALE_AFTER] (calls were switched off) never rings late.
  */
 @Component
 class CallEligibility(
@@ -34,14 +35,14 @@ class CallEligibility(
         return when {
             !inquiry.contactConsent -> SkipReason.NO_CONSENT
             phone == null -> SkipReason.INVALID_PHONE
-            inquiry.doNotCall -> SkipReason.DO_NOT_CALL
+            inquiry.doNotCall || calls.numberSaidDoNotCall(phone) -> SkipReason.DO_NOT_CALL
             kind != CallKind.MANUAL && inquiry.humanTakeoverAt != null -> SkipReason.HUMAN_TAKEOVER
             inquiry.status == InquiryStatus.ARCHIVED -> SkipReason.ARCHIVED
             s.testNumbers.isNotEmpty() && phone !in s.testNumbers -> SkipReason.NOT_ON_TEST_LIST
-            (kind == CallKind.CONFIRMATION || kind == CallKind.FOLLOW_UP) &&
-                Duration.between(call.scheduledAt, now) > STALE_AFTER -> SkipReason.STALE
+            CallClock.nextSlot(now, CallClock.clientZones(phone), s) == null -> SkipReason.TIMEZONE_UNCLEAR
+            Duration.between(call.scheduledAt, now) > STALE_AFTER -> SkipReason.STALE
             call.attempt > s.maxAttempts -> SkipReason.MAX_ATTEMPTS
-            kind == CallKind.CONFIRMATION -> confirmationRule(inquiry, phone, now)
+            kind == CallKind.CONFIRMATION -> confirmationRule(call, inquiry, phone, now)
             kind == CallKind.FOLLOW_UP -> followUpRule(inquiry)
             else -> null
         }
@@ -60,7 +61,11 @@ class CallEligibility(
             calls.countStartedBetween(monthStart, monthEnd) >= s.monthlyLimit
     }
 
+    /** Another call to the same number is dialling or talking right now: this one waits (design §4, never two at once). */
+    fun anotherCallActive(call: InquiryCall): Boolean = calls.existsActiveCallToNumber(call.toNumber!!, call.id!!)
+
     private fun confirmationRule(
+        call: InquiryCall,
         inquiry: Inquiry,
         phone: String,
         now: Instant,
@@ -68,6 +73,7 @@ class CallEligibility(
         when {
             inquiry.offerSentAt != null -> SkipReason.OFFER_ALREADY_SENT
             calls.existsDoneConfirmationForPhoneSince(phone, now.minus(RECENT), inquiry.id!!) -> SkipReason.RECENT_CONFIRMATION
+            calls.existsOpenConfirmationOfOtherInquiry(phone, inquiry.id!!, call.id ?: Long.MAX_VALUE) -> SkipReason.SAME_PERSON
             else -> null
         }
 

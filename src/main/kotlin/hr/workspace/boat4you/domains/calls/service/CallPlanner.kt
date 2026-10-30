@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.calls.service
 
 import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
+import hr.workspace.boat4you.domains.calls.enums.SkipReason
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCall
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCallRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
@@ -10,6 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import java.sql.Timestamp
 import java.time.Clock
 import java.time.Instant
 
@@ -26,14 +28,32 @@ class CallPlanner(
     private val jdbc: JdbcTemplate,
     private val clock: Clock = Clock.systemUTC(),
 ) {
-    /** Plans the confirmation call for a new inquiry (consent, readable phone, not "do not call"); planned even while calls are off. */
+    /**
+     * Plans the confirmation call for a new inquiry (consent, readable phone); planned even while calls are off. A person who
+     * said "do not call" on any inquiry gets the mark on this one too and no call. When the same person was confirmed in the
+     * last 7 days or is already being called about another inquiry, the row is SKIPPED: that call mentions this inquiry
+     * (design §2.2). A number whose possible zones share no window is SKIPPED too.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun onInquiryCreated(inquiry: Inquiry) {
         val phone = inquiry.phoneE164
-        if (!inquiry.contactConsent || phone == null || inquiry.doNotCall) return
+        val id = inquiry.id!!
+        if (!inquiry.contactConsent || phone == null) return
+        if (inquiry.doNotCall || calls.numberSaidDoNotCall(phone)) {
+            jdbc.update("UPDATE inquiry SET do_not_call = TRUE WHERE id = ?", id)
+            return
+        }
         val s = settings.snapshot()
-        val at = CallClock.nextSlot(now().plus(s.firstDelay), CallClock.clientZone(phone), s)
-        calls.save(newCall(inquiry.id!!, CallKind.CONFIRMATION, phone, inquiry.locale, at))
+        val now = now()
+        val at = CallClock.nextSlot(now.plus(s.firstDelay), CallClock.clientZones(phone), s)
+        val skip =
+            when {
+                at == null -> SkipReason.TIMEZONE_UNCLEAR
+                calls.existsDoneConfirmationForPhoneSince(phone, now.minus(CallEligibility.RECENT), id) -> SkipReason.RECENT_CONFIRMATION
+                calls.existsOpenConfirmationOfOtherInquiry(phone, id, Long.MAX_VALUE) -> SkipReason.SAME_PERSON
+                else -> null
+            }
+        calls.save(newCall(id, CallKind.CONFIRMATION, phone, inquiry.locale, at ?: now).skipped(skip))
     }
 
     @Transactional
@@ -48,21 +68,25 @@ class CallPlanner(
         inquiry.offerSentAt = now
         inquiry.offerNote = text
         inquiries.save(inquiry)
-        val existing = calls.findByInquiryIdOrderByCreatedAtDesc(inquiryId)
-        existing.filter { it.kind == CallKind.CONFIRMATION && it.status == CallStatus.SCHEDULED }.forEach {
-            it.status = CallStatus.CANCELLED
-            calls.save(it)
-        }
+        // Conditional updates, never entity saves: the dialler may have just moved the row to DIALING, and that must stand.
+        jdbc.update(
+            "UPDATE inquiry_call SET status = 'CANCELLED', updated_at = now() WHERE inquiry_id = ? AND kind = 'CONFIRMATION' AND status = 'SCHEDULED'",
+            inquiryId,
+        )
         val phone = inquiry.phoneE164 ?: return
         val s = settings.snapshot()
-        val at = CallClock.nextSlot(now.plus(s.followUpDelay), CallClock.clientZone(phone), s)
-        val pending = existing.firstOrNull { it.kind == CallKind.FOLLOW_UP && it.status == CallStatus.SCHEDULED }
-        if (pending != null) {
-            pending.scheduledAt = at
-            calls.save(pending)
-        } else {
-            calls.save(newCall(inquiryId, CallKind.FOLLOW_UP, phone, inquiry.locale, at))
+        val at = CallClock.nextSlot(now.plus(s.followUpDelay), CallClock.clientZones(phone), s)
+        if (at == null) {
+            calls.save(newCall(inquiryId, CallKind.FOLLOW_UP, phone, inquiry.locale, now).skipped(SkipReason.TIMEZONE_UNCLEAR))
+            return
         }
+        val moved =
+            jdbc.update(
+                "UPDATE inquiry_call SET scheduled_at = ?, updated_at = now() WHERE inquiry_id = ? AND kind = 'FOLLOW_UP' AND status = 'SCHEDULED'",
+                Timestamp.from(at),
+                inquiryId,
+            )
+        if (moved == 0) calls.save(newCall(inquiryId, CallKind.FOLLOW_UP, phone, inquiry.locale, at))
     }
 
     /** Mario's "Nazvat ću sam": no more AI calls for this inquiry; his callback tasks stay. */
@@ -89,16 +113,15 @@ class CallPlanner(
         )
     }
 
-    /** Mario's "Nazovi sad": now when the client's window is open (or he confirmed outside it), else the next slot. */
+    /** Mario's "Nazovi sad": now when the client's window is open, else the client's next slot (never outside it). */
     @Transactional
     fun scheduleManual(
         inquiryId: Long,
         now: Instant,
-        confirmedOutsideWindow: Boolean,
     ): InquiryCall {
         val inquiry = inquiries.findById(inquiryId).orElseThrow()
         val phone = inquiry.phoneE164 ?: throw IllegalStateException("inquiry $inquiryId has no callable phone")
-        val at = if (confirmedOutsideWindow) now else CallClock.nextSlot(now, CallClock.clientZone(phone), settings.snapshot())
+        val at = checkNotNull(CallClock.nextSlot(now, CallClock.clientZones(phone), settings.snapshot())) { "no calling window for inquiry $inquiryId" }
         return calls.save(newCall(inquiryId, CallKind.MANUAL, phone, inquiry.locale, at))
     }
 
@@ -110,15 +133,17 @@ class CallPlanner(
         now: Instant,
     ) {
         val phone = previous.toNumber ?: return
-        val previousFailed =
-            calls
-                .findByInquiryIdOrderByCreatedAtDesc(previous.inquiryId!!)
-                .any { it.id != previous.id && it.kind == previous.kind && it.status == CallStatus.FAILED }
-        val at = CallClock.retryAt(status, previous.attempt, now, CallClock.clientZone(phone), settings.snapshot(), previousFailed) ?: return
+        val at = CallClock.retryAt(status, previous.attempt, now, CallClock.clientZones(phone), settings.snapshot(), earlierAttemptFailed(previous)) ?: return
         calls.save(
             newCall(previous.inquiryId!!, previous.kind!!, phone, previous.language, at).apply { attempt = previous.attempt + 1 },
         )
     }
+
+    /** An earlier attempt of the same call (same inquiry and kind) already failed technically. */
+    fun earlierAttemptFailed(call: InquiryCall): Boolean =
+        calls
+            .findByInquiryIdOrderByCreatedAtDesc(call.inquiryId!!)
+            .any { it.id != call.id && it.kind == call.kind && it.status == CallStatus.FAILED }
 
     /** A callback task for Mario (never dialled by Nika); [note] says why. */
     @Transactional
@@ -148,6 +173,14 @@ class CallPlanner(
         toNumber = phone
         language = locale ?: "en"
     }
+
+    private fun InquiryCall.skipped(reason: SkipReason?) =
+        apply {
+            if (reason != null) {
+                status = CallStatus.SKIPPED
+                skipReason = reason
+            }
+        }
 
     private fun now(): Instant = clock.instant()
 

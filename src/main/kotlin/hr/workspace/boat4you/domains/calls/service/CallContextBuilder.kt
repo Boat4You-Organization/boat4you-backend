@@ -15,11 +15,13 @@ object CallContextBuilder {
     private const val MESSAGE_MAX = 500
     private val DETAIL_KEYS = listOf("people", "kids", "cabins", "budgetEur", "boatType", "region", "crew")
 
+    /** [others]: the person's other recent inquiries (same phone), which Nika mentions ("you also asked about …", design §2.2). */
     fun variables(
         inquiry: Inquiry,
         call: InquiryCall,
         now: Instant,
         s: CallsSettings.Snapshot,
+        others: List<Inquiry> = emptyList(),
     ): Map<String, String> {
         val site = CallSite.fromKey(inquiry.site) ?: CallSite.BOAT4YOU
         val details = inquiry.details.orEmpty()
@@ -35,7 +37,15 @@ object CallContextBuilder {
             "transfer_hours_text" to CallClock.transferHoursText(s),
             "language" to (call.language ?: inquiry.locale ?: "en"),
             "client_timezone" to (inquiry.phoneE164?.let { CallClock.clientZone(it).id } ?: CallClock.ZAGREB.id),
+            "other_inquiries" to others.joinToString(" | ") { mention(it) },
+            // Echoed back in the webhook, so a call whose start was unclear still finds its row (no conversation id).
+            "call_id" to call.id.toString(),
         )
+    }
+
+    private fun mention(other: Inquiry): String {
+        val dates = if (other.dateFrom != null && other.dateTo != null) "${other.dateFrom} to ${other.dateTo}" else null
+        return listOfNotNull(boatLabel(other.yacht), dates).joinToString(", ").ifBlank { "an inquiry without boat or dates" }
     }
 
     private fun kind(kind: CallKind?) =

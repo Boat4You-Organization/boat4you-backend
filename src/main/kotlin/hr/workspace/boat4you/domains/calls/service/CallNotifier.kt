@@ -41,6 +41,16 @@ class CallNotifier(
         inquiry: Inquiry,
     ) = mail(call, inquiry, "tehnička greška", "Poziv nije uspio ni u drugom pokušaju: ${call.error ?: "nepoznato"}")
 
+    fun lost(
+        call: InquiryCall,
+        inquiry: Inquiry,
+    ) = mail(
+        call,
+        inquiry,
+        "poziv bez rezultata",
+        "Za ovaj poziv 2 sata nema rezultata. Nije ponovljen automatski, da klijent ne dobije dva poziva; ako treba, klikni Nazovi sad.",
+    )
+
     fun quality(
         call: InquiryCall,
         inquiry: Inquiry,
@@ -84,16 +94,23 @@ class CallNotifier(
         )
     }
 
+    /** Never throws: a notice is best effort, and the call result it reports is stored in the caller's transaction. */
     private fun deliver(
         subject: String,
         vars: Map<String, Any?>,
     ) {
-        val to = users.findAllAdminEmailAddresses()
-        if (to.isEmpty()) {
-            log.warn("Call notice not mailed: no admin e-mail address ({})", subject)
-            return
+        try {
+            val to = users.findAllAdminEmailAddresses()
+            if (to.isEmpty()) {
+                log.warn("Call notice not mailed: no admin e-mail address ({})", subject)
+                return
+            }
+            send(to, subject, TEMPLATE, vars + ("currentYear" to Year.now(ZoneOffset.UTC).value))
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            log.error("Call notice not mailed: {}", e.javaClass.simpleName, e)
         }
-        send(to, subject, TEMPLATE, vars + ("currentYear" to Year.now(ZoneOffset.UTC).value))
     }
 
     companion object {

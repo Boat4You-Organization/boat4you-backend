@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.branding.Brand
 import hr.workspace.boat4you.domains.branding.BrandResolver
 import hr.workspace.boat4you.domains.calls.CallSite
@@ -34,6 +36,10 @@ class InquiryMutationService(
     private val log = LoggerFactory.getLogger(InquiryMutationService::class.java)
 
     companion object {
+        /** The AI call center's `details` (public form, read into Nika's context) are refused above this many JSON characters. */
+        const val DETAILS_MAX = 4000
+        private val DETAILS_JSON = jacksonObjectMapper()
+
         /** A second identical submit inside this window is the same inquiry (double tap, retry, back button). */
         val DUPLICATE_WINDOW: Duration = Duration.ofMinutes(10)
 
@@ -69,6 +75,11 @@ class InquiryMutationService(
         inquiryDto: InquiryDto,
         request: HttpServletRequest? = null,
     ) {
+        inquiryDto.details?.let {
+            if (DETAILS_JSON.writeValueAsString(it).length > DETAILS_MAX) {
+                throw ParameterValidationException(mapOf("details" to "at most $DETAILS_MAX characters"))
+            }
+        }
         val key =
             submitKey(
                 inquiryDto.email, inquiryDto.yachtId, inquiryDto.dateFrom, inquiryDto.dateTo,

@@ -1,15 +1,20 @@
 package hr.workspace.boat4you.domains.calls
 
+import hr.workspace.boat4you.domains.calls.elevenlabs.CallNotStartedException
 import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationData
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsApi
 import hr.workspace.boat4you.domains.calls.elevenlabs.OutboundCallResult
+import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
 import hr.workspace.boat4you.domains.calls.enums.SkipReason
+import hr.workspace.boat4you.domains.calls.service.CallAudioStore
 import hr.workspace.boat4you.domains.calls.service.CallDispatcher
 import hr.workspace.boat4you.domains.calls.service.CallEligibility
 import hr.workspace.boat4you.domains.calls.service.CallNotifier
+import hr.workspace.boat4you.domains.calls.service.CallOutcomeService
 import hr.workspace.boat4you.domains.calls.service.CallPlanner
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
@@ -17,7 +22,9 @@ import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import java.nio.file.Files
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -31,7 +38,8 @@ class CallDispatcherTest : CallsJpaTest() {
 
     private class FakeElevenLabs : ElevenLabsApi {
         val dialled = CopyOnWriteArrayList<Pair<String, Map<String, String>>>()
-        var fail = false
+        var failure: RuntimeException? = null
+        val attempts = AtomicInteger()
         private val n = AtomicInteger()
 
         override fun startOutboundCall(
@@ -39,7 +47,8 @@ class CallDispatcherTest : CallsJpaTest() {
             language: String,
             variables: Map<String, String>,
         ): OutboundCallResult {
-            if (fail) throw IllegalStateException("ElevenLabs POST answered 500")
+            attempts.incrementAndGet()
+            failure?.let { throw it }
             dialled += toNumber to variables
             val i = n.incrementAndGet()
             return OutboundCallResult("conv-$i", "CA$i")
@@ -52,13 +61,23 @@ class CallDispatcherTest : CallsJpaTest() {
     private val notifier: CallNotifier = mock(CallNotifier::class.java)
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
     private val dispatcher by lazy {
-        CallDispatcher(calls, inquiries, CallEligibility(calls, jdbc), CallPlanner(calls, inquiries, settings, jdbc, clock), api, settings, notifier, txManager)
+        val outcomes =
+            CallOutcomeService(
+                calls,
+                inquiries,
+                CallPlanner(calls, inquiries, settings, jdbc, clock),
+                notifier,
+                CallAudioStore(Files.createTempDirectory("dispatch").toString()),
+                clock,
+            )
+        CallDispatcher(calls, inquiries, CallEligibility(calls, jdbc), outcomes, api, settings, notifier, txManager)
     }
 
     @BeforeEach
     fun reset() {
         api.dialled.clear()
-        api.fail = false
+        api.failure = null
+        api.attempts.set(0)
         clearInvocations(notifier)
         settings.write(mapOf("calls.enabled" to "true"))
     }
@@ -106,14 +125,14 @@ class CallDispatcherTest : CallsJpaTest() {
     }
 
     @Test
-    fun `an ElevenLabs error marks FAILED and schedules exactly one retry 15 minutes later`() {
-        api.fail = true
+    fun `a call ElevenLabs certainly did not place is FAILED and retried exactly once 15 minutes later`() {
+        api.failure = CallNotStartedException("ElevenLabs POST answered 422")
         val i = inquiry()
         val c = call(i, scheduledAt = now)
         dispatcher.runOnce(now)
         val saved = calls.findById(c.id!!).get()
         saved.status shouldBe CallStatus.FAILED
-        saved.error shouldBe "ElevenLabs POST answered 500"
+        saved.error shouldBe "ElevenLabs POST answered 422"
         val retry = calls.findByInquiryIdOrderByCreatedAtDesc(i.id!!).single { it.status == CallStatus.SCHEDULED }
         retry.scheduledAt shouldBe Instant.parse("2026-11-03T09:15:00Z")
         retry.attempt shouldBe 2
@@ -143,5 +162,71 @@ class CallDispatcherTest : CallsJpaTest() {
         listOf(first, second).map { calls.findById(it.id!!).get().status }.toSet() shouldBe setOf(CallStatus.DIALING, CallStatus.SCHEDULED)
         verify(notifier, times(2)).limitReached(LocalDate.of(2026, 11, 3)) // the notifier itself mails once per day
         settings.write(mapOf("calls.limit.daily" to "40"))
+    }
+
+    @Test
+    fun `when it is unclear whether the call was placed it stays DIALING and is never dialled again`() {
+        api.failure = IllegalStateException("ElevenLabs POST answered 502")
+        val i = inquiry()
+        val c = call(i, scheduledAt = now)
+        dispatcher.runOnce(now)
+        val saved = calls.findById(c.id!!).get()
+        saved.status shouldBe CallStatus.DIALING
+        saved.error!! shouldContain "unclear"
+        calls.findByInquiryIdOrderByCreatedAtDesc(i.id!!).size shouldBe 1
+        api.failure = null
+        dispatcher.runOnce(now.plus(Duration.ofHours(1))) shouldBe 0
+        api.attempts.get() shouldBe 1
+    }
+
+    @Test
+    fun `the call carries its own id, so a webhook can find it without a conversation id`() {
+        val c = call(inquiry(), scheduledAt = now)
+        dispatcher.runOnce(now)
+        api.dialled.single().second["call_id"] shouldBe c.id.toString()
+    }
+
+    @Test
+    fun `two due inquiries of the same phone ring once, and Nika hears of the other one`() {
+        val first = inquiry()
+        val second =
+            inquiry {
+                dateFrom = LocalDate.of(2027, 6, 12)
+                dateTo = LocalDate.of(2027, 6, 19)
+            }
+        call(first, scheduledAt = now)
+        val b = call(second, scheduledAt = now)
+        dispatcher.runOnce(now) shouldBe 1
+        calls.findById(b.id!!).get().skipReason shouldBe SkipReason.SAME_PERSON
+        api.dialled.single().second["other_inquiries"]!! shouldContain "2027-06-12"
+    }
+
+    @Test
+    fun `a call waits 30 minutes while another call to the same phone is in progress`() {
+        call(inquiry(), status = CallStatus.DIALING) { startedAt = now.minusSeconds(60) }
+        val manual = call(inquiry(), kind = CallKind.MANUAL, scheduledAt = now)
+        dispatcher.runOnce(now) shouldBe 0
+        val saved = calls.findById(manual.id!!).get()
+        saved.status shouldBe CallStatus.SCHEDULED
+        saved.scheduledAt shouldBe now.plus(Duration.ofMinutes(30))
+    }
+
+    @Test
+    fun `one broken call does not stop the others`() {
+        val broken = call(inquiry(phone = "+385981111110"), scheduledAt = now)
+        call(inquiry(phone = "+385981111111"), scheduledAt = now)
+        jdbc.execute("CREATE FUNCTION calls_test_break() RETURNS trigger LANGUAGE plpgsql AS \$\$ BEGIN RAISE EXCEPTION 'broken row'; END \$\$")
+        jdbc.execute(
+            "CREATE TRIGGER calls_test_break BEFORE UPDATE ON inquiry_call FOR EACH ROW " +
+                "WHEN (NEW.id = ${broken.id} AND NEW.status = 'DIALING') EXECUTE FUNCTION calls_test_break()",
+        )
+        try {
+            dispatcher.runOnce(now) shouldBe 1
+        } finally {
+            jdbc.execute("DROP TRIGGER calls_test_break ON inquiry_call")
+            jdbc.execute("DROP FUNCTION calls_test_break()")
+        }
+        api.dialled.single().first shouldBe "+385981111111"
+        calls.findById(broken.id!!).get().status shouldBe CallStatus.FAILED
     }
 }

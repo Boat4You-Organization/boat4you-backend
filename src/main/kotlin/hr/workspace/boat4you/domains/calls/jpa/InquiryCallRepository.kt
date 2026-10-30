@@ -6,7 +6,9 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import java.time.Instant
 
-interface InquiryCallRepository : JpaRepository<InquiryCall, Long> {
+interface InquiryCallRepository :
+    JpaRepository<InquiryCall, Long>,
+    InquiryCallLocking {
     /** Due dialable calls, oldest first, locking them; rows another transaction holds are skipped. Call inside a transaction. */
     @Query(
         value =
@@ -45,6 +47,38 @@ interface InquiryCallRepository : JpaRepository<InquiryCall, Long> {
         @Param("phone") phoneE164: String,
         @Param("since") since: Instant,
         @Param("excludeInquiryId") excludeInquiryId: Long,
+    ): Boolean
+
+    /**
+     * Another inquiry's confirmation call to this number that is still open (planned, dialling or talking) and was planned
+     * before [beforeId]: the same person is already being called about that one (design §2.2).
+     */
+    @Query(
+        "SELECT COUNT(c) > 0 FROM InquiryCall c WHERE c.toNumber = :phone AND c.inquiryId <> :inquiryId AND c.id < :beforeId " +
+            "AND c.kind = hr.workspace.boat4you.domains.calls.enums.CallKind.CONFIRMATION " +
+            "AND c.status IN (hr.workspace.boat4you.domains.calls.enums.CallStatus.SCHEDULED, " +
+            "hr.workspace.boat4you.domains.calls.enums.CallStatus.DIALING, hr.workspace.boat4you.domains.calls.enums.CallStatus.IN_PROGRESS)",
+    )
+    fun existsOpenConfirmationOfOtherInquiry(
+        @Param("phone") phoneE164: String,
+        @Param("inquiryId") inquiryId: Long,
+        @Param("beforeId") beforeId: Long,
+    ): Boolean
+
+    /** Another call to this number is dialling or talking right now. */
+    @Query(
+        "SELECT COUNT(c) > 0 FROM InquiryCall c WHERE c.toNumber = :phone AND c.id <> :exceptId " +
+            "AND c.status IN (hr.workspace.boat4you.domains.calls.enums.CallStatus.DIALING, hr.workspace.boat4you.domains.calls.enums.CallStatus.IN_PROGRESS)",
+    )
+    fun existsActiveCallToNumber(
+        @Param("phone") phoneE164: String,
+        @Param("exceptId") exceptId: Long,
+    ): Boolean
+
+    /** Someone with this number said "do not call" on any of their inquiries (design §2.1: permanent for the person). */
+    @Query(value = "SELECT EXISTS (SELECT 1 FROM inquiry WHERE phone_e164 = :phone AND do_not_call)", nativeQuery = true)
+    fun numberSaidDoNotCall(
+        @Param("phone") phoneE164: String,
     ): Boolean
 
     /** Calls still dialling or in progress that started before [before] (lost webhook, deploy gap). */

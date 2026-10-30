@@ -13,8 +13,9 @@ import java.time.ZonedDateTime
 
 /**
  * Time rules of the call center (design §2.2, §2.4, §6.4), pure functions. The client is called only between the window
- * start and end in their own time zone (from the number), outside it at window start + 30 min (not on the stroke, so nobody
- * is woken); a call must start at least [CALL_FIT] before the window ends. Transfers to Mario follow Croatian time.
+ * start and end in their own time zone (from the number; every zone the number may be in), outside it at window start + 30 min
+ * (not on the stroke, so nobody is woken); a call must start at least [CALL_FIT] before the window ends. Transfers to Mario
+ * follow Croatian time.
  */
 object CallClock {
     val ZAGREB: ZoneId = ZoneId.of("Europe/Zagreb")
@@ -25,30 +26,71 @@ object CallClock {
     private val util = PhoneNumberUtil.getInstance()
     private val zones = PhoneNumberToTimeZonesMapper.getInstance()
 
-    fun clientZone(e164: String): ZoneId =
+    /** The zone Nika is told for countries whose numbers libphonenumber maps to several zones (listed alphabetically). */
+    private val MAIN_ZONE =
+        mapOf(
+            "ES" to "Europe/Madrid",
+            "PT" to "Europe/Lisbon",
+            "RU" to "Europe/Moscow",
+            "AU" to "Australia/Sydney",
+            "US" to "America/New_York",
+            "CA" to "America/Toronto",
+            "BR" to "America/Sao_Paulo",
+            "MX" to "America/Mexico_City",
+            "NZ" to "Pacific/Auckland",
+            "CL" to "America/Santiago",
+        )
+
+    /**
+     * Every zone the number may be in (libphonenumber: by country, for the USA, Canada and Australia by prefix), the country's
+     * main zone first; Zagreb when the number tells nothing.
+     */
+    fun clientZones(e164: String): List<ZoneId> =
         try {
-            zones
-                .getTimeZonesForNumber(util.parse(e164, "ZZ"))
-                .firstOrNull { it != PhoneNumberToTimeZonesMapper.getUnknownTimeZone() }
-                ?.let(ZoneId::of) ?: ZAGREB
+            val number = util.parse(e164, "ZZ")
+            val all =
+                zones
+                    .getTimeZonesForNumber(number)
+                    .filter { it != PhoneNumberToTimeZonesMapper.getUnknownTimeZone() }
+                    .map(ZoneId::of)
+            val main = MAIN_ZONE[util.getRegionCodeForNumber(number)]?.let(ZoneId::of)
+            when {
+                all.isEmpty() -> listOf(ZAGREB)
+                main != null && main in all -> listOf(main) + (all - main)
+                else -> all
+            }
         } catch (e: NumberParseException) {
-            ZAGREB
+            listOf(ZAGREB)
         }
+
+    /** The zone Nika is told: the main one of [clientZones]. */
+    fun clientZone(e164: String): ZoneId = clientZones(e164).first()
+
+    /**
+     * The first moment at or after [earliest] that is inside the window in every one of [zones] (a Spanish mobile may be on the
+     * Canaries, so it must suit both); when [earliest] is not, window start + 30 min of the zone that opens last. Null when the
+     * zones are too far apart to share a window (a Russian mobile): such a number is never called automatically.
+     */
+    fun nextSlot(
+        earliest: Instant,
+        zones: List<ZoneId>,
+        s: CallsSettings.Snapshot,
+    ): Instant? {
+        val openings =
+            zones.asSequence().flatMap { zone ->
+                val day = earliest.atZone(zone).toLocalDate()
+                (0L..2L).asSequence().map { ZonedDateTime.of(day.plusDays(it), s.windowStart.plus(AFTER_START), zone).toInstant() }
+            }
+        return (sequenceOf(earliest) + openings)
+            .filter { !it.isBefore(earliest) && zones.all { zone -> inWindow(it, zone, s) } }
+            .minOrNull()
+    }
 
     fun nextSlot(
         earliest: Instant,
         zone: ZoneId,
         s: CallsSettings.Snapshot,
-    ): Instant {
-        val local = earliest.atZone(zone)
-        val time = local.toLocalTime()
-        val lastStart = s.windowEnd.minus(CALL_FIT)
-        return when {
-            !time.isBefore(s.windowStart) && time.isBefore(lastStart) -> earliest
-            time.isBefore(s.windowStart) -> at(local, 0, s.windowStart.plus(AFTER_START))
-            else -> at(local, 1, s.windowStart.plus(AFTER_START))
-        }
-    }
+    ): Instant = checkNotNull(nextSlot(earliest, listOf(zone), s))
 
     /**
      * When to try again after [status] on attempt number [attempt], or null for no more tries. No answer / voicemail: +2 h,
@@ -59,7 +101,7 @@ object CallClock {
         status: CallStatus,
         attempt: Int,
         now: Instant,
-        zone: ZoneId,
+        zones: List<ZoneId>,
         s: CallsSettings.Snapshot,
         previousFailed: Boolean = false,
     ): Instant? {
@@ -67,14 +109,32 @@ object CallClock {
         return when (status) {
             CallStatus.NO_ANSWER, CallStatus.VOICEMAIL ->
                 if (attempt == 1) {
-                    nextSlot(now.plus(Duration.ofHours(2)), zone, s)
+                    nextSlot(now.plus(Duration.ofHours(2)), zones, s)
                 } else {
-                    at(now.atZone(zone), 1, s.windowStart.plus(AFTER_START))
+                    nextSlot(now.atZone(zones.first()).toLocalDate().plusDays(1).atStartOfDay(zones.first()).toInstant(), zones, s)
                 }
-            CallStatus.BUSY -> nextSlot(now.plus(Duration.ofMinutes(30)), zone, s)
-            CallStatus.FAILED -> if (previousFailed) null else nextSlot(now.plus(Duration.ofMinutes(15)), zone, s)
+            CallStatus.BUSY -> nextSlot(now.plus(Duration.ofMinutes(30)), zones, s)
+            CallStatus.FAILED -> if (previousFailed) null else nextSlot(now.plus(Duration.ofMinutes(15)), zones, s)
             else -> null
         }
+    }
+
+    fun retryAt(
+        status: CallStatus,
+        attempt: Int,
+        now: Instant,
+        zone: ZoneId,
+        s: CallsSettings.Snapshot,
+        previousFailed: Boolean = false,
+    ): Instant? = retryAt(status, attempt, now, listOf(zone), s, previousFailed)
+
+    private fun inWindow(
+        t: Instant,
+        zone: ZoneId,
+        s: CallsSettings.Snapshot,
+    ): Boolean {
+        val time = t.atZone(zone).toLocalTime()
+        return !time.isBefore(s.windowStart) && time.isBefore(s.windowEnd.minus(CALL_FIT))
     }
 
     fun transferAllowed(
@@ -103,10 +163,4 @@ object CallClock {
     }
 
     private fun name(d: DayOfWeek) = d.name.lowercase().replaceFirstChar { it.uppercase() }
-
-    private fun at(
-        local: ZonedDateTime,
-        plusDays: Long,
-        time: LocalTime,
-    ): Instant = ZonedDateTime.of(local.toLocalDate().plusDays(plusDays), time, local.zone).toInstant()
 }

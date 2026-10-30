@@ -1,11 +1,13 @@
 package hr.workspace.boat4you.domains.catalouge.services
 
+import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.branding.BrandResolver
 import hr.workspace.boat4you.domains.calls.service.CallPlanner
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryDto
 import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -14,6 +16,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import java.time.Instant
@@ -116,5 +119,11 @@ class InquiryConsentTest {
         service.createNewInquiry(dto(consent = true))
         val inquiry = saved()
         verify(emails).sendNewInquiryNotification(inquiry, null)
+    }
+
+    @Test
+    fun `details over 4000 characters are refused before anything is saved`() {
+        shouldThrow<ParameterValidationException> { service.createNewInquiry(dto(details = mapOf("wishes" to "x".repeat(4001)))) }
+        verify(inquiries, never()).saveAndFlush(any(Inquiry::class.java) ?: Inquiry())
     }
 }

@@ -13,8 +13,9 @@ import java.util.Base64
 
 /**
  * What a finished call means (design §2.2-§2.5): stores the result on the call row, then retries, marks "do not call",
- * opens a callback task for Mario and mails him when he is needed. Each method is idempotent: a call that already left
- * DIALING / IN_PROGRESS is not touched again, so a redelivered webhook changes nothing.
+ * opens a callback task for Mario and mails him when he is needed. Each method locks and re-reads the row first, so two
+ * results of one call (transcription and recording, webhook and reconcile) never overwrite each other, and is idempotent:
+ * a call that already left DIALING / IN_PROGRESS is not touched again, so a redelivered webhook changes nothing.
  */
 @Service
 class CallOutcomeService(
@@ -27,10 +28,10 @@ class CallOutcomeService(
 ) {
     @Transactional
     fun applyTranscription(
-        call: InquiryCall,
+        row: InquiryCall,
         data: ConversationData,
     ) {
-        if (call.status !in OPEN) return
+        val call = calls.lockFresh(row.id!!)?.takeIf { it.status in OPEN } ?: return
         val now = clock.instant()
         val inquiry = inquiries.findById(call.inquiryId!!).orElseThrow()
         val collected = data.analysis?.dataCollectionResults.orEmpty().mapValues { it.value.value }
@@ -77,33 +78,62 @@ class CallOutcomeService(
 
     @Transactional
     fun applyInitiationFailure(
-        call: InquiryCall,
+        row: InquiryCall,
         reason: String,
     ) {
-        if (call.status !in OPEN) return
-        val now = clock.instant()
         val status =
             when (reason.lowercase()) {
                 "busy" -> CallStatus.BUSY
                 "no-answer" -> CallStatus.NO_ANSWER
                 else -> CallStatus.FAILED
             }
-        call.status = status
-        call.endedAt = now
-        call.error = reason.take(500)
+        end(row, status, reason)
+    }
+
+    /** ElevenLabs certainly did not place the call (refused, rejected, unreachable): FAILED and one retry. */
+    @Transactional
+    fun applyNotStarted(
+        row: InquiryCall,
+        error: String,
+    ) = end(row, CallStatus.FAILED, error)
+
+    /** No result 2 h after the start: FAILED but never dialled again, since the client may have been called; Mario is told. */
+    @Transactional
+    fun applyLost(row: InquiryCall) {
+        val call = calls.lockFresh(row.id!!)?.takeIf { it.status in OPEN } ?: return
+        call.status = CallStatus.FAILED
+        call.endedAt = clock.instant()
+        call.error = "lost"
         calls.save(call)
-        planner.scheduleRetry(call, status, now)
+        inquiries.findById(call.inquiryId!!).ifPresent { notifier.lost(call, it) }
     }
 
     @Transactional
     fun applyAudio(
-        call: InquiryCall,
+        row: InquiryCall,
         base64Mp3: String,
     ) {
-        if (call.audioPath != null) return
+        val call = calls.lockFresh(row.id!!)?.takeIf { it.audioPath == null } ?: return
         val conversation = call.elevenlabsConversationId ?: return
         call.audioPath = audio.save(conversation, Base64.getDecoder().decode(base64Mp3), clock.instant())
         calls.save(call)
+    }
+
+    /** A call that ended without a conversation: the retry rules apply; the second technical failure of a call tells Mario (§2.5). */
+    private fun end(
+        row: InquiryCall,
+        status: CallStatus,
+        error: String,
+    ) {
+        val call = calls.lockFresh(row.id!!)?.takeIf { it.status in OPEN } ?: return
+        val now = clock.instant()
+        val failedBefore = status == CallStatus.FAILED && planner.earlierAttemptFailed(call)
+        call.status = status
+        call.endedAt = now
+        call.error = error.take(500)
+        calls.save(call)
+        planner.scheduleRetry(call, status, now)
+        if (failedBefore) inquiries.findById(call.inquiryId!!).ifPresent { notifier.technicalFailure(call, it) }
     }
 
     private fun notifierLabel(outcome: CallOutcome?) =
@@ -115,7 +145,7 @@ class CallOutcomeService(
         }
 
     companion object {
-        private val OPEN = setOf(CallStatus.DIALING, CallStatus.IN_PROGRESS)
+        val OPEN = setOf(CallStatus.DIALING, CallStatus.IN_PROGRESS)
 
         /** The outcome from the agent's data collection, in priority order (design §6.5, plan Task 7). */
         fun outcomeOf(

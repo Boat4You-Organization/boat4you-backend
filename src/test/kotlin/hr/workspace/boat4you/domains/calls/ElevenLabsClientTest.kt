@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.calls
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.sun.net.httpserver.HttpServer
+import hr.workspace.boat4you.domains.calls.elevenlabs.CallNotStartedException
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsClient
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsProperties
 import io.kotest.assertions.throwables.shouldThrow
@@ -69,14 +70,36 @@ class ElevenLabsClientTest {
     }
 
     @Test
-    fun `a refused call (success false) is an error`() {
+    fun `a refused call (success false) was certainly not placed`() {
         response = """{"success":false,"message":"number not allowed","conversation_id":null,"callSid":null}"""
-        shouldThrow<IllegalStateException> { client().startOutboundCall("+385912345678", "hr", emptyMap()) }
+        shouldThrow<CallNotStartedException> { client().startOutboundCall("+385912345678", "hr", emptyMap()) }
+    }
+
+    @Test
+    fun `a rejected request (4xx) was certainly not placed`() {
+        status = 422
+        response = """{"detail":"invalid"}"""
+        shouldThrow<CallNotStartedException> { client().startOutboundCall("+385912345678", "hr", emptyMap()) }
+    }
+
+    @Test
+    fun `after a server error (5xx) it is unclear whether the call was placed`() {
+        status = 502
+        response = """{"detail":"bad gateway"}"""
+        val e = shouldThrow<IllegalStateException> { client().startOutboundCall("+385912345678", "hr", emptyMap()) }
+        (e is CallNotStartedException) shouldBe false
+    }
+
+    @Test
+    fun `an unreachable ElevenLabs was certainly not called`() {
+        val closed = java.net.ServerSocket(0).use { it.localPort }
+        val c = ElevenLabsClient(ElevenLabsProperties("http://127.0.0.1:$closed", "k", "agent-1", "phone-1", "whsec"))
+        shouldThrow<CallNotStartedException> { c.startOutboundCall("+385912345678", "hr", emptyMap()) }
     }
 
     @Test
     fun `without an API key nothing is sent`() {
-        shouldThrow<IllegalStateException> { client(apiKey = "").startOutboundCall("+385912345678", "hr", emptyMap()) }
+        shouldThrow<CallNotStartedException> { client(apiKey = "").startOutboundCall("+385912345678", "hr", emptyMap()) }
         seen.size shouldBe 0
     }
 

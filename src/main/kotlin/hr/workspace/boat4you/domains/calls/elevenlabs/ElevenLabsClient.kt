@@ -8,7 +8,11 @@ import org.springframework.http.HttpStatusCode
 import org.springframework.http.MediaType
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Component
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClient
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.UnknownHostException
 import java.time.Duration
 
 /**
@@ -40,7 +44,7 @@ class ElevenLabsClient(
         language: String,
         variables: Map<String, String>,
     ): OutboundCallResult {
-        check(props.configured) { "ElevenLabs not configured" }
+        if (!props.configured) throw CallNotStartedException("ElevenLabs not configured")
         val body =
             mapOf(
                 "agent_id" to props.agentId,
@@ -52,10 +56,24 @@ class ElevenLabsClient(
                         "conversation_config_override" to mapOf("agent" to mapOf("language" to language)),
                     ),
             )
-        val raw = exchange("POST", "/v1/convai/twilio/outbound-call", json.writeValueAsString(body))
+        val raw =
+            try {
+                exchange("POST", "/v1/convai/twilio/outbound-call", json.writeValueAsString(body))
+            } catch (e: HttpStatusException) {
+                // A rejected request (4xx) was never acted on; after a 5xx the call may or may not have been placed.
+                throw if (e.status in 400..499) CallNotStartedException(e.message!!) else e
+            } catch (e: ResourceAccessException) {
+                // Not even connected: nothing was sent. A timeout after connecting stays unclear.
+                val cause = e.cause
+                throw if (cause is ConnectException || cause is UnknownHostException || cause is NoRouteToHostException) {
+                    CallNotStartedException("ElevenLabs not reachable")
+                } else {
+                    e
+                }
+            }
         val response: Map<String, Any?> = json.readValue(raw)
         if (response["success"] == false) {
-            throw IllegalStateException("ElevenLabs refused the call: ${response["message"]}")
+            throw CallNotStartedException("ElevenLabs refused the call: ${response["message"]}")
         }
         return OutboundCallResult(response["conversation_id"] as String?, response["callSid"] as String?)
     }
@@ -83,11 +101,16 @@ class ElevenLabsClient(
                 val text = res.body.readAllBytes().decodeToString()
                 if (!status.is2xxSuccessful) {
                     log.warn("ElevenLabs {} {} answered {}", method, path.substringBefore("/conversations/") + "…", status.value())
-                    throw IllegalStateException("ElevenLabs $method answered ${status.value()}")
+                    throw HttpStatusException(status.value(), "ElevenLabs $method answered ${status.value()}")
                 }
                 text
             }!!
     }
+
+    private class HttpStatusException(
+        val status: Int,
+        message: String,
+    ) : IllegalStateException(message)
 
     companion object {
         private val CONNECT_TIMEOUT: Duration = Duration.ofSeconds(10)

@@ -101,13 +101,14 @@ class AdminCallControllerTest : CallsJpaTest() {
 
     @Test
     fun `call now is refused with the reason when the rules forbid it`() {
+        settings.write(mapOf("calls.enabled" to "true"))
         val noConsent = inquiry(consent = false)
-        mvc.post("/admin/calls/inquiries/${noConsent.id}/call-now", dsl = json("""{"confirmOutsideWindow":false}""")).andExpect {
+        mvc.post("/admin/calls/inquiries/${noConsent.id}/call-now", dsl = json("{}")).andExpect {
             status { isConflict() }
             jsonPath("$.skipReason") { value("NO_CONSENT") }
         }
         val ok = inquiry()
-        mvc.post("/admin/calls/inquiries/${ok.id}/call-now", dsl = json("""{"confirmOutsideWindow":false}""")).andExpect {
+        mvc.post("/admin/calls/inquiries/${ok.id}/call-now", dsl = json("{}")).andExpect {
             status { isOk() }
             jsonPath("$.kind") { value("MANUAL") }
         }
@@ -171,6 +172,26 @@ class AdminCallControllerTest : CallsJpaTest() {
             jsonPath("$.content[0].inquiry.site") { value("cy") }
             jsonPath("$.content[0].inquiry.contactConsent") { value(true) }
             jsonPath("$.content[0].lastOutcome") { value("CONFIRMED") }
+        }
+    }
+
+    @Test
+    fun `call now is refused while calls are switched off`() {
+        settings.write(mapOf("calls.enabled" to "false"))
+        val i = inquiry()
+        mvc.post("/admin/calls/inquiries/${i.id}/call-now", dsl = json("{}")).andExpect {
+            status { isConflict() }
+            jsonPath("$.skipReason") { value("CALLS_OFF") }
+        }
+    }
+
+    @Test
+    fun `call now outside the client's window answers with the client's next slot`() {
+        settings.write(mapOf("calls.enabled" to "true"))
+        val newYork = inquiry(phone = "+12125550100") // 09:00 UTC = 04:00 New York -> 09:30 New York = 14:30 UTC
+        mvc.post("/admin/calls/inquiries/${newYork.id}/call-now", dsl = json("{}")).andExpect {
+            status { isOk() }
+            jsonPath("$.scheduledAt") { value("2026-11-03T14:30:00Z") }
         }
     }
 }
