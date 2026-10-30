@@ -80,6 +80,9 @@ class SecurityConfiguration(
         configuration.allowedMethods = listOf("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
         configuration.allowedHeaders = listOf("*")
         configuration.allowCredentials = true
+        // Browsers may reuse a preflight for an hour: the P3 widget's chat and tracker POSTs from the sister sites
+        // would otherwise send an OPTIONS before each beat (P3 review M8).
+        configuration.maxAge = CORS_PREFLIGHT_MAX_AGE_SECONDS
         val source = UrlBasedCorsConfigurationSource()
         source.registerCorsConfiguration("/**", configuration)
         return source
@@ -88,5 +91,9 @@ class SecurityConfiguration(
     @Bean
     fun grantedAuthorityDefaults(): GrantedAuthorityDefaults {
         return GrantedAuthorityDefaults("")
+    }
+
+    private companion object {
+        const val CORS_PREFLIGHT_MAX_AGE_SECONDS = 3600L
     }
 }

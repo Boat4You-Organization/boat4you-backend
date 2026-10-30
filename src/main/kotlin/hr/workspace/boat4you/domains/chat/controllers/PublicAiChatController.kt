@@ -5,6 +5,8 @@ import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import hr.workspace.boat4you.domains.chat.service.AiChatService
 import hr.workspace.boat4you.domains.chat.service.ChatSecurityGuard
 import hr.workspace.boat4you.domains.contactcenter.service.ChatSiteResolver
+import hr.workspace.boat4you.domains.contactcenter.service.ChatVisitLinker
+import org.slf4j.LoggerFactory
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -32,7 +34,10 @@ import org.springframework.web.bind.annotation.ResponseBody
 @RequestMapping("/public/chat")
 class PublicAiChatController(
     private val chat: AiChatService,
+    private val visits: ChatVisitLinker,
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     data class CreateSessionRequest(
         val locale: String? = null,
         val page: String? = null,
@@ -40,6 +45,9 @@ class PublicAiChatController(
         val name: String? = null,
         /** For a server-to-server call without an `Origin` only; a browser's `Origin` header always decides the site. */
         val siteId: String? = null,
+        /** P3 widget: the visitor and visit of the tracker, when it runs; today's ChatWidget sends neither (WEB-12). */
+        val visitorKey: String? = null,
+        val visitKey: String? = null,
     )
 
     data class MessageRequest(
@@ -81,7 +89,26 @@ class PublicAiChatController(
                 return invalidName()
             }
         chat.updatePresence(session, request?.page, request?.referrer)
+        linkVisit(session, request)
         return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList(), session.visitorName, chat.isAiPaused(session)))
+    }
+
+    /**
+     * Points a new session at the widget's visit (P3 task 9). Only two well-formed UUIDs are passed on; the linker checks
+     * that the visit is live, belongs to that visitor and to the session's site (P1b). A failure never changes the reply.
+     */
+    @Suppress("TooGenericExceptionCaught") // the chat must answer even when the link fails
+    private fun linkVisit(
+        session: AiChatSession,
+        request: CreateSessionRequest?,
+    ) {
+        val visitorKey = request?.visitorKey?.trim()?.takeIf { UUID_V4.matches(it) } ?: return
+        val visitKey = request.visitKey?.trim()?.takeIf { UUID_V4.matches(it) } ?: return
+        try {
+            visits.linkChatSession(session.id!!, session.siteId, visitorKey, visitKey)
+        } catch (e: Exception) {
+            log.warn("CC: chat session {} not linked to its visit: {}", session.id, e.toString())
+        }
     }
 
     data class NameRequest(val name: String? = null)
@@ -168,4 +195,8 @@ class PublicAiChatController(
 
     private fun notFound(): ResponseEntity<Any> =
         ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to "unknown session"))
+
+    private companion object {
+        val UUID_V4 = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+    }
 }
