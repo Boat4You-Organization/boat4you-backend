@@ -1,5 +1,28 @@
 # Backend deploy notes
 
+## 2026-10-30 — 🗂️ Contact Center P2: admin API (razgovori, live, kontakti, statistika) — ⏳ NIJE DEPLOYANO
+
+Četvrti korak contact centera (plan `infra/docs/superpowers/plans/2026-10-30-p2-contact-center-admin.md`). Grana `feat/contact-center-p2` iz `main` `a0bc04e`. **Nema migracije**, P2 ne mijenja ni jedan stupac.
+
+**1. Novi API** `/admin/cc` (samo SYSTEM_ADMIN, BACKEND-27; postojeći `/admin/chat/**` i `/admin/cc/ai/**` nepromijenjeni)
+- `GET /conversations` (filteri `siteId`, `status`, `needsHuman`, `flaggedOnly`, `contactStatus`, `tag`, `from`, `to`, `q`, `includeSpam`, keyset `before` + `beforeId`, `size` 1–200); `GET /conversations/unread-count`.
+- `GET /conversations/{id}` (prije čitanja poveže kontakt), `POST /{id}/read`, `POST /{id}/take-over` (409 za LOCKED), `POST /{id}/return-to-ai` (409 za flagged, LOCKED, ne-HUMAN).
+- `GET /live`, `POST /live/{visitorKey}/message` `{"text"}`.
+- `GET /contacts`, `GET /contacts/{id}`, `PATCH /contacts/{id}` (null = bez promjene, prazno = briše), `PUT /contacts/{id}/tags` (`spam` = status SPAM), `POST /contacts/{id}/merge` `{"sourceId"}` (samo ručno).
+- `GET /stats?from&to&siteId` (zadano zadnjih 30 dana, najviše 400 dana).
+
+**2. Promjene ponašanja postojećeg koda**
+- `adminReply` više ne sprema cijeli red sesije: dva uvjetna UPDATE-a (status, nepročitano, aktivnost, preuzimanje; pečati odgovora samo kad je posjetitelj pisao). AI pečat ili zastavica upisani u međuvremenu ostaju.
+- Proaktivna poruka gubi kontrolne znakove (NUL bi rušio svaku dostavu); novi red ostaje.
+
+**3. Novi job na cusma3:** `ContactLinkJob` (`ccContactLink`, svakih 5 min, `cc.contacts.link-ms`). Prvi run poveže sve stare IRIS razgovore s imenom, emailom ili telefonom s kontaktom (isti posjetitelj = isti kontakt; isti email drugog posjetitelja se NE spaja). Na cusma2 se kontakt stvara kad Mario otvori razgovor.
+
+**4. Rollback:** `webservice.jar.prev` bez SQL-a. Kontakti koje je job napravio ostaju i bezopasni su (stari jar ih ne čita osim kroz `contact_id`).
+
+**5. Provjere uz deploy**
+- cusma2: `GET /admin/cc/conversations` i `/admin/cc/conversations/unread-count` iz admina (200), `GET /admin/cc/stats` (200, nule za posjetitelje prije P3).
+- cusma3: nakon ~5 min `SELECT name, lock_until FROM shedlock WHERE name = 'ccContactLink'` ima red; `SELECT count(*) FROM cc_contact` raste jednom pa stoji; journal `CC contacts: N conversations linked`.
+
 ## 2026-10-30 — 🤖 Contact Center P1c: AI po sajtu i sigurnost — ✅ cusma2 LIVE 30.10. 08:46 UTC (jar main 9cf7ce5, md5 e9bd2a921a5b4453f3d84160368d8acf, V9_107 + V9_108 primijenjene 08:45:55 u 18 ms, start 13,3 s, lokalni health 200 nakon ~16 s, javni 200); ⏳ cusma3 čeka gate prozor 13:00–14:10 UTC (rezerva 15:10–16:15). Mario 30.10.: „Da, pregled“ = završni pregled, merge, push i deploy.
 
 Treći korak contact centera (dizajn `infra/docs/contact-center-dizajn-2026-10-25.md` §2.2, §2.6, §6.6–6.7; plan `infra/docs/superpowers/plans/2026-10-26-p1c-ai-per-site-safety.md`). Grana iz `main` `b903099` (P1a + P1b), 21 commit (`7a66e8a` … ovaj); ništa nije mergeano ni deployano. Zadaci 1–10 28.10. (s pregledom po zadatku), 11–18 30.10. (bez agenata, Marijevo pravilo o tokenima od 29.10.). **Završni pregled cijele grane (30.10., jedan Opus agent):** jedan važan nalaz (jedna IP adresa mogla je zaključavanjima otvoriti prekidač za sve posjetitelje) i šest manjih; važan i četiri manja popravljena u ovom commitu, dva manja zapisana kao poznata ograničenja (dno unosa).
