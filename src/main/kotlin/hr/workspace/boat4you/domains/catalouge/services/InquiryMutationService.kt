@@ -2,6 +2,8 @@ package hr.workspace.boat4you.domains.catalouge.services
 
 import hr.workspace.boat4you.domains.branding.Brand
 import hr.workspace.boat4you.domains.branding.BrandResolver
+import hr.workspace.boat4you.domains.calls.CallSite
+import hr.workspace.boat4you.domains.calls.service.PhoneNormalizer
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryDto
 import hr.workspace.boat4you.domains.catalouge.dto.InquiryUpdateDto
 import hr.workspace.boat4you.domains.catalouge.enums.InquiryStatus
@@ -14,6 +16,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -95,6 +98,7 @@ class InquiryMutationService(
         inquiry.phone = inquiryDto.phone
         inquiry.message = inquiryDto.message
         inquiry.status = InquiryStatus.NEW
+        applyCallFields(inquiry, inquiryDto)
 
         inquiryRepository.saveAndFlush(inquiry)
 
@@ -103,7 +107,26 @@ class InquiryMutationService(
         // EmailService would then register its deferral inside afterCommit, which Spring never runs, and no
         // inquiry e-mail would go out (review 29.9.2026). The advisory lock is released at commit, after this row
         // is written, so a concurrent duplicate finds it.
-        sendInquiryEmails(inquiry, request?.let(brandResolver::resolve))
+        // A sister site sends its own inquiry e-mails (nodemailer) and posts here only so the call center has the row.
+        if (inquiryDto.emailAlreadySent != true) {
+            sendInquiryEmails(inquiry, request?.let(brandResolver::resolve))
+        }
+    }
+
+    /** The AI call center fields (design §2.6): site, language, consent with its text version and time, E.164 phone, details. */
+    private fun applyCallFields(
+        inquiry: Inquiry,
+        dto: InquiryDto,
+    ) {
+        inquiry.site = CallSite.fromKey(dto.site)?.key
+        inquiry.locale = dto.locale?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        if (dto.contactConsent == true) {
+            inquiry.contactConsent = true
+            inquiry.consentTextVersion = dto.consentTextVersion?.trim()?.takeIf { it.isNotEmpty() }
+            inquiry.consentAt = Instant.now()
+        }
+        inquiry.phoneE164 = PhoneNormalizer.toE164(dto.phone)
+        inquiry.details = dto.details?.takeIf { it.isNotEmpty() }
     }
 
     private fun sendInquiryEmails(

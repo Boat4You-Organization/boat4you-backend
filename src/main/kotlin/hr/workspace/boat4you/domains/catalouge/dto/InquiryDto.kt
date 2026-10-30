@@ -31,4 +31,20 @@ data class InquiryDto(
     val phone: String,
     @field:Size(max = 2000)
     val message: String,
+    /**
+     * AI call center fields (design infra/docs/ai-call-center-dizajn-2026-10-27.md §2.6), all optional: today's forms send none.
+     * One of the 7 CallSite keys; an unknown key is ignored.
+     */
+    @field:Size(max = 40)
+    val site: String? = null,
+    @field:Size(max = 5)
+    val locale: String? = null,
+    /** The mandatory consent checkbox (calls incl. Nika's AI call, recording). */
+    val contactConsent: Boolean? = null,
+    @field:Size(max = 20)
+    val consentTextVersion: String? = null,
+    /** A sister site already sent the inquiry e-mails itself (nodemailer); the backend must not send them again. */
+    val emailAlreadySent: Boolean? = null,
+    /** Structured form fields read by the call center: people, cabins, budgetEur, weekPriceEur, region, boatType, crew, kids. */
+    val details: Map<String, Any?>? = null,
 )
