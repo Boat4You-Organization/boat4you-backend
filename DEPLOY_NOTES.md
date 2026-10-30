@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-10-30 — 📞 AI call centar „Nika zove“, faza 1: backend jezgra (V9_112, V9_113) — ⏳ NIJE DEPLOYANO (grana `feat/ai-call-center`)
+## 2026-10-30 — 📞 AI call centar „Nika zove“, faza 1: backend jezgra (V9_112, V9_113) — ✅ cusma2 LIVE 30.10. 11:55 UTC (jar main 2c10840, md5 0a53556a341fb04bc608a8fc6883e57d, V9_112 + V9_113 primijenjene 11:55:01 u 36 ms, start 13,6 s, javni health 200 nakon ~3 s; izvana: `POST /webhooks/elevenlabs` bez potpisa 401, `/admin/calls/settings` bez prijave 403; tag `live/2026-10-30-ai-call-center-p1`); ⏳ cusma3 (dispatch/reconcile jobovi, pozivi ionako isključeni) kroz gate, dogovor s Contact Center sesijom (njen cusma3 deploy 13:00 UTC)
 
 Mario 30.10.: „kreni radi call agenta“ (dizajn `infra/docs/ai-call-center-dizajn-2026-10-27.md` v2, plan `infra/docs/superpowers/plans/2026-10-30-ai-call-center-p1-backend.md`). Sve je iza `calls.enabled` (zadano **false**, i kad red ne postoji) — deploy ovog jara ne zove nikoga.
 
