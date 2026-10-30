@@ -6,6 +6,7 @@ Plan `infra/docs/superpowers/plans/2026-10-30-p3-shared-widget.md`, zadatak 9. G
 
 - `POST /public/chat/sessions` prima dva nova neobavezna polja `visitorKey` i `visitKey` (UUID v4). Kad su oba ispravna, sesija se povezuje s posjetom kroz `ChatVisitLinker` (P1b: posjet mora biti živ, istog posjetitelja i istog sajta kao sesija). Neuspjeh ili odbijanje se logira (`CC: chat session … not linked`) i ne mijenja odgovor.
 - Današnji `ChatWidget` na boat4you.com ne šalje ta polja i radi kao prije (WEB-12).
+- CORS preflight se u pregledniku sada pamti sat vremena (`maxAge` 3600 za sve putanje): widget sa sestrinskih sajtova inače bi uz svaki beat i poruku slao i OPTIONS (završni pregled P3, M8).
 - Uz deploy provjeriti `APPLICATION_CORS_ALLOWED_ORIGINS` na cusma2: svih 7 www i apex hostova (widget na sestrinskim sajtovima zove `/public/chat` i `/public/cc/v1` s njihovog `Origin`).
 - Rollback: `webservice.jar.prev` bez SQL-a.
 
