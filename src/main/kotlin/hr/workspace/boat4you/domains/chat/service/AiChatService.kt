@@ -888,8 +888,8 @@ class AiChatService(
          */
         const val TEAM_REPLY_PREFIX = "[Team reply] "
 
-        /** [TEAM_REPLY_PREFIX] at the start of any line, the form the model must never get from its own text. */
-        private val TEAM_MARKER_AT_LINE_START = Regex("(?m)^" + Regex.escape(TEAM_REPLY_PREFIX))
+        /** The team marker at the start of any line, in any spelling ("[team reply]:", indented, no space), never kept from the model's own text. */
+        private val TEAM_MARKER_AT_LINE_START = Regex("""(?im)^\s*\[\s*team\s+reply\s*]\s*:?\s*""")
 
         /** The user turn put in front when the site team wrote the first line of a conversation. */
         private const val TEAM_OPENED_TURN = "(The site team opened this conversation.)"
