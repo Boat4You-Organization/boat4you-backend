@@ -75,6 +75,12 @@ open class ChatTestHarness(
                     }
                 "countByIpAndFlaggedTrueAndLockedAtAfter" -> flaggedFromIp
                 "findById" -> Optional.ofNullable(sessionStore[inv.arguments[0] as Long])
+                "findAllByStatusAndFlaggedFalseAndDeletedAtIsNullAndHandoffHoldingAtIsNullAndHandoffRequestedAtBetween" ->
+                    sessionStore.values.filter {
+                        val at = it.handoffRequestedAt
+                        it.status == inv.arguments[0] && !it.flagged && it.deletedAt == null && it.handoffHoldingAt == null && at != null &&
+                            !at.isBefore(inv.arguments[1] as Instant) && !at.isAfter(inv.arguments[2] as Instant)
+                    }
                 "findAllByStatusAndFlaggedFalseAndDeletedAtIsNullAndLastActivityAtAfter" ->
                     sessionStore.values.filter {
                         it.status == inv.arguments[0] && !it.flagged && it.deletedAt == null && it.lastActivityAt.isAfter(inv.arguments[1] as Instant)
