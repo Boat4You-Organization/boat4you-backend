@@ -75,6 +75,10 @@ open class ChatTestHarness(
                     }
                 "countByIpAndFlaggedTrueAndLockedAtAfter" -> flaggedFromIp
                 "findById" -> Optional.ofNullable(sessionStore[inv.arguments[0] as Long])
+                "findAllByStatusAndFlaggedFalseAndDeletedAtIsNullAndLastActivityAtAfter" ->
+                    sessionStore.values.filter {
+                        it.status == inv.arguments[0] && !it.flagged && it.deletedAt == null && it.lastActivityAt.isAfter(inv.arguments[1] as Instant)
+                    }
                 // The two conditional UPDATEs of the never-silent path: same WHERE and SET as the queries, 1 or 0 rows.
                 "stampHandoffHolding" -> {
                     val s = sessionStore[inv.arguments[0] as Long]
