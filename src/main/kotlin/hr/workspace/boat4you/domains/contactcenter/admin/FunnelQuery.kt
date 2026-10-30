@@ -5,8 +5,9 @@ import org.springframework.stereotype.Service
 import java.sql.Timestamp
 import java.time.Instant
 
-/** A last page of visits without an inquiry: [exits] of the [views] visits that saw [path] left there. */
+/** A last page of visits without an inquiry: [exits] of the [views] visits that saw [path] on [siteId] left there. */
 data class ExitPage(
+    val siteId: String,
     val path: String,
     val pageType: String,
     val views: Long,
@@ -52,12 +53,12 @@ class FunnelQuery(
     ): CcFunnel {
         val filters = listOfNotNull(siteId?.let { "v.site_id" to it }, device?.let { "v.device_class" to it }, channel?.let { "v.channel" to it })
         val visits =
-            "WITH fv AS (SELECT v.id FROM cc_visit v JOIN cc_visitor vr ON vr.id = v.visitor_id WHERE v.started_at >= ? AND v.started_at < ?" +
+            "WITH fv AS (SELECT v.id, v.site_id FROM cc_visit v JOIN cc_visitor vr ON vr.id = v.visitor_id WHERE v.started_at >= ? AND v.started_at < ?" +
                 filters.joinToString("") { " AND ${it.first} = ?" } + " AND NOT v.is_bot AND NOT vr.is_staff)"
         val args = arrayOf<Any>(Timestamp.from(from), Timestamp.from(to), *filters.map { it.second }.toTypedArray())
         val (steps, chatOpened) = steps(visits, args)
         val last =
-            "$visits, last AS (SELECT DISTINCT ON (p.visit_id) p.visit_id, p.path, p.page_type FROM fv JOIN cc_page_view p ON p.visit_id = fv.id " +
+            "$visits, last AS (SELECT DISTINCT ON (p.visit_id) p.visit_id, fv.site_id, p.path, p.page_type FROM fv JOIN cc_page_view p ON p.visit_id = fv.id " +
                 "WHERE NOT $INQUIRED ORDER BY p.visit_id, p.viewed_at DESC, p.id DESC)"
         return CcFunnel(
             from = from,
@@ -97,13 +98,14 @@ class FunnelQuery(
     ): List<ExitPage> =
         jdbc
             .query(
-                "$last, ex AS (SELECT path, min(page_type) AS page_type, count(*) AS exits FROM last GROUP BY 1 ORDER BY 3 DESC, 1 LIMIT $TOP_EXITS), " +
-                    "pv AS (SELECT p.path, count(DISTINCT p.visit_id) AS views FROM fv JOIN cc_page_view p ON p.visit_id = fv.id " +
-                    "WHERE p.path IN (SELECT path FROM ex) GROUP BY 1) " +
-                    "SELECT ex.path, ex.page_type, pv.views, ex.exits FROM ex JOIN pv ON pv.path = ex.path",
-                { rs, _ -> ExitPage(rs.getString("path"), rs.getString("page_type"), rs.getLong("views"), rs.getLong("exits")) },
+                "$last, ex AS (SELECT site_id, path, min(page_type) AS page_type, count(*) AS exits FROM last GROUP BY 1, 2 " +
+                    "ORDER BY 4 DESC, 2, 1 LIMIT $TOP_EXITS), " +
+                    "pv AS (SELECT fv.site_id, p.path, count(DISTINCT p.visit_id) AS views FROM fv JOIN cc_page_view p ON p.visit_id = fv.id " +
+                    "WHERE (fv.site_id, p.path) IN (SELECT site_id, path FROM ex) GROUP BY 1, 2) " +
+                    "SELECT ex.site_id, ex.path, ex.page_type, pv.views, ex.exits FROM ex JOIN pv ON pv.site_id = ex.site_id AND pv.path = ex.path",
+                { rs, _ -> ExitPage(rs.getString("site_id"), rs.getString("path"), rs.getString("page_type"), rs.getLong("views"), rs.getLong("exits")) },
                 *args,
-            ).sortedWith(compareByDescending<ExitPage> { it.exits }.thenByDescending { it.views }.thenBy { it.path })
+            ).sortedWith(compareByDescending<ExitPage> { it.exits }.thenByDescending { it.views }.thenBy { it.path }.thenBy { it.siteId })
 
     private fun clicks(
         visits: String,

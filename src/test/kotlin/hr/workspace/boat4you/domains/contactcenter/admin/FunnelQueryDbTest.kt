@@ -134,8 +134,18 @@ class FunnelQueryDbTest {
         }
         funnel().let {
             it.exitsByType shouldContainExactly listOf(Count("HOME", 2), Count("BOAT", 1))
-            it.exits shouldContainExactly listOf(ExitPage("/", "HOME", views = 3, exits = 2), ExitPage("/en/a", "BOAT", views = 4, exits = 1))
+            it.exits shouldContainExactly
+                listOf(ExitPage("boat4you", "/", "HOME", views = 3, exits = 2), ExitPage("boat4you", "/en/a", "BOAT", views = 4, exits = 1))
         }
+    }
+
+    @Test
+    fun `the same path on two sites is two exit pages`() {
+        visit(site = "catamaran-greece").let { page(it, "HOME", "/") }
+        visit(site = "catamaran-greece").let { page(it, "HOME", "/") }
+        visit().let { page(it, "HOME", "/") }
+        funnel().exits shouldContainExactly
+            listOf(ExitPage("catamaran-greece", "/", "HOME", views = 2, exits = 2), ExitPage("boat4you", "/", "HOME", views = 1, exits = 1))
     }
 
     @Test
