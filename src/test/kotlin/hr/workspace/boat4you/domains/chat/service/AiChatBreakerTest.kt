@@ -37,6 +37,29 @@ class AiChatBreakerTest {
     }
 
     @Test
+    fun `a repeat offender's sessions are locked and logged but never count towards the breaker`() {
+        h.flaggedFromIp = 2
+        repeat(6) { h.service.createSession("en", "Ana", "198.51.100.9") }
+        h.events.count { it.type == "LOCK" } shouldBe 6
+        h.breaker
+            .states()
+            .first { it.siteId == null }
+            .locksPerMin shouldBe 0
+        h.breaker.isOpen("boat4you") shouldBe false
+    }
+
+    @Test
+    fun `hostile names from one address count once, so one address cannot pause the AI`() {
+        repeat(5) { h.service.createSession("en", "<img src=x onerror=1>", "198.51.100.10") }
+        h.events.count { it.type == "LOCK" } shouldBe 5
+        h.breaker
+            .states()
+            .first { it.siteId == null }
+            .locksPerMin shouldBe 1
+        h.breaker.isOpen("boat4you") shouldBe false
+    }
+
+    @Test
     fun `an off-topic question is no security event (BACKEND-2)`() {
         h.service.handleVisitorMessage(h.newSession(), "koliko je 2+2")
         h.events.filter { it.type == "LOCK" }.shouldBeEmpty()

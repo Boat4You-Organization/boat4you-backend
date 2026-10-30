@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.contactcenter.SiteIds
 import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEvent
 import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEventRepository
+import jakarta.annotation.PostConstruct
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -111,6 +112,12 @@ class AiCircuitBreaker(
     private val sites = HashMap<String, Scope>()
     private val mailsSent = ArrayDeque<Instant>()
 
+    /** When each address last had a lock counted (epoch second); one lock per address a minute counts, oldest evicted first. */
+    private val lockCountedAt =
+        object : LinkedHashMap<String, Long>(256, 0.75f, false) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>): Boolean = size > MAX_LOCK_ADDRESSES
+        }
+
     /** Sessions that got the "AI paused" notice in the current open period; bounded, oldest evicted first. */
     private val notices: MutableSet<Long> =
         Collections.newSetFromMap(
@@ -123,7 +130,22 @@ class AiCircuitBreaker(
 
     fun recordVisitorMessage(siteId: String) = record(siteId, Metric.MESSAGES)
 
-    fun recordLock(siteId: String) = record(siteId, Metric.LOCKS)
+    /**
+     * A lock counts towards the breaker once per [ip] a minute: one address that keeps getting locked (a probe loop, a
+     * hostile name on every new session) must not pause the AI for every visitor; locks from several addresses in a minute
+     * are the surge the breaker is for. Without an address every lock counts.
+     */
+    fun recordLock(
+        siteId: String,
+        ip: String? = null,
+    ) {
+        if (ip != null && !firstLockThisMinute(ip)) return
+        record(siteId, Metric.LOCKS)
+    }
+
+    /** After a restart a manual open is back before the first request is served. */
+    @PostConstruct
+    fun restoreOnStart() = restoreManualState()
 
     /** True while the global scope or the scope of [siteId] is open: the chat must not call the model for that site. */
     fun isOpen(siteId: String): Boolean = synchronized(this) { global.open || sites[siteId]?.open == true }
@@ -275,15 +297,30 @@ class AiCircuitBreaker(
         return Transition(CcSecurityEvent.TYPE_BREAKER_OPEN, scope.siteId, "auto: $reason", reason, now, allowMail(now), v.breakerCooldownMinutes)
     }
 
-    /** Caller holds the lock. A new open period starts with no notices given. */
+    /** Caller holds the lock. */
     private fun closeScope(scope: Scope) {
         scope.open = false
         scope.manual = false
         scope.openedAt = null
         scope.reason = null
-        notices.clear()
+        // A new open period starts with no notices given, but only once no scope is open any more: a session on a scope
+        // that is still open must not get the "AI paused" line twice.
+        if (!global.open && sites.values.none { it.open }) notices.clear()
         log.warn("AI breaker {} closed", label(scope.siteId))
     }
+
+    private fun firstLockThisMinute(ip: String): Boolean =
+        synchronized(this) {
+            val second = clock().epochSecond
+            val last = lockCountedAt[ip]
+            if (last != null && last > second - 60) {
+                false
+            } else {
+                lockCountedAt.remove(ip)
+                lockCountedAt[ip] = second
+                true
+            }
+        }
 
     /** Caller holds the lock. */
     private fun allowMail(now: Instant): Boolean {
@@ -350,6 +387,7 @@ class AiCircuitBreaker(
     companion object {
         const val MAX_NOTICES = 10_000
         const val MAILS_PER_HOUR = 5
+        const val MAX_LOCK_ADDRESSES = 10_000
         private const val ADMIN_URL = "https://admin.boat4you.com/chat"
         private val MAIL_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm 'UTC'").withZone(ZoneOffset.UTC)
     }

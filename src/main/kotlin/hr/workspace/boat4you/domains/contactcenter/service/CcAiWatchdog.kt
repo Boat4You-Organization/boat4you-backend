@@ -18,7 +18,7 @@ import java.time.Instant
  * The AI chat's own clock on the API node (cusma2), where the breaker counters, the "AI paused" notices and the
  * single-flight lock of [AiChatService] live in memory; hence `!data-sync`, the reverse of the Contact Center's
  * scheduler jobs, and no ShedLock (one API node; every write here is a conditional UPDATE or goes through single-flight).
- * After a restart it restores a manual breaker open and answers the visitor messages a restart cut off (BACKEND-18/19);
+ * After a restart it answers the visitor messages a restart cut off (BACKEND-18/19; the breaker restores a manual open itself);
  * every 15 s it closes a breaker whose cooldown has passed, posts the holding message of a handoff that has waited
  * `cc.handoff.minutes`, and gives a taken-over conversation back to the AI when its return is set and due.
  */
@@ -35,7 +35,6 @@ class CcAiWatchdog(
 
     @EventListener(ApplicationReadyEvent::class)
     fun onReady() {
-        breaker.restoreManualState()
         Thread {
             val answered = recoverAfterRestart()
             log.info("CC_AI recovery answered {} sessions", answered)

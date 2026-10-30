@@ -236,7 +236,9 @@ class PublicEndpointRateLimiter(
     }
 
     private fun matchingRule(request: HttpServletRequest): Rule? {
-        val uri = UriUtils.decode(request.requestURI, Charsets.UTF_8) // the path as the container routes it: /public/cc/v1/%76isit is /public/cc/v1/visit
+        // The path as the container routes it: /public/cc/v1/%76isit is /public/cc/v1/visit. Tomcat refuses a malformed escape with 400
+        // before any filter; another container might not, so a path that does not decode is matched as sent.
+        val uri = runCatching { UriUtils.decode(request.requestURI, Charsets.UTF_8) }.getOrDefault(request.requestURI)
         return rules.firstOrNull {
             it.method == request.method &&
                 when {

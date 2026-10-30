@@ -121,6 +121,29 @@ class AiCircuitBreakerTest {
     }
 
     @Test
+    fun `one IP counts one lock a minute, so a single attacker cannot pause the AI for everyone`() {
+        repeat(10) { b.recordLock("boat4you", "198.51.100.7") }
+        b.isOpen("boat4you") shouldBe false
+        b.states().first { it.siteId == null }.locksPerMin shouldBe 1
+        listOf("198.51.100.8", "198.51.100.9", "198.51.100.10").forEach { b.recordLock("boat4you", it) }
+        b.isOpen("boat4you") shouldBe true // four different addresses in a minute: a real surge (site threshold 3)
+        now = now.plusSeconds(61)
+        b.recordLock("europe-yachts", "198.51.100.7")
+        b.states().first { it.siteId == "europe-yachts" }.locksPerMin shouldBe 1 // a minute later the same address counts again
+    }
+
+    @Test
+    fun `closing one scope keeps the notices of a scope that is still open`() {
+        b.open("catamaran-greece", "m")
+        b.open("boat4you", "m")
+        b.claimNotice(7) shouldBe true
+        b.close("boat4you", "m")
+        b.claimNotice(7) shouldBe false
+        b.close("catamaran-greece", "m")
+        b.claimNotice(7) shouldBe true
+    }
+
+    @Test
     fun `notices stay bounded`() {
         repeat(AiCircuitBreaker.MAX_NOTICES + 5) { b.claimNotice(it.toLong()) }
         b.claimNotice(AiCircuitBreaker.MAX_NOTICES + 4L) shouldBe false // the newest session is still remembered
