@@ -548,14 +548,31 @@ class AiChatService(
         content: String,
         authorUserId: Long? = null,
     ): AiChatMessage {
-        val msg = save(session.id!!, AiChatMessage.ROLE_ADMIN, content.trim().take(MAX_MESSAGE_CHARS), authorUserId = authorUserId)
-        val visitorHasWritten = messages.findAllBySessionIdOrderByIdAsc(session.id!!).any { it.role == AiChatMessage.ROLE_USER }
+        val id = session.id!!
+        val msg = save(id, AiChatMessage.ROLE_ADMIN, content.trim().take(MAX_MESSAGE_CHARS), authorUserId = authorUserId)
+        val visitorHasWritten = messages.findAllBySessionIdOrderByIdAsc(id).any { it.role == AiChatMessage.ROLE_USER }
+        val now = Instant.now()
+        // Conditional UPDATEs, not a save of the session the controller loaded: an AI stamp, a flag or a lock written in
+        // the meantime is never overwritten (P1a/P1c carry-forward). The in-memory session mirrors them for the caller.
+        sessions.markHumanReply(id, msg.createdAt, now)
+        if (visitorHasWritten) sessions.stampHumanReply(id, msg.createdAt)
         ConversationMetrics.onHumanReply(session, msg.createdAt, visitorHasWritten)
         session.status = AiChatSession.STATUS_HUMAN
         session.adminUnread = false
-        session.lastActivityAt = Instant.now()
-        sessions.save(session)
+        session.lastActivityAt = now
         return msg
+    }
+
+    /**
+     * The broker takes the conversation without writing (P2 "Preuzmi"): the AI stops answering and the visitor sees no
+     * message; their next message is mailed to the broker as for any HUMAN conversation. False for a LOCKED or deleted one.
+     */
+    fun takeOver(session: AiChatSession): Boolean {
+        val now = Instant.now()
+        if (sessions.takeOver(session.id!!, now) != 1) return false
+        session.status = AiChatSession.STATUS_HUMAN
+        if (session.takenOverAt == null) session.takenOverAt = now
+        return true
     }
 
     @Transactional

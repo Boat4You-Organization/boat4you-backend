@@ -112,6 +112,44 @@ class CcStorageRepositoryTest {
     }
 
     @Test
+    fun `the broker reply and take over are conditional UPDATEs - stamps set once, kept by later writes`() {
+        val t0 = Instant.parse("2027-01-01T10:00:00Z")
+        val s =
+            sessions.save(
+                AiChatSession().apply {
+                    token = "t-reply"
+                    adminUnread = true
+                    firstResponseAt = t0
+                    firstResponseBy = AiChatSession.RESPONSE_BY_AI
+                },
+            )
+        val id = s.id!!
+        val at = t0.plusSeconds(60)
+        sessions.markHumanReply(id, at, at) shouldBe 1
+        sessions.stampHumanReply(id, at) shouldBe 1
+        jdbc.update("UPDATE ai_chat_session SET current_page = '/en/yachts' WHERE id = ?", id)
+        sessions.stampHumanReply(id, at.plusSeconds(60)) shouldBe 1
+        sessions.findById(id).get().let {
+            it.status shouldBe AiChatSession.STATUS_HUMAN
+            it.adminUnread shouldBe false
+            it.takenOverAt shouldBe at
+            it.firstHumanResponseAt shouldBe at
+            it.firstResponseAt shouldBe t0
+            it.firstResponseBy shouldBe AiChatSession.RESPONSE_BY_AI
+        }
+        jdbc.update("UPDATE ai_chat_session SET status = 'LOCKED' WHERE id = ?", id)
+        sessions.takeOver(id, at.plusSeconds(120)) shouldBe 0
+        jdbc.update("UPDATE ai_chat_session SET status = 'AI', deleted_at = now() WHERE id = ?", id)
+        sessions.takeOver(id, at.plusSeconds(120)) shouldBe 0
+        jdbc.update("UPDATE ai_chat_session SET deleted_at = NULL WHERE id = ?", id)
+        sessions.takeOver(id, at.plusSeconds(120)) shouldBe 1
+        sessions.findById(id).get().let {
+            it.status shouldBe AiChatSession.STATUS_HUMAN
+            it.takenOverAt shouldBe at
+        }
+    }
+
+    @Test
     fun `JdbcCcAiSettings writes a row and reads it back at once, through P1a's CcSettings`() {
         val cc = CcSettings(jdbc, Duration.ofSeconds(10))
         val s = JdbcCcAiSettings(cc, jdbc)

@@ -57,6 +57,50 @@ interface AiChatSessionRepository : JpaRepository<AiChatSession, Long> {
         @Param("at") at: Instant,
     ): Int
 
+    /**
+     * The broker takes a conversation without writing (P2 "Preuzmi"): HUMAN, the takeover stamped once. Never a LOCKED or
+     * deleted one (ADMIN-9: a locked conversation is answered with a reply). 1 when taken, 0 otherwise; HUMAN again is 1.
+     */
+    @Transactional
+    @Modifying
+    @Query(
+        "UPDATE AiChatSession s SET s.status = 'HUMAN', s.takenOverAt = COALESCE(s.takenOverAt, :at) " +
+            "WHERE s.id = :id AND s.status IN ('AI', 'HUMAN_REQUESTED', 'HUMAN', 'CLOSED') AND s.deletedAt IS NULL",
+    )
+    fun takeOver(
+        @Param("id") id: Long,
+        @Param("at") at: Instant,
+    ): Int
+
+    /**
+     * A broker reply owns the conversation (ADMIN-8, ADMIN-14): HUMAN, read, active now, the takeover stamped once. A
+     * conditional UPDATE instead of a save of the session the controller loaded, so a stamp or flag written meanwhile stays.
+     */
+    @Transactional
+    @Modifying
+    @Query(
+        "UPDATE AiChatSession s SET s.status = 'HUMAN', s.adminUnread = false, s.lastActivityAt = :now, " +
+            "s.takenOverAt = COALESCE(s.takenOverAt, :at) WHERE s.id = :id",
+    )
+    fun markHumanReply(
+        @Param("id") id: Long,
+        @Param("at") at: Instant,
+        @Param("now") now: Instant,
+    ): Int
+
+    /** The response stamps of a broker reply to a visitor who had written; each one is set once and never moved (spec 2.3). */
+    @Transactional
+    @Modifying
+    @Query(
+        "UPDATE AiChatSession s SET s.firstHumanResponseAt = COALESCE(s.firstHumanResponseAt, :at), " +
+            "s.takenOverAt = COALESCE(s.takenOverAt, :at), s.firstResponseAt = COALESCE(s.firstResponseAt, :at), " +
+            "s.firstResponseBy = COALESCE(s.firstResponseBy, 'HUMAN') WHERE s.id = :id",
+    )
+    fun stampHumanReply(
+        @Param("id") id: Long,
+        @Param("at") at: Instant,
+    ): Int
+
     /** CcAiWatchdog restart recovery: recent conversations of one status; flagged and deleted ones are never touched. */
     fun findAllByStatusAndFlaggedFalseAndDeletedAtIsNullAndLastActivityAtAfter(
         status: String,
