@@ -25,6 +25,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus
 import java.net.InetSocketAddress
 import java.time.Duration
 import java.time.Instant
+import java.util.Optional
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -73,6 +74,27 @@ open class ChatTestHarness(
                         sessionSavedInTx += txSeq
                     }
                 "countByIpAndFlaggedTrueAndLockedAtAfter" -> flaggedFromIp
+                "findById" -> Optional.ofNullable(sessionStore[inv.arguments[0] as Long])
+                // The two conditional UPDATEs of the never-silent path: same WHERE and SET as the queries, 1 or 0 rows.
+                "stampHandoffHolding" -> {
+                    val s = sessionStore[inv.arguments[0] as Long]
+                    if (s != null && s.status == AiChatSession.STATUS_HUMAN_REQUESTED && !s.flagged && s.deletedAt == null && s.handoffHoldingAt == null) {
+                        s.handoffHoldingAt = inv.arguments[1] as Instant
+                        1
+                    } else {
+                        0
+                    }
+                }
+                "returnToAi" -> {
+                    val s = sessionStore[inv.arguments[0] as Long]
+                    if (s != null && s.status == AiChatSession.STATUS_HUMAN && !s.flagged && s.deletedAt == null) {
+                        s.status = AiChatSession.STATUS_AI
+                        s.aiReturnedAt = inv.arguments[1] as Instant
+                        1
+                    } else {
+                        0
+                    }
+                }
                 "stampFirstResponse" -> {
                     firstResponseStamps += inv.arguments.toList()
                     null
@@ -91,6 +113,7 @@ open class ChatTestHarness(
                     }
                 "countBySessionId" -> stored.count { it.sessionId == inv.arguments[0] }.toLong()
                 "findAllBySessionIdOrderByIdAsc" -> stored.filter { it.sessionId == inv.arguments[0] }
+                "findFirstBySessionIdOrderByIdDesc" -> stored.filter { it.sessionId == inv.arguments[0] }.maxByOrNull { it.id!! }
                 "findBySessionIdAndClientMessageId" ->
                     stored.firstOrNull { it.sessionId == inv.arguments[0] && it.clientMessageId == inv.arguments[1] }
                 "findAllBySessionIdAndIdGreaterThanOrderByIdAsc" ->
