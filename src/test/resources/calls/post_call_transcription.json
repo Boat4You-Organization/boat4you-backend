@@ -1,0 +1,22 @@
+{
+  "type": "post_call_transcription",
+  "event_timestamp": 1793790000,
+  "data": {
+    "agent_id": "agent-1",
+    "conversation_id": "conv-42",
+    "status": "done",
+    "transcript": [
+      {"role": "agent", "message": "Dobar dan, dobili smo vaš upit na našoj stranici Boat4You. Moje ime je Nika, AI asistentica. Razgovor se snima.", "time_in_call_secs": 0, "tool_calls": []},
+      {"role": "user", "message": "Da, imam minutu. Nas je osmero, tajna rečenica klijenta.", "time_in_call_secs": 9, "tool_calls": []},
+      {"role": "agent", "message": "Hvala, Mario će vam poslati ponudu.", "time_in_call_secs": 160, "tool_calls": []}
+    ],
+    "metadata": {"start_time_unix_secs": 1793789800, "call_duration_secs": 184, "cost": 512, "termination_reason": "end_call tool was called"},
+    "analysis": {
+      "call_successful": "success",
+      "transcript_summary": "Klijentica potvrdila 8 osoba, katamaran, 12.-19.6.2027.",
+      "data_collection_results": {"people": {"value": 8}, "boat_type": {"value": "catamaran"}, "ready_to_book": {"value": false}},
+      "evaluation_criteria_results": {"ai_disclosed": {"result": "success", "rationale": "Said she is an AI."}}
+    },
+    "has_audio": true
+  }
+}
