@@ -64,9 +64,19 @@ interface InvoiceRepository :
     @Query(value = "SELECT CAST(pg_advisory_xact_lock(4272026) AS TEXT)", nativeQuery = true)
     fun lockInvoiceNumbering(): String?
 
-    /** Distinct invoice years, newest first — drives the year tabs in admin. */
+    /**
+     * Distinct invoice years, newest first — drives the year tabs in admin.
+     * `invoice_date` is VARCHAR (V1_27) holding Hibernate's LocalDate text
+     * (prod: `2026-04-04 +00`), so EXTRACT on it fails; the year is read from
+     * the leading four digits and rows without one are skipped.
+     */
     @Query(
-        value = "SELECT DISTINCT CAST(EXTRACT(YEAR FROM invoice_date) AS INTEGER) FROM invoice ORDER BY 1 DESC",
+        value = """
+            SELECT DISTINCT CAST(left(invoice_date, 4) AS INTEGER)
+            FROM invoice
+            WHERE invoice_date ~ '^[0-9]{4}-'
+            ORDER BY 1 DESC
+        """,
         nativeQuery = true,
     )
     fun findDistinctYears(): List<Int>
