@@ -55,4 +55,10 @@ interface InquiryCallRepository : JpaRepository<InquiryCall, Long> {
         @Param("before") before: Instant,
         @Param("statuses") statuses: Collection<CallStatus> = listOf(CallStatus.DIALING, CallStatus.IN_PROGRESS),
     ): List<InquiryCall>
+
+    /** Calls whose recording is older than the retention (by end time). */
+    @Query("SELECT c FROM InquiryCall c WHERE c.audioPath IS NOT NULL AND c.endedAt < :before")
+    fun findWithAudioEndedBefore(
+        @Param("before") before: Instant,
+    ): List<InquiryCall>
 }
