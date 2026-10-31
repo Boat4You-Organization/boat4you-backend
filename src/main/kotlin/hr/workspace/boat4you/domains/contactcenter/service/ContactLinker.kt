@@ -57,6 +57,33 @@ class ContactLinker(
         return tx.execute { link(sessionId) }
     }
 
+    /**
+     * After the chat stored a name, e-mail or phone: the linked contact gets the fields it does not have yet (a contact made
+     * from the name alone never received the e-mail given later, Alison and Amanda 30.10.2026), an unlinked session its
+     * contact as in [ensureForSession]. What the broker set is never replaced.
+     */
+    fun syncFromSession(sessionId: Long): Long? {
+        val row =
+            jdbc
+                .query(
+                    "SELECT contact_id, visitor_name, visitor_email, phone FROM ai_chat_session WHERE id = ? AND deleted_at IS NULL",
+                    { rs, _ ->
+                        SessionRow(
+                            rs.getLong("contact_id").takeUnless { rs.wasNull() },
+                            null,
+                            rs.getString("visitor_name"),
+                            rs.getString("visitor_email"),
+                            rs.getString("phone"),
+                            false,
+                        )
+                    },
+                    sessionId,
+                ).firstOrNull() ?: return null
+        val contactId = row.contactId ?: return ensureForSession(sessionId)
+        fillEmpty(contactId, NameValidator.validOrNull(row.name), clean(row.email, EMAIL_MAX), clean(row.phone, PHONE_MAX))
+        return contactId
+    }
+
     /** Links the next [batch] sessions after [afterId] that have a name, email or phone but no contact; keyset by id. */
     fun linkPending(
         afterId: Long,

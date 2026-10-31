@@ -128,6 +128,29 @@ class PublicAiChatController(
         }
     }
 
+    data class ContactRequest(
+        val email: String? = null,
+        val phone: String? = null,
+    )
+
+    /** The contact form under IRIS's first boats (31.10.2026): an e-mail and/or phone so the team can send an offer. */
+    @PostMapping("/sessions/{token}/contact")
+    @ResponseBody
+    fun setContact(
+        @PathVariable token: String,
+        @RequestBody request: ContactRequest,
+    ): ResponseEntity<Any> {
+        if (!chat.isEnabled()) return disabled()
+        val session = chat.getSession(token) ?: return notFound()
+        return when (chat.setVisitorContact(session, request.email, request.phone)) {
+            AiChatService.ContactOutcome.OK -> ResponseEntity.ok(mapOf("ok" to true))
+            AiChatService.ContactOutcome.INVALID_EMAIL -> ResponseEntity.badRequest().body(mapOf("error" to "invalid_email"))
+            AiChatService.ContactOutcome.INVALID_PHONE -> ResponseEntity.badRequest().body(mapOf("error" to "invalid_phone"))
+            AiChatService.ContactOutcome.EMPTY -> ResponseEntity.badRequest().body(mapOf("error" to "empty"))
+            AiChatService.ContactOutcome.LOCKED -> locked(ChatSecurityGuard.handoffText(session.locale))
+        }
+    }
+
     /** Widget heartbeat — who is live on the site and which page they're on. */
     @PostMapping("/sessions/{token}/presence")
     @ResponseBody

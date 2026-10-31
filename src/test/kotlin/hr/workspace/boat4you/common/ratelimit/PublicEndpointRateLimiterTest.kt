@@ -120,7 +120,7 @@ class PublicEndpointRateLimiterTest {
     }
 
     @Test
-    fun `a forged X-Forwarded-For buys no budget on any of the six X-Real-IP rules`() {
+    fun `a forged X-Forwarded-For buys no budget on any of the seven X-Real-IP rules`() {
         limiter.clock = CcTestClock() // frozen, so no rule refills while the loop runs
         listOf(
             "/public/cc/v1/visit" to 60,
@@ -129,6 +129,7 @@ class PublicEndpointRateLimiterTest {
             "/public/chat/sessions" to 5,
             "/public/chat/sessions/t0k/messages" to 40,
             "/public/chat/sessions/t0k/name" to 10,
+            "/public/chat/sessions/t0k/contact" to 10,
         ).forEach { (uri, budget) ->
             repeat(budget) { hit(uri, xff = "10.1.0.$it").status shouldBe 200 }
             hit(uri, xff = "10.9.9.9").status shouldBe 429

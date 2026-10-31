@@ -692,6 +692,16 @@ class AiChatToolExecutor(
                 )
             it.putObject("startDate").put("type", "string").put("description", "YYYY-MM-DD; the charter lasts $MIN_NIGHTS to $MAX_NIGHTS nights")
             it.putObject("endDate").put("type", "string").put("description", "YYYY-MM-DD")
+            it
+                .putObject("windowStart")
+                .put("type", "string")
+                .put(
+                    "description",
+                    "YYYY-MM-DD; instead of startDate/endDate when the visitor is flexible: ONE call searches every " +
+                        "Saturday-to-Saturday week between windowStart and windowEnd (up to $MAX_WINDOW_WEEKS weeks) and " +
+                        "returns each boat at its cheapest week, with matches per week",
+                )
+            it.putObject("windowEnd").put("type", "string").put("description", "YYYY-MM-DD, the last day of the flexible window")
             it.putObject("vesselType").put("type", "string")
                 .put("description", "Optional: SAILING_YACHT, CATAMARAN, MOTOR_YACHT, MOTORBOAT, GULET, MOTORSAILER, POWER_CATAMARAN, LUXURY_MOTOR_YACHT, MINI_CRUISER")
             it.putObject("equipment").put("type", "array")

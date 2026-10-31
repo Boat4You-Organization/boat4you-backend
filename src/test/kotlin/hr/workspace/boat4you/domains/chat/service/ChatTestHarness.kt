@@ -16,6 +16,7 @@ import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEventRepository
 import hr.workspace.boat4you.domains.contactcenter.service.AiCircuitBreaker
 import hr.workspace.boat4you.domains.contactcenter.service.CcAiSettings
 import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
+import hr.workspace.boat4you.domains.contactcenter.service.ContactLinker
 import org.mockito.Mockito.mock
 import org.mockito.invocation.InvocationOnMock
 import org.springframework.transaction.PlatformTransactionManager
@@ -256,6 +257,15 @@ open class ChatTestHarness(
             if (inv.method.name == "sendEmail") breakerMails += inv
             null
         }
+
+    /** Session ids the chat asked to bring to their CC contact (ContactLinker.syncFromSession), in order. */
+    val contactSyncs = CopyOnWriteArrayList<Long>()
+    private val contactLinker =
+        mock(ContactLinker::class.java) { inv ->
+            if (inv.method.name == "syncFromSession") contactSyncs += inv.arguments[0] as Long
+            null
+        }
+
     val breaker = AiCircuitBreaker(settings, securityEvents, breakerEmail, "info@example.com").also { it.mailExecutor = { r -> r.run() } }
 
     val service =
@@ -274,6 +284,7 @@ open class ChatTestHarness(
             securityEvents = securityEvents,
             transactionManager = txManager,
             notifyEmail = "info@example.com",
+            contacts = contactLinker,
         )
 
     fun textReply(text: String): JsonNode = mapper.readTree("""{"stop_reason":"end_turn","content":[{"type":"text","text":${mapper.writeValueAsString(text)}}]}""")

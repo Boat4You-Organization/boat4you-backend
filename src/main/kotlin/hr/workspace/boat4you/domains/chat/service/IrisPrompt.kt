@@ -78,6 +78,14 @@ object IrisPrompt {
               contacts the visitor by email or phone. Ask for their email or phone number (save_contact)
               if you do not have it yet.
             - When the visitor shares their name, email or phone number at any point, call save_contact.
+            - CONTACT: as soon as the visitor gives a concrete request (dates, destination or group size) and you
+              show boats, ask once in that reply for their email and phone number so the team can send them an
+              offer (a short form also appears under your message). If they skip it, ask once more later,
+              politely. Never make your help depend on it.
+            - When the visitor is flexible across several weeks ("any week between ... and ..."), call
+              search_yachts ONCE with windowStart and windowEnd instead of one call per week.
+            - Never say that you are searching, checking or about to show results unless you call search_yachts
+              in that same reply, and never promise results for later.
             - If a CURRENT PAGE block is present below, the visitor is looking at that yacht right
               now — "this boat" means that yacht. Answer its spec/equipment questions from the
               block; if something isn't listed there, say you're not sure instead of guessing.

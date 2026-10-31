@@ -15,6 +15,7 @@ import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEvent
 import hr.workspace.boat4you.domains.contactcenter.jpa.CcSecurityEventRepository
 import hr.workspace.boat4you.domains.contactcenter.service.AiCircuitBreaker
 import hr.workspace.boat4you.domains.contactcenter.service.ChatSearchRecorder
+import hr.workspace.boat4you.domains.contactcenter.service.ContactLinker
 import hr.workspace.boat4you.domains.contactcenter.service.ConversationMetrics
 import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
 import org.slf4j.LoggerFactory
@@ -63,6 +64,7 @@ class AiChatService(
     transactionManager: PlatformTransactionManager,
     @Value("\${chat.notify-email:info@boat4you.com}")
     private val notifyEmail: String,
+    private val contacts: ContactLinker? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val tx = TransactionTemplate(transactionManager)
@@ -204,6 +206,30 @@ class AiChatService(
             }
         }
 
+    enum class ContactOutcome { OK, INVALID_EMAIL, INVALID_PHONE, EMPTY, LOCKED }
+
+    /**
+     * The widget's contact form (31.10.2026): what the visitor typed replaces the session's e-mail and phone, each only
+     * when it is valid; nothing is stored when either given value is not.
+     */
+    fun setVisitorContact(
+        session: AiChatSession,
+        email: String?,
+        phone: String?,
+    ): ContactOutcome {
+        if (isLocked(session)) return ContactOutcome.LOCKED
+        val mail = email?.trim().orEmpty()
+        val tel = phone?.trim().orEmpty()
+        if (mail.isEmpty() && tel.isEmpty()) return ContactOutcome.EMPTY
+        if (mail.isNotEmpty() && !ContactSniffer.EMAIL.matches(mail)) return ContactOutcome.INVALID_EMAIL
+        val formTel = if (tel.isEmpty()) null else ContactSniffer.formPhone(tel) ?: return ContactOutcome.INVALID_PHONE
+        if (mail.isNotEmpty()) session.visitorEmail = mail
+        formTel?.let { session.phone = it }
+        sessions.save(session)
+        syncContact(session.id!!)
+        return ContactOutcome.OK
+    }
+
     fun messagesAfter(sessionId: Long, afterId: Long): List<AiChatMessage> =
         messages.findAllBySessionIdAndIdGreaterThanOrderByIdAsc(sessionId, afterId)
 
@@ -232,7 +258,9 @@ class AiChatService(
         try {
             // The controller looked before it took the slot; a retry that finished in between is found here (BACKEND-19).
             findDuplicate(sessionId, clientMessageId)?.let { return replayOf(session, it) }
+            val knownContact = session.visitorEmail to session.phone
             val accepted = tx.execute { acceptVisitorMessage(session, content, page, clientMessageId) }!!
+            if ((session.visitorEmail to session.phone) != knownContact) syncContact(sessionId)
             if (accepted is Accepted.Done) return accepted.outcome
             // Every search_yachts call of this reply; filled by the model loop, stored with the reply in tx2 (BACKEND-17).
             // A model failure keeps what was collected before it.
@@ -410,6 +438,11 @@ class AiChatService(
             if (verdict.hit != null) lock(session, DIR_IN, verdict.hit, content) else lock(session, DIR_NAME, nameHit!!, session.visitorName)
             return Accepted.Done(lockedOrStored(session, userMsg))
         }
+
+        // An e-mail or phone in any message is kept, also while a handoff waits and the AI is silent (Nihad 31.10.2026);
+        // only into empty fields, so what the visitor or the broker set before stays.
+        if (session.visitorEmail.isNullOrBlank()) ContactSniffer.email(content)?.let { session.visitorEmail = it }
+        if (session.phone.isNullOrBlank()) ContactSniffer.phone(content)?.let { session.phone = it }
 
         if (!aiAnswers || session.status == AiChatSession.STATUS_HUMAN_REQUESTED) {
             // First message of a new burst (unread was already seen/answered) pings the
@@ -671,6 +704,7 @@ class AiChatService(
                             objectMapper.createObjectNode().apply {
                                 pendingCards?.let { set<JsonNode>("yachts", it) }
                                 pendingBlogs?.let { set<JsonNode>("blogs", it) }
+                                if (pendingCards != null && asksForContact(session)) put("contactForm", true)
                             },
                         )
                     }
@@ -715,6 +749,23 @@ class AiChatService(
         }
     }
 
+    /** The contact form goes with the first boats of a session that has no e-mail or phone yet, once (Mario 31.10.2026). */
+    private fun asksForContact(session: AiChatSession): Boolean =
+        session.visitorEmail.isNullOrBlank() && session.phone.isNullOrBlank() &&
+            messages.findAllBySessionIdOrderByIdAsc(session.id!!).none {
+                it.role == AiChatMessage.ROLE_ASSISTANT && it.payload?.contains("\"contactForm\":true") == true
+            }
+
+    /** Brings the session's name, e-mail and phone to its CC contact; never breaks the chat (the linker job links later). */
+    @Suppress("TooGenericExceptionCaught")
+    private fun syncContact(sessionId: Long) {
+        try {
+            contacts?.syncFromSession(sessionId)
+        } catch (e: Exception) {
+            log.warn("CC contact of chat session {} not synced: {}", sessionId, e.toString())
+        }
+    }
+
     private fun textsOf(contentBlocks: JsonNode): List<String> =
         contentBlocks.filter { it.path("type").asText() == "text" }.map { it.path("text").asText().trim() }.filter { it.isNotBlank() }
 
@@ -740,9 +791,10 @@ class AiChatService(
             "save_contact" -> {
                 // The model copies what the visitor typed: same name rules as the widget, an email only when it looks like one.
                 NameValidator.validOrNull(input.path("name").asText(""))?.let { session.visitorName = it }
-                input.path("email").asText("").trim().takeIf { EMAIL.matches(it) }?.let { session.visitorEmail = it }
-                input.path("phone").asText("").trim().takeIf { PHONE.matches(it) }?.let { session.phone = it.replace(Regex("\\s+"), " ") }
+                input.path("email").asText("").trim().takeIf { ContactSniffer.EMAIL.matches(it) }?.let { session.visitorEmail = it }
+                input.path("phone").asText("").trim().takeIf { ContactSniffer.PHONE.matches(it) }?.let { session.phone = it.replace(Regex("\\s+"), " ") }
                 sessions.save(session)
+                syncContact(session.id!!)
                 AiChatToolExecutor.ToolOutcome("""{"ok":true}""")
             }
             else -> UNKNOWN_TOOL
@@ -994,10 +1046,6 @@ class AiChatService(
 
         /** One leading slash, no "//", no backslash, no "@", no whitespace (review B6). */
         private val SAFE_PAGE = Regex("""^/(?![/\\])[A-Za-z0-9/_\-.~%?=&+,]{0,499}$""")
-        private val EMAIL = Regex("""^[^\s@<>]{1,64}@[^\s@<>]{1,190}\.[A-Za-z]{2,24}$""")
-
-        /** A phone number the model copied from the visitor: an optional +, then 6-20 digits and spaces and nothing else (spaces are collapsed when stored). */
-        private val PHONE = Regex("""^\+?[0-9][0-9 ]{5,19}$""")
 
         /** Line breaks and other control characters in a logged excerpt would forge log lines. */
         private val LOG_UNSAFE = Regex("""[\p{Cc}\p{Zl}\p{Zp}]""")

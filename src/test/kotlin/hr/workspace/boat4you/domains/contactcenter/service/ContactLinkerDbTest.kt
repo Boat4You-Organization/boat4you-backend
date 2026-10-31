@@ -119,4 +119,28 @@ class ContactLinkerDbTest {
         third.scanned shouldBe 0
         contacts() shouldBe 3
     }
+
+    @Test
+    fun `a contact made from the name alone gets the email and phone the chat stores later`() {
+        val s = session(name = "Alison")
+        val id = linker.ensureForSession(s).shouldNotBeNull()
+        jdbc.update("UPDATE ai_chat_session SET visitor_email = 'alison@example.com', phone = '+44 7700 900123' WHERE id = ?", s)
+        linker.syncFromSession(s) shouldBe id
+        jdbc.queryForMap("SELECT email, phone FROM cc_contact WHERE id = ?", id).let {
+            it["email"] shouldBe "alison@example.com"
+            it["phone"] shouldBe "+44 7700 900123"
+        }
+    }
+
+    @Test
+    fun `syncing never replaces what the broker set, and gives a session without a contact its contact`() {
+        val s = session(name = "Ana")
+        val id = linker.ensureForSession(s).shouldNotBeNull()
+        jdbc.update("UPDATE cc_contact SET email = 'broker@example.com' WHERE id = ?", id)
+        jdbc.update("UPDATE ai_chat_session SET visitor_email = 'other@example.com' WHERE id = ?", s)
+        linker.syncFromSession(s)
+        jdbc.queryForObject("SELECT email FROM cc_contact WHERE id = ?", String::class.java, id) shouldBe "broker@example.com"
+        val fresh = session(email = "new@example.com")
+        linker.syncFromSession(fresh).shouldNotBeNull() shouldBe contactOf(fresh)
+    }
 }

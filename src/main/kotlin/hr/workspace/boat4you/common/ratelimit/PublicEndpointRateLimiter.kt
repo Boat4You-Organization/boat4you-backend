@@ -45,7 +45,7 @@ import java.util.concurrent.ConcurrentHashMap
  *  - `POST /public/reviews/request/{token}` — anonymous review submit
  *    behind the e-mail magic link (25.9.2026). The 256-bit token cannot be
  *    guessed; the limit only stops a script from hammering one link.
- *  - `POST /public/chat/sessions`, `.../{token}/messages`, `.../{token}/name`
+ *  - `POST /public/chat/sessions`, `.../{token}/messages`, `.../{token}/name`, `.../{token}/contact`
  *    — the AI chat (11.10.2026, review B5): each message can cost several
  *    Anthropic calls, each new session can mail the broker. The 30 s presence
  *    heartbeat stays unlimited here (several open tabs), nginx covers it.
@@ -189,6 +189,15 @@ class PublicEndpointRateLimiter(
                 capacity = chatNameCapacity,
                 windowSeconds = chatNameWindowSeconds,
                 label = "chat-name",
+                realIp = true,
+            ),
+            Rule(
+                "POST",
+                "/public/chat/sessions/{token}/contact",
+                pattern = Regex("^/public/chat/sessions/[^/]+/contact$"),
+                capacity = chatNameCapacity,
+                windowSeconds = chatNameWindowSeconds,
+                label = "chat-contact",
                 realIp = true,
             ),
             Rule("POST", "/public/cc/v1/visit", capacity = ccVisitCapacity, windowSeconds = ccVisitWindowSeconds, label = "cc-visit", realIp = true),
