@@ -51,6 +51,10 @@ open class ChatTestHarness(
     val modelSystems = mutableListOf<AnthropicClient.SystemPrompt>()
     val modelMessages = mutableListOf<JsonNode>()
     val modelTools = mutableListOf<JsonNode?>()
+
+    /** Per model call: its max_tokens and whether tools were switched off (tool_choice none). */
+    val modelMaxTokens = mutableListOf<Int>()
+    val modelToolsOff = mutableListOf<Boolean>()
     val modelCalls: List<Pair<String, JsonNode>> get() = modelSystems.map { it.full }.zip(modelMessages)
     var modelReply: () -> JsonNode = { textReply("Hi, I'm IRIS! Where would you like to sail?") }
     val mails = CopyOnWriteArrayList<InvocationOnMock>()
@@ -161,6 +165,8 @@ open class ChatTestHarness(
                     modelSystems += inv.arguments[0] as AnthropicClient.SystemPrompt
                     modelMessages.add((inv.arguments[1] as JsonNode).deepCopy())
                     modelTools += inv.arguments[2] as JsonNode?
+                    modelMaxTokens += inv.arguments[3] as Int
+                    modelToolsOff += inv.arguments[4] as Boolean
                     modelReply()
                 }
                 else -> null

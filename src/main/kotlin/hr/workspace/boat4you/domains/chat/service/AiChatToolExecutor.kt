@@ -15,8 +15,10 @@ import org.springframework.web.client.RestClient
 import org.springframework.web.util.UriComponentsBuilder
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import java.time.temporal.TemporalAdjusters
 
 /**
  * Executes the assistant's tools against our OWN public search API on
@@ -66,6 +68,10 @@ class AiChatToolExecutor(
         /** Same nights window as the public search (YachtController guard): 3 to 28 nights. */
         const val MIN_NIGHTS = 3
         const val MAX_NIGHTS = 28
+
+        /** A window search covers at most this many Saturday weeks (one API call each) and lists this many boats. */
+        const val MAX_WINDOW_WEEKS = 6
+        const val MAX_WINDOW_LIST = 12
     }
 
     /** A gulet by the API's vesselType / modelName (GuletRules), for the search rows and the boat page alike. */
@@ -85,6 +91,105 @@ class AiChatToolExecutor(
         input: JsonNode,
         site: AiSiteProfile = AiSiteProfile.BOAT4YOU,
         locale: String = "en",
+    ): ToolOutcome =
+        if (input.path("startDate").asText("").isBlank() && input.path("windowStart").asText("").isNotBlank()) {
+            searchWindow(input, site, locale)
+        } else {
+            searchPeriod(input, site, locale)
+        }
+
+    /**
+     * A visitor flexible across weeks (Nihad 30.10.2026: five calls, one per week, cut the model's reply short): every
+     * Saturday-to-Saturday week inside windowStart..windowEnd (at most [MAX_WINDOW_WEEKS]) is searched with the same
+     * filters and the boats are merged, each at its cheapest week. A refusal (country, place, dates) is the first week's.
+     */
+    private fun searchWindow(
+        input: JsonNode,
+        site: AiSiteProfile,
+        locale: String,
+    ): ToolOutcome {
+        val from = runCatching { LocalDate.parse(input.path("windowStart").asText("")) }.getOrNull()
+        val to = runCatching { LocalDate.parse(input.path("windowEnd").asText("")) }.getOrNull()
+        val saturdays =
+            if (from == null || to == null) {
+                emptyList()
+            } else {
+                generateSequence(from.with(TemporalAdjusters.nextOrSame(DayOfWeek.SATURDAY))) { it.plusWeeks(1) }
+                    .takeWhile { !it.plusDays(7).isAfter(to) }
+                    .toList()
+            }
+        if (saturdays.isEmpty()) {
+            return ToolOutcome("""{"error":"no Saturday-to-Saturday week fits in this window - use YYYY-MM-DD and a window of at least one week"}""")
+        }
+        val limit = input.path("limit").asInt(6).coerceIn(1, 6)
+        val desc = input.path("sortByPrice").asText("asc") == "desc"
+        val best = LinkedHashMap<String, Pair<JsonNode, JsonNode>>() // slug -> (boat for the model, card)
+        val weeks = objectMapper.createArrayNode()
+        var first: JsonNode? = null
+        var firstSearch: SearchCriteria? = null
+        var totalAvailable = 0
+        for (saturday in saturdays.take(MAX_WINDOW_WEEKS)) {
+            val week =
+                (input.deepCopy<JsonNode>() as ObjectNode).apply {
+                    remove(listOf("windowStart", "windowEnd"))
+                    put("startDate", saturday.toString())
+                    put("endDate", saturday.plusDays(7).toString())
+                    put("limit", 6)
+                }
+            val outcome = searchPeriod(week, site, locale)
+            val parsed = objectMapper.readTree(outcome.resultForModel)
+            if (parsed.has("error")) return outcome
+            if (first == null) {
+                first = parsed
+                firstSearch = outcome.search
+            }
+            totalAvailable += parsed.path("totalAvailable").asInt(0)
+            weeks.addObject().apply {
+                put("startDate", saturday.toString())
+                put("endDate", saturday.plusDays(7).toString())
+                put("matches", parsed.path("matches").asInt(0))
+                put("totalAvailable", parsed.path("totalAvailable").asInt(0))
+            }
+            // The model's boats and the cards are added in the same loop of searchPeriod, so index i is one boat.
+            val cards = outcome.cards ?: continue
+            parsed.path("yachts").forEachIndexed { i, boat ->
+                val card = cards.get(i) ?: return@forEachIndexed
+                val slug = card.path("slug").asText()
+                val kept = best[slug]
+                if (kept == null || boat.path("totalPriceEur").asInt() < kept.first.path("totalPriceEur").asInt()) best[slug] = boat to card
+            }
+        }
+        val price = compareBy<Pair<JsonNode, JsonNode>> { it.first.path("totalPriceEur").asInt() }
+        val ranked = best.values.sortedWith(if (desc) price.reversed() else price)
+        val result =
+            objectMapper.createObjectNode().apply {
+                put("matches", ranked.size)
+                put("totalAvailable", totalAvailable)
+                put("sortedBy", if (desc) "price descending" else "price ascending")
+                put("window", "each boat at its cheapest Saturday-to-Saturday week in $from - $to")
+                listOf("searchedArea", "equipmentNote", "vesselNote").forEach { key -> first?.get(key)?.let { set<JsonNode>(key, it) } }
+                set<JsonNode>("weeks", weeks)
+                if (saturdays.size > MAX_WINDOW_WEEKS) {
+                    put(
+                        "weeksNote",
+                        "searched the first $MAX_WINDOW_WEEKS weeks of ${saturdays.size}; ask the visitor whether to check the later weeks too",
+                    )
+                }
+                putArray("yachts").addAll(ranked.take(MAX_WINDOW_LIST).map { it.first })
+                if (ranked.isEmpty()) put("hint", "no results in any week of the window - suggest relaxing filters (budget, cabins, equipment) or a nearby area")
+            }
+        val cards = objectMapper.createArrayNode().addAll(ranked.take(limit).map { it.second })
+        return ToolOutcome(
+            objectMapper.writeValueAsString(result),
+            if (ranked.isEmpty()) null else cards,
+            search = firstSearch?.copy(startDate = from, endDate = to, resultCount = ranked.size, totalAvailable = totalAvailable),
+        )
+    }
+
+    private fun searchPeriod(
+        input: JsonNode,
+        site: AiSiteProfile,
+        locale: String,
     ): ToolOutcome {
         val countryCode = input.path("countryCode").asText("").trim().uppercase().take(2).takeIf { COUNTRY_CODE.matches(it) } ?: ""
         val startDate = input.path("startDate").asText("")

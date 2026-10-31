@@ -624,12 +624,43 @@ class AiChatService(
 
         var rounds = 0
         while (true) {
-            val response = anthropic.createMessage(system, history, toolDefs)
+            var response = anthropic.createMessage(system, history, toolDefs, REPLY_TOKENS)
+            if (response.path("stop_reason").asText() == "max_tokens") {
+                // Cut off mid-reply (five search calls did not fit in 700 tokens, Nihad 30.10.2026): once more with room.
+                log.info("chat reply of session {} hit max_tokens {}: asked again with {}", session.id, REPLY_TOKENS, RETRY_TOKENS)
+                response = anthropic.createMessage(system, history, toolDefs, RETRY_TOKENS)
+            }
             val contentBlocks = response.path("content")
             val stopReason = response.path("stop_reason").asText()
-
-            spoken += contentBlocks.filter { it.path("type").asText() == "text" }.map { it.path("text").asText().trim() }.filter { it.isNotBlank() }
-            if (stopReason != "tool_use" || rounds >= MAX_TOOL_ROUNDS) {
+            if (stopReason == "max_tokens" && contentBlocks.any { it.path("type").asText() == "tool_use" }) {
+                // Its text only announces a search that never ran: not sent, a bare "searching now" is worse than an apology.
+                log.warn("chat reply of session {} cut off twice while calling tools: not sent", session.id)
+            } else {
+                spoken += textsOf(contentBlocks)
+            }
+            val capped = stopReason == "tool_use" && rounds >= MAX_TOOL_ROUNDS
+            if (capped) {
+                // Out of tool rounds: every pending call gets a "not run" result and the model answers once more with tools
+                // off, from what it already found, instead of the visitor getting only the announcement of a search.
+                history.add(objectMapper.createObjectNode().put("role", "assistant").set<JsonNode>("content", contentBlocks))
+                history.add(
+                    objectMapper.createObjectNode().put("role", "user").set<JsonNode>(
+                        "content",
+                        objectMapper.createArrayNode().addAll(
+                            contentBlocks.filter { it.path("type").asText() == "tool_use" }.map { block ->
+                                objectMapper.createObjectNode()
+                                    .put("type", "tool_result")
+                                    .put("tool_use_id", block.path("id").asText())
+                                    .put("content", TOOL_LIMIT_RESULT)
+                            },
+                        ),
+                    ),
+                )
+                log.info("chat reply of session {} used {} tool rounds: final answer with tools off", session.id, MAX_TOOL_ROUNDS)
+                spoken += textsOf(anthropic.createMessage(system, history, toolDefs, REPLY_TOKENS, toolsOff = true).path("content"))
+            }
+            if (stopReason != "tool_use" || capped) {
+                if (spoken.isEmpty()) log.warn("chat reply of session {} has no text (stop_reason {}): apology sent", session.id, stopReason)
                 val text = spoken.joinToString("\n").ifBlank { ChatTexts.failureApology(session.locale) }
                 // Yacht cards and blog links are built here from tool results, never from model text.
                 val payload =
@@ -683,6 +714,9 @@ class AiChatService(
             )
         }
     }
+
+    private fun textsOf(contentBlocks: JsonNode): List<String> =
+        contentBlocks.filter { it.path("type").asText() == "text" }.map { it.path("text").asText().trim() }.filter { it.isNotBlank() }
 
     private fun lastVisitorLine(session: AiChatSession): String =
         messages.findAllBySessionIdOrderByIdAsc(session.id!!).lastOrNull { it.role == AiChatMessage.ROLE_USER }?.content ?: ""
@@ -898,6 +932,14 @@ class AiChatService(
         const val MAX_MESSAGES_PER_SESSION = 80
         const val MAX_HISTORY_MESSAGES = 30
         const val MAX_TOOL_ROUNDS = 4
+
+        /** max_tokens of a reply, and of its one retry after a cut-off (700 cut five search calls short, 30.10.2026). */
+        const val REPLY_TOKENS = 1200
+        const val RETRY_TOKENS = 2400
+
+        private const val TOOL_LIMIT_RESULT =
+            "not run - the tool limit of this reply is reached; answer the visitor now with the results you already have " +
+                "and offer to look further in the next message"
 
         /**
          * Put in front of every broker (ADMIN) line when the transcript goes to the model. Only the server writes it,

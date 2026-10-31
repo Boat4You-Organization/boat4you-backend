@@ -62,16 +62,16 @@ class AnthropicClient(
      * throws on transport/API errors — the service maps that to a polite
      * apology, never a 500 to the visitor.
      */
-    fun createMessage(system: SystemPrompt, messages: JsonNode, tools: JsonNode?, maxTokens: Int = 700): JsonNode {
+    fun createMessage(system: SystemPrompt, messages: JsonNode, tools: JsonNode?, maxTokens: Int = 700, toolsOff: Boolean = false): JsonNode {
         if (!inFlight.tryAcquire(PERMIT_WAIT_SECONDS, TimeUnit.SECONDS)) throw IllegalStateException("Anthropic call limit reached")
         try {
-            return call(system, messages, tools, maxTokens)
+            return call(system, messages, tools, maxTokens, toolsOff)
         } finally {
             inFlight.release()
         }
     }
 
-    private fun call(system: SystemPrompt, messages: JsonNode, tools: JsonNode?, maxTokens: Int): JsonNode {
+    private fun call(system: SystemPrompt, messages: JsonNode, tools: JsonNode?, maxTokens: Int, toolsOff: Boolean): JsonNode {
         val body = objectMapper.createObjectNode().apply {
             put("model", model)
             put("max_tokens", maxTokens)
@@ -89,7 +89,12 @@ class AnthropicClient(
                 }
             }
             set<JsonNode>("messages", messages)
-            if (tools != null && !tools.isEmpty) set<JsonNode>("tools", tools)
+            if (tools != null && !tools.isEmpty) {
+                // The same tools stay in the request (a stable cached prefix, and the history holds tool calls); with
+                // toolsOff the model must answer in text.
+                set<JsonNode>("tools", tools)
+                if (toolsOff) putObject("tool_choice").put("type", "none")
+            }
         }
 
         val response = client.post()
