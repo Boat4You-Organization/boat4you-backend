@@ -1,5 +1,20 @@
 # Backend deploy notes
 
+## 2026-10-31 — 💬 Chat (IRIS): pretraga više tjedana, bez praznih najava, kontakt iz chata — ✅ cusma2 LIVE 31.10. 14:11:13 UTC (jar main `189ff2d`, md5 a9d16ae2773cf12794259add4ebbe222, bez migracije, Flyway up to date, start 13,2 s, javni health 200; tag `live/2026-10-31-chat-contact`); cusma3 ga ne treba (chat radi samo na cusma2), dobiva ga s idućim jarom kroz gate
+
+Mario 31.10.2026 („Da, popravi chat“, „Da, deployaj“). Uzrok: Nihad (Croatia Yachting, sesija 65, 30.–31.10.) tražio je bilo koji tjedan u 5 tjedana; Haiku s max_tokens 700 i 4 kruga alata rezao je odgovor usred 5 poziva pretrage → šest puta „running all five weeks now“ ili „technical hiccup“, bez loga. Alison (11), Amanda (13) i Nihad bez kontakta: IRIS je tražio e-mail samo pri predaji osobi, e-mail upisan dok predaja čeka nije se spremao, a kontakt nastao iz imena nikad nije dobio kasniji e-mail/telefon. Plan infra `docs/superpowers/plans/2026-10-31-chat-contact-multiweek.md`.
+
+- `search_yachts` prima `windowStart`/`windowEnd`: do 6 tjedana subota–subota u jednom pozivu, brod s najjeftinijim tjednom, mjesto se traži jednom, jedan `cc_search` red za prozor.
+- Odgovor 1200 tokena; odrezan (max_tokens) → još jednom s 2400; odrezan usred poziva alata se ne šalje (isprika); kraj krugova → završni poziv s `tool_choice: none`. Svaka isprika se logira s razlogom.
+- `ContactSniffer`: e-mail i telefon iz svake poruke u prazna polja sesije (i dok predaja čeka); bez + ili 00 telefon počinje s 0 i nema točaka (datumi i iznosi nisu telefon); e-mail ≤ 254 i nikad odrezan usred riječi.
+- Prvi odgovor s brodovima sesije bez kontakta nosi `contactForm`; `POST /public/chat/sessions/{token}/contact` (provjera, 409 dok odgovor traje, rate limit kao `/name`); `SessionStateDto.hasContact`.
+- `ContactLinker.syncFromSession` nakon svake promjene: povezani kontakt dobiva polja koja nema; što je tim upisao se ne mijenja (ispravljeni e-mail iz obrasca zato ne prepisuje e-mail koji kontakt već ima).
+- IRIS: traži e-mail i telefon uz prve rezultate (još jednom kasnije), zna „CONTACT ON FILE“ (da/ne, nikad vrijednosti), koristi prozor za fleksibilne tjedne, nikad ne najavljuje pretragu koju ne pokreće.
+- Testovi: chat 159/159, chat + contactcenter + limiter 428/428; jedan završni pregled (Opus): 5 važnih nalaza popravljeno, sitni u ledgeru `infra/.superpowers/sdd/2026-10-31-chat-contact-multiweek/progress.md`.
+- Provjera izvana: `POST …/sessions/<lažni>/contact` → 404 „unknown session“ (ruta postoji). nginx `/public/chat/` bez vlastitog timeouta (60 s) = widget čeka 60 s.
+- Deploy: prvi pokušaj 14:03 i drugi 14:05 odbijeni na SSH prijavi (ograničenje brzine nakon samo-čitajuće provjere nginxa), treći 14:10 prošao; ništa nije bilo napola promijenjeno.
+- Rollback: `webservice.jar.prev` na cusma2 + restart (prethodni jar `55abb80`, md5 af2a7e5b…).
+
 ## 2026-10-31 — 📉 Contact Center P6 R0: lijevak upita, izlazne stranice, klikovi (`GET /admin/cc/funnel`) + tracker događaj `INQUIRY` — ✅ cusma2 LIVE 31.10. 09:11:10 UTC (jar main `55abb80`, md5 af2a7e5b75eaf2b34305b5aefe229138, bez migracije, Flyway up to date, start 13,1 s, javni health 200; tag `live/2026-10-31-cc-funnel`); cusma3 ga ne treba (nema jobova), dobiva ga s idućim jarom kroz gate
 
 Mario 30.10.2026 („Da, kreni s R0“, 31.10. „Da, deployaj R0“). Plan infra `docs/superpowers/plans/2026-10-30-p6-heatmape-snimke.md` (R0).
