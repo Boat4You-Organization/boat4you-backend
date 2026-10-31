@@ -66,6 +66,8 @@ class PublicAiChatController(
         val messages: List<MessageDto>,
         val visitorName: String? = null,
         val aiPaused: Boolean = false,
+        /** An e-mail or phone is known: the widget's contact form stays hidden (31.10.2026). */
+        val hasContact: Boolean = false,
     )
 
     @PostMapping("/sessions")
@@ -90,7 +92,7 @@ class PublicAiChatController(
             }
         chat.updatePresence(session, request?.page, request?.referrer)
         linkVisit(session, request)
-        return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList(), session.visitorName, chat.isAiPaused(session)))
+        return ResponseEntity.ok(SessionStateDto(session.token!!, session.status, emptyList(), session.visitorName, chat.isAiPaused(session), hasContact(session)))
     }
 
     /**
@@ -191,7 +193,7 @@ class PublicAiChatController(
     ): ResponseEntity<Any> =
         when (outcome) {
             is AiChatService.MessageOutcome.Replied ->
-                ResponseEntity.ok(SessionStateDto(token, session.status, outcome.messages.map(::dto), session.visitorName, outcome.aiPaused))
+                ResponseEntity.ok(SessionStateDto(token, session.status, outcome.messages.map(::dto), session.visitorName, outcome.aiPaused, hasContact(session)))
             is AiChatService.MessageOutcome.Locked -> locked(outcome.handoffText)
             AiChatService.MessageOutcome.Busy -> ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "busy"))
         }
@@ -203,12 +205,14 @@ class PublicAiChatController(
         if (!chat.isEnabled()) return disabled()
         val session = chat.getSession(token) ?: return notFound()
         val list = chat.messagesAfter(session.id!!, afterId)
-        return ResponseEntity.ok(SessionStateDto(token, session.status, list.map(::dto), session.visitorName, chat.isAiPaused(session)))
+        return ResponseEntity.ok(SessionStateDto(token, session.status, list.map(::dto), session.visitorName, chat.isAiPaused(session), hasContact(session)))
     }
 
     private fun dto(m: AiChatMessage) = MessageDto(m.id!!, m.role!!, m.content!!, m.payload)
 
     private fun invalidName(): ResponseEntity<Any> = ResponseEntity.badRequest().body(mapOf("error" to "invalid_name"))
+
+    private fun hasContact(session: AiChatSession) = !session.visitorEmail.isNullOrBlank() || !session.phone.isNullOrBlank()
 
     private fun locked(handoffText: String): ResponseEntity<Any> =
         ResponseEntity.status(HttpStatus.LOCKED).body(mapOf("error" to "locked", "message" to handoffText))

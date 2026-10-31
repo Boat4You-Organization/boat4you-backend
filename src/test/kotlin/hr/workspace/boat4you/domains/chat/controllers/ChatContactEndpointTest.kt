@@ -24,6 +24,7 @@ class ChatContactEndpointTest {
                 "isEnabled" -> true
                 "getSession" -> if (inv.arguments[0] == "tok-5") session else null
                 "setVisitorContact" -> outcome
+                "messagesAfter" -> emptyList<Any>()
                 else -> null
             }
         }
@@ -45,5 +46,12 @@ class ChatContactEndpointTest {
         outcome = ContactOutcome.LOCKED
         post().statusCode shouldBe HttpStatus.LOCKED
         post("nope").statusCode shouldBe HttpStatus.NOT_FOUND
+    }
+
+    @Test
+    fun `the session state tells the widget whether a contact is known, so the form goes away for good`() {
+        (controller.poll("tok-5", 0).body as PublicAiChatController.SessionStateDto).hasContact shouldBe false
+        session.phone = "+385 91 234 5678"
+        (controller.poll("tok-5", 0).body as PublicAiChatController.SessionStateDto).hasContact shouldBe true
     }
 }
