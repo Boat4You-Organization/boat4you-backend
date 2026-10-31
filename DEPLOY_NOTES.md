@@ -1,5 +1,16 @@
 # Backend deploy notes
 
+## 2026-10-31 — 📉 Contact Center P6 R0: lijevak upita, izlazne stranice, klikovi (`GET /admin/cc/funnel`) + tracker događaj `INQUIRY` — ✅ cusma2 LIVE 31.10. 09:11:10 UTC (jar main `55abb80`, md5 af2a7e5b75eaf2b34305b5aefe229138, bez migracije, Flyway up to date, start 13,1 s, javni health 200; tag `live/2026-10-31-cc-funnel`); cusma3 ga ne treba (nema jobova), dobiva ga s idućim jarom kroz gate
+
+Mario 30.10.2026 („Da, kreni s R0“, 31.10. „Da, deployaj R0“). Plan infra `docs/superpowers/plans/2026-10-30-p6-heatmape-snimke.md` (R0).
+
+- `FunnelQuery`: koraci VISIT → BOAT (stranica broda) → FORM (stranica vrste BOOKING) → INQUIRY (sajt javio poslan upit); posjet se broji na najdubljem koraku i na svim prije njega. Izlazne stranice = zadnja stranica posjeta bez upita, po sajtu i putanji (pregledi, izlazi). Top klikovi po vrsti stranice. Filteri sajt, uređaj, izvor; botovi i tim nikad.
+- `GET /admin/cc/funnel?from&to&siteId&device&channel` (SYSTEM_ADMIN, ista pravila raspona kao `/stats`: zadano 30 dana, najviše 400).
+- `CcEventType.INQUIRY` + `TrackerInputValidator.EVENT_TYPES` (VARCHAR stupac, bez migracije); šalje ga widget iz `generate_lead`.
+- Testovi: FunnelQueryDbTest 7/7, kontroler 6 + sigurnost 2, validator 10, contactcenter.* 256/256. Jedan završni pregled (Opus): 0 kritičnih/važnih; izlazi po sajtu popravljeni (`55abb80`).
+- Provjera izvana: `/admin/cc/funnel` bez prijave 403 (kao `/stats`), tracker beat bez tijela 400.
+- Rollback: `webservice.jar.prev` na cusma2 + restart (prethodni jar `edd4a48`, md5 941535e1…).
+
 ## 2026-10-30 — 🧾 Admin Invoices: kartice godina (`GET /admin/invoices/years`) — ✅ cusma2 LIVE 30.10. 16:04:32 UTC (jar main `edd4a48`, md5 941535e1544a6f038dee8b2e682055ee, Flyway up to date, health 200; Mario „ako ne radi datum na računima onda da“); cusma3 ga ne treba, dobiva ga s idućim jarom kroz gate
 
 Grana `fix/invoice-years` iz `main` `367c367`. Nema migracije. Nađeno usput u logu cusma2 (30.10. 14:43 UTC): `ERROR: function pg_catalog.extract(unknown, character varying) does not exist`, admin stranica Invoices ne dobiva kartice godina od uvođenja upita (`0e48cb1`, 26.8.).
