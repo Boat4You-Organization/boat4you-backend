@@ -150,6 +150,7 @@ class PublicAiChatController(
             AiChatService.ContactOutcome.INVALID_PHONE -> ResponseEntity.badRequest().body(mapOf("error" to "invalid_phone"))
             AiChatService.ContactOutcome.EMPTY -> ResponseEntity.badRequest().body(mapOf("error" to "empty"))
             AiChatService.ContactOutcome.LOCKED -> locked(ChatSecurityGuard.handoffText(session.locale))
+            AiChatService.ContactOutcome.BUSY -> ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "busy"))
         }
     }
 

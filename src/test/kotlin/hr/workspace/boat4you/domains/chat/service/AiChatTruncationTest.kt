@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.chat.service
 
 import com.fasterxml.jackson.databind.JsonNode
 import hr.workspace.boat4you.domains.chat.jpa.AiChatMessage
+import hr.workspace.boat4you.domains.chat.jpa.AiChatSession
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.AfterEach
@@ -29,8 +30,7 @@ class AiChatTruncationTest {
         h.modelReply = { queue.removeFirstOrNull() ?: h.textReply("unexpected extra call") }
     }
 
-    private fun lastAssistant(s: hr.workspace.boat4you.domains.chat.jpa.AiChatSession) =
-        h.transcript(s).last { it.first == AiChatMessage.ROLE_ASSISTANT }.second
+    private fun lastAssistant(s: AiChatSession) = h.transcript(s).last { it.first == AiChatMessage.ROLE_ASSISTANT }.second
 
     @Test
     fun `a reply cut off by max_tokens is asked again with more room and the announcement is not sent`() {

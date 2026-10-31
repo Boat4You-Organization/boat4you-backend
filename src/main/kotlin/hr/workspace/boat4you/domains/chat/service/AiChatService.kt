@@ -206,11 +206,12 @@ class AiChatService(
             }
         }
 
-    enum class ContactOutcome { OK, INVALID_EMAIL, INVALID_PHONE, EMPTY, LOCKED }
+    enum class ContactOutcome { OK, INVALID_EMAIL, INVALID_PHONE, EMPTY, LOCKED, BUSY }
 
     /**
      * The widget's contact form (31.10.2026): what the visitor typed replaces the session's e-mail and phone, each only
-     * when it is valid; nothing is stored when either given value is not.
+     * when it is valid; nothing is stored when either given value is not. Not while a reply is being made: its save of the
+     * session loaded before the model ran would overwrite the form ([ContactOutcome.BUSY], the widget tries again).
      */
     fun setVisitorContact(
         session: AiChatSession,
@@ -221,12 +222,18 @@ class AiChatService(
         val mail = email?.trim().orEmpty()
         val tel = phone?.trim().orEmpty()
         if (mail.isEmpty() && tel.isEmpty()) return ContactOutcome.EMPTY
-        if (mail.isNotEmpty() && !ContactSniffer.EMAIL.matches(mail)) return ContactOutcome.INVALID_EMAIL
+        if (mail.isNotEmpty() && !ContactSniffer.isEmail(mail)) return ContactOutcome.INVALID_EMAIL
         val formTel = if (tel.isEmpty()) null else ContactSniffer.formPhone(tel) ?: return ContactOutcome.INVALID_PHONE
-        if (mail.isNotEmpty()) session.visitorEmail = mail
-        formTel?.let { session.phone = it }
-        sessions.save(session)
-        syncContact(session.id!!)
+        val id = session.id!!
+        if (!inFlight.add(id)) return ContactOutcome.BUSY
+        try {
+            if (mail.isNotEmpty()) session.visitorEmail = mail
+            formTel?.let { session.phone = it }
+            sessions.save(session)
+        } finally {
+            inFlight.remove(id)
+        }
+        syncContact(id)
         return ContactOutcome.OK
     }
 
@@ -650,6 +657,7 @@ class AiChatService(
                         tools.pageContext(page, site, session.locale),
                         TEAM_REPLIES_NOTE.takeIf { transcript.hasTeamLines },
                         HANDOFF_NOTE.takeIf { session.status == AiChatSession.STATUS_HUMAN_REQUESTED },
+                        contactOnFile(session),
                     ),
                 ),
             )
@@ -681,7 +689,8 @@ class AiChatService(
                         "content",
                         objectMapper.createArrayNode().addAll(
                             contentBlocks.filter { it.path("type").asText() == "tool_use" }.map { block ->
-                                objectMapper.createObjectNode()
+                                objectMapper
+                                    .createObjectNode()
                                     .put("type", "tool_result")
                                     .put("tool_use_id", block.path("id").asText())
                                     .put("content", TOOL_LIMIT_RESULT)
@@ -749,6 +758,15 @@ class AiChatService(
         }
     }
 
+    /** Tells the model what is on file (yes or no, never the values), so it never asks again (review 31.10.2026). */
+    private fun contactOnFile(session: AiChatSession): String? {
+        val email = !session.visitorEmail.isNullOrBlank()
+        val phone = !session.phone.isNullOrBlank()
+        if (!email && !phone) return null
+        return "CONTACT ON FILE: email ${if (email) "yes" else "no"}, phone ${if (phone) "yes" else "no"} — never ask the visitor again " +
+            "for what is on file."
+    }
+
     /** The contact form goes with the first boats of a session that has no e-mail or phone yet, once (Mario 31.10.2026). */
     private fun asksForContact(session: AiChatSession): Boolean =
         session.visitorEmail.isNullOrBlank() && session.phone.isNullOrBlank() &&
@@ -791,7 +809,7 @@ class AiChatService(
             "save_contact" -> {
                 // The model copies what the visitor typed: same name rules as the widget, an email only when it looks like one.
                 NameValidator.validOrNull(input.path("name").asText(""))?.let { session.visitorName = it }
-                input.path("email").asText("").trim().takeIf { ContactSniffer.EMAIL.matches(it) }?.let { session.visitorEmail = it }
+                input.path("email").asText("").trim().takeIf(ContactSniffer::isEmail)?.let { session.visitorEmail = it }
                 input.path("phone").asText("").trim().takeIf { ContactSniffer.PHONE.matches(it) }?.let { session.phone = it.replace(Regex("\\s+"), " ") }
                 sessions.save(session)
                 syncContact(session.id!!)

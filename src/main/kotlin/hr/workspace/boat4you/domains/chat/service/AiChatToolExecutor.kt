@@ -128,6 +128,7 @@ class AiChatToolExecutor(
         var first: JsonNode? = null
         var firstSearch: SearchCriteria? = null
         var totalAvailable = 0
+        val places = mutableMapOf<String, Resolution>() // one place lookup for all weeks of the window
         for (saturday in saturdays.take(MAX_WINDOW_WEEKS)) {
             val week =
                 (input.deepCopy<JsonNode>() as ObjectNode).apply {
@@ -136,7 +137,7 @@ class AiChatToolExecutor(
                     put("endDate", saturday.plusDays(7).toString())
                     put("limit", 6)
                 }
-            val outcome = searchPeriod(week, site, locale)
+            val outcome = searchPeriod(week, site, locale, places)
             val parsed = objectMapper.readTree(outcome.resultForModel)
             if (parsed.has("error")) return outcome
             if (first == null) {
@@ -190,6 +191,7 @@ class AiChatToolExecutor(
         input: JsonNode,
         site: AiSiteProfile,
         locale: String,
+        places: MutableMap<String, Resolution>? = null,
     ): ToolOutcome {
         val countryCode = input.path("countryCode").asText("").trim().uppercase().take(2).takeIf { COUNTRY_CODE.matches(it) } ?: ""
         val startDate = input.path("startDate").asText("")
@@ -262,7 +264,12 @@ class AiChatToolExecutor(
         // "Split" must search the Split REGION, not all of Croatia (Mario 20.7.2026:
         // bot answered a Split request with boats from Punat). Resolve the place via
         // the same autocomplete the website's "Where" field uses and pass its did.
-        val resolution = if (location.isBlank()) null else resolveDestination(location, countryCode, site)
+        val resolution =
+            when {
+                location.isBlank() -> null
+                places != null -> places.getOrPut("$countryCode|$location") { resolveDestination(location, countryCode, site) }
+                else -> resolveDestination(location, countryCode, site)
+            }
         resolution?.elsewhereCountry?.let { elsewhere ->
             val refusal =
                 objectMapper.createObjectNode().apply {

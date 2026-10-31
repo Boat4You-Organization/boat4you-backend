@@ -81,7 +81,7 @@ object IrisPrompt {
             - CONTACT: as soon as the visitor gives a concrete request (dates, destination or group size) and you
               show boats, ask once in that reply for their email and phone number so the team can send them an
               offer (a short form also appears under your message). If they skip it, ask once more later,
-              politely. Never make your help depend on it.
+              politely. Never make your help depend on it, and never ask for what CONTACT ON FILE says you have.
             - When the visitor is flexible across several weeks ("any week between ... and ..."), call
               search_yachts ONCE with windowStart and windowEnd instead of one call per week.
             - Never say that you are searching, checking or about to show results unless you call search_yachts

@@ -86,4 +86,34 @@ class AiChatContactTest {
         h.service.setVisitorContact(s, " ", null) shouldBe AiChatService.ContactOutcome.EMPTY
         h.service.setVisitorContact(h.newSession().also { it.flagged = true }, "a@b.com", null) shouldBe AiChatService.ContactOutcome.LOCKED
     }
+
+    @Test
+    fun `IRIS is told a contact is on file, so it never asks for it again`() {
+        h.service.handleVisitorMessage(h.newSession().also { it.visitorEmail = "ana@example.com" }, "hello")
+        h.modelSystems.last().tail shouldContain "CONTACT ON FILE: email yes, phone no"
+        h.service.handleVisitorMessage(h.newSession(), "hello")
+        h.modelSystems.last().tail shouldNotContain "CONTACT ON FILE"
+    }
+
+    @Test
+    fun `the form waits while IRIS answers, so the reply cannot overwrite what it stored`() {
+        val s = h.newSession()
+        var during: AiChatService.ContactOutcome? = null
+        h.modelReply = {
+            during = h.service.setVisitorContact(s, "ana@example.com", null)
+            h.textReply("ok")
+        }
+        h.service.handleVisitorMessage(s, "hello")
+        during shouldBe AiChatService.ContactOutcome.BUSY
+        h.service.setVisitorContact(s, "ana@example.com", null) shouldBe AiChatService.ContactOutcome.OK
+    }
+
+    @Test
+    fun `an over-long address is refused, never a failed message`() {
+        val long = "x".repeat(250) + "@example.com"
+        val s = h.newSession()
+        h.service.handleVisitorMessage(s, "my mail is $long")
+        s.visitorEmail shouldBe null
+        h.service.setVisitorContact(s, long, null) shouldBe AiChatService.ContactOutcome.INVALID_EMAIL
+    }
 }

@@ -43,6 +43,8 @@ class ChatContactEndpointTest {
                     (it.body as Map<*, *>)["error"] shouldBe error
                 }
             }
+        outcome = ContactOutcome.BUSY
+        post().statusCode shouldBe HttpStatus.CONFLICT
         outcome = ContactOutcome.LOCKED
         post().statusCode shouldBe HttpStatus.LOCKED
         post("nope").statusCode shouldBe HttpStatus.NOT_FOUND

@@ -40,4 +40,25 @@ class ContactSnifferTest {
         ContactSniffer.formPhone("12").shouldBeNull()
         ContactSniffer.formPhone("call me").shouldBeNull()
     }
+
+    @Test
+    fun `an address is never cut at an accented letter, extended by the next word or longer than the column`() {
+        ContactSniffer.email("müller@gmx.de") shouldBe "müller@gmx.de"
+        ContactSniffer.email("mail: andré.dupont@orange.fr") shouldBe "andré.dupont@orange.fr"
+        ContactSniffer.email("ana@gmail.com.Thanks") shouldBe "ana@gmail.com"
+        ContactSniffer.email("x".repeat(250) + "@example.com").shouldBeNull()
+    }
+
+    @Test
+    fun `European date ranges, budgets and booking numbers are never a phone`() {
+        listOf(
+            "18.09.-25.09.2027",
+            "from 18.9.2027-25.9.2027",
+            "termin 18-25.09.2027",
+            "Budget 15 000 - 20 000 EUR",
+            "8.000-10.000 €",
+            "booking 2027001234",
+            "09.10.-16.10.2027",
+        ).forEach { ContactSniffer.phone(it).shouldBeNull() }
+    }
 }

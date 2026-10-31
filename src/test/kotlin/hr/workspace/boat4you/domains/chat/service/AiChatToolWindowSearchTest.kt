@@ -19,6 +19,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 class AiChatToolWindowSearchTest {
     private val mapper = ObjectMapper()
     private val startDates = CopyOnWriteArrayList<String>()
+    private var placeLookups = 0
 
     /** Rows per week start date; a week not listed has no boats. */
     private val weeks =
@@ -33,6 +34,10 @@ class AiChatToolWindowSearchTest {
                 val body =
                     when {
                         ex.requestURI.path.startsWith("/public/catalogue") -> "[]"
+                        ex.requestURI.path.startsWith("/public/locations") -> {
+                            placeLookups++
+                            """{"content":[]}"""
+                        }
                         else -> {
                             val start = query["startDate"].orEmpty()
                             startDates += start
@@ -107,5 +112,12 @@ class AiChatToolWindowSearchTest {
         val outcome = window("2027-09-19", "2027-09-24")
         startDates shouldBe emptyList()
         mapper.readTree(outcome.resultForModel).path("error").asText() shouldContain "no Saturday-to-Saturday week"
+    }
+
+    @Test
+    fun `the place is looked up once for the whole window, not once per week`() {
+        window("2027-09-18", "2027-10-23", ""","location":"Split"""")
+        startDates.size shouldBe 5
+        placeLookups shouldBe 1
     }
 }

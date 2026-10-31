@@ -62,7 +62,13 @@ class AnthropicClient(
      * throws on transport/API errors — the service maps that to a polite
      * apology, never a 500 to the visitor.
      */
-    fun createMessage(system: SystemPrompt, messages: JsonNode, tools: JsonNode?, maxTokens: Int = 700, toolsOff: Boolean = false): JsonNode {
+    fun createMessage(
+        system: SystemPrompt,
+        messages: JsonNode,
+        tools: JsonNode?,
+        maxTokens: Int = 700,
+        toolsOff: Boolean = false,
+    ): JsonNode {
         if (!inFlight.tryAcquire(PERMIT_WAIT_SECONDS, TimeUnit.SECONDS)) throw IllegalStateException("Anthropic call limit reached")
         try {
             return call(system, messages, tools, maxTokens, toolsOff)
@@ -71,7 +77,13 @@ class AnthropicClient(
         }
     }
 
-    private fun call(system: SystemPrompt, messages: JsonNode, tools: JsonNode?, maxTokens: Int, toolsOff: Boolean): JsonNode {
+    private fun call(
+        system: SystemPrompt,
+        messages: JsonNode,
+        tools: JsonNode?,
+        maxTokens: Int,
+        toolsOff: Boolean,
+    ): JsonNode {
         val body = objectMapper.createObjectNode().apply {
             put("model", model)
             put("max_tokens", maxTokens)
