@@ -1,5 +1,18 @@
 # Backend deploy notes
 
+## 2026-11-01 — 🎥 Contact Center P6 R1: snimke posjeta — prijem, worker, arhiva stilova, prekidači (V9_114) — ✅ cusma2 LIVE 1.11. 10:34:31 UTC (jar main `629547e`, md5 ad1e58d0034f7aefed778829ed67b522, Flyway „9.114 - cc rec“ 0,037 s, start 12,9 s, health 200); cusma3 (worker) ⏳ kroz gate
+
+Mario 1.11.2026 („Da, nastavi R1“, „Da, deployaj R1“). Plan infra `docs/superpowers/plans/2026-10-30-p6-heatmape-snimke.md` (R1), ledger `infra/.superpowers/sdd/2026-10-30-p6-heatmape-snimke/progress.md`.
+
+- `POST /public/cc/v1/r`: Origin → sajt (403 `origin`), prekidač (403 `off`), kvota (507 prije čitanja tijela), 413 > 1 MiB, 400 `format`, 503 `busy` kad svih 8 upisa čeka NFS; tijelo se sprema neotvoreno u `/mnt/shared/rec/spool/<minuta>/`. `GET /public/cc/v1/rec-config` (`enabled` false dok je kvota puna, cache 5 min).
+- Zastavica kvote čita se samo u pozadinskoj niti (30 s), nikad na zahtjevu: zastoj cusma3 (hard NFS) drži najviše 8 Tomcat niti.
+- `RecWorker` (samo `data-sync`, ShedLock `recWorker` svaku minutu, `recHousekeeping` svaki sat): spool → staging → `<site>/<dan>/<sesija>-<stranica>-<id>.ndjson.gz` + činjenice (`rec_click/scroll/error/perf`), veza na `cc_visit` preko `ccv`; loša datoteka → `spool-bad/`, neuspjelo zatvaranje → `FAILED`; gzip ≤ 8 MiB, staging ≤ 32 MiB; datoteke 60 dana, činjenice 13 mj.; kvota 45 GiB + mail na 70 %; sweep ostataka.
+- `RecAssetArchiver`: CSS iz `/_next/static/chunks|css/` sa fontovima i slikama (samo vlastiti sajt, bez preusmjeravanja), `/replay-assets/` tek s R2.
+- `GET/PUT /admin/cc/rec/settings[/{siteId}]` (SYSTEM_ADMIN); bez reda = isključeno. Rate limit `cc-rec` = proračun `cc-beat`.
+- Testovi: contactcenter + chat + limiter 466/466, ktlint 0; završni pregled (Opus): 1 kritičan + 4 važna (+2 podignuta) popravljena testom, sitni u ledgeru.
+- Provjera izvana: `rec-config?siteId=catamaran-greece` → 200 `{"enabled":false,…}`; `POST /r` s Originom Greecea → 403 `off`.
+- Rollback: `webservice.jar.prev` na cusma2 + restart (prethodni jar `189ff2d`, md5 a9d16ae2…); V9_114 samo dodaje tablice (stari jar ih ignorira).
+
 ## 2026-10-31 — 💬 Chat (IRIS): pretraga više tjedana, bez praznih najava, kontakt iz chata — ✅ cusma2 LIVE 31.10. 14:11:13 UTC (jar main `189ff2d`, md5 a9d16ae2773cf12794259add4ebbe222, bez migracije, Flyway up to date, start 13,2 s, javni health 200; tag `live/2026-10-31-chat-contact`); cusma3 ga ne treba (chat radi samo na cusma2), dobiva ga s idućim jarom kroz gate
 
 Mario 31.10.2026 („Da, popravi chat“, „Da, deployaj“). Uzrok: Nihad (Croatia Yachting, sesija 65, 30.–31.10.) tražio je bilo koji tjedan u 5 tjedana; Haiku s max_tokens 700 i 4 kruga alata rezao je odgovor usred 5 poziva pretrage → šest puta „running all five weeks now“ ili „technical hiccup“, bez loga. Alison (11), Amanda (13) i Nihad bez kontakta: IRIS je tražio e-mail samo pri predaji osobi, e-mail upisan dok predaja čeka nije se spremao, a kontakt nastao iz imena nikad nije dobio kasniji e-mail/telefon. Plan infra `docs/superpowers/plans/2026-10-31-chat-contact-multiweek.md`.
