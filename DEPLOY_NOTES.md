@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-11-01 — 🎥 Contact Center P6 R1: snimke posjeta — prijem, worker, arhiva stilova, prekidači (V9_114) — ✅ cusma2 LIVE 1.11. 10:34:31 UTC (jar main `629547e`, md5 ad1e58d0034f7aefed778829ed67b522, Flyway „9.114 - cc rec“ 0,037 s, start 12,9 s, health 200); cusma3 (worker) ⏳ kroz gate
+## 2026-11-01 — 🎥 Contact Center P6 R1: snimke posjeta — prijem, worker, arhiva stilova, prekidači (V9_114) — ✅ cusma2 LIVE 1.11. 10:34:31 UTC (jar main `629547e`, md5 ad1e58d0034f7aefed778829ed67b522, Flyway „9.114 - cc rec“ 0,037 s, start 12,9 s, health 200); cusma3 (worker) ✅ LIVE 13:02:14 UTC kroz gate (prozor 13:00, bez crona i ShedLocka, 0 sync redaka; `/mnt/data/rec` cusma3 uid 1000 = cusma2)
 
 Mario 1.11.2026 („Da, nastavi R1“, „Da, deployaj R1“). Plan infra `docs/superpowers/plans/2026-10-30-p6-heatmape-snimke.md` (R1), ledger `infra/.superpowers/sdd/2026-10-30-p6-heatmape-snimke/progress.md`.
 
