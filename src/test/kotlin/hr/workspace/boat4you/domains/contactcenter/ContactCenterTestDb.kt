@@ -30,6 +30,7 @@ object ContactCenterTestDb {
             "V9_103__cc_tracker_visit_key.sql",
             "V9_107__cc_security_event.sql",
             "V9_108__ai_chat_never_silent.sql",
+            "V9_114__cc_rec.sql",
         )
 
     private val postgres: PostgreSQLContainer<Nothing> by lazy {
