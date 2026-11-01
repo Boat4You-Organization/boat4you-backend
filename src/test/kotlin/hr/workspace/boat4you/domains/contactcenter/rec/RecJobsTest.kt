@@ -28,7 +28,17 @@ class RecJobsTest {
             if (inv.method.name == "sendEmail") subjects += inv.arguments[1] as String
             null
         }
-    private val jobs = RecJobs(worker, email, "info@example.com")
+    private var assetPurges = 0
+    private val assets =
+        mock(RecAssetArchiver::class.java) { inv ->
+            if (inv.method.name == "purgeUnused") {
+                assetPurges++
+                0
+            } else {
+                null
+            }
+        }
+    private val jobs = RecJobs(worker, assets, email, "info@example.com")
 
     private fun at(instant: String) {
         jobs.clock = Clock.fixed(Instant.parse(instant), ZoneOffset.UTC)
@@ -50,5 +60,6 @@ class RecJobsTest {
         jobs.housekeeping()
         subjects.size shouldBe 2
         purged shouldBe 4
+        assetPurges shouldBe 4
     }
 }

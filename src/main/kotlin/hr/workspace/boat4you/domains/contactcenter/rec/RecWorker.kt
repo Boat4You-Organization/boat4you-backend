@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.contactcenter.rec
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import hr.workspace.boat4you.domains.contactcenter.SiteIds
 import hr.workspace.boat4you.domains.contactcenter.service.PageTypeClassifier
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -42,6 +43,7 @@ class RecWorker(
     @Value("\${cc.rec.silence:PT15M}") private val silence: Duration,
     @Value("\${cc.rec.retention-days:60}") private val retentionDays: Long,
     @Value("\${cc.rec.quota-bytes:48318382080}") private val quotaBytes: Long,
+    private val assets: RecAssetArchiver? = null,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val tx = TransactionTemplate(transactionManager)
@@ -67,6 +69,7 @@ class RecWorker(
         val now = clock.instant()
         val counts = Counts()
         val ended = LinkedHashSet<Long>()
+        val stylesheets = HashMap<String, MutableSet<String>>()
         for (dir in finishedMinutes(now)) {
             for (file in payloadFiles(dir)) {
                 ingest(file, counts)?.let(ended::add)
@@ -81,7 +84,11 @@ class RecWorker(
                     Long::class.java,
                     Timestamp.from(now.minus(silence)),
                 )
-        val closed = due.count { id -> close(id) }
+        val closed = due.count { id -> close(id, stylesheets) }
+        // The CSS and fonts the closed recordings use, once per site and run (a site that does not answer never stops the closes).
+        stylesheets.forEach { (site, paths) ->
+            runCatching { assets?.archive(site, paths) }.onFailure { log.warn("rec assets of {} not archived: {}", site, it.toString()) }
+        }
         return RunResult(counts.payloads, counts.duplicates, counts.dropped, closed)
     }
 
@@ -178,7 +185,10 @@ class RecWorker(
 
     /** Closes one open page view; false when it is no longer open or has nothing staged. */
     @Suppress("ReturnCount")
-    private fun close(id: Long): Boolean {
+    private fun close(
+        id: Long,
+        stylesheets: MutableMap<String, MutableSet<String>>,
+    ): Boolean {
         val row =
             jdbc
                 .query(
@@ -204,6 +214,8 @@ class RecWorker(
                 w.write("\n")
             }
         }
+        val host = SiteIds.HOSTS.entries.firstOrNull { it.value == site }?.let { "www.${it.key}" }.orEmpty()
+        payloads.forEach { stylesheets.getOrPut(site) { HashSet() } += RecAssetArchiver.stylesheets(it, host) }
         val facts = Facts()
         payloads.forEach { line ->
             runCatching { RecExtractor.parse(line) }

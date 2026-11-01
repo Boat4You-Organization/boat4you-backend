@@ -21,6 +21,7 @@ import java.util.Locale
 @Component
 class RecJobs(
     private val worker: RecWorker,
+    private val assets: RecAssetArchiver,
     private val email: EmailService,
     @Value("\${cc.rec.alert-email:info@boat4you.com}") private val alertEmail: String,
 ) {
@@ -44,6 +45,10 @@ class RecJobs(
         runCatching { worker.purge() }
             .onSuccess { if (it > 0) log.info("rec purge: {} recording files older than the retention deleted", it) }
             .onFailure { log.error("rec purge failed", it) }
+        // An asset is touched by every recording that closes with it: one unused for the retention and a week is no longer needed.
+        runCatching { assets.purgeUnused(ASSET_UNUSED_DAYS) }
+            .onSuccess { if (it > 0) log.info("rec assets: {} unused files deleted", it) }
+            .onFailure { log.error("rec asset purge failed", it) }
         val used = runCatching { worker.checkQuota() }.onFailure { log.error("rec quota check failed", it) }.getOrNull() ?: return
         val quota = worker.quotaBytes()
         val percent = if (quota > 0) used * 100 / quota else 100
@@ -72,6 +77,7 @@ class RecJobs(
 
     companion object {
         const val WARN_PERCENT = 70
+        private const val ASSET_UNUSED_DAYS = 67L
         private const val BYTES_PER_GB = 1_073_741_824.0
         private const val ADMIN_URL = "https://admin.boat4you.com/contact-center"
     }

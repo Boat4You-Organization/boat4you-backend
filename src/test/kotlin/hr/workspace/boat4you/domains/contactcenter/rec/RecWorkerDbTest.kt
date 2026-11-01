@@ -8,6 +8,7 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.mockito.Mockito.mock
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Timestamp
@@ -29,10 +30,12 @@ class RecWorkerDbTest {
     private val jdbc = ContactCenterTestDb.ready()
     private val now = Instant.parse("2026-11-01T12:00:30Z")
 
-    private fun worker(quotaBytes: Long = 1_000_000_000) =
-        RecWorker(jdbc, ccTx(jdbc), root.toString(), Duration.ofMinutes(15), 60, quotaBytes).also {
-            it.clock = Clock.fixed(now, ZoneOffset.UTC)
-        }
+    private fun worker(
+        quotaBytes: Long = 1_000_000_000,
+        assets: RecAssetArchiver? = null,
+    ) = RecWorker(jdbc, ccTx(jdbc), root.toString(), Duration.ofMinutes(15), 60, quotaBytes, assets).also {
+        it.clock = Clock.fixed(now, ZoneOffset.UTC)
+    }
 
     private fun payload(
         seq: Int,
@@ -165,5 +168,23 @@ class RecWorkerDbTest {
         Files.delete(big)
         worker(quotaBytes = 200).checkQuota()
         Files.exists(root.resolve(RecSpool.QUOTA_FLAG)) shouldBe false
+    }
+
+    @Test
+    fun `a closed page view hands the stylesheets of its site to the asset archive`() {
+        val seen = mutableListOf<Pair<String, Set<*>>>()
+        val assets =
+            mock(RecAssetArchiver::class.java) { inv ->
+                if (inv.method.name == "archive") {
+                    seen += (inv.arguments[0] as String) to (inv.arguments[1] as Set<*>)
+                    0
+                } else {
+                    null
+                }
+            }
+        val dom = """[100,5,"href=/_next/static/css/x1.css","href=https://evil.example/_next/static/css/e.css"]"""
+        spool(now.minus(Duration.ofMinutes(10)), payload(1, dom, end = true))
+        worker(assets = assets).runOnce()
+        seen shouldBe listOf("boat4you" to setOf("/_next/static/css/x1.css"))
     }
 }
