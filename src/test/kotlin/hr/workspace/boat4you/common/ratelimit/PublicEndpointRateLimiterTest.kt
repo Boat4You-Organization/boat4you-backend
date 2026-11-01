@@ -125,6 +125,7 @@ class PublicEndpointRateLimiterTest {
         listOf(
             "/public/cc/v1/visit" to 60,
             "/public/cc/v1/beat" to 600,
+            "/public/cc/v1/r" to 600,
             "/public/cc/v1/handoff" to 10,
             "/public/chat/sessions" to 5,
             "/public/chat/sessions/t0k/messages" to 40,

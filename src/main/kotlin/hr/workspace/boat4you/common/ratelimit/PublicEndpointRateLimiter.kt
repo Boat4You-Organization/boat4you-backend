@@ -202,6 +202,8 @@ class PublicEndpointRateLimiter(
             ),
             Rule("POST", "/public/cc/v1/visit", capacity = ccVisitCapacity, windowSeconds = ccVisitWindowSeconds, label = "cc-visit", realIp = true),
             Rule("POST", "/public/cc/v1/beat", capacity = ccBeatCapacity, windowSeconds = ccBeatWindowSeconds, label = "cc-beat", realIp = true),
+            // The session recorder's payloads (P6 R1): the beat's budget, nginx has its own zone in front.
+            Rule("POST", "/public/cc/v1/r", capacity = ccBeatCapacity, windowSeconds = ccBeatWindowSeconds, label = "cc-rec", realIp = true),
             Rule("POST", "/public/cc/v1/handoff", capacity = ccHandoffCapacity, windowSeconds = ccHandoffWindowSeconds, label = "cc-handoff", realIp = true),
         )
     }
