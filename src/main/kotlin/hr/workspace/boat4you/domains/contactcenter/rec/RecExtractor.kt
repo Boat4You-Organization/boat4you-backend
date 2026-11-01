@@ -29,6 +29,27 @@ object RecExtractor {
 
     private val mapper = ObjectMapper()
 
+    /** Navigation (performance.ts) tokens 2 onwards, in order. */
+    private val NAVIGATION_FIELDS =
+        listOf(
+            "fetchStart",
+            "connectStart",
+            "connectEnd",
+            "requestStart",
+            "responseStart",
+            "responseEnd",
+            "domInteractive",
+            "domComplete",
+            "loadEventStart",
+            "loadEventEnd",
+            "redirectCount",
+            "size",
+            "type",
+            "protocol",
+            "encodedSize",
+            "decodedSize",
+        )
+
     data class Envelope(
         val version: String,
         val sequence: Int,
@@ -75,6 +96,12 @@ object RecExtractor {
             decode(type, t, payloadJson)?.let { events += Event(type, (t.getOrNull(0) as? Number)?.toLong(), it) }
         }
         return Payload(envelope(e), events, variables)
+    }
+
+    /** Only the envelope of a payload: the worker routes and dedupes on it without decoding the events. */
+    fun envelopeOf(payloadJson: String): Envelope {
+        val e = mapper.readValue(payloadJson, Map::class.java)["e"] as? List<*> ?: error("payload has no envelope array e")
+        return envelope(e)
     }
 
     /** The spike's parity records `{file, seq, event, time, data}`, in arrival order (tools/parity.mjs format). */
@@ -266,10 +293,7 @@ object RecExtractor {
 
     private fun decodeNavigation(t: Tokens): Map<String, Any?> {
         val d = LinkedHashMap<String, Any?>()
-        listOf(
-            "fetchStart", "connectStart", "connectEnd", "requestStart", "responseStart", "responseEnd", "domInteractive",
-            "domComplete", "loadEventStart", "loadEventEnd", "redirectCount", "size", "type", "protocol", "encodedSize", "decodedSize",
-        ).forEachIndexed { i, name -> d.at(name, t, i + 2) }
+        NAVIGATION_FIELDS.forEachIndexed { i, name -> d.at(name, t, i + 2) }
         return d
     }
 
