@@ -17,10 +17,11 @@ import java.util.HexFormat
 
 /**
  * The CSS and fonts a recording needs to replay as it looked on its day (P6 R1.5). All seven sites are Next.js, whose stylesheets
- * carry their content hash in the name (`/_next/static/css/<hash>.css`), so the address is the version: each one a recording uses
- * is fetched once from the recording's own site, stored by content under `assets/<host>/<sha256>.<ext>` with the `/_next/static/`
- * fonts and images its url() loads, and those url() references are rewritten to `/replay-assets/<host>/<sha256>.<ext>`.
- * Only paths under `/_next/static/` of the recording's own site are ever fetched (no other host, no redirects off it).
+ * carry their content hash in the name (`/_next/static/chunks/<hash>.css` since Next 16, `/_next/static/css/` before), so the
+ * address is the version: each one a recording uses is fetched once from the recording's own site, stored by content under
+ * `assets/<host>/<sha256>.<ext>` with the fonts and images its url() loads (relative ones such as `../media/x.png` resolved against
+ * the stylesheet, public ones such as `/fonts/…`), and those url() references are rewritten to `/replay-assets/<host>/<sha256>.<ext>`.
+ * Only the recording's own site is ever fetched, only under [ASSET_PREFIXES], with redirects off.
  */
 @Component
 class RecAssetArchiver(
@@ -45,11 +46,11 @@ class RecAssetArchiver(
             val url = base.resolve(path).toString()
             if (touch(url)) continue
             val css = fetch(url) ?: continue
+            val cssUri = URI(url)
             val text =
                 URL_REF.replace(String(css, Charsets.UTF_8)) { m ->
-                    val ref = m.groupValues[2]
-                    if (!ref.startsWith(NEXT_STATIC)) return@replace m.value
-                    val asset = binary(base, hostDir, ref) ?: return@replace m.value
+                    val target = assetUri(base, cssUri, m.groupValues[2]) ?: return@replace m.value
+                    val asset = binary(hostDir, target) ?: return@replace m.value
                     stored += asset.second
                     "url(/replay-assets/${asset.first})"
                 }
@@ -85,19 +86,34 @@ class RecAssetArchiver(
     /** True, and marked as used now, when [url] is archived already. */
     private fun touch(url: String): Boolean = jdbc.update("UPDATE rec_asset SET last_used_at = now() WHERE url = ?", url) > 0
 
-    /** The archived path of a font or image under /_next/static/, and 1 when it was stored now (0 when known). */
-    private fun binary(
+    /**
+     * The same-site font or image a stylesheet's url() loads: a relative or root-relative reference resolved against the stylesheet,
+     * kept only on the site's own host, under [ASSET_PREFIXES] and with a file extension; null for data:, other hosts and fragments.
+     */
+    private fun assetUri(
         base: URI,
-        hostDir: String,
+        css: URI,
         ref: String,
+    ): URI? {
+        if (ref.startsWith("#") || ref.startsWith("//") || ref.contains(':')) return null
+        val target = runCatching { css.resolve(ref).normalize() }.getOrNull() ?: return null
+        val path = target.rawPath ?: return null
+        val sameSite = target.host == base.host && target.port == base.port
+        return target.takeIf { sameSite && ASSET_PREFIXES.any(path::startsWith) && EXT.matches(path.substringAfterLast('.', "")) }
+    }
+
+    /** The archived path of a font or image, and 1 when it was stored now (0 when known). */
+    private fun binary(
+        hostDir: String,
+        target: URI,
     ): Pair<String, Int>? {
-        val url = base.resolve(ref).toString()
+        val url = target.toString()
         jdbc.query("SELECT path FROM rec_asset WHERE url = ? ORDER BY id DESC LIMIT 1", { rs, _ -> rs.getString(1) }, url).firstOrNull()?.let {
             touch(url)
             return it to 0
         }
         val bytes = fetch(url) ?: return null
-        val ext = ref.substringAfterLast('.', "bin").takeIf { EXT.matches(it) } ?: "bin"
+        val ext = target.rawPath.substringAfterLast('.', "bin").takeIf { EXT.matches(it) } ?: "bin"
         return store(hostDir, url, bytes, ext, null) to 1
     }
 
@@ -136,9 +152,9 @@ class RecAssetArchiver(
         }
 
     companion object {
-        private const val NEXT_STATIC = "/_next/static/"
-        private val CSS_PATH = Regex("""^/_next/static/css/[A-Za-z0-9._-]{1,120}\.css$""")
-        private val CSS_IN_TEXT = Regex("""(?:https?://([A-Za-z0-9.-]+))?(/_next/static/css/[A-Za-z0-9._-]{1,120}\.css)""")
+        private val ASSET_PREFIXES = listOf("/_next/static/", "/fonts/", "/icons/", "/images/")
+        private val CSS_PATH = Regex("""^/_next/static/(?:css|chunks)/[A-Za-z0-9._-]{1,120}\.css$""")
+        private val CSS_IN_TEXT = Regex("""(?:https?://([A-Za-z0-9.-]+))?(/_next/static/(?:css|chunks)/[A-Za-z0-9._-]{1,120}\.css)""")
         private val URL_REF = Regex("""url\(\s*(['"]?)([^'")\s]+)\1\s*\)""")
         private val EXT = Regex("^[A-Za-z0-9]{1,8}$")
         private val TIMEOUT: Duration = Duration.ofSeconds(10)
@@ -146,7 +162,7 @@ class RecAssetArchiver(
         private const val HTTP_OK = 200
         private const val URL_MAX = 1000
 
-        /** The `/_next/static/css/` stylesheets a recording's text names, relative or on [host] itself; another host is ignored. */
+        /** The Next.js stylesheets a recording's text names, relative or on [host] itself; another host is ignored. */
         fun stylesheets(
             text: String,
             host: String,

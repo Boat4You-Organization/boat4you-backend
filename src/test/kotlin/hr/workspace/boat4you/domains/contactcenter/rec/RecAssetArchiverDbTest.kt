@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.contactcenter.rec
 
 import com.sun.net.httpserver.HttpServer
 import hr.workspace.boat4you.domains.contactcenter.ContactCenterTestDb
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -28,6 +29,10 @@ class RecAssetArchiverDbTest {
     private val css =
         "@font-face{font-family:x;src:url(/_next/static/media/f1.woff2) format(\"woff2\")}" +
             ".a{background:url(data:image/png;base64,AAAA)}.b{background:url('https://cdn.example.com/z.png')}"
+    // What Next 16 really builds: stylesheets in chunks/, public fonts by absolute path, media relative to the stylesheet.
+    private val chunkCss =
+        "@font-face{font-family:r;src:url(/fonts/R/R.woff2) format(\"woff2\")}.m{background:url(../media/m1.png?dpl=x1)}" +
+            ".p{background:url(/private/secret.txt)}.v{behavior:url(#default#VML)}"
     private val server =
         HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
             createContext("/") { ex ->
@@ -36,6 +41,10 @@ class RecAssetArchiverDbTest {
                     when (ex.requestURI.path) {
                         "/_next/static/css/a1.css" -> css.toByteArray()
                         "/_next/static/media/f1.woff2" -> byteArrayOf(1, 2, 3, 4)
+                        "/_next/static/chunks/c1.css" -> chunkCss.toByteArray()
+                        "/fonts/R/R.woff2" -> byteArrayOf(5, 6)
+                        "/_next/static/media/m1.png" -> byteArrayOf(7, 8)
+                        "/private/secret.txt" -> "secret".toByteArray()
                         else -> null
                     }
                 if (body == null) {
@@ -96,5 +105,25 @@ class RecAssetArchiverDbTest {
         archiver.purgeUnused(67) shouldBe 1
         Files.exists(font) shouldBe false
         jdbc.queryForObject("SELECT count(*) FROM rec_asset", Long::class.java) shouldBe 1
+    }
+
+    @Test
+    fun `a real recording names its stylesheet under chunks, with the deploy query`() {
+        val line = javaClass.getResource("/rec/fixtures/boat4you/10k8r1d-1.ndjson")!!.readText()
+        RecAssetArchiver.stylesheets(line, "www.boat4you.com") shouldContain "/_next/static/chunks/2f8oz9_lbyyt8.css"
+    }
+
+    @Test
+    fun `a chunks stylesheet is archived with its public fonts and relative media, other paths untouched`() {
+        archiver.archive("boat4you", setOf("/_next/static/chunks/c1.css")) shouldBe 3
+        val stored =
+            jdbc.queryForObject("SELECT path FROM rec_asset WHERE url LIKE '%c1.css'", String::class.java)!!.let { root.resolve("assets").resolve(it) }
+        val text = Files.readString(stored)
+        text shouldNotContain "/fonts/R/R.woff2"
+        text shouldNotContain "../media/m1.png"
+        text shouldContain "url(/private/secret.txt)"
+        text shouldContain "url(#default#VML)"
+        hits["/private/secret.txt"] shouldBe null
+        jdbc.queryForObject("SELECT count(*) FROM rec_asset WHERE url LIKE '%/_next/static/media/m1.png%'", Long::class.java) shouldBe 1L
     }
 }
