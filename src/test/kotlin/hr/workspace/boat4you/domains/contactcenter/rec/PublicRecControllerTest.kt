@@ -10,9 +10,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.Mockito.mock
 import org.springframework.mock.web.MockHttpServletRequest
+import java.io.IOException
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPOutputStream
 import kotlin.io.path.name
 import kotlin.io.path.readBytes
@@ -35,7 +39,9 @@ class PublicRecControllerTest {
             }
         }
 
-    private fun controller() = PublicRecController(settings, RecSpool(root.toString()))
+    private val spool by lazy { RecSpool(root.toString()) }
+
+    private fun controller() = PublicRecController(settings, spool)
 
     private fun post(
         body: ByteArray,
@@ -82,10 +88,54 @@ class PublicRecControllerTest {
     }
 
     @Test
-    fun `over quota is 507 and nothing is written`() {
+    fun `over quota is 507 before the body is read, nothing is written and rec-config says off`() {
         Files.writeString(root.resolve(RecSpool.QUOTA_FLAG), "45 GB")
-        post("{}".toByteArray()).statusCode.value() shouldBe 507
+        spool.refreshQuota()
+        val unread =
+            object : MockHttpServletRequest("POST", "/public/cc/v1/r") {
+                override fun getInputStream() = throw IOException("the body must not be read")
+            }.apply { addHeader("Origin", "https://www.boat4you.com") }
+        controller().ingest(unread).statusCode.value() shouldBe 507
         spooled().shouldBeEmpty()
+        (controller().config("boat4you").body as Map<*, *>)["enabled"] shouldBe false
+    }
+
+    @Test
+    fun `the quota flag is looked at only by the background refresh, never on a request`() {
+        Files.writeString(root.resolve(RecSpool.QUOTA_FLAG), "45 GB")
+        spool.quotaFull() shouldBe false
+        spool.refreshQuota()
+        spool.quotaFull() shouldBe true
+        Files.delete(root.resolve(RecSpool.QUOTA_FLAG))
+        spool.quotaFull() shouldBe true
+        spool.refreshQuota()
+        spool.quotaFull() shouldBe false
+    }
+
+    @Test
+    fun `a stalled share holds at most 8 writes, the next request is 503 busy at once`() {
+        val release = CountDownLatch(1)
+        val waiting = CountDownLatch(8)
+        spool.writeFile = { path, bytes ->
+            waiting.countDown()
+            release.await()
+            Files.write(path, bytes)
+        }
+        val pool = Executors.newFixedThreadPool(9)
+        try {
+            val stuck = (1..8).map { pool.submit<Int> { post("{}".toByteArray()).statusCode.value() } }
+            waiting.await(5, TimeUnit.SECONDS) shouldBe true
+            pool.submit<Any?> { post("{}".toByteArray()) }.get(2, TimeUnit.SECONDS).let {
+                it as org.springframework.http.ResponseEntity<*>
+                it.statusCode.value() shouldBe 503
+                (it.body as Map<*, *>)["error"] shouldBe "busy"
+            }
+            release.countDown()
+            stuck.map { it.get(5, TimeUnit.SECONDS) } shouldBe List(8) { 204 }
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+        }
     }
 
     @Test

@@ -21,8 +21,9 @@ import java.time.Duration
  * spool untouched (cusma2 never parses a recording), `GET /public/cc/v1/rec-config` tells the widget whether and how much to record.
  *
  * `/r`: the `Origin` host decides the site (403 `origin` for any other host); 403 `off` while the site's recording is switched off
- * (the kill switch); 413 over [MAX_BODY_BYTES]; 400 `format` for a body that is neither gzip nor JSON; 507 `quota` while the worker's
- * quota flag is set; 503 when the spool cannot be written; else 204. Every answer is `no-store`.
+ * (the kill switch); 507 `quota` while the worker's quota flag is set (before the body is read; rec-config then says off, so the
+ * recorders stop); 413 over [MAX_BODY_BYTES]; 400 `format` for a body that is neither gzip nor JSON; 503 `busy` while all spool
+ * writers wait on the share, 503 `unavailable` when the spool cannot be written; else 204. Every answer is `no-store`.
  */
 @RestController
 @RequestMapping("/public/cc/v1")
@@ -37,16 +38,18 @@ class PublicRecController(
     fun ingest(http: HttpServletRequest): ResponseEntity<Any> {
         val site = siteOf(http.getHeader("Origin")) ?: return error(HTTP_FORBIDDEN, "origin")
         if (!settings.forSite(site).enabled) return error(HTTP_FORBIDDEN, "off")
+        if (spool.quotaFull()) return error(HTTP_INSUFFICIENT_STORAGE, "quota")
         if (http.contentLengthLong > MAX_BODY_BYTES) return error(HTTP_PAYLOAD_TOO_LARGE, "too_large")
         val body = http.inputStream.readNBytes(MAX_BODY_BYTES + 1)
         if (body.size > MAX_BODY_BYTES) return error(HTTP_PAYLOAD_TOO_LARGE, "too_large")
         val gzip = body.size >= 2 && body[0] == GZIP_0 && body[1] == GZIP_1
         val first = body.firstOrNull { !Char(it.toInt() and 0xFF).isWhitespace() }
         if (!gzip && first != '{'.code.toByte() && first != '['.code.toByte()) return error(HTTP_BAD_REQUEST, "format")
-        if (spool.quotaFull()) return error(HTTP_INSUFFICIENT_STORAGE, "quota")
         return try {
             spool.write(site, body, gzip)
             ResponseEntity.noContent().cacheControl(CacheControl.noStore()).build()
+        } catch (e: RecSpool.SpoolBusyException) {
+            error(HTTP_UNAVAILABLE, "busy")
         } catch (e: IOException) {
             log.warn("rec spool write failed for {}: {}", site, e.toString())
             error(HTTP_UNAVAILABLE, "unavailable")
@@ -63,7 +66,7 @@ class PublicRecController(
         return ResponseEntity
             .ok()
             .cacheControl(CacheControl.maxAge(CONFIG_MAX_AGE).cachePublic())
-            .body(mapOf("enabled" to s.enabled, "sample" to s.samplePct, "mobileSample" to s.mobilePct))
+            .body(mapOf("enabled" to (s.enabled && !spool.quotaFull()), "sample" to s.samplePct, "mobileSample" to s.mobilePct))
     }
 
     private fun siteOf(origin: String?): String? = origin?.let { runCatching { URI(it).host }.getOrNull() }?.let(SiteIds::fromHost)
