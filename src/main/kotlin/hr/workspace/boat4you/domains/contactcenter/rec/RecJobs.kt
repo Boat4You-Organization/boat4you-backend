@@ -45,6 +45,9 @@ class RecJobs(
         runCatching { worker.purge() }
             .onSuccess { if (it > 0) log.info("rec purge: {} recording files older than the retention deleted", it) }
             .onFailure { log.error("rec purge failed", it) }
+        runCatching { worker.expireFacts() }
+            .onSuccess { if (it > 0) log.info("rec retention: {} recorded page views older than 13 months deleted with their facts", it) }
+            .onFailure { log.error("rec retention failed", it) }
         // An asset is touched by every recording that closes with it: one unused for the retention and a week is no longer needed.
         runCatching { assets.purgeUnused(ASSET_UNUSED_DAYS) }
             .onSuccess { if (it > 0) log.info("rec assets: {} unused files deleted", it) }

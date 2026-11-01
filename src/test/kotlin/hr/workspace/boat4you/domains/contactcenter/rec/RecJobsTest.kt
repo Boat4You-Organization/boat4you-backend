@@ -13,11 +13,13 @@ import java.time.ZoneOffset
 class RecJobsTest {
     private var used = 0L
     private var purged = 0
+    private var expired = 0
     private val subjects = mutableListOf<String>()
     private val worker =
         mock(RecWorker::class.java) { inv ->
             when (inv.method.name) {
                 "purge" -> purged++.let { 0 }
+                "expireFacts" -> expired++.let { 0 }
                 "checkQuota" -> used
                 "quotaBytes" -> 100L
                 else -> null
@@ -61,5 +63,6 @@ class RecJobsTest {
         subjects.size shouldBe 2
         purged shouldBe 4
         assetPurges shouldBe 4
+        expired shouldBe 4
     }
 }

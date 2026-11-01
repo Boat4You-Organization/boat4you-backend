@@ -187,4 +187,27 @@ class RecWorkerDbTest {
         worker(assets = assets).runOnce()
         seen shouldBe listOf("boat4you" to setOf("/_next/static/css/x1.css"))
     }
+
+    @Test
+    fun `after 13 months a recorded page view and its facts go, like the other visit statistics`() {
+        fun pageView(days: Long): Long {
+            val at = Timestamp.from(now.minus(Duration.ofDays(days)))
+            val id =
+                jdbc.queryForObject(
+                    "INSERT INTO rec_page_view (site_id, project_id, user_id, session_id, page_num, started_at, last_payload_at, status, file_purged) " +
+                        "VALUES ('boat4you', 'boat4you', 'u', ?, 1, ?, ?, 'CLOSED', TRUE) RETURNING id",
+                    Long::class.java,
+                    "s$days",
+                    at,
+                    at,
+                )!!
+            jdbc.update("INSERT INTO rec_click (page_view_id, t_ms) VALUES (?, 1)", id)
+            return id
+        }
+        pageView(400)
+        val kept = pageView(300)
+        worker().expireFacts() shouldBe 1
+        jdbc.queryForList("SELECT id FROM rec_page_view", Long::class.java) shouldContainExactly listOf(kept)
+        count("rec_click") shouldBe 1
+    }
 }

@@ -327,6 +327,18 @@ class RecWorker(
         return old.size
     }
 
+    /**
+     * Recorded page views older than [FACTS_MONTHS] months go with their facts (ON DELETE CASCADE), as the other visit statistics
+     * do (ContactCenterRetention, 13 months); their files went after [retentionDays]. Returns how many page views went.
+     */
+    fun expireFacts(): Int {
+        val cutoff = Timestamp.from(clock.instant().atZone(ZoneOffset.UTC).minusMonths(FACTS_MONTHS).toInstant())
+        return jdbc.update(
+            "DELETE FROM rec_page_view WHERE id IN (SELECT id FROM rec_page_view WHERE status = 'CLOSED' AND started_at < ? LIMIT $PURGE_BATCH)",
+            cutoff,
+        )
+    }
+
     /** Bytes under [root]; `QUOTA_FULL` exists exactly while they are at or over [quotaBytes]. */
     fun checkQuota(): Long {
         val used = Files.walk(root).use { s -> s.filter(Files::isRegularFile).mapToLong { runCatching { Files.size(it) }.getOrDefault(0L) }.sum() }
@@ -352,6 +364,7 @@ class RecWorker(
         private const val EL_MAX = 80
         private const val ERROR_MAX = 500
         private const val PURGE_BATCH = 5000
+        private const val FACTS_MONTHS = 13L
     }
 }
 
