@@ -13,6 +13,7 @@ import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.sql.Timestamp
 import java.time.Clock
@@ -33,6 +34,11 @@ import java.util.zip.GZIPOutputStream
  * its facts are stored and its `ccv` variable links it to the visit. A payload whose project is not its file's site, or that comes
  * after its page view closed, is dropped. [purge] deletes the files of closed page views older than [retentionDays] (the facts
  * stay); [checkQuota] keeps `QUOTA_FULL` in step with the disk, so the ingest answers 507 above [quotaBytes].
+ *
+ * The spool is written by anyone who can post to the public ingest, so no single file or page view may stop the worker: a spool
+ * file that throws is set aside in `spool-bad/`, a page view whose close throws becomes `FAILED`, times are clamped to their
+ * columns, a gzip expands to at most [MAX_TEXT_BYTES] and a staging file grows to at most [stagingMaxBytes]. [sweep] deletes
+ * what would otherwise outlive the retention.
  */
 @Component
 @Suppress("TooManyFunctions")
@@ -52,6 +58,9 @@ class RecWorker(
 
     internal var clock: Clock = Clock.systemUTC()
 
+    /** A page view whose staging file reached this many bytes takes no more payloads (the close reads the file whole). */
+    internal var stagingMaxBytes: Long = STAGING_MAX_BYTES
+
     data class RunResult(
         val payloads: Int,
         val duplicates: Int,
@@ -65,6 +74,7 @@ class RecWorker(
         var dropped = 0
     }
 
+    @Suppress("TooGenericExceptionCaught") // one bad file or page view must never stop the others
     fun runOnce(): RunResult {
         val now = clock.instant()
         val counts = Counts()
@@ -72,8 +82,14 @@ class RecWorker(
         val stylesheets = HashMap<String, MutableSet<String>>()
         for (dir in finishedMinutes(now)) {
             for (file in payloadFiles(dir)) {
-                ingest(file, counts)?.let(ended::add)
-                Files.deleteIfExists(file)
+                try {
+                    ingest(file, counts)?.let(ended::add)
+                    Files.deleteIfExists(file)
+                } catch (e: Exception) {
+                    counts.dropped++
+                    log.warn("rec: spool file {} set aside: {}", file.fileName, e.toString())
+                    setAside(file)
+                }
             }
             runCatching { Files.deleteIfExists(dir) } // still holds a .tmp of a late write: kept for the next run
         }
@@ -84,7 +100,7 @@ class RecWorker(
                     Long::class.java,
                     Timestamp.from(now.minus(silence)),
                 )
-        val closed = due.count { id -> close(id, stylesheets) }
+        val closed = due.count { id -> closeOrFail(id, stylesheets) }
         // The CSS and fonts the closed recordings use, once per site and run (a site that does not answer never stops the closes).
         stylesheets.forEach { (site, paths) ->
             runCatching { assets?.archive(site, paths) }.onFailure { log.warn("rec assets of {} not archived: {}", site, it.toString()) }
@@ -106,6 +122,14 @@ class RecWorker(
         }
     }
 
+    private fun setAside(file: Path) {
+        runCatching {
+            val bad = root.resolve(SPOOL_BAD)
+            Files.createDirectories(bad)
+            Files.move(file, bad.resolve(file.fileName), StandardCopyOption.REPLACE_EXISTING)
+        }.onFailure { runCatching { Files.deleteIfExists(file) } }
+    }
+
     /** Stores one spool file; the page view id when it was its end payload. */
     @Suppress("ReturnCount")
     private fun ingest(
@@ -119,7 +143,8 @@ class RecWorker(
         val site = if (base.length > UUID_LENGTH + 1) base.substring(base.indexOf('-') + 1, base.length - UUID_LENGTH - 1) else ""
         val text =
             try {
-                if (gzip) String(GZIPInputStream(Files.newInputStream(file)).use { it.readAllBytes() }, Charsets.UTF_8) else Files.readString(file)
+                val bytes = if (gzip) GZIPInputStream(Files.newInputStream(file)).use { it.readNBytes(MAX_TEXT_BYTES + 1) } else Files.readAllBytes(file)
+                if (bytes.size > MAX_TEXT_BYTES) null else String(bytes, Charsets.UTF_8)
             } catch (e: IOException) {
                 log.warn("rec: unreadable spool file {}: {}", name, e.toString())
                 null
@@ -130,15 +155,21 @@ class RecWorker(
             return null
         }
         val line = text.replace("\n", "")
-        val (id, status) = upsert(site, envelope, receivedAt)
+        val elapsed = envelope.start.coerceIn(0, MAX_ELAPSED_MS) + envelope.duration.coerceIn(0, MAX_ELAPSED_MS)
+        val (id, status) = upsert(site, envelope, receivedAt, elapsed)
         if (status != STATUS_OPEN) {
             counts.dropped++
             return null
         }
         // The line first, then the row: a crash in between repeats the line (dropped at the close), never loses it.
         val staging = staging(id)
+        val bytes = (line + "\n").toByteArray(Charsets.UTF_8)
+        if (Files.exists(staging) && Files.size(staging) + bytes.size > stagingMaxBytes) {
+            counts.dropped++
+            return if (envelope.end) id else null
+        }
         Files.createDirectories(staging.parent)
-        Files.writeString(staging, line + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+        Files.write(staging, bytes, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         val fresh = jdbc.update("INSERT INTO rec_payload (page_view_id, sequence) VALUES (?, ?) ON CONFLICT DO NOTHING", id, envelope.sequence) == 1
         if (!fresh) {
             counts.duplicates++
@@ -148,7 +179,7 @@ class RecWorker(
         jdbc.update(
             "UPDATE rec_page_view SET payloads = payloads + 1, bytes = bytes + ?, duration_ms = GREATEST(COALESCE(duration_ms, 0), ?) WHERE id = ?",
             line.length.toLong(),
-            (envelope.start + envelope.duration).toInt(),
+            elapsed.toInt(),
             id,
         )
         return if (envelope.end) id else null
@@ -158,10 +189,11 @@ class RecWorker(
         site: String,
         e: RecExtractor.Envelope,
         receivedAt: Instant,
+        elapsed: Long,
     ): Pair<Long, String> {
         val url = e.url?.take(URL_MAX)
         val pageType = url?.let { u -> runCatching { URI(u) }.getOrNull()?.let { PageTypeClassifier.classify(site, it.rawPath ?: "/").type } }
-        val startedAt = Timestamp.from(receivedAt.minusMillis(e.start + e.duration))
+        val startedAt = Timestamp.from(receivedAt.minusMillis(elapsed))
         return jdbc.queryForObject(
             "INSERT INTO rec_page_view (site_id, project_id, user_id, session_id, page_num, url, page_type, started_at, last_payload_at) " +
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (project_id, user_id, session_id, page_num) DO UPDATE SET " +
@@ -182,6 +214,21 @@ class RecWorker(
     }
 
     private fun staging(id: Long): Path = root.resolve("staging").resolve("$id.ndjson")
+
+    /** [close], and when it throws: the page view becomes FAILED and its staging goes (it never closes, so nothing else would). */
+    @Suppress("TooGenericExceptionCaught")
+    private fun closeOrFail(
+        id: Long,
+        stylesheets: MutableMap<String, MutableSet<String>>,
+    ): Boolean =
+        try {
+            close(id, stylesheets)
+        } catch (e: Exception) {
+            log.warn("rec: page view {} could not be closed, marked FAILED: {}", id, e.toString())
+            runCatching { jdbc.update("UPDATE rec_page_view SET status = 'FAILED' WHERE id = ? AND status = 'OPEN'", id) }
+            runCatching { Files.deleteIfExists(staging(id)) }
+            false
+        }
 
     /** Closes one open page view; false when it is no longer open or has nothing staged. */
     @Suppress("ReturnCount")
@@ -222,7 +269,12 @@ class RecWorker(
                 .onSuccess(facts::add)
                 .onFailure { log.warn("rec: page view {} has a payload the extractor refused: {}", id, it.toString()) }
         }
-        tx.executeWithoutResult { store(id, rel, facts) }
+        try {
+            tx.executeWithoutResult { store(id, rel, facts) }
+        } catch (e: RuntimeException) {
+            Files.deleteIfExists(file) // no row points at it, so the purge would never find it
+            throw e
+        }
         Files.deleteIfExists(staging)
         return true
     }
@@ -263,7 +315,7 @@ class RecWorker(
             f.clicks.map { c ->
                 arrayOf<Any?>(
                     id,
-                    c.time ?: 0,
+                    c.time.ms(),
                     c.int("x"),
                     c.int("y"),
                     c.int("eX"),
@@ -286,13 +338,13 @@ class RecWorker(
         jdbc.batchUpdate(
             "INSERT INTO rec_scroll (page_view_id, t_ms, target, x, y, top_el, bottom_el, trust) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             f.scrolls.map { s ->
-                arrayOf<Any?>(id, s.time ?: 0, s.long("target"), s.int("x"), s.int("y"), s.str("top", EL_MAX), s.str("bottom", EL_MAX), s.int("trust"))
+                arrayOf<Any?>(id, s.time.ms(), s.long("target"), s.int("x"), s.int("y"), s.str("top", EL_MAX), s.str("bottom", EL_MAX), s.int("trust"))
             },
         )
         // The stack is not kept: it can hold URLs with tokens.
         jdbc.batchUpdate(
             "INSERT INTO rec_error (page_view_id, t_ms, message, line, col, source) VALUES (?, ?, ?, ?, ?, ?)",
-            f.errors.map { e -> arrayOf<Any?>(id, e.time ?: 0, e.str("message", ERROR_MAX), e.int("line"), e.int("column"), e.str("source", ERROR_MAX)) },
+            f.errors.map { e -> arrayOf<Any?>(id, e.time.ms(), e.str("message", ERROR_MAX), e.int("line"), e.int("column"), e.str("source", ERROR_MAX)) },
         )
         f.navigation?.let { jdbc.update("INSERT INTO rec_perf (page_view_id, nav) VALUES (?, CAST(? AS JSONB)) ON CONFLICT DO NOTHING", id, mapper.writeValueAsString(it)) }
         jdbc.update(
@@ -334,9 +386,49 @@ class RecWorker(
     fun expireFacts(): Int {
         val cutoff = Timestamp.from(clock.instant().atZone(ZoneOffset.UTC).minusMonths(FACTS_MONTHS).toInstant())
         return jdbc.update(
-            "DELETE FROM rec_page_view WHERE id IN (SELECT id FROM rec_page_view WHERE status = 'CLOSED' AND started_at < ? LIMIT $PURGE_BATCH)",
+            "DELETE FROM rec_page_view WHERE id IN (SELECT id FROM rec_page_view WHERE status <> 'OPEN' AND started_at < ? LIMIT $PURGE_BATCH)",
             cutoff,
         )
+    }
+
+    /**
+     * Deletes what would otherwise outlive the retention: set-aside spool files after [BAD_KEEP], `.tmp` files of writes cusma2
+     * never finished after [STALE_TMP], and the staging files of page views that are no longer open (a FAILED close, a crash
+     * between the close and its delete). Returns the files deleted.
+     */
+    fun sweep(): Int {
+        val now = clock.instant()
+        var deleted = deleteOlder(root.resolve(SPOOL_BAD), now.minus(BAD_KEEP)) { true }
+        val spool = root.resolve(RecSpool.SPOOL)
+        if (Files.isDirectory(spool)) {
+            Files.list(spool).use { it.toList() }.filter(Files::isDirectory).forEach { dir ->
+                deleted += deleteOlder(dir, now.minus(STALE_TMP)) { it.fileName.toString().endsWith(".tmp") }
+                runCatching { Files.deleteIfExists(dir) } // only once empty
+            }
+        }
+        val staging = root.resolve("staging")
+        if (Files.isDirectory(staging)) {
+            // Listed before the open ids are read: a file of a page view opened after the listing is never looked at.
+            val files = Files.list(staging).use { it.toList() }
+            val open = jdbc.queryForList("SELECT id FROM rec_page_view WHERE status = 'OPEN'", Long::class.java).toHashSet()
+            files
+                .filter { f -> f.fileName.toString().removeSuffix(".ndjson").toLongOrNull()?.let { it !in open } == true }
+                .forEach { if (Files.deleteIfExists(it)) deleted++ }
+        }
+        return deleted
+    }
+
+    private fun deleteOlder(
+        dir: Path,
+        cutoff: Instant,
+        which: (Path) -> Boolean,
+    ): Int {
+        if (!Files.isDirectory(dir)) return 0
+        val old =
+            Files.list(dir).use { s ->
+                s.filter { Files.isRegularFile(it) && which(it) && Files.getLastModifiedTime(it).toInstant() < cutoff }.toList()
+            }
+        return old.count { Files.deleteIfExists(it) }
     }
 
     /** Bytes under [root]; `QUOTA_FULL` exists exactly while they are at or over [quotaBytes]. */
@@ -351,6 +443,7 @@ class RecWorker(
 
     companion object {
         const val STATUS_OPEN = "OPEN"
+        const val SPOOL_BAD = "spool-bad"
         const val VISIT_VARIABLE = "ccv"
         private val SPOOL_GRACE: Duration = Duration.ofMinutes(1)
         private val DAY: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd").withZone(ZoneOffset.UTC)
@@ -365,8 +458,16 @@ class RecWorker(
         private const val ERROR_MAX = 500
         private const val PURGE_BATCH = 5000
         private const val FACTS_MONTHS = 13L
+        const val MAX_TEXT_BYTES = 8 * 1024 * 1024
+        private const val STAGING_MAX_BYTES = 32L * 1024 * 1024
+        private const val MAX_ELAPSED_MS = 7L * 24 * 60 * 60 * 1000
+        private val BAD_KEEP: Duration = Duration.ofDays(7)
+        private val STALE_TMP: Duration = Duration.ofDays(1)
     }
 }
+
+/** An event time in ms, clamped to the INTEGER column. */
+private fun Long?.ms(): Int = (this ?: 0).coerceIn(0, Int.MAX_VALUE.toLong()).toInt()
 
 private fun RecExtractor.Event.int(key: String): Int? = (data[key] as? Number)?.toInt()
 

@@ -17,7 +17,10 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
+import java.io.ByteArrayOutputStream
+import java.nio.file.attribute.FileTime
 import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 /**
  * The recording worker on cusma3 (P6 R1.4) over a real database and a temporary root: the spool becomes page views (a retried
@@ -53,6 +56,16 @@ class RecWorkerDbTest {
         val dir = root.resolve("spool").resolve(RecSpool.MINUTE.format(at))
         Files.createDirectories(dir)
         Files.writeString(dir.resolve("${at.toEpochMilli()}-$site-${UUID.randomUUID()}.json"), json)
+    }
+
+    private fun spoolBytes(
+        at: Instant,
+        bytes: ByteArray,
+        ext: String,
+    ): Path {
+        val dir = root.resolve("spool").resolve(RecSpool.MINUTE.format(at))
+        Files.createDirectories(dir)
+        return Files.write(dir.resolve("${at.toEpochMilli()}-boat4you-${UUID.randomUUID()}.$ext"), bytes)
     }
 
     private fun count(table: String): Long = jdbc.queryForObject("SELECT count(*) FROM $table", Long::class.java)!!
@@ -206,8 +219,100 @@ class RecWorkerDbTest {
         }
         pageView(400)
         val kept = pageView(300)
-        worker().expireFacts() shouldBe 1
+        jdbc.update(
+            "INSERT INTO rec_page_view (site_id, project_id, user_id, session_id, page_num, started_at, last_payload_at, status) " +
+                "VALUES ('boat4you', 'boat4you', 'u', 'sf', 1, now() - interval '400 days', now() - interval '400 days', 'FAILED')",
+        )
+        worker().expireFacts() shouldBe 2
         jdbc.queryForList("SELECT id FROM rec_page_view", Long::class.java) shouldContainExactly listOf(kept)
         count("rec_click") shouldBe 1
+    }
+
+    @Test
+    fun `a spool file that breaks the worker is set aside and the files after it are still stored`() {
+        val t = now.minus(Duration.ofMinutes(10))
+        spool(t, """{"e":["0.8.73",1,1000,500,"boat4you","u\u0000","s9",1,0,0,0,"https://www.boat4you.com/"],"a":[]}""")
+        spool(t.plusSeconds(1), payload(1))
+        worker().runOnce().let {
+            it.payloads shouldBe 1
+            it.dropped shouldBe 1
+        }
+        jdbc.queryForList("SELECT session_id FROM rec_page_view", String::class.java) shouldContainExactly listOf("s1")
+        Files.list(root.resolve(RecWorker.SPOOL_BAD)).use { it.count() } shouldBe 1L
+        worker().runOnce().payloads shouldBe 0
+    }
+
+    @Test
+    fun `a click time beyond INTEGER and a forged start are clamped and the page view still closes`() {
+        val at = now.minus(Duration.ofMinutes(5))
+        val click = """[3000000000,9,17,100,200,5000,6000,0,1,0,"Book","/b","abc",1,0,120,40,"A"]"""
+        spool(at, """{"e":["0.8.73",1,1e300,500,"boat4you","u1","s1",1,0,1,0,"https://www.boat4you.com/"],"a":[$click]}""")
+        worker().runOnce().closed shouldBe 1
+        jdbc.queryForObject("SELECT t_ms FROM rec_click", Int::class.java) shouldBe Int.MAX_VALUE
+        val started = jdbc.queryForObject("SELECT started_at FROM rec_page_view", Timestamp::class.java)!!.toInstant()
+        (started >= at.minus(Duration.ofDays(15))) shouldBe true
+    }
+
+    @Test
+    fun `a page view whose close fails is marked FAILED, its staging goes and the others still close`() {
+        val t = now.minus(Duration.ofMinutes(5))
+        spool(t, payload(1, """[1300,9,17,100,200,5000,6000,0,1,0,"bad\u0000text","/b","abc",1,0,120,40,"A"]""", end = true, session = "s1"))
+        spool(t.plusSeconds(1), payload(1, click, end = true, session = "s2"))
+        worker().runOnce().closed shouldBe 1
+        jdbc.queryForObject("SELECT status FROM rec_page_view WHERE session_id = 's1'", String::class.java) shouldBe "FAILED"
+        jdbc.queryForObject("SELECT status FROM rec_page_view WHERE session_id = 's2'", String::class.java) shouldBe "CLOSED"
+        Files.list(root.resolve("staging")).use { it.count() } shouldBe 0L
+    }
+
+    @Test
+    fun `a gzip bomb is dropped without being read whole`() {
+        val bomb =
+            ByteArrayOutputStream().also { o ->
+                GZIPOutputStream(o).use { gz ->
+                    gz.write(payload(1).dropLast(1).toByteArray())
+                    gz.write(""","pad":"""".toByteArray())
+                    repeat(9 * 1024) { gz.write(ByteArray(1024) { 'x'.code.toByte() }) }
+                    gz.write(""""}""".toByteArray())
+                }
+            }.toByteArray()
+        spoolBytes(now.minus(Duration.ofMinutes(5)), bomb, "gz")
+        worker().runOnce().dropped shouldBe 1
+        count("rec_page_view") shouldBe 0
+    }
+
+    @Test
+    fun `a page view stops taking payloads once its staging file reaches the cap`() {
+        val t = now.minus(Duration.ofMinutes(10))
+        (1..4).forEach { spool(t.plusSeconds(it.toLong()), payload(it)) }
+        worker().also { it.stagingMaxBytes = 250 }.runOnce().let {
+            it.payloads shouldBe 2
+            it.dropped shouldBe 2
+        }
+    }
+
+    @Test
+    fun `the sweep deletes what would outlive the retention - old set-aside and stale spool files, staging of closed page views`() {
+        val old = FileTime.from(now.minus(Duration.ofDays(8)))
+        val bad = root.resolve(RecWorker.SPOOL_BAD).also { Files.createDirectories(it) }
+        val oldBad = Files.writeString(bad.resolve("old.json"), "x").also { Files.setLastModifiedTime(it, old) }
+        val newBad = Files.writeString(bad.resolve("new.json"), "x")
+        val staleDir = root.resolve("spool").resolve(RecSpool.MINUTE.format(now.minus(Duration.ofDays(2)))).also { Files.createDirectories(it) }
+        val staleTmp = Files.writeString(staleDir.resolve(".x.json.tmp"), "x").also { Files.setLastModifiedTime(it, old) }
+        val closedId =
+            jdbc.queryForObject(
+                "INSERT INTO rec_page_view (site_id, project_id, user_id, session_id, page_num, started_at, last_payload_at, status) " +
+                    "VALUES ('boat4you', 'boat4you', 'u', 'sx', 1, now(), now(), 'FAILED') RETURNING id",
+                Long::class.java,
+            )!!
+        val staging = root.resolve("staging").also { Files.createDirectories(it) }
+        val orphan = Files.writeString(staging.resolve("$closedId.ndjson"), "x")
+        val missing = Files.writeString(staging.resolve("999999.ndjson"), "x")
+        worker().sweep() shouldBe 4
+        Files.exists(oldBad) shouldBe false
+        Files.exists(newBad) shouldBe true
+        Files.exists(staleTmp) shouldBe false
+        Files.exists(staleDir) shouldBe false
+        Files.exists(orphan) shouldBe false
+        Files.exists(missing) shouldBe false
     }
 }
