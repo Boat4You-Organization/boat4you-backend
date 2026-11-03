@@ -1,5 +1,13 @@
 # Backend deploy notes
 
+## 2026-11-03 — 📊 CC Tražilice: tablica Google pojmova — filtar ulazne stranice + sortiranje — ✅ cusma2 LIVE 3.11. 22:50:05 UTC (main `e3e8eda`, md5 c0e3d3550abd5974e1c062504c87ed0b, bez migracije, start 13,0 s, health 200); cusma3 ne treba (samo API)
+
+Mario 3.11. (preko sesije ADMIN), „Da, pregled + deploy“. Admin isti dan 22:50:32 UTC.
+- **`GET /admin/cc/search-engines/queries`** (SYSTEM_ADMIN; filtri kao /search-engines + `path`, `sort=CLICKS|IMPRESSIONS|CTR|POSITION`, `dir=asc|desc`): top 50 Google pojmova cijelog skupa u traženom redoslijedu; `path` (traži `siteId`) = Googleovi redovi pojam × stranica, bez njega redovi cijelog sajta (path ''). CTR i pozicija rangiraju samo pojmove s ≥ 10 pojavljivanja (`MIN_IMPRESSIONS`). Provjera filtera zajednička s /search-engines.
+- **Provjere:** contactcenter + chat 518/518 na spojenom stablu; detekt 0 novih. Neovisni pregled (Opus): 0 blokera; should-fix u adminu popravljen (vlastita greška tablice), duge putanje izvan birača.
+- **Otvoreno (prijedlog):** indeks `seo_query_day (engine, path, day, site_id)` — sada svaka promjena sortiranja skenira sve redove sajta u rasponu (isto kao postojeća tablica); s 16 mj. povijesti (~5 M redova) bi ubrzao. Traži novu migraciju (sljedeća slobodna V9_121).
+- **Rollback:** cusma2 `webservice.jar.prev` = 30b6aa19 (main `0d23449`).
+
 ## 2026-11-03 — 📊 Contact Center Tražilice F1: Google Search Console + Bing u Statistici (V9_119) — ✅ cusma2 LIVE 3.11. 13:24:22 UTC (main `0d23449`, md5 30b6aa1932cd4d1c852807d4a4f9dc1c, Flyway „9.119 - seo search stats“ 0,016 s, start 12,9 s, health 200); ✅ cusma3 LIVE 18:08:03 UTC istim jarom (deploy BOAT4YOU 3, jedan restart; vidi ROUTE_GONE niže); ✅ prvi uvoz 18:23:14 UTC; ✅ Bing ključ + restart cusma3 18:37:53 UTC, prvi Bing uvoz 19:23:31 UTC
 
 Mario 3.11.: „Da, kreni s F1“, pa „Da, deployaj“. Plan i pristupi: side-session-notes `cc-stats-gsc-ga4-bing-plan-2026-11-03.md`; stanje `cc-search-engines-f1-deploy-2026-11-03.md`.
