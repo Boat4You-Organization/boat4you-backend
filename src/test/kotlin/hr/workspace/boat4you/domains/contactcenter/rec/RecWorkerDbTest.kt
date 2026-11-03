@@ -371,8 +371,11 @@ class RecWorkerDbTest {
         val moves = listOf(mv(1000, "h1.b1", 100, 1500), mv(1500, "h1.b1", 900, 1900), mv(4000, "h2.b2", 16500, 16500))
         spool(now.minus(Duration.ofMinutes(5)), pageOf(moves.joinToString(",")))
         worker().runOnce().closed shouldBe 1
-        jdbc.query("SELECT hash, hash_beta, ex, ey, ms, n FROM rec_hover ORDER BY hash", { rs, _ -> listOf(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getInt(4), rs.getInt(5), rs.getInt(6)) }) shouldContainExactly
-            listOf(listOf("h1", "b1", 512, 1536, 2500, 2), listOf("h2", "b2", 16896, 16896, 2000, 1))
+        val rows =
+            jdbc.query("SELECT hash, hash_beta, ex, ey, ms, n FROM rec_hover ORDER BY hash") { rs, _ ->
+                listOf(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getInt(4), rs.getInt(5), rs.getInt(6))
+            }
+        rows shouldContainExactly listOf(listOf("h1", "b1", 512, 1536, 2500, 2), listOf("h2", "b2", 16896, 16896, 2000, 1))
     }
 
     @Test

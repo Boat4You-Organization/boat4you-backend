@@ -106,30 +106,28 @@ object RecExtractor {
             @Suppress("UNCHECKED_CAST")
             val t = entry as? Tokens ?: continue
             val type = eventType(t) ?: continue
-            if (type == EVENT_MUTATION) {
-                (t.getOrNull(0) as? Number)?.toLong()?.let(mutations::add)
-                continue
+            when (type) {
+                EVENT_MUTATION -> (t.getOrNull(0) as? Number)?.toLong()?.let(mutations::add)
+                EVENT_MOUSE_MOVE -> move(t)?.let(moves::add)
+                EVENT_TOUCH_START -> touches++
+                EVENT_VARIABLE -> variables(t, variables)
+                else -> decode(type, t, payloadJson)?.let { events += Event(type, (t.getOrNull(0) as? Number)?.toLong(), it) }
             }
-            if (type == EVENT_MOUSE_MOVE) {
-                move(t)?.let(moves::add)
-                continue
-            }
-            if (type == EVENT_TOUCH_START) {
-                touches++
-                continue
-            }
-            if (type == EVENT_VARIABLE) {
-                var v = 2
-                while (v + 1 < t.size) {
-                    val values = t[v + 1]
-                    variables[jsKey(t[v])] = if (values is List<*>) values.map { it.toString() } else listOf(values.toString())
-                    v += 2
-                }
-                continue
-            }
-            decode(type, t, payloadJson)?.let { events += Event(type, (t.getOrNull(0) as? Number)?.toLong(), it) }
         }
         return Payload(envelope(e), events, variables, mutations, moves, touches)
+    }
+
+    /** A Variable event's `key, values` pairs from token 2 on, into [into]. */
+    private fun variables(
+        t: Tokens,
+        into: MutableMap<String, List<String>>,
+    ) {
+        var v = 2
+        while (v + 1 < t.size) {
+            val values = t[v + 1]
+            into[jsKey(t[v])] = if (values is List<*>) values.map { it.toString() } else listOf(values.toString())
+            v += 2
+        }
     }
 
     /** A move's F8 tokens: `[time, 12, target, x, y, id, isPrimary, "hash.hashBeta", eX, eY]`; null for a move without them. */
