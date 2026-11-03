@@ -406,11 +406,6 @@ class RecWorker(
     }
 
     /**
-     * Deletes what would otherwise outlive the retention: set-aside spool files after [BAD_KEEP], `.tmp` files of writes cusma2
-     * never finished after [STALE_TMP], and the staging files of page views that are no longer open (a FAILED close, a crash
-     * between the close and its delete). Returns the files deleted.
-     */
-    /**
      * Hover rows (P6 R4) are the biggest facts by far and the admin reads at most 90 days back: those of page views older than
      * [HOVER_DAYS] days go, the page view and its other facts stay until [FACTS_MONTHS]. Returns the page views cleared.
      */
@@ -427,6 +422,11 @@ class RecWorker(
         return ids.size
     }
 
+    /**
+     * Deletes what would otherwise outlive the retention: set-aside spool files after [BAD_KEEP], `.tmp` files of writes cusma2
+     * never finished after [STALE_TMP], and the staging files of page views that are no longer open (a FAILED close, a crash
+     * between the close and its delete). Returns the files deleted.
+     */
     fun sweep(): Int {
         val now = clock.instant()
         var deleted = deleteOlder(root.resolve(SPOOL_BAD), now.minus(BAD_KEEP)) { true }
