@@ -86,7 +86,7 @@ class PublicRecController(
         if (type == null || SiteIds.HOSTS.keys.none { "www.$it" == host }) return error(HTTP_NOT_FOUND, "not_found")
         val bytes =
             try {
-                files.read("assets/$host/$file", MAX_ASSET_BYTES)
+                files.readAsset("assets/$host/$file", MAX_ASSET_BYTES)
             } catch (e: RecFiles.BusyException) {
                 return error(HTTP_UNAVAILABLE, "busy")
             } ?: return error(HTTP_NOT_FOUND, "not_found")

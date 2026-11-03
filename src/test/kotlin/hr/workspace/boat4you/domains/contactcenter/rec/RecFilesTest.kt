@@ -58,4 +58,28 @@ class RecFilesTest {
             pool.shutdownNow()
         }
     }
+
+    @Test
+    fun `public asset reads have their own slots - a stalled raw read never makes an asset read busy`() {
+        Files.writeString(root.resolve("x"), "x")
+        val release = CountDownLatch(1)
+        val waiting = CountDownLatch(RecFiles.MAX_READERS)
+        files.readFile = { path ->
+            if (path.fileName.toString() == "x") {
+                waiting.countDown()
+                release.await()
+            }
+            Files.readAllBytes(path)
+        }
+        Files.writeString(root.resolve("a.css"), "a")
+        val pool = Executors.newFixedThreadPool(RecFiles.MAX_READERS)
+        try {
+            repeat(RecFiles.MAX_READERS) { pool.submit<ByteArray?> { files.read("x") } }
+            waiting.await(5, TimeUnit.SECONDS) shouldBe true
+            files.readAsset("a.css")?.toString(Charsets.UTF_8) shouldBe "a"
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+        }
+    }
 }

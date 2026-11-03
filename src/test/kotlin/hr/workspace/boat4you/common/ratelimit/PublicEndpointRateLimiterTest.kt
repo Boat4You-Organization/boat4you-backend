@@ -73,12 +73,11 @@ class PublicEndpointRateLimiterTest {
     }
 
     @Test
-    fun `the replay assets the admin player loads have their own budget per IP, rec-config is not counted`() {
+    fun `replay assets are not limited by the app - every admin comes through one proxy IP, cusma1 limits per client`() {
         limiter.clock = CcTestClock()
         val css = "/public/cc/v1/replay-assets/www.boat4you.com/${"a".repeat(64)}.css"
-        repeat(600) { hit(css, method = "GET").status shouldBe 200 }
-        hit(css, method = "GET").status shouldBe 429
-        hit("/public/cc/v1/rec-config", method = "GET").status shouldBe 200
+        repeat(700) { hit(css, method = "GET").status shouldBe 200 }
+        hit(css, method = "HEAD").status shouldBe 200
     }
 
     @Test

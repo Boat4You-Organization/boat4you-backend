@@ -204,8 +204,8 @@ class PublicEndpointRateLimiter(
             Rule("POST", "/public/cc/v1/beat", capacity = ccBeatCapacity, windowSeconds = ccBeatWindowSeconds, label = "cc-beat", realIp = true),
             // The session recorder's payloads (P6 R1): the beat's budget, nginx has its own zone in front.
             Rule("POST", "/public/cc/v1/r", capacity = ccBeatCapacity, windowSeconds = ccBeatWindowSeconds, label = "cc-rec", realIp = true),
-            // The archived CSS and fonts the admin player loads (P6 R2): the beat's budget, its own bucket.
-            Rule("GET", "/public/cc/v1/replay-assets/", prefix = true, capacity = ccBeatCapacity, windowSeconds = ccBeatWindowSeconds, label = "cc-replay-assets", realIp = true),
+            // No rule for /public/cc/v1/replay-assets/ (P6 R2): every admin reaches it through the cusma1 proxy, one IP, so one
+            // bucket would let anyone switch replay styling off; cusma1 limits per client, the reads have their own bounded slots.
             Rule("POST", "/public/cc/v1/handoff", capacity = ccHandoffCapacity, windowSeconds = ccHandoffWindowSeconds, label = "cc-handoff", realIp = true),
         )
     }

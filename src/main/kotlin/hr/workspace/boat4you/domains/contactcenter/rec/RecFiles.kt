@@ -10,7 +10,8 @@ import java.util.concurrent.Semaphore
 /**
  * Reading recordings and archived assets on cusma2 (P6 R2). [root] is the NFS share of cusma3's /mnt/data/rec, a hard mount:
  * while cusma3 is away every file call waits, so at most [MAX_READERS] reads run at once and the next is refused at once with
- * [BusyException] (as the spool's writers, RecSpool). Only paths inside [root] are read.
+ * [BusyException] (as the spool's writers, RecSpool); the public archived assets have their own slots. Only paths inside
+ * [root] are read.
  */
 @Component
 class RecFiles(
@@ -23,27 +24,42 @@ class RecFiles(
 
     private val readers = Semaphore(MAX_READERS)
 
+    private val assetReaders = Semaphore(MAX_ASSET_READERS)
+
     /** The bytes of [rel] under [root]; null when it is missing, outside [root] or larger than [max] bytes. */
     fun read(
         rel: String,
         max: Long = MAX_BYTES,
+    ): ByteArray? = read(rel, max, readers)
+
+    private fun read(
+        rel: String,
+        max: Long,
+        slots: Semaphore,
     ): ByteArray? {
         val file = root.resolve(rel.removePrefix("/")).normalize()
         if (!file.startsWith(root)) return null
-        if (!readers.tryAcquire()) throw BusyException()
+        if (!slots.tryAcquire()) throw BusyException()
         try {
             if (!Files.isRegularFile(file) || Files.size(file) > max) return null
             return readFile(file)
         } finally {
-            readers.release()
+            slots.release()
         }
     }
+
+    /** As [read], for the public archived assets: their own [MAX_ASSET_READERS] slots, so public requests never take the admin's. */
+    fun readAsset(
+        rel: String,
+        max: Long = MAX_BYTES,
+    ): ByteArray? = read(rel, max, assetReaders)
 
     /** All [MAX_READERS] slots are taken, most likely by a stalled share. */
     class BusyException : IOException("rec files busy")
 
     companion object {
         const val MAX_READERS = 4
+        const val MAX_ASSET_READERS = 2
         const val MAX_BYTES = 64L * 1024 * 1024
     }
 }
