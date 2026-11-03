@@ -24,8 +24,10 @@ import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.TransactionStatus
 import org.springframework.transaction.support.SimpleTransactionStatus
 import java.net.InetSocketAddress
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.Optional
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -273,7 +275,7 @@ open class ChatTestHarness(
             sessions = sessions,
             messages = messages,
             anthropic = anthropic,
-            tools = AiChatToolExecutor("http://127.0.0.1:${fleet?.address?.port ?: 1}", mapper),
+            tools = AiChatToolExecutor("http://127.0.0.1:${fleet?.address?.port ?: 1}", mapper).fixedToday(),
             objectMapper = mapper,
             emailService = emailService,
             geoIp = geoIp,
@@ -346,3 +348,6 @@ open class ChatTestHarness(
 
 /** Statuses [AiChatSessionRepository.takeOver] takes a conversation from. */
 private val TAKE_OVER_FROM = setOf("AI", "HUMAN_REQUESTED", "HUMAN", "CLOSED")
+
+/** The tools' today in tests: 3.11.2026, so the fixed 2027 dates in the chat tests never become "in the past" (review 3.11.2026). */
+internal fun AiChatToolExecutor.fixedToday(): AiChatToolExecutor = apply { clock = Clock.fixed(Instant.parse("2026-11-03T12:00:00Z"), ZoneOffset.UTC) }

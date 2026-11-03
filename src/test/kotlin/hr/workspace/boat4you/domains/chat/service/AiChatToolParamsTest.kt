@@ -35,7 +35,7 @@ class AiChatToolParamsTest {
             }
             start()
         }
-    private val tools = AiChatToolExecutor("http://127.0.0.1:${server.address.port}", mapper)
+    private val tools = AiChatToolExecutor("http://127.0.0.1:${server.address.port}", mapper).fixedToday()
 
     @AfterEach
     fun stop() = server.stop(0)

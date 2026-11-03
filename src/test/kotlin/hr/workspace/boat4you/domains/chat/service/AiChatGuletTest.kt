@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
  */
 class AiChatGuletTest {
     private val mapper = ObjectMapper()
-    private val tools = AiChatToolExecutor("http://127.0.0.1:1", mapper)
+    private val tools = AiChatToolExecutor("http://127.0.0.1:1", mapper).fixedToday()
 
     @Test
     fun `a gulet by vessel type or model name`() {

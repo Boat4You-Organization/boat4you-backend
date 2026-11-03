@@ -38,10 +38,30 @@ class AiChatItineraryTest {
     }
 
     @Test
+    fun `a guide and the itineraries page in one turn both reach the visitor (review I1)`() {
+        var round = 0
+        h.modelReply = {
+            if (round++ == 0) {
+                h.mapper.readTree(
+                    """{"stop_reason":"tool_use","content":[""" +
+                        """{"type":"tool_use","id":"t1","name":"show_blog_posts","input":{"slugs":["7-day-itinerary-from-split-croatia"]}},""" +
+                        """{"type":"tool_use","id":"t2","name":"show_itineraries","input":{}}]}""",
+                )
+            } else {
+                h.textReply("Here is a guide and all our itineraries - both links are below.")
+            }
+        }
+        val out = h.service.handleVisitorMessage(h.newSession(), "Can you suggest a route?")
+        h.mapper.readTree(out.shouldBeInstanceOf<MessageOutcome.Replied>().messages.last().payload).path("blogs").map { it.path("url").asText() } shouldBe
+            listOf("/blog/7-day-itinerary-from-split-croatia", "/itineraries")
+    }
+
+    @Test
     fun `every site offers show_itineraries and the prompt says when to use it`() {
         h.service.handleVisitorMessage(h.newSession(siteId = "catamaran-croatia"), "a route please")
         h.modelTools.single()!!.map { it.path("name").asText() }.contains("show_itineraries") shouldBe true
         h.modelSystems.single().cached shouldContain "has not said where they would like to sail, or has no preference, call show_itineraries"
+        h.modelSystems.single().cached shouldContain "unless you already know"
     }
 
     @Test

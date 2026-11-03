@@ -740,7 +740,7 @@ class AiChatService(
                 val outcome = executeTool(session, name, block.path("input"))
                 outcome.search?.let(searches::add)
                 if (outcome.cards != null) pendingCards = outcome.cards
-                if (outcome.blogs != null) pendingBlogs = outcome.blogs
+                if (outcome.blogs != null) pendingBlogs = mergeLinks(pendingBlogs, outcome.blogs)
                 results.add(
                     objectMapper.createObjectNode().apply {
                         put("type", "tool_result")
@@ -818,6 +818,17 @@ class AiChatService(
             }
             else -> UNKNOWN_TOOL
         }
+
+    /** The link cards of one reply: every link tool's, in order, each URL once (review I1: a guide and the itineraries page). */
+    private fun mergeLinks(
+        kept: ArrayNode?,
+        added: ArrayNode,
+    ): ArrayNode {
+        if (kept == null) return added
+        val seen = kept.map { it.path("url").asText() }.toMutableSet()
+        added.filter { seen.add(it.path("url").asText()) }.forEach { kept.add(it) }
+        return kept
+    }
 
     /** The site's page of all itineraries as one link card, in the visitor's language; the model cannot choose the URL. */
     private fun showItineraries(

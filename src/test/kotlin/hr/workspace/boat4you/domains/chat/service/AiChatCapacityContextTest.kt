@@ -12,7 +12,7 @@ import kotlin.test.assertNull
  */
 class AiChatCapacityContextTest {
     private val mapper = ObjectMapper()
-    private val tools = AiChatToolExecutor("http://127.0.0.1:1", mapper)
+    private val tools = AiChatToolExecutor("http://127.0.0.1:1", mapper).fixedToday()
 
     @Test
     fun `Dione II (MMK) - notes split, crew for a crewed listing`() {
