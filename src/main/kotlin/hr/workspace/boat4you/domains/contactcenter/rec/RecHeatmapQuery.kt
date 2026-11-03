@@ -24,6 +24,8 @@ data class HeatmapElement(
     val dead: Int,
     val inquiryClicks: Int,
     val inquiryPageViews: Int,
+    /** Milliseconds the mouse rested on it over the group's page views (P6 R4; 0 without mouse data). */
+    val hoverMs: Int = 0,
 )
 
 /** Clicks at one spot of an element; eX/eY are clarity's 0..32767 within the element (the centre of a 1024 grid cell). */
@@ -31,6 +33,13 @@ data class HeatPoint(
     val eX: Int,
     val eY: Int,
     val clicks: Int,
+)
+
+/** Where the mouse rested within an element (P6 R4): a 1024-grid cell centre (0..32767) and the milliseconds there. */
+data class HoverPoint(
+    val eX: Int,
+    val eY: Int,
+    val ms: Int,
 )
 
 /** How many page views scrolled down to at least [pct] % of the page. */
@@ -53,6 +62,10 @@ data class Heatmap(
     val foldPct: Int,
     /** The page view whose page is the background (the newest one with its file), null when none has a file left. */
     val background: Long?,
+    /** Hover cells per element, the [MAX_ELEMENTS] most rested on (desktop page views without a touch; empty before recorder F8). */
+    val hover: Map<String, List<HoverPoint>> = emptyMap(),
+    /** The page views with mouse data. */
+    val hoverPageViews: Int = 0,
 )
 
 data class HeatmapGroup(
@@ -124,6 +137,9 @@ class RecHeatmapQuery(
                     points = points(db, args),
                     scroll = (0..100 step STEP).map { pct -> ScrollReach(pct, reach.reaches.count { it >= pct }) },
                     foldPct = reach.fold,
+                    hover = hover(db, args),
+                    hoverPageViews =
+                        db.queryForObject("$PV SELECT count(DISTINCT h.page_view_id) FROM rec_hover h JOIN pv ON pv.id = h.page_view_id", Int::class.java, *args) ?: 0,
                     background =
                         db
                             .queryForList(
@@ -276,6 +292,14 @@ class RecHeatmapQuery(
                     { rs, _ -> rs.getString(1) to rs.getInt(2) },
                     *args,
                 ).toMap()
+        val hoverMs =
+            db
+                .query(
+                    "$PV SELECT COALESCE(h.hash_beta, h.hash) AS k, sum(h.ms) FROM rec_hover h JOIN pv ON pv.id = h.page_view_id " +
+                        "WHERE COALESCE(h.hash_beta, h.hash) IS NOT NULL GROUP BY 1",
+                    { rs, _ -> rs.getString(1) to rs.getLong(2) },
+                    *args,
+                ).toMap()
         val elements =
             db.query(
                 "$PV SELECT COALESCE(c.hash_beta, c.hash) AS h, count(*) AS clicks, count(DISTINCT c.page_view_id) AS pvs, " +
@@ -296,6 +320,7 @@ class RecHeatmapQuery(
                         dead = rs.getInt("dead"),
                         inquiryClicks = rs.getInt("inq"),
                         inquiryPageViews = rs.getInt("inq_pvs"),
+                        hoverMs = (hoverMs[h] ?: 0L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                     )
                 },
                 *args,
@@ -318,6 +343,22 @@ class RecHeatmapQuery(
                     "FROM rec_click c JOIN pv ON pv.id = c.page_view_id JOIN top ON top.h = COALESCE(c.hash_beta, c.hash) GROUP BY 1, 2, 3) q " +
                     "WHERE q.r <= $MAX_POINTS ORDER BY h, n DESC",
                 { rs, _ -> rs.getString("h") to HeatPoint(rs.getInt("bx"), rs.getInt("by"), rs.getInt("n")) },
+                *args,
+            ).groupBy({ it.first }, { it.second })
+
+    /** The hover cells of the [MAX_ELEMENTS] elements the mouse rested on most, at most [MAX_POINTS] cells each, the longest first. */
+    private fun hover(
+        db: JdbcTemplate,
+        args: Array<Any>,
+    ): Map<String, List<HoverPoint>> =
+        db
+            .query(
+                "$PV, top AS (SELECT COALESCE(h.hash_beta, h.hash) AS k FROM rec_hover h JOIN pv ON pv.id = h.page_view_id " +
+                    "WHERE COALESCE(h.hash_beta, h.hash) IS NOT NULL GROUP BY 1 ORDER BY sum(h.ms) DESC, 1 LIMIT $MAX_ELEMENTS) " +
+                    "SELECT k, ex, ey, ms FROM (SELECT top.k, h.ex, h.ey, sum(h.ms) AS ms, row_number() OVER (PARTITION BY top.k ORDER BY sum(h.ms) DESC) AS r " +
+                    "FROM rec_hover h JOIN pv ON pv.id = h.page_view_id JOIN top ON top.k = COALESCE(h.hash_beta, h.hash) GROUP BY 1, 2, 3) q " +
+                    "WHERE q.r <= $MAX_POINTS ORDER BY k, ms DESC",
+                { rs, _ -> rs.getString("k") to HoverPoint(rs.getInt("ex"), rs.getInt("ey"), rs.getLong("ms").coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) },
                 *args,
             ).groupBy({ it.first }, { it.second })
 

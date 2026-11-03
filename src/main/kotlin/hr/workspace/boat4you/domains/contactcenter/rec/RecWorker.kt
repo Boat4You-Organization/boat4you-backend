@@ -289,10 +289,14 @@ class RecWorker(
         var document: Pair<Int?, Int?>? = null
         var visitKey: String? = null
         val mutations = ArrayList<Long>()
+        val moves = ArrayList<RecExtractor.Move>()
+        var touches = 0
         var endMs = 0L
 
         fun add(p: RecExtractor.Payload) {
             mutations += p.mutations
+            moves += p.moves
+            touches += p.touches
             endMs = maxOf(endMs, p.envelope.start + p.envelope.duration)
             for (e in p.events) {
                 when (e.type) {
@@ -346,6 +350,10 @@ class RecWorker(
             f.scrolls.map { s ->
                 arrayOf<Any?>(id, s.time.ms(), s.long("target"), s.int("x"), s.int("y"), s.str("top", EL_MAX), s.str("bottom", EL_MAX), s.int("trust"))
             },
+        )
+        jdbc.batchUpdate(
+            "INSERT INTO rec_hover (page_view_id, hash, hash_beta, ex, ey, ms, n) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            hoverRows(f).map { h -> arrayOf<Any?>(id, h.hash, h.hashBeta, h.ex, h.ey, h.ms, h.n) },
         )
         // The stack is not kept: it can hold URLs with tokens.
         jdbc.batchUpdate(
@@ -490,6 +498,36 @@ class RecWorker(
         jdbc.batchUpdate("UPDATE rec_click SET dead = ? WHERE id = ?", ids.zip(dead).map { (clickId, d) -> arrayOf<Any?>(d, clickId) })
     }
 
+    private class HoverRow(
+        val hash: String?,
+        val hashBeta: String?,
+        val ex: Int,
+        val ey: Int,
+        var ms: Long = 0,
+        var n: Int = 0,
+    )
+
+    /**
+     * Where the mouse rested (P6 R4): per element and 1024-grid cell within it, the time until the next move or the end of
+     * the page view, each stay at most [HOVER_CAP_MS] (a parked mouse is not attention). Nothing for a touch screen: its
+     * synthetic mouse moves sit on whatever was tapped.
+     */
+    private fun hoverRows(f: Facts): Collection<HoverRow> {
+        if (f.touches > 0 || f.moves.isEmpty()) return emptyList()
+        val rows = LinkedHashMap<List<Any?>, HoverRow>()
+        val sorted = f.moves.sortedBy { it.time }
+        sorted.forEachIndexed { i, m ->
+            val next = sorted.getOrNull(i + 1)?.time ?: f.endMs
+            val stay = (next - m.time).coerceIn(0, HOVER_CAP_MS)
+            val ex = (m.eX.coerceIn(0, CLICK_PRECISION) / HOVER_GRID) * HOVER_GRID + HOVER_GRID / 2
+            val ey = (m.eY.coerceIn(0, CLICK_PRECISION) / HOVER_GRID) * HOVER_GRID + HOVER_GRID / 2
+            val row = rows.getOrPut(listOf(m.hash, m.hashBeta, ex, ey)) { HoverRow(m.hash?.take(HASH_MAX), m.hashBeta?.take(HASH_MAX), ex, ey) }
+            row.ms += stay
+            row.n++
+        }
+        return rows.values
+    }
+
     /**
      * Per click of [f], in order: dead when it has no link, is not on a form field, and neither a DOM change, a scroll (a button that
      * scrolls to a section) nor the end of the page view follows within [REACT_MS] (the page did not react; Clarity's own definition
@@ -530,6 +568,9 @@ class RecWorker(
         private val BAD_KEEP: Duration = Duration.ofDays(7)
         private val STALE_TMP: Duration = Duration.ofDays(1)
         private const val REACT_MS = 1500L
+        private const val HOVER_CAP_MS = 2000L
+        private const val HOVER_GRID = 1024
+        private const val CLICK_PRECISION = 32767
         private val FIELD_TAGS = setOf("input", "textarea", "select", "option")
     }
 }

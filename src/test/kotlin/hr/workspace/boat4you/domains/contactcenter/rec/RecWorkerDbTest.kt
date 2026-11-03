@@ -358,6 +358,32 @@ class RecWorkerDbTest {
         jdbc.queryForObject("SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_rec_click_dead_unknown'", String::class.java)!! shouldContain "WHERE (dead IS NULL)"
     }
 
+    private fun mv(
+        t: Int,
+        hash: String,
+        ex: Int,
+        ey: Int,
+    ) = """[$t,12,17,100,200,"","true","$hash",$ex,$ey]"""
+
+    @Test
+    fun `where the mouse rested - per element and cell, each stay at most 2 s, until the next move or the end`() {
+        // h1 at 1.0 s and 1.5 s (same cell), h2 at 4.0 s; the page view ends at 11 s.
+        val moves = listOf(mv(1000, "h1.b1", 100, 1500), mv(1500, "h1.b1", 900, 1900), mv(4000, "h2.b2", 16500, 16500))
+        spool(now.minus(Duration.ofMinutes(5)), pageOf(moves.joinToString(",")))
+        worker().runOnce().closed shouldBe 1
+        jdbc.query("SELECT hash, hash_beta, ex, ey, ms, n FROM rec_hover ORDER BY hash", { rs, _ -> listOf(rs.getString(1), rs.getString(2), rs.getInt(3), rs.getInt(4), rs.getInt(5), rs.getInt(6)) }) shouldContainExactly
+            listOf(listOf("h1", "b1", 512, 1536, 2500, 2), listOf("h2", "b2", 16896, 16896, 2000, 1))
+    }
+
+    @Test
+    fun `a page view with a touch gets no hover rows, nor does one whose moves carry no element`() {
+        val touched = listOf("[900,17,17,100,200,\"\",\"true\"]", mv(1000, "h1.b1", 100, 1500), mv(4000, "h2.b2", 100, 100))
+        spool(now.minus(Duration.ofMinutes(5)), pageOf(touched.joinToString(",")))
+        spool(now.minus(Duration.ofMinutes(5)), pageOf("""[1000,12,17,100,200,"","true"],[4000,12,17,120,200,"","true"]""").replace("\"s1\"", "\"s2\""))
+        worker().runOnce().closed shouldBe 2
+        jdbc.queryForObject("SELECT count(*) FROM rec_hover", Long::class.java) shouldBe 0L
+    }
+
     @Test
     fun `older recordings get their dead clicks from their files, a purged one stays unknown`() {
         fun closedWithFile(
