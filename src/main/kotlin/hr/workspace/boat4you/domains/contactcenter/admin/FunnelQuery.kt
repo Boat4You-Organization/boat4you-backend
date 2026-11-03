@@ -17,8 +17,8 @@ data class ExitPage(
 /**
  * Clicks on [label] (or its link when it has no text) on pages of [pageType]; OTHER when the page is unknown. [kind] is link or
  * button, [area] where on the page the element sits (gallery, slider, nav, header, footer, form, dialog, main — null for a click
- * the widget sent before P7a), [pages] how many distinct pages had it, [path] the page with most of them and [target] its most
- * common link target (null for a button).
+ * the widget sent before P7a), [pages] how many distinct pages (site and path) had it, [siteId] and [path] the page with most
+ * of them and [target] its most common link target (null for a button).
  */
 data class TopClick(
     val pageType: String,
@@ -27,6 +27,7 @@ data class TopClick(
     val pages: Long,
     val kind: String,
     val area: String?,
+    val siteId: String?,
     val path: String?,
     val target: String?,
 )
@@ -122,21 +123,24 @@ class FunnelQuery(
         args: Array<Any>,
     ): List<TopClick> =
         jdbc.query(
-            // c: every click with its kind (the widget's, else link when it has a target), area ('' when unknown), page and target;
-            // g: the top groups; tp / tt: the most clicked page and the most common target of each group.
+            // c: every click with its kind (the widget's, else link when it has a target), area ('' when unknown; only the known
+            // names, the payload is the visitor's browser's), site, page and target; g: the top groups; tp / tt: the most clicked
+            // page and the most common target of each top group.
             "$visits, c AS (SELECT COALESCE(p.page_type, 'OTHER') AS t, COALESCE(e.label, e.target) AS l, " +
-                "COALESCE(e.payload->>'kind', CASE WHEN COALESCE(e.target, '') <> '' THEN 'link' ELSE 'button' END) AS k, " +
-                "COALESCE(e.payload->>'area', '') AS a, p.path, NULLIF(e.target, '') AS target " +
+                "CASE WHEN e.payload->>'kind' IN ('link', 'button') THEN e.payload->>'kind' " +
+                "WHEN COALESCE(e.target, '') <> '' THEN 'link' ELSE 'button' END AS k, " +
+                "CASE WHEN e.payload->>'area' IN ($AREAS) THEN e.payload->>'area' ELSE '' END AS a, " +
+                "fv.site_id AS s, p.path, NULLIF(e.target, '') AS target " +
                 "FROM fv JOIN cc_event e ON e.visit_id = fv.id LEFT JOIN cc_page_view p ON p.id = e.page_view_id " +
                 "WHERE e.type = 'CLICK' AND COALESCE(e.label, e.target) IS NOT NULL), " +
-                "g AS (SELECT t, l, k, a, count(*) AS n, count(DISTINCT path) AS pages FROM c GROUP BY 1, 2, 3, 4 ORDER BY 5 DESC, 1, 2, 3, 4 LIMIT $TOP_CLICKS), " +
-                "tp AS (SELECT DISTINCT ON (t, l, k, a) t, l, k, a, path FROM (SELECT t, l, k, a, path, count(*) AS n FROM c WHERE path IS NOT NULL " +
-                "GROUP BY 1, 2, 3, 4, 5) x ORDER BY t, l, k, a, n DESC, path), " +
-                "tt AS (SELECT DISTINCT ON (t, l, k, a) t, l, k, a, target FROM (SELECT t, l, k, a, target, count(*) AS n FROM c WHERE target IS NOT NULL " +
-                "GROUP BY 1, 2, 3, 4, 5) x ORDER BY t, l, k, a, n DESC, target) " +
-                "SELECT g.t, g.l, g.k, g.a, g.n, g.pages, tp.path, tt.target FROM g " +
-                "LEFT JOIN tp ON (tp.t, tp.l, tp.k, tp.a) = (g.t, g.l, g.k, g.a) LEFT JOIN tt ON (tt.t, tt.l, tt.k, tt.a) = (g.t, g.l, g.k, g.a) " +
-                "ORDER BY g.n DESC, g.t, g.l, g.k, g.a",
+                "g AS (SELECT t, l, k, a, count(*) AS n, count(DISTINCT (s, path)) FILTER (WHERE path IS NOT NULL) AS pages " +
+                "FROM c GROUP BY 1, 2, 3, 4 ORDER BY 5 DESC, 1, 2, 3, 4 LIMIT $TOP_CLICKS), " +
+                "tp AS (SELECT DISTINCT ON (t, l, k, a) t, l, k, a, s, path FROM (SELECT t, l, k, a, s, path, count(*) AS n FROM c " +
+                "JOIN g USING (t, l, k, a) WHERE path IS NOT NULL GROUP BY 1, 2, 3, 4, 5, 6) x ORDER BY t, l, k, a, n DESC, s, path), " +
+                "tt AS (SELECT DISTINCT ON (t, l, k, a) t, l, k, a, target FROM (SELECT t, l, k, a, target, count(*) AS n FROM c " +
+                "JOIN g USING (t, l, k, a) WHERE target IS NOT NULL GROUP BY 1, 2, 3, 4, 5) x ORDER BY t, l, k, a, n DESC, target) " +
+                "SELECT g.t, g.l, g.k, g.a, g.n, g.pages, tp.s, tp.path, tt.target FROM g " +
+                "LEFT JOIN tp USING (t, l, k, a) LEFT JOIN tt USING (t, l, k, a) ORDER BY g.n DESC, g.t, g.l, g.k, g.a",
             { rs, _ ->
                 TopClick(
                     pageType = rs.getString("t"),
@@ -145,6 +149,7 @@ class FunnelQuery(
                     pages = rs.getLong("pages"),
                     kind = rs.getString("k"),
                     area = rs.getString("a").ifEmpty { null },
+                    siteId = rs.getString("s"),
                     path = rs.getString("path"),
                     target = rs.getString("target"),
                 )
@@ -155,6 +160,7 @@ class FunnelQuery(
     companion object {
         private const val TOP_EXITS = 20
         private const val TOP_CLICKS = 30
+        private const val AREAS = "'gallery', 'slider', 'nav', 'header', 'footer', 'form', 'dialog', 'main'"
         private const val INQUIRED = "EXISTS (SELECT 1 FROM cc_event e WHERE e.visit_id = fv.id AND e.type = 'INQUIRY')"
         private val STEPS = listOf("VISIT", "BOAT", "FORM", "INQUIRY")
     }

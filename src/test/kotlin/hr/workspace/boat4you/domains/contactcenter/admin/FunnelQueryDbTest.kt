@@ -176,9 +176,9 @@ class FunnelQueryDbTest {
         event(v, "CLICK", null, label = "Close")
         funnel().clicks shouldContainExactly
             listOf(
-                TopClick("BOAT", "Book now", 2, pages = 1, kind = "button", area = null, path = "/en/boat", target = null),
-                TopClick("OTHER", "Close", 1, pages = 0, kind = "button", area = null, path = null, target = null),
-                TopClick("SEARCH", "/en/search?country=hr", 1, pages = 1, kind = "link", area = null, path = "/en/search", target = "/en/search?country=hr"),
+                TopClick("BOAT", "Book now", 2, pages = 1, kind = "button", area = null, siteId = "boat4you", path = "/en/boat", target = null),
+                TopClick("OTHER", "Close", 1, pages = 0, kind = "button", area = null, siteId = null, path = null, target = null),
+                TopClick("SEARCH", "/en/search?country=hr", 1, pages = 1, kind = "link", area = null, siteId = "boat4you", path = "/en/search", target = "/en/search?country=hr"),
             )
     }
 
@@ -198,9 +198,25 @@ class FunnelQueryDbTest {
         click(v, b, "Inquire", target = "/en/inquiry?b", payload = link)
         funnel().clicks shouldContainExactly
             listOf(
-                TopClick("BOAT", "Inquire", 3, pages = 2, kind = "link", area = "main", path = "/en/boat/b", target = "/en/inquiry?b"),
-                TopClick("BOAT", "Next", 3, pages = 2, kind = "button", area = "gallery", path = "/en/boat/a", target = null),
-                TopClick("BOAT", "Next", 1, pages = 1, kind = "link", area = null, path = "/en/boat/b", target = "/x"),
+                TopClick("BOAT", "Inquire", 3, pages = 2, kind = "link", area = "main", siteId = "boat4you", path = "/en/boat/b", target = "/en/inquiry?b"),
+                TopClick("BOAT", "Next", 3, pages = 2, kind = "button", area = "gallery", siteId = "boat4you", path = "/en/boat/a", target = null),
+                TopClick("BOAT", "Next", 1, pages = 1, kind = "link", area = null, siteId = "boat4you", path = "/en/boat/b", target = "/x"),
+            )
+    }
+
+    @Test
+    fun `the same path on two sites is two pages, the busier site leads, unknown kind and area are not trusted`() {
+        val b4y = visit()
+        val greece = visit(site = "catamaran-greece")
+        val pb = page(b4y, "HOME", "/")
+        val pg = page(greece, "HOME", "/")
+        click(b4y, pb, "Search", payload = """{"kind":"evil","area":"roof"}""")
+        click(greece, pg, "Search", target = "/catamarans", payload = """{"kind":"evil","area":"roof"}""")
+        click(greece, pg, "Search", target = "/catamarans", payload = """{"kind":"evil","area":"roof"}""")
+        funnel().clicks shouldContainExactly
+            listOf(
+                TopClick("HOME", "Search", 2, pages = 1, kind = "link", area = null, siteId = "catamaran-greece", path = "/", target = "/catamarans"),
+                TopClick("HOME", "Search", 1, pages = 1, kind = "button", area = null, siteId = "boat4you", path = "/", target = null),
             )
     }
 
