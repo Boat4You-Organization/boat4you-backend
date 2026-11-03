@@ -49,6 +49,9 @@ class RecJobs(
         runCatching { worker.purge() }
             .onSuccess { if (it > 0) log.info("rec purge: {} recording files older than the retention deleted", it) }
             .onFailure { log.error("rec purge failed", it) }
+        runCatching { worker.purgeHover() }
+            .onSuccess { if (it > 0) log.info("rec purge: hover rows of {} page views older than 95 days deleted", it) }
+            .onFailure { log.error("rec hover purge failed", it) }
         runCatching { worker.expireFacts() }
             .onSuccess { if (it > 0) log.info("rec retention: {} recorded page views older than 13 months deleted with their facts", it) }
             .onFailure { log.error("rec retention failed", it) }

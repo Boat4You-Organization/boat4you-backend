@@ -388,6 +388,41 @@ class RecWorkerDbTest {
     }
 
     @Test
+    fun `hover rows go after 95 days, the clicks of the page view stay`() {
+        fun pageView(days: Long): Long {
+            val at = Timestamp.from(now.minus(Duration.ofDays(days)))
+            val id =
+                jdbc.queryForObject(
+                    "INSERT INTO rec_page_view (site_id, project_id, user_id, session_id, page_num, started_at, last_payload_at, status, file_purged) " +
+                        "VALUES ('boat4you', 'boat4you', 'u', ?, 1, ?, ?, 'CLOSED', true) RETURNING id",
+                    Long::class.java,
+                    "h$days",
+                    at,
+                    at,
+                )!!
+            jdbc.update("INSERT INTO rec_click (page_view_id, t_ms) VALUES (?, 1000)", id)
+            jdbc.update("INSERT INTO rec_hover (page_view_id, hash, hash_beta, ex, ey, ms, n) VALUES (?, 'h', 'b', 512, 512, 300, 1)", id)
+            return id
+        }
+        val old = pageView(100)
+        val fresh = pageView(80)
+        worker().purgeHover() shouldBe 1
+        jdbc.queryForObject("SELECT count(*) FROM rec_hover WHERE page_view_id = ?", Long::class.java, old) shouldBe 0L
+        jdbc.queryForObject("SELECT count(*) FROM rec_hover WHERE page_view_id = ?", Long::class.java, fresh) shouldBe 1L
+        jdbc.queryForObject("SELECT count(*) FROM rec_click WHERE page_view_id = ?", Long::class.java, old) shouldBe 1L
+    }
+
+    @Test
+    fun `a page view keeps at most 2000 hover cells, the longest stays`() {
+        // 2200 distinct cells on 3 elements; the 12 s one must survive.
+        val moves = (0 until 2200).map { i -> mv(1000 + i * 3, "h${i % 3}.b${i % 3}", (i / 3 % 32) * 1024 + 10, (i / 96) * 1024 + 10) } + mv(9000, "big.big", 100, 100)
+        spool(now.minus(Duration.ofMinutes(5)), pageOf(moves.joinToString(",")))
+        worker().runOnce().closed shouldBe 1
+        jdbc.queryForObject("SELECT count(*) FROM rec_hover", Long::class.java)!! shouldBe 2000L
+        jdbc.queryForObject("SELECT ms FROM rec_hover WHERE hash = 'big'", Int::class.java) shouldBe 2000
+    }
+
+    @Test
     fun `older recordings get their dead clicks from their files, a purged one stays unknown`() {
         fun closedWithFile(
             session: String,

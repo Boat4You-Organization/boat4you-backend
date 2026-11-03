@@ -233,4 +233,13 @@ class RecHeatmapQueryDbTest {
         h.elements.first { it.hash == "photo" }.hoverMs shouldBe 3000
         h.elements.first { it.hash == "reach" }.hoverMs shouldBe 0
     }
+
+    @Test
+    fun `the hover map keeps up to 120 cells per element, the longest first`() {
+        val w = world()
+        (0 until 150).forEach { i -> hover(w.b, "photo", (i % 32) * 1024 + 512, (i / 32) * 1024 + 512, 10 + i) }
+        val cells = query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second).hover.getValue("photo")
+        cells.size shouldBe 120
+        cells.first().ms shouldBe 159
+    }
 }

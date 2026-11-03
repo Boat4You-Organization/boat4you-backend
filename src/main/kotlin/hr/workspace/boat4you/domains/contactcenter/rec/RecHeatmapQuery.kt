@@ -128,7 +128,7 @@ class RecHeatmapQuery(
         cached(listOf("heatmap", siteId, pageType, device, from, to)) {
             read { db ->
                 val args = args(siteId, pageType, device, from, to)
-                val s = stats(db, args)
+                val s = stats(db, args, withHover = true)
                 val reach = reaches(db, args)
                 Heatmap(
                     siteId = siteId,
@@ -143,7 +143,7 @@ class RecHeatmapQuery(
                     foldPct = reach.fold,
                     hover = hover(db, args),
                     hoverPageViews =
-                        db.queryForObject("$PV SELECT count(DISTINCT h.page_view_id) FROM rec_hover h JOIN pv ON pv.id = h.page_view_id", Int::class.java, *args) ?: 0,
+                        db.queryForObject("$PV SELECT count(*) FROM pv WHERE EXISTS (SELECT 1 FROM rec_hover h WHERE h.page_view_id = pv.id)", Int::class.java, *args) ?: 0,
                     background =
                         db
                             .queryForList(
@@ -274,10 +274,11 @@ class RecHeatmapQuery(
         val elements: List<HeatmapElement>,
     )
 
-    /** The group's counts and its [MAX_ELEMENTS] most clicked elements. */
+    /** The group's counts and its [MAX_ELEMENTS] most clicked elements, with the mouse time per element when [withHover]. */
     private fun stats(
         db: JdbcTemplate,
         args: Array<Any>,
+        withHover: Boolean = false,
     ): Stats {
         val counts =
             db.queryForMap(
@@ -297,13 +298,17 @@ class RecHeatmapQuery(
                     *args,
                 ).toMap()
         val hoverMs =
-            db
-                .query(
-                    "$PV SELECT COALESCE(h.hash_beta, h.hash) AS k, sum(h.ms) FROM rec_hover h JOIN pv ON pv.id = h.page_view_id " +
-                        "WHERE COALESCE(h.hash_beta, h.hash) IS NOT NULL GROUP BY 1",
-                    { rs, _ -> rs.getString(1) to rs.getLong(2) },
-                    *args,
-                ).toMap()
+            if (!withHover) {
+                emptyMap()
+            } else {
+                db
+                    .query(
+                        "$PV SELECT COALESCE(h.hash_beta, h.hash) AS k, sum(h.ms) FROM rec_hover h JOIN pv ON pv.id = h.page_view_id " +
+                            "WHERE COALESCE(h.hash_beta, h.hash) IS NOT NULL GROUP BY 1",
+                        { rs, _ -> rs.getString(1) to rs.getLong(2) },
+                        *args,
+                    ).toMap()
+            }
         val elements =
             db.query(
                 "$PV SELECT COALESCE(c.hash_beta, c.hash) AS h, count(*) AS clicks, count(DISTINCT c.page_view_id) AS pvs, " +
@@ -350,7 +355,7 @@ class RecHeatmapQuery(
                 *args,
             ).groupBy({ it.first }, { it.second })
 
-    /** The hover cells of the [MAX_ELEMENTS] elements the mouse rested on most, at most [MAX_POINTS] cells each, the longest first. */
+    /** The hover cells of the [MAX_ELEMENTS] elements the mouse rested on most, at most [HOVER_MAX_POINTS] cells each, the longest first. */
     private fun hover(
         db: JdbcTemplate,
         args: Array<Any>,
@@ -361,7 +366,7 @@ class RecHeatmapQuery(
                     "WHERE COALESCE(h.hash_beta, h.hash) IS NOT NULL GROUP BY 1 ORDER BY sum(h.ms) DESC, 1 LIMIT $MAX_ELEMENTS) " +
                     "SELECT k, ex, ey, ms FROM (SELECT top.k, h.ex, h.ey, sum(h.ms) AS ms, row_number() OVER (PARTITION BY top.k ORDER BY sum(h.ms) DESC) AS r " +
                     "FROM rec_hover h JOIN pv ON pv.id = h.page_view_id JOIN top ON top.k = COALESCE(h.hash_beta, h.hash) GROUP BY 1, 2, 3) q " +
-                    "WHERE q.r <= $MAX_POINTS ORDER BY k, ms DESC",
+                    "WHERE q.r <= $HOVER_MAX_POINTS ORDER BY k, ms DESC",
                 { rs, _ -> rs.getString("k") to HoverPoint(rs.getInt("ex"), rs.getInt("ey"), rs.getLong("ms").coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) },
                 *args,
             ).groupBy({ it.first }, { it.second })
@@ -458,6 +463,7 @@ class RecHeatmapQuery(
     companion object {
         private const val MAX_ELEMENTS = 200
         private const val MAX_POINTS = 50
+        private const val HOVER_MAX_POINTS = 120
         private const val MAX_CTAS = 5
         private const val GRID = 1024
         private const val STEP = 5

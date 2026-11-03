@@ -410,6 +410,23 @@ class RecWorker(
      * never finished after [STALE_TMP], and the staging files of page views that are no longer open (a FAILED close, a crash
      * between the close and its delete). Returns the files deleted.
      */
+    /**
+     * Hover rows (P6 R4) are the biggest facts by far and the admin reads at most 90 days back: those of page views older than
+     * [HOVER_DAYS] days go, the page view and its other facts stay until [FACTS_MONTHS]. Returns the page views cleared.
+     */
+    fun purgeHover(): Int {
+        val cutoff = Timestamp.from(clock.instant().minus(Duration.ofDays(HOVER_DAYS)))
+        val ids =
+            jdbc.queryForList(
+                "SELECT DISTINCT h.page_view_id FROM rec_hover h JOIN rec_page_view p ON p.id = h.page_view_id WHERE p.started_at < ? LIMIT $PURGE_BATCH",
+                Long::class.java,
+                cutoff,
+            )
+        if (ids.isEmpty()) return 0
+        jdbc.batchUpdate("DELETE FROM rec_hover WHERE page_view_id = ?", ids.map { arrayOf<Any?>(it) })
+        return ids.size
+    }
+
     fun sweep(): Int {
         val now = clock.instant()
         var deleted = deleteOlder(root.resolve(SPOOL_BAD), now.minus(BAD_KEEP)) { true }
@@ -525,7 +542,8 @@ class RecWorker(
             row.ms += stay
             row.n++
         }
-        return rows.values
+        // The longest stays only: a page view of many minutes could otherwise write tens of thousands of cells.
+        return rows.values.sortedByDescending { it.ms }.take(HOVER_MAX_ROWS)
     }
 
     /**
@@ -569,6 +587,8 @@ class RecWorker(
         private val STALE_TMP: Duration = Duration.ofDays(1)
         private const val REACT_MS = 1500L
         private const val HOVER_CAP_MS = 2000L
+        private const val HOVER_MAX_ROWS = 2000
+        private const val HOVER_DAYS = 95L
         private const val HOVER_GRID = 1024
         private const val CLICK_PRECISION = 32767
         private val FIELD_TAGS = setOf("input", "textarea", "select", "option")
