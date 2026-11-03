@@ -1,5 +1,17 @@
 # Backend deploy notes
 
+## 2026-11-03 — 🔥 Contact Center P6 R3: heatmape i „Što popraviti“ (V9_115) — ✅ cusma2 LIVE 3.11. 11:36:34 UTC (jar `3046bdc` = R3 + main `fd2904a`, md5 2ae223f823aaa85c4b4cf9e81f2cd1fc, Flyway „9.115 - rec click dead“ [out of order] 0,008 s, start 13,0 s, health 200); ⏳ cusma3 (worker) 21:05 UTC kroz gate, istim jarom
+
+Mario 3.11.2026 („kreni sa izgradnjim“, „Da, deployaj R3“): ne snimke pojedinaca, nego gdje se najviše i najmanje klika, greške u dizajnu, što dodati da više ljudi pošalje upit. Plan infra `docs/superpowers/plans/2026-10-30-p6-heatmape-snimke.md` (R3 preoblikovan), ledger `infra/.superpowers/sdd/2026-10-30-p6-heatmape-snimke/progress.md` (## R3).
+
+- `GET /admin/cc/rec/heatmap` (sajt + vrsta stranice + uređaj; elementi od najviše do najmanje klikanih, točke za clickmap, doseg scrolla po 5 %, fold, podloga = najnoviji pregled s datotekom), `GET /heatmap/groups`, `GET /insights` (DEAD, RAGE, INQUIRY_ELEMENT, CTA_REACH, LOW_REACH; najgori prvi). SYSTEM_ADMIN, raspon u cijelim satima, 30 dana zadano, najviše 400.
+- Čitanja na bazi koju dijeli booking: jedna read-only transakcija po odgovoru, `SET LOCAL statement_timeout` 15 s, cache 10 min (200 ključeva), točke ograničene u SQL-u (200 elemenata × 50 ćelija).
+- V9_115: `rec_click.dead` (nema linka, nije polje obrasca, ni promjena DOM-a ni scroll ni kraj pregleda unutar 1500 ms) + `idx_rec_click_dead_unknown` (dead IS NULL). Worker (cusma3) puni `dead` pri zatvaranju; stariji pregledi dopunjuju se iz datoteka, 20 u minuti, preko tog indeksa. Do cusma3 deploya novi klikovi ostaju NULL (= „nije mrtav“), dopuna ih uzme poslije.
+- Bijesni klik u heatmapi traži barem jedan mrtav klik u nizu (popis snimki iz R2 broji kao prije). CTA_REACH samo za gumbe koji stoje na mjestu (ne fiksni/ljepljivi, ne footer); INQUIRY_ELEMENT samo pregledi prije upita, barem 10, nikad sam gumb za upit, polje obrasca ni stranica rezervacije.
+- Testovi: rec.* 68/68, ktlint 0; cijeli suite 1683, 5 starih padova izvan grane (contextLoads bez lokalne baze, NauSysDateTimeWrapper 2024, Matchers, ReservationOptionsCombination). Završni pregled (Opus): 0 kritičnih, 7 važnih + 2 podignuta popravljena testom, sitni u ledgeru.
+- Koordinacija: prvi pokušaj (jar bez `fd2904a`) prekinut u Flyway preflightu prije bilo kakvog dodira servera, jer je BOAT4YOU 3 u 11:34 UTC pustio V9_116 na cusma2.
+- Rollback: cusma2 `webservice.jar.prev` = `fd2904a` (md5 7498f629…, BOAT4YOU 3). V9_115 ostaje (nullable kolona i indeks, stari jar ih ignorira).
+
 ## 2026-11-03 — ⛵ NauSys ponude na zahtjev idu na aktivni zapis broda (14 dana Namaka Ekolu) — ✅ cusma2 LIVE 3.11. 08:16:31 UTC (jar main `5eb37f3`, md5 104a06bd035b74c65abc5a0f326c6ad4, Flyway up to date, start 12,9 s, health 200; tag `live/2026-11-03-nausys-active-row`); ⏳ cusma3 kroz gate 18:07 UTC
 
 Mario 2.11.: „Idem napravit rezervaciju dva tjedna od 7-21/8 i grešku mi javlja“ → „nausys spaja normalno, trebamo i mi“ → „samo sredi“.
