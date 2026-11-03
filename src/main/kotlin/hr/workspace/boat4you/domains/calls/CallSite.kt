@@ -3,7 +3,7 @@ package hr.workspace.boat4you.domains.calls
 /**
  * The 7 sites an inquiry can come from, as Nika names them ("we received your inquiry on our site {spokenName}, part of the
  * Boat4You group", design §2.8). Sent by each form as the explicit `site` field; deliberately not BrandRegistry, so the call
- * center does not depend on Origin or the Contact Center brand fix. Spoken names are Claude's call, Mario may change them.
+ * center does not depend on Origin or the Contact Center brand fix. Spoken names are Claude's call, Mario may change them (CC = the site and Google profile name, Mario 3.11.2026).
  */
 enum class CallSite(
     val key: String,
@@ -11,7 +11,7 @@ enum class CallSite(
     val domain: String,
 ) {
     BOAT4YOU("boat4you", "Boat4You", "www.boat4you.com"),
-    CC("cc", "Catamaran Croatia Charter", "www.catamaran-croatia-charter.com"),
+    CC("cc", "Catamaran Charter Croatia", "www.catamaran-croatia-charter.com"),
     GREECE("greece", "Catamaran Charter Greece", "www.catamaran-charter-greece.com"),
     ITALY("italy", "Catamaran Charter Italy", "www.catamarancharteritaly.com"),
     CARIBBEAN("caribbean", "Catamaran Charter Caribbean", "www.catamaran-charter-caribbean.com"),

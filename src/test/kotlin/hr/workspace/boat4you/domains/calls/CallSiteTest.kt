@@ -13,6 +13,11 @@ class CallSiteTest {
     }
 
     @Test
+    fun `Nika names the CC site as the site and its Google profile do (Mario 3_11_2026)`() {
+        CallSite.fromKey("cc")!!.spokenName shouldBe "Catamaran Charter Croatia"
+    }
+
+    @Test
     fun `an unknown or missing key is null`() {
         CallSite.fromKey("unknown").shouldBeNull()
         CallSite.fromKey(null).shouldBeNull()
