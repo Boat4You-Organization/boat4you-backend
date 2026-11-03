@@ -267,13 +267,13 @@ class RealPriceSwitchesTest {
         }
         warnings() shouldBe emptyList()
         val infos = { appender.list.filter { it.level == Level.INFO }.map { it.formattedMessage } }
-        infos() shouldBe listOf("Real-price switches effective: 0 of 13 away from the default, search rp:LEGACY:OFF:true")
+        infos() shouldBe listOf("Real-price switches effective: 0 of 14 away from the default, search rp:LEGACY:OFF:true")
         infos().none { it.contains("mmk", ignoreCase = true) || it.contains("nausys", ignoreCase = true) } shouldBe true
 
         db.set(SettingsKeyEnum.MMK_OPTION_VERIFY, "LOG")
         advance(Duration.ofSeconds(60))
         switches.snapshot()
-        infos().last() shouldBe "Real-price switches effective: 1 of 13 away from the default, search rp:LEGACY:OFF:true"
+        infos().last() shouldBe "Real-price switches effective: 1 of 14 away from the default, search rp:LEGACY:OFF:true"
         infos().none { it.contains("mmk", ignoreCase = true) || it.contains("nausys", ignoreCase = true) } shouldBe true
     }
 
@@ -296,6 +296,7 @@ class RealPriceSwitchesTest {
             SettingsKeyEnum.NAUSYS_WARM_LONG_RANGES to listOf("OFF", "ON"),
             SettingsKeyEnum.REVERIFY_DIGEST to listOf("ON", "OFF"),
             SettingsKeyEnum.GALLERY_EXTENDED to listOf("OFF", "ON"),
+            SettingsKeyEnum.MMK_D3_MODE to listOf("OFF", "LOG", "WRITE"),
         )
 
     @Test

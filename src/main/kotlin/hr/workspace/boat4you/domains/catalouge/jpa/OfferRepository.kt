@@ -202,7 +202,8 @@ interface OfferRepository : JpaRepository<Offer, Long> {
              AND em.system_id = o.yacht_id AND em.extended_type = 'Yacht-AgencyId-' || y.agency_id
         WHERE o.status = 'UNAVAILABLE'
         AND o.date_from >= CURRENT_DATE
-        AND (o.ext_status IS NULL OR o.ext_status <> 'SYNTHETIC_OPTION')
+        -- ROUTE_GONE (MmkRouteGone, V9_116): the week came back with another route; asking it again changes nothing.
+        AND (o.ext_status IS NULL OR o.ext_status NOT IN ('SYNTHETIC_OPTION', 'ROUTE_GONE'))
         AND NOT EXISTS (
             SELECT 1 FROM external_reservations r
             WHERE r.yacht_id = o.yacht_id

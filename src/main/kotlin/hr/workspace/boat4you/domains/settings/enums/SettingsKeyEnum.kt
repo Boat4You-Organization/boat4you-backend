@@ -26,4 +26,8 @@ enum class SettingsKeyEnum {
     // Boat page gallery with model and marina photos (photos DESIGN.md, 16.10.2026): OFF = today's gallery, ON = the
     // YachtGalleryService merge. Same mechanics as the real-price switches (RealPriceSwitches.galleryExtended).
     GALLERY_EXTENDED,
+
+    // ROUTE_GONE in the MMK offer upsert (3.11.2026, MmkRouteGone): OFF = today, LOG = one line per yacht with what WRITE
+    // would hide, WRITE = hide the route the partner stopped sending. Same mechanics as the real-price switches.
+    MMK_D3_MODE,
 }

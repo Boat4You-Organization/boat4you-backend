@@ -39,6 +39,7 @@ class MmkYachtOfferSyncService(
     private val extraRepository: ExtraRepository,
     private val offerExtraRepository: OfferExtraRepository,
     private val yachtSyncMutex: YachtSyncMutex,
+    private val routeGone: MmkRouteGone,
 ) {
     private val log: Logger = LoggerFactory.getLogger(this.javaClass)
 
@@ -77,6 +78,7 @@ class MmkYachtOfferSyncService(
         var skippedCount = 0
         var skippedYachtCount = 0
         var skippedLockedCount = 0
+        var routeGoneCount = 0
 
         // 0-night offers (dateFrom == dateTo) are unbookable and collide on the
         // natural key — drop them before grouping so one bad row can't skip a yacht.
@@ -135,9 +137,17 @@ class MmkYachtOfferSyncService(
                         // so the second sibling never sees the first one's fresh INSERT and
                         // collides on uq_offer_yacht_week_product_route — skipping the yacht.
                         val seenKeys = mutableSetOf<String>()
+                        val answer = MmkRouteGone.Answer()
                         mmkOffers.forEach { mmkOffer ->
                             val pairFromId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.startBaseId }?.systemId
                             val pairToId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.endBaseId }?.systemId
+                            answer.add(
+                                mmkOffer.dateFrom.value?.toLocalDate(),
+                                mmkOffer.dateTo.value?.toLocalDate(),
+                                CharterType.fromMmkValue(mmkOffer.product),
+                                pairFromId,
+                                pairToId,
+                            )
                             val naturalKey =
                                 "${mmkOffer.dateFrom.value?.toLocalDate()}|${mmkOffer.dateTo.value?.toLocalDate()}|" +
                                     "${CharterType.fromMmkValue(mmkOffer.product)}|$pairFromId|$pairToId"
@@ -161,6 +171,7 @@ class MmkYachtOfferSyncService(
                                 }
                             if (updated) upsertedCount++ else skippedCount++
                         }
+                        routeGoneCount += routeGone.apply(yacht, existingYachtOffers, answer)
                     }
                 if (!ran) skippedLockedCount++
             } catch (e: Exception) {
@@ -182,6 +193,7 @@ class MmkYachtOfferSyncService(
             skippedMissingLocation = skippedCount
             skippedMissingYachtMapping = skippedYachtCount
             skippedLocked = skippedLockedCount
+            routeGone = routeGoneCount
         }
     }
 
@@ -468,9 +480,17 @@ class MmkYachtOfferSyncService(
                         // so the second sibling never sees the first one's fresh INSERT and
                         // collides on uq_offer_yacht_week_product_route — skipping the yacht.
                         val seenKeys = mutableSetOf<String>()
+                        val answer = MmkRouteGone.Answer()
                         mmkOffers.forEach { mmkOffer ->
                             val pairFromId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.startBaseId }?.systemId
                             val pairToId = pairingLocationMappings.find { m -> m.externalId == mmkOffer.endBaseId }?.systemId
+                            answer.add(
+                                mmkOffer.dateFrom.value?.toLocalDate(),
+                                mmkOffer.dateTo.value?.toLocalDate(),
+                                CharterType.fromMmkValue(mmkOffer.product),
+                                pairFromId,
+                                pairToId,
+                            )
                             val naturalKey =
                                 "${mmkOffer.dateFrom.value?.toLocalDate()}|${mmkOffer.dateTo.value?.toLocalDate()}|" +
                                     "${CharterType.fromMmkValue(mmkOffer.product)}|$pairFromId|$pairToId"
@@ -492,6 +512,7 @@ class MmkYachtOfferSyncService(
                                 updateOffer(existingOffer, yacht, mmkOffer)
                             }
                         }
+                        routeGone.apply(yacht, existingYachtOffers, answer)
                     }
                 if (!ran) skippedLockedCount++
             } catch (e: Exception) {
