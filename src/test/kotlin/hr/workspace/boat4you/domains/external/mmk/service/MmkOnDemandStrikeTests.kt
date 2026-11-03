@@ -140,7 +140,7 @@ class MmkOnDemandStrikeTests {
 
         service.syncOffersForYachtIdAndDateRage(ext, from, to)
 
-        verify(sync).syncOffers(answer)
+        verify(sync).syncOffers(answer, true)
         verifyNoInteractions(reverify, checks, offers)
     }
 

@@ -171,7 +171,8 @@ class MmkYachtOfferSyncService(
                                 }
                             if (updated) upsertedCount++ else skippedCount++
                         }
-                        routeGoneCount += routeGone.apply(yacht, existingYachtOffers, answer)
+                        // The agency sweeps ask MMK by company and yacht ids, never by base: the answer is whole.
+                        routeGoneCount += routeGone.apply(yacht, existingYachtOffers, answer, "agency-sweep")
                     }
                 if (!ran) skippedLockedCount++
             } catch (e: Exception) {
@@ -421,8 +422,15 @@ class MmkYachtOfferSyncService(
     /**
      * Transaction unit = ONE YACHT under the advisory write lock — same rationale as
      * [syncOffersForAgency]. A yacht another sync is writing right now is skipped.
+     *
+     * @param judgeRoutes true only when the call asked MMK for whole yachts (no base, country or area filter), so the
+     * answer carries every route of its dates: then [MmkRouteGone] judges the routes it did not carry. A search warm
+     * filtered by marina returns only the searched bases and must never judge (review 3.11.2026).
      */
-    fun syncOffers(mmkAllOffers: List<org.openapitools.client.mmk.model.Offer>) {
+    fun syncOffers(
+        mmkAllOffers: List<org.openapitools.client.mmk.model.Offer>,
+        judgeRoutes: Boolean = false,
+    ) {
         val yachtExternalIds = mmkAllOffers.map { it.yachtId }.distinct()
         val allYachts =
             yachtRepository.findByExternalIdsAndExternalSystemId(
@@ -512,7 +520,7 @@ class MmkYachtOfferSyncService(
                                 updateOffer(existingOffer, yacht, mmkOffer)
                             }
                         }
-                        routeGone.apply(yacht, existingYachtOffers, answer)
+                        if (judgeRoutes) routeGone.apply(yacht, existingYachtOffers, answer, "per-yacht")
                     }
                 if (!ran) skippedLockedCount++
             } catch (e: Exception) {

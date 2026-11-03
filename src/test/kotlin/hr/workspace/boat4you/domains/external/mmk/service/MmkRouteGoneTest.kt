@@ -9,6 +9,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import io.kotest.matchers.shouldBe
+import jakarta.persistence.EntityManager
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockingDetails
 import org.mockito.Mockito.`when`
 import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.core.JdbcTemplate
@@ -112,6 +114,7 @@ class MmkRouteGoneTest {
         private lateinit var dataSource: HikariDataSource
         private lateinit var jdbc: JdbcTemplate
         private val switches = mock(RealPriceSwitches::class.java)
+        private val entityManager = mock(EntityManager::class.java)
         private lateinit var routeGone: MmkRouteGone
         private val yacht = Yacht().apply { id = 18643 }
 
@@ -135,7 +138,7 @@ class MmkRouteGoneTest {
                 """.trimIndent(),
             )
             jdbc.execute("BEGIN; ${ClassPathResource("db/migration/V9_82__real_price_evidence.sql").getContentAsString(Charsets.UTF_8)}; COMMIT;")
-            routeGone = MmkRouteGone(switches, NamedParameterJdbcTemplate(jdbc))
+            routeGone = MmkRouteGone(switches, NamedParameterJdbcTemplate(jdbc), entityManager)
         }
 
         @AfterAll
@@ -146,6 +149,7 @@ class MmkRouteGoneTest {
 
         @BeforeEach
         fun rows() {
+            org.mockito.Mockito.clearInvocations(entityManager)
             jdbc.execute("TRUNCATE offer, reservation_flow, partner_offer_flip_log")
             // 1 and 2 = Pula rows the answer dropped (2 is being booked), 3 = the Propriano row the answer carried
             jdbc.execute(
@@ -158,10 +162,15 @@ class MmkRouteGoneTest {
             )
         }
 
+        private val rowsInSession = listOf(offer(1, PULA), offer(2, PULA), offer(3, PROPRIANO))
+
         private fun apply(mode: MmkD3Mode): Int {
             `when`(switches.mmkD3Mode).thenReturn(mode)
-            return routeGone.apply(yacht, listOf(offer(1, PULA), offer(2, PULA), offer(3, PROPRIANO)), answer(PROPRIANO to PROPRIANO))
+            `when`(entityManager.contains(rowsInSession[0])).thenReturn(true)
+            return routeGone.apply(yacht, rowsInSession, answer(PROPRIANO to PROPRIANO), "test")
         }
+
+        private fun detached() = mockingDetails(entityManager).invocations.filter { it.method.name == "detach" }.map { (it.arguments[0] as Offer).id }
 
         private fun statuses() = jdbc.queryForList("SELECT id || ' ' || status || ' ' || ext_status FROM offer ORDER BY id", String::class.java)
 
@@ -174,6 +183,8 @@ class MmkRouteGoneTest {
                     "old_client_price || ' ' || new_status || ' ' || (run_id IS NULL) FROM partner_offer_flip_log",
                 String::class.java,
             ) shouldBe listOf("1 MMK_SYNC ROUTE_GONE 1 FREE 1 3456 UNAVAILABLE true")
+            // the session's FREE copy of the hidden row can no longer be flushed back over it
+            detached() shouldBe listOf(1L)
         }
 
         @Test
@@ -181,6 +192,7 @@ class MmkRouteGoneTest {
             apply(MmkD3Mode.LOG) shouldBe 1
             statuses() shouldBe listOf("1 FREE 1", "2 FREE 1", "3 FREE 1")
             jdbc.queryForObject("SELECT count(*) FROM partner_offer_flip_log", Int::class.java) shouldBe 0
+            detached() shouldBe emptyList()
         }
 
         @Test

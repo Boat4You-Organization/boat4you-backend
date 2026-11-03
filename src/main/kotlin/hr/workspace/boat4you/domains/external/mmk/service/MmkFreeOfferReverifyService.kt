@@ -722,7 +722,7 @@ class MmkFreeOfferReverifyService(
             d2Candidate ||
                 MmkQuotes.drifted(response, period.dateFrom, period.dateTo, offerRepository.findPeriodStatusPrices(yachtId, period.dateFrom, period.dateTo))
         if (!matters) return
-        if (ctx.mode == MmkOptionVerifyMode.ON) mmkYachtOfferSyncService.syncOffers(response)
+        if (ctx.mode == MmkOptionVerifyMode.ON) mmkYachtOfferSyncService.syncOffers(response, judgeRoutes = true)
         option.upserts.incrementAndGet()
     }
 
