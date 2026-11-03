@@ -455,8 +455,9 @@ class RecWorker(
     fun backfillDead(limit: Int): Int {
         val pending =
             jdbc.query(
-                "SELECT p.id, p.file_path FROM rec_page_view p WHERE p.status <> 'OPEN' AND NOT p.file_purged AND p.file_path IS NOT NULL " +
-                    "AND EXISTS (SELECT 1 FROM rec_click c WHERE c.page_view_id = p.id AND c.dead IS NULL) ORDER BY p.id LIMIT $limit",
+                // Driven by idx_rec_click_dead_unknown: once the back-fill is done it is empty, so the minute's run costs nothing.
+                "SELECT p.id, p.file_path FROM rec_page_view p WHERE p.id IN (SELECT c.page_view_id FROM rec_click c WHERE c.dead IS NULL) " +
+                    "AND p.status <> 'OPEN' AND NOT p.file_purged AND p.file_path IS NOT NULL ORDER BY p.id LIMIT $limit",
                 { rs, _ -> rs.getLong(1) to rs.getString(2) },
             )
         pending.forEach { (id, rel) ->
@@ -490,16 +491,18 @@ class RecWorker(
     }
 
     /**
-     * Per click of [f], in order: dead when it has no link, is not on a form field, and neither a DOM change nor the end of the page
-     * view follows within [REACT_MS] (the page did not react; Clarity's own definition is the same idea).
+     * Per click of [f], in order: dead when it has no link, is not on a form field, and neither a DOM change, a scroll (a button that
+     * scrolls to a section) nor the end of the page view follows within [REACT_MS] (the page did not react; Clarity's own definition
+     * is the same idea).
      */
     private fun deadClicks(f: Facts): List<Boolean> {
-        val mutations = f.mutations.sorted()
+        val reactions = (f.mutations + f.scrolls.mapNotNull { it.time }).sorted()
         return f.clicks.map { c ->
             val t = c.time ?: 0
             val link = c.str("link", LINK_MAX)?.takeIf { it.isNotBlank() }
             val tag = c.str("tag", TAG_MAX)?.lowercase()
-            val reacted = mutations.any { it > t && it <= t + REACT_MS }
+            val next = reactions.binarySearch(t + 1).let { if (it < 0) -it - 1 else it } // the first reaction after the click
+            val reacted = next < reactions.size && reactions[next] <= t + REACT_MS
             link == null && tag !in FIELD_TAGS && !reacted && f.endMs - t > REACT_MS
         }
     }

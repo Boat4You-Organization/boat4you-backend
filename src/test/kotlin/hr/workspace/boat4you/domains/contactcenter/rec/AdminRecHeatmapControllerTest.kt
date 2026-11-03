@@ -50,6 +50,10 @@ class AdminRecHeatmapControllerTest {
         val from = calls.last()[3] as java.time.Instant
         val to = calls.last()[4] as java.time.Instant
         (to.epochSecond - from.epochSecond) shouldBe 30L * 24 * 3600
+        // Whole hours, so the same heatmap asked again within the hour is the same request (the cache).
+        (to.epochSecond % 3600) shouldBe 0L
+        mvc.get("/admin/cc/rec/heatmap?siteId=boat4you&pageType=BOAT&device=MOBILE&from=2026-10-01T10:17:05Z").andExpect { status { isOk() } }
+        calls.last()[3] shouldBe java.time.Instant.parse("2026-10-01T10:00:00Z")
         mvc.get("/admin/cc/rec/heatmap/groups?siteId=boat4you&device=DESKTOP").andExpect {
             status { isOk() }
             jsonPath("$[0].pageType") { value("BOAT") }

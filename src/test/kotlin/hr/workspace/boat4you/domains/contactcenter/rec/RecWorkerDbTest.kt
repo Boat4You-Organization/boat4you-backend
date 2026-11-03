@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.contactcenter.ccVisit
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.Mockito.mock
@@ -341,6 +342,20 @@ class RecWorkerDbTest {
         worker().runOnce().closed shouldBe 1
         jdbc.query("SELECT t_ms, dead FROM rec_click ORDER BY t_ms", { rs, _ -> rs.getInt(1) to rs.getBoolean(2) }) shouldContainExactly
             listOf(1000 to true, 3000 to false, 5000 to false, 7000 to false, 9800 to false)
+    }
+
+    @Test
+    fun `a click the page scrolled after is not dead - a button that scrolls to a section`() {
+        val events = listOf(c(1000, "", "div"), "[1600,10,5,0,850,\"t\",\"b\",1]", c(4000, "", "div")).joinToString(",")
+        spool(now.minus(Duration.ofMinutes(5)), pageOf(events))
+        worker().runOnce().closed shouldBe 1
+        jdbc.query("SELECT t_ms, dead FROM rec_click ORDER BY t_ms", { rs, _ -> rs.getInt(1) to rs.getBoolean(2) }) shouldContainExactly
+            listOf(1000 to false, 4000 to true)
+    }
+
+    @Test
+    fun `the back-fill finds its page views through a partial index of the clicks still unknown`() {
+        jdbc.queryForObject("SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_rec_click_dead_unknown'", String::class.java)!! shouldContain "WHERE (dead IS NULL)"
     }
 
     @Test

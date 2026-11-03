@@ -55,8 +55,9 @@ class RecHeatmapQueryDbTest {
         ex: Int = 16000,
         ey: Int = 16000,
         y: Int = 500,
+        tag: String = "button",
     ) = jdbc.update(
-        "INSERT INTO rec_click (page_view_id, t_ms, x, y, ex, ey, hash, hash_beta, text, tag, dead) VALUES (?, ?, 10, ?, ?, ?, ?, ?, ?, 'button', ?)",
+        "INSERT INTO rec_click (page_view_id, t_ms, x, y, ex, ey, hash, hash_beta, text, tag, dead) VALUES (?, ?, 10, ?, ?, ?, ?, ?, ?, ?, ?)",
         pv,
         t,
         y,
@@ -65,8 +66,14 @@ class RecHeatmapQueryDbTest {
         "a$hash",
         hash,
         text,
+        tag,
         dead,
     )
+
+    private fun inquiry(
+        visit: Long,
+        at: Instant,
+    ) = jdbc.update("INSERT INTO cc_event (visit_id, type, created_at) VALUES (?, 'INQUIRY', ?)", visit, Timestamp.from(at))
 
     private fun scroll(
         pv: Long,
@@ -82,7 +89,7 @@ class RecHeatmapQueryDbTest {
     /** Three boat page views on desktop: [a] from a visit that sent an inquiry, [b] and [c] not; one search page view. */
     private fun world(): World {
         val (_, visit) = ccVisit(jdbc, UUID.randomUUID().toString(), "boat4you", now.minus(Duration.ofMinutes(60)))
-        jdbc.update("INSERT INTO cc_event (visit_id, type) VALUES (?, 'INQUIRY')", visit)
+        inquiry(visit, now)
         val a = pv(60, visitId = visit)
         val b = pv(40)
         val c = pv(20, purged = true)
@@ -93,6 +100,7 @@ class RecHeatmapQueryDbTest {
         listOf(500, 700, 900).forEach { click(b, it, "photo", "", dead = true, ex = 1000, ey = 2000) }
         click(c, 1000, "photo", "", dead = true, ex = 1000, ey = 2000)
         click(c, 3000, "specs", "Specs")
+        click(a, 2500, "photos", "Photos")
         scroll(a, 3200) // reaches 100 %
         scroll(b, 1200) // (1200 + 800) / 4000 = 50 %
         pv(10, pageType = "SEARCH")
@@ -105,8 +113,8 @@ class RecHeatmapQueryDbTest {
         val h = query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second)
         h.pageViews shouldBe 3
         h.inquiryPageViews shouldBe 1
-        h.clicks shouldBe 8
-        h.elements.map { it.hash } shouldContainExactly listOf("photo", "reach", "specs")
+        h.clicks shouldBe 9
+        h.elements.map { it.hash } shouldContainExactly listOf("photo", "reach", "photos", "specs")
         h.elements[0].let {
             it.clicks shouldBe 4
             it.pageViews shouldBe 2
@@ -141,21 +149,64 @@ class RecHeatmapQueryDbTest {
     fun `groups count page views and clicks per page type`() {
         world()
         query.groups("boat4you", "DESKTOP", range.first, range.second).map { Triple(it.pageType, it.pageViews, it.clicks) } shouldContainExactly
-            listOf(Triple("BOAT", 3, 8), Triple("SEARCH", 1, 0))
+            listOf(Triple("BOAT", 3, 9), Triple("SEARCH", 1, 0))
     }
 
     @Test
     fun `insights - dead and rage clicks, an element inquiring visitors click, the reach of the inquiry button`() {
         world()
-        val insights = query.insights("boat4you", "DESKTOP", range.first, range.second, minPageViews = 1, minClicks = 1)
+        val insights = query.insights("boat4you", "DESKTOP", range.first, range.second, InsightLimits(1, 1, 1))
         insights.map { it.kind to it.hash }.toSet().let {
             it.contains("DEAD" to "photo") shouldBe true
             it.contains("RAGE" to "photo") shouldBe true
-            it.contains("INQUIRY_ELEMENT" to "reach") shouldBe true
+            it.contains("INQUIRY_ELEMENT" to "photos") shouldBe true
+            // The inquiry button itself is what every inquiry clicks: not a finding.
+            it.contains("INQUIRY_ELEMENT" to "reach") shouldBe false
         }
         insights.single { it.kind == "CTA_REACH" }.let {
             it.pageType shouldBe "BOAT"
-            it.percent shouldBe 33 // the inquiry button sits at 75 % of the page (y 3000 / 4000): 1 of 3 page views get there
+            it.hash shouldBe "reach"
+            it.count shouldBe 75 // the inquiry button sits at 75 % of the page (y 3000 / 4000)
+            it.percent shouldBe 33 // 1 of 3 page views get there
         }
+    }
+
+    @Test
+    fun `a button clicked at many depths is fixed or sticky - always on screen, so its reach is no finding`() {
+        listOf(800, 2000, 3200).forEach { y -> click(pv(30, pageType = "HOME"), 1000, "bar", "Send inquiry", y = y) }
+        query.insights("boat4you", "DESKTOP", range.first, range.second, InsightLimits(1, 1)).none { it.kind == "CTA_REACH" } shouldBe true
+    }
+
+    @Test
+    fun `three quick clicks the page reacted to are no rage click - a gallery arrow`() {
+        val p = pv(30)
+        listOf(100, 400, 700).forEach { click(p, it, "arrow", "") }
+        query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second).elements.single().rage shouldBe 0
+    }
+
+    @Test
+    fun `a page view after the visit's inquiry does not count as inquiring`() {
+        val (_, visit) = ccVisit(jdbc, UUID.randomUUID().toString(), "boat4you", now.minus(Duration.ofMinutes(60)))
+        inquiry(visit, now.minus(Duration.ofMinutes(30)))
+        pv(40, visitId = visit)
+        pv(20, visitId = visit)
+        query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second).inquiryPageViews shouldBe 1
+    }
+
+    @Test
+    fun `insights put the worst first - a page few get to the bottom of before a milder one`() {
+        // 10 page views each: on HOME 1 gets to the lower half (10 %), on SEARCH 4 do (40 %).
+        repeat(10) { i -> pv(30, pageType = "HOME").also { if (i < 1) scroll(it, 3200) } }
+        repeat(10) { i -> pv(30, pageType = "SEARCH").also { if (i < 4) scroll(it, 3200) } }
+        query.insights("boat4you", "DESKTOP", range.first, range.second, InsightLimits(1, 1)).filter { it.kind == "LOW_REACH" }.map { it.pageType } shouldContainExactly
+            listOf("HOME", "SEARCH")
+    }
+
+    @Test
+    fun `a heatmap asked again within minutes comes from the cache`() {
+        val w = world()
+        query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second).clicks shouldBe 9
+        click(w.b, 5000, "specs", "Specs")
+        query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second).clicks shouldBe 9
     }
 }

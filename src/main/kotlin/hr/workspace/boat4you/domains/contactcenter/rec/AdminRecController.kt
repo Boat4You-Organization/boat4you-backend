@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.ResponseBody
 import java.time.Duration
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 /**
  * The recording switches of the seven sites in the admin (P6 R1.6, SYSTEM_ADMIN): on or off, and which share of visits with
@@ -183,14 +184,19 @@ class AdminRecController(
         return ResponseEntity.ok(heatmaps.insights(site, dev, start, end))
     }
 
-    /** [from, to): the last 30 days by default, at most [MAX_RANGE]; null when empty or too long. */
+    /**
+     * [from, to): the last 30 days by default, at most [MAX_RANGE]; null when empty or too long. In whole hours, so the same heatmap
+     * asked again within the hour is the same request and RecHeatmapQuery's cache answers it.
+     */
     private fun range(
         from: Instant?,
         to: Instant?,
     ): Pair<Instant, Instant>? {
         val end = to ?: Instant.now()
         val start = from ?: end.minus(HEATMAP_RANGE)
-        return (start to end).takeIf { start.isBefore(end) && Duration.between(start, end) <= MAX_RANGE }
+        if (!start.isBefore(end) || Duration.between(start, end) > MAX_RANGE) return null
+        val hourEnd = end.truncatedTo(ChronoUnit.HOURS).let { if (it == end) it else it.plus(Duration.ofHours(1)) }
+        return (from?.truncatedTo(ChronoUnit.HOURS) ?: hourEnd.minus(HEATMAP_RANGE)) to hourEnd
     }
 
     private fun bad(error: String): ResponseEntity<Any> = ResponseEntity.badRequest().body(mapOf("error" to error))
