@@ -20,7 +20,17 @@ class AdminRecHeatmapControllerTest {
             when (inv.method.name) {
                 "heatmap" ->
                     Heatmap(
-                        "boat4you", "BOAT", "MOBILE", 3, 1, 8, emptyList(), mapOf("h1" to listOf(HeatPoint(512, 1536, 4))), emptyList(), 20, 7L,
+                        siteId = "boat4you",
+                        pageType = "BOAT",
+                        device = "MOBILE",
+                        pageViews = 3,
+                        inquiryPageViews = 1,
+                        clicks = 8,
+                        elements = emptyList(),
+                        points = mapOf("h1" to listOf(HeatPoint(512, 1536, 4))),
+                        scroll = emptyList(),
+                        foldPct = 20,
+                        background = 7L,
                         hover = mapOf("h1" to listOf(HoverPoint(512, 1536, 900))),
                     )
                 "groups" -> listOf(HeatmapGroup("BOAT", 3, 8))
