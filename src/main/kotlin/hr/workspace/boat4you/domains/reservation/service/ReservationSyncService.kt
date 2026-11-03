@@ -109,11 +109,14 @@ class ReservationSyncService(
         }
 
         val newInternalYachtId =
-            externalMappingRepository.findByExternalIdAndExternalSystemAndType(
-                partnerYachtId,
-                externalSystem,
-                Yacht::class.simpleName.toString(),
-            )?.systemId
+            swapTargetRow(
+                externalMappingRepository
+                    .findAllByExternalIdAndExternalSystemAndType(
+                        partnerYachtId,
+                        externalSystem,
+                        Yacht::class.simpleName.toString(),
+                    ).mapNotNull { it.systemId },
+            )
 
         log.warn(
             "DETECTED YACHT SWAP: reservation_id=${reservation.id} number=${reservation.reservationNumber} " +
@@ -158,6 +161,15 @@ class ReservationSyncService(
 
         return ProcessResult.SWAP_DETECTED
     }
+
+    // A boat re-registered under another agency keeps its partner id, so two of our rows can carry it: the retired
+    // one and the active one (3.11.2026). The single-row finder threw on those and the swap was never recorded.
+    private fun swapTargetRow(systemIds: List<Long>): Long? =
+        when (systemIds.size) {
+            0 -> null
+            1 -> systemIds.single()
+            else -> yachtRepository.findAllById(systemIds).maxWithOrNull(compareBy<Yacht>({ it.sysActive == true }, { it.id }))?.id
+        }
 
     private fun applyYachtSwap(
         reservation: Reservation,
