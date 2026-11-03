@@ -67,6 +67,23 @@ class NauSysYachtOfferSyncService(
 
     companion object {
         /**
+         * Our yacht row an on-demand answer for [externalYachtId] is written to. A boat re-registered under another
+         * agency keeps its NauSys id: the new row is active, the old one stays deactivated with its mapping, so the
+         * first mapping found may be the retired twin (2.11.2026: Namaka Ekolu's 14-day offer went to it and the page
+         * said "not available"). The active row wins, then the newest.
+         */
+        internal fun onDemandYachtRow(
+            externalYachtId: Long,
+            mappings: List<ExternalMapping>,
+            yachts: List<Yacht>,
+        ): Long? =
+            mappings
+                .filter { it.externalId == externalYachtId }
+                .mapNotNull { m -> yachts.find { it.id == m.systemId } }
+                .maxWithOrNull(compareBy<Yacht>({ it.sysActive == true }, { it.id }))
+                ?.id
+
+        /**
          * Marker for offers that were returned by NauSys for *other* weeks of the same yacht but not for
          * the exact (dateFrom, dateTo) we just synced. Treated as pre-reserved so the yacht still surfaces
          * in search with a "Pre-reserved" badge instead of vanishing.
@@ -621,9 +638,7 @@ class NauSysYachtOfferSyncService(
         val optionalOnSite = realPriceSwitches.extrasZeroOptionalOnSite.isOn
         val requoted = mutableListOf<PeriodKey>()
         nausysAllOffers.groupBy { it.yachtId }?.forEach { (nausysYachtId, nausysOffers) ->
-            val mapping = allYachtMappings.find { it.externalId == nausysYachtId!! } ?: return@forEach
-            val systemYachtId =
-                mapping.systemId?.takeIf { sysId -> allYachts.any { it.id == sysId } } ?: return@forEach
+            val systemYachtId = onDemandYachtRow(nausysYachtId!!, allYachtMappings, allYachts) ?: return@forEach
 
             try {
                 val ran =
