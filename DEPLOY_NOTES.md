@@ -1,5 +1,15 @@
 # Backend deploy notes
 
+## 2026-11-03 — 🧭 Iris: upit za rutu bez mjesta → stranica svih itinerara; nikad prošli datumi — ✅ cusma2 LIVE 3.11. 12:55:46 UTC (jar `8c737cc` = fix + main `aa42729`, md5 f8fe7979b3d1d010f26be05d4d0317a3, bez migracije, start 12,7 s, health 200); widget `b4y-cc.719d9f3b.js` LIVE 12:35 UTC (infra `4455c2c`, tag `live/2026-11-03-cc-widget-itinerary`); cusma3 ne treba (chat je samo na cusma2)
+
+Mario 3.11.2026 (John, Catamaran Charter Croatia 2.11.: „Can you suggest a route“ + „No preference where to start“ → itinerar nikad nije stigao): „ako nije specificirao gdje, pošalješ ga na stranicu gdje su svi itinerari“; „Da, pregled i deploy“.
+
+- Novi alat `show_itineraries` na svih 7 sajtova: kartica „Svi naši itinerari“ (9 jezika) na `/itinerary` sestara odnosno `/itineraries` boat4you, s jezičnim prefiksom; URL slaže server. Prompt: ruta bez mjesta ili „svejedno“ → kartica, pa (ako ne zna) pitanje kad; kad gost navede područje, Iris sama predloži rutu.
+- **Prošli datumi:** u studenom je „middle to end of June“ tražen kao lipanj 2026 — gostu je pokazan tjedan koji je prošao, a srpanj–rujan „bez ponude“. Sada: datum bez godine = sljedeći put kad dolazi (prompt), `search_yachts` odbija datume prije danas i predlaže iste datume iduće godine, prozor koji je počeo u prošlosti traži samo tjedne pred nama.
+- Kartice jednog odgovora se zbrajaju (vodič s bloga + itinerari zajedno; pregled I1). Testovi chata imaju fiksni „danas“ (3.11.2026), pa datumi 2027 ne postaju prošli.
+- Provjera: chat+branding 173/173, widget 73/73; 45/45 mogućih URL-ova itinerara 200; pregled (Opus): 0 kritičnih, I1 popravljen testom, redoslijed widget → backend poštovan.
+- Rollback: cusma2 `webservice.jar.prev` = `5c32cbd` (md5 59ef4255…, BOAT4YOU 3).
+
 ## 2026-11-03 — 🧭 ROUTE_GONE: stari ruta-redovi 18643/18707/18753 (V9_116 + V9_117), MMK pravilo iza `MMK_D3_MODE` (zadano OFF), provjera zamjene broda — ✅ cusma2 LIVE 11:34:00 UTC (main `fd2904a`, md5 7498f6291267b7d212cb9fd46a4343e4, V9_116 0,056 s) i 12:07:02 UTC (main `5c32cbd` = R3 `a9acc01` + V9_117, md5 59ef42557c20f61439480909e86b9667, V9_117 0,046 s, start 12,9 s); cusma3 ⏳ 18:07 UTC isti jar (jedan restart, nosi i R3 — dogovor s JIVO CHAT)
 
 Mario 3.11.: „2 sredi“ (18643 u HR pretrazi iz Pule, stranica Propriano; nalaz infra `docs/yacht-18643-search-view-2026-10-28.md`) i „zavrsi to“ → „sredi ali analiziraj dobro prije“ → „Automatski + mail kupcu“ (zamjena broda).
