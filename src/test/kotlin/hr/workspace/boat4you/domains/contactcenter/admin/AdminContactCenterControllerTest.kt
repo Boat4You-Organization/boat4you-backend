@@ -31,6 +31,7 @@ class AdminContactCenterControllerTest {
     private val chat = mock(AiChatService::class.java)
     private val stats = mock(StatsQuery::class.java)
     private val funnel = mock(FunnelQuery::class.java)
+    private val searchEngines = mock(SearchEngineQuery::class.java)
     private val controller =
         AdminContactCenterController(
             conversations,
@@ -43,6 +44,7 @@ class AdminContactCenterControllerTest {
             mock(ContactService::class.java),
             stats,
             funnel,
+            searchEngines,
         )
     private val mvc = MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(ApiErrorHandler()).build()
 
@@ -107,6 +109,22 @@ class AdminContactCenterControllerTest {
         verify(funnel).funnel(from, to, "catamaran-greece", "MOBILE", "ADS")
     }
 
+
+    @Test
+    fun `search engines check site, country, device and range before reading`() {
+        mvc.get("/admin/cc/search-engines?siteId=evil").andExpect { status { isBadRequest() } }
+        mvc.get("/admin/cc/search-engines?country=usa").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("unknown country") }
+        }
+        mvc.get("/admin/cc/search-engines?device=WATCH").andExpect { status { isBadRequest() } }
+        mvc.get("/admin/cc/search-engines?from=2025-01-01T00:00:00Z&to=2026-03-01T00:00:00Z").andExpect { status { isBadRequest() } }
+        verifyNoInteractions(searchEngines)
+        val from = Instant.parse("2026-10-01T00:00:00Z")
+        val to = Instant.parse("2026-11-01T00:00:00Z")
+        mvc.get("/admin/cc/search-engines?from=$from&to=$to&siteId=boat4you&country=US&device=MOBILE").andExpect { status { isOk() } }
+        verify(searchEngines).searchEngines(from, to, "boat4you", "US", "MOBILE")
+    }
     @Test
     fun `detail links the contact before reading`() {
         `when`(conversations.detail(anyLong())).thenReturn(null)
@@ -133,6 +151,7 @@ class AdminContactCenterControllerTest {
                 mock(ContactService::class.java),
                 stats,
                 funnel,
+                searchEngines,
             )
         MockMvcBuilders
             .standaloneSetup(c)
