@@ -15,6 +15,7 @@ import org.springframework.web.client.RestClient
 import org.springframework.web.util.UriComponentsBuilder
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.time.Clock
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -34,6 +35,9 @@ class AiChatToolExecutor(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val client: RestClient = RestClient.builder().baseUrl(selfBaseUrl).build()
+
+    /** Today, for refusing dates in the past (tests fix it). */
+    internal var clock: Clock = Clock.systemUTC()
 
     // labelCode -> equipment id, lazily fetched from our own cached catalogue endpoint.
     @Volatile
@@ -108,8 +112,12 @@ class AiChatToolExecutor(
         site: AiSiteProfile,
         locale: String,
     ): ToolOutcome {
-        val from = runCatching { LocalDate.parse(input.path("windowStart").asText("")) }.getOrNull()
+        val asked = runCatching { LocalDate.parse(input.path("windowStart").asText("")) }.getOrNull()
         val to = runCatching { LocalDate.parse(input.path("windowEnd").asText("")) }.getOrNull()
+        val today = LocalDate.now(clock)
+        if (asked != null && to != null && !to.isAfter(today)) return pastDates(asked, to, today)
+        // A window that began in the past: only its weeks still ahead.
+        val from = asked?.let { maxOf(it, today) }
         val saturdays =
             if (from == null || to == null) {
                 emptyList()
@@ -249,6 +257,10 @@ class AiChatToolExecutor(
                 """{"error":"invalid date range — use YYYY-MM-DD, $MIN_NIGHTS to $MAX_NIGHTS nights"}""",
                 search = criteria(null, emptyList(), 0, null),
             )
+        }
+        val today = LocalDate.now(clock)
+        if (LocalDate.parse(startDate).isBefore(today)) {
+            return pastDates(LocalDate.parse(startDate), LocalDate.parse(endDate), today).copy(search = criteria(null, emptyList(), 0, null))
         }
 
         if (site.scoped && countryCode !in site.countryCodes) {
@@ -748,6 +760,11 @@ class AiChatToolExecutor(
         ) {
             it.putObject("reason").put("type", "string").put("description", "Short reason for the handoff")
         })
+        tools.add(tool(
+            "show_itineraries",
+            "Show the visitor this site's page of all our sailing itineraries as a link card under your reply. Use it when " +
+                "the visitor asks for a route or itinerary and has not said where they would like to sail, or has no preference.",
+        ) { })
         if (includeBlog) {
             tools.add(tool(
                 "show_blog_posts",
@@ -768,6 +785,27 @@ class AiChatToolExecutor(
             it.putObject("phone").put("type", "string")
         })
         return tools
+    }
+
+    /**
+     * Dates before today (Mario 3.11.2026: in November, "middle to end of June" was searched as the June just gone and a visitor
+     * was shown a week that had passed): never searched; the model is told the next time the same dates come.
+     */
+    private fun pastDates(
+        from: LocalDate,
+        to: LocalDate,
+        today: LocalDate,
+    ): ToolOutcome {
+        val years = generateSequence(1L) { it + 1 }.first { !from.plusYears(it).isBefore(today) }
+        return ToolOutcome(
+            objectMapper.writeValueAsString(
+                mapOf(
+                    "error" to "these dates are in the past (today is $today) - nothing can be booked for them",
+                    "hint" to "a date without a year is the next time it comes: search ${from.plusYears(years)} to ${to.plusYears(years)}, " +
+                        "or ask the visitor which year they mean",
+                ),
+            ),
+        )
     }
 
     private fun tool(name: String, description: String, props: (ObjectNode) -> Unit): ObjectNode =

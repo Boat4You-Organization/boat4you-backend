@@ -26,6 +26,7 @@ class BrandAiProfileTest {
                 "sailing yachts, catamarans, motor yachts and gulets",
                 true,
                 setOf("de", "fr", "it", "es", "pt", "nl", "pl", "hr"),
+                "/itineraries",
             )
         r.get("catamaran-croatia").ai shouldBe
             AiSiteProfile(

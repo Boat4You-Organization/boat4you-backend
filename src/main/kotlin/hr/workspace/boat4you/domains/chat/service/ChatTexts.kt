@@ -24,6 +24,9 @@ object ChatTexts {
     /** What a visitor reads while the AI is paused (circuit breaker open): the form offer instead of an answer. */
     fun aiPaused(locale: String?): String = pick(AI_PAUSED, locale)
 
+    /** The title of the link card to the site's page of all itineraries. */
+    fun itinerariesTitle(locale: String?): String = pick(ITINERARIES, locale)
+
     private fun pick(
         texts: Map<String, String>,
         locale: String?,
@@ -79,5 +82,18 @@ object ChatTexts {
             "es" to "Nuestra asistente de IA está en pausa unos minutos. Deje aquí su correo electrónico o su número de teléfono y una persona de nuestro equipo se pondrá en contacto con usted.",
             "pl" to "Nasza asystentka AI jest wstrzymana na kilka minut. Zostaw tutaj swój adres e-mail lub numer telefonu, a ktoś z naszego zespołu się z Tobą skontaktuje.",
             "nl" to "Onze AI-assistent is een paar minuten gepauzeerd. Laat hier uw e-mailadres of telefoonnummer achter, dan neemt iemand van ons team contact met u op.",
+        )
+
+    private val ITINERARIES =
+        mapOf(
+            "en" to "All our sailing itineraries",
+            "hr" to "Svi naši itinerari plovidbe",
+            "fr" to "Tous nos itinéraires de navigation",
+            "de" to "Alle unsere Segelrouten",
+            "pt" to "Todos os nossos itinerários de navegação",
+            "it" to "Tutti i nostri itinerari in barca",
+            "es" to "Todos nuestros itinerarios de navegación",
+            "pl" to "Wszystkie nasze trasy rejsów",
+            "nl" to "Al onze zeilroutes",
         )
 }

@@ -806,6 +806,7 @@ class AiChatService(
                 )
             }
             "show_blog_posts" -> if (site(session).blogGuides) showBlogPosts(input) else UNKNOWN_TOOL
+            "show_itineraries" -> showItineraries(site(session), session.locale)
             "save_contact" -> {
                 // The model copies what the visitor typed: same name rules as the widget, an email only when it looks like one.
                 NameValidator.validOrNull(input.path("name").asText(""))?.let { session.visitorName = it }
@@ -817,6 +818,19 @@ class AiChatService(
             }
             else -> UNKNOWN_TOOL
         }
+
+    /** The site's page of all itineraries as one link card, in the visitor's language; the model cannot choose the URL. */
+    private fun showItineraries(
+        site: AiSiteProfile,
+        locale: String?,
+    ): AiChatToolExecutor.ToolOutcome {
+        val links = objectMapper.createArrayNode()
+        links.addObject().put("title", ChatTexts.itinerariesTitle(locale)).put("url", site.localePrefix(locale) + site.itineraryPath)
+        return AiChatToolExecutor.ToolOutcome(
+            objectMapper.writeValueAsString(mapOf("shown" to "all our sailing itineraries", "note" to "The link appears under your reply; do not write any URL.")),
+            blogs = links,
+        )
+    }
 
     private fun showBlogPosts(input: JsonNode): AiChatToolExecutor.ToolOutcome {
         // Only slugs of published guides (ChatBlogIndex) become links - the model cannot make up an article or a URL.

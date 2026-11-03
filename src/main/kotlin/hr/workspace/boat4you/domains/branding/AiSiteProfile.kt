@@ -39,6 +39,8 @@ data class AiSiteProfile(
     val fleetLabel: String,
     val blogGuides: Boolean,
     val prefixedLocales: Set<String>,
+    /** The page of all the site's itineraries (Mario 3.11.2026: a route question without a place goes there). */
+    val itineraryPath: String = "/itinerary",
 ) {
     /** True when the site sells in some countries only, so the AI has to keep its searches inside them. */
     val scoped: Boolean get() = countryCodes.isNotEmpty()
@@ -66,6 +68,7 @@ data class AiSiteProfile(
                 fleetLabel = "sailing yachts, catamarans, motor yachts and gulets",
                 blogGuides = true,
                 prefixedLocales = setOf("de", "fr", "it", "es", "pt", "nl", "pl", "hr"),
+                itineraryPath = "/itineraries",
             )
     }
 }
