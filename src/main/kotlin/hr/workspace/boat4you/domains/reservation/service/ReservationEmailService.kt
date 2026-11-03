@@ -1032,10 +1032,13 @@ class ReservationEmailService(
             .replace("\"", "&quot;")
             .replace("\n", "<br />")
 
+    // Loads the reservation itself (3.11.2026): the swap check runs outside any transaction, so the copy it holds still
+    // points at the previous yacht and its lazy model and pickup location cannot be read.
     fun sendYachtSwapNotification(
-        reservation: Reservation,
+        reservationId: Long,
         audit: ReservationYachtSwapAudit,
     ) {
+        val reservation = reservationRepository.findById(reservationId).orElse(null) ?: return
         val flow = reservation.reservationFlow ?: return
         val newYacht = flow.yacht ?: return
         val displayReservationRef = reservation.reservationNumber ?: "${reservation.id!!}"
@@ -1069,8 +1072,13 @@ class ReservationEmailService(
                 "publicUrl" to serverHostPublic,
             )
 
+        val fullName =
+            (flow.user?.getFullName() ?: flow.getFullName())
+                .replace(Regex("[,\"<>;\\\\]"), " ")
+                .trim()
+                .ifBlank { "there" }
         emailService.sendEmail(
-            recipients = listOf(flow.email!!),
+            recipients = listOf(if (fullName != "there") "$fullName <${flow.email!!}>" else flow.email!!),
             subject = "Your yacht has been replaced on reservation $displayReservationRef",
             templateName = "email/yachtReplaced",
             variables = customerVariables,
