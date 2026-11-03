@@ -132,10 +132,14 @@ object RecExtractor {
 
     /** A move's F8 tokens: `[time, 12, target, x, y, id, isPrimary, "hash.hashBeta", eX, eY]`; null for a move without them. */
     private fun move(t: Tokens): Move? {
-        val hashes = (t.getOrNull(MOVE_HASH) as? String)?.takeIf { it.isNotBlank() }?.split('.') ?: return null
-        val eX = (t.getOrNull(MOVE_HASH + 1) as? Number)?.toInt() ?: return null
-        val eY = (t.getOrNull(MOVE_HASH + 2) as? Number)?.toInt() ?: return null
-        return Move((t.getOrNull(0) as? Number)?.toLong() ?: 0, hashes[0].ifBlank { null }, hashes.getOrNull(1), eX, eY)
+        val hashes = (t.getOrNull(MOVE_HASH) as? String)?.takeIf { it.isNotBlank() }?.split('.')
+        val eX = (t.getOrNull(MOVE_HASH + 1) as? Number)?.toInt()
+        val eY = (t.getOrNull(MOVE_HASH + 2) as? Number)?.toInt()
+        return if (hashes == null || eX == null || eY == null) {
+            null
+        } else {
+            Move((t.getOrNull(0) as? Number)?.toLong() ?: 0, hashes[0].ifBlank { null }, hashes.getOrNull(1), eX, eY)
+        }
     }
 
     /** Only the envelope of a payload: the worker routes and dedupes on it without decoding the events. */
