@@ -1,5 +1,24 @@
 # Backend deploy notes
 
+## 2026-11-03 — 📣 Objave (social publisher S1): kanali po sajtu, objavljivanje i zakazivanje, AI dnevne objave, Higgsfield video (V9_118) — ⏳ NIJE DEPLOYANO (grana `claude/blissful-wright-sn6a9f`)
+
+Mario 3.11.2026: „alat s kojim ćemo moći objavljivati jednu objavu na više kanala … sve inhouse“ i „za svaki web Facebook, Instagram i TikTok, YouTube jedan za sve; samostalne objave; AI radi dnevne objave uz Higgsfield i slike koje već imamo; cijeli centar“. Admin: boat4you-admin `/social` (PR na istoj grani), dizajn `docs/superpowers/specs/2026-11-03-social-publisher-design.md` (admin repo).
+
+- **V9_118** (samo nove tablice): `social_account` (kanal + sajt, tokeni AES-GCM), `social_oauth_state`, `social_media` (+ `/public/social/media/{token}.jpg|mp4`), `social_post`, `social_post_media`, `social_post_target`, `social_api_key` (samo SHA-256), `social_ai_setting` (po sajtu), `social_ai_run` (jedan po sajtu i danu), `social_generation` (Higgsfield).
+- **API:** `/admin/social/**` (SYSTEM_ADMIN): kanali (OAuth start, povratak `/public/social/oauth/{meta|tiktok|youtube|threads|linkedin}/callback`, Bluesky app lozinka, sajt kanala, odspajanje), mediji (sirovo tijelo, ne multipart: JPEG/PNG/WebP → JPEG ≤ 2160 px, MP4/MOV ≤ 500 MB, ffprobe/ffmpeg sličica), objave (skica / zakaži / objavi odmah, otkaži, ponovi, obriši), API ključevi, AI postavke po sajtu i „napravi sada“. `/api/social/v1/**` (permitAll, provjera `X-Api-Key`, 60/h po ključu): kanali, mediji (datoteka ili URL uz SSRF zaštitu), objave (ključ „samo skice“ uvijek skica).
+- **Konektori:** Facebook stranice + Instagram (jedna Meta prijava donosi sve stranice i njihove IG račune), TikTok (Content Posting API, privatno do revizije), YouTube (resumable upload, PKCE), Threads, LinkedIn (osoba; stranice tvrtke uz Community Management API), Bluesky. X, Pinterest, Google Business: „not available yet“.
+- **Objavljivač** (`SocialPublisher`, ShedLock `social_publisher`, svakih 20 s): `UPDATE … FOR UPDATE SKIP LOCKED` uzme dospjele kanale jednom; prolazne greške 1/5/15 min (najviše 3 pokušaja), istekli token → kanal EXPIRED; PUBLISHING > 30 min → FAILED (nikad automatski ponovno).
+- **AI dnevne objave** (`SocialAiService`, ShedLock `social_ai_daily`, svakih 10 min, Europe/Zagreb): 3 h prije vremena objave sajta odabere brod iz flote sajta (naš `/public/yachts`, nije bio u objavi 60 dana), naše fotke (`/public/image/{id}`), Claude napiše tekst po mreži (`SOCIAL_AI_MODEL`, zadano claude-opus-5-5, isti `ANTHROPIC_API_KEY` kao chat, strukturirani izlaz, bez cijena), skica za odobrenje ili zakazano. S videom: Higgsfield image→video (ShedLock `social_generations`, svaku minutu), druga objava za TikTok + YouTube.
+- **Env (sve prazno = isključeno):** `SOCIAL_TOKEN_KEY` (32 bajta base64, obavezno za spajanje), `SOCIAL_PUBLIC_API_URL` (https://api.boat4you.com), `SOCIAL_ADMIN_ORIGINS` (https://admin.boat4you.com), `SOCIAL_META_APP_ID/SECRET`, `SOCIAL_THREADS_APP_ID/SECRET`, `SOCIAL_TIKTOK_CLIENT_KEY/SECRET` (+ `SOCIAL_TIKTOK_AUDITED`), `SOCIAL_GOOGLE_CLIENT_ID/SECRET`, `SOCIAL_LINKEDIN_CLIENT_ID/SECRET` (+ `SOCIAL_LINKEDIN_SCOPES`), `SOCIAL_HIGGSFIELD_API_KEY_ID/SECRET` (+ putanje modela i statusa, provjeriti u docs.higgsfield.ai).
+- **nginx api.boat4you.com:** `location /admin/social/media` i `/api/social/v1/media` → `client_max_body_size 512m; proxy_request_buffering off;` (danas 25m → 413 za video).
+- **Testovi:** `domains.social.*` 27/27 (jedinični: šifriranje, PKCE RFC 7636, pravila mreža, status objave, magic bytes, Bluesky facets, Higgsfield odgovori, sajt iz imena, termin sezone; konektori Meta/TikTok s lažnim HTTP-om; shema V9_118 + claim SKIP LOCKED na PostgreSQL-u). Nije viđeno protiv pravih mreža ni Higgsfielda (nema ključeva).
+
+Deploy:
+
+- [ ] Developer aplikacije (Meta, TikTok, Google, LinkedIn, Threads) i ključevi u env; `SOCIAL_TOKEN_KEY` generirati (`openssl rand -base64 32`).
+- [ ] nginx limit za `/admin/social/media`.
+- [ ] Jar s V9_118 (nove tablice; lock samo nad njima) → zatim admin `/social`.
+
 ## 2026-11-03 — 🧭 Iris: upit za rutu bez mjesta → stranica svih itinerara; nikad prošli datumi — ✅ cusma2 LIVE 3.11. 12:55:46 UTC (jar `8c737cc` = fix + main `aa42729`, md5 f8fe7979b3d1d010f26be05d4d0317a3, bez migracije, start 12,7 s, health 200); widget `b4y-cc.719d9f3b.js` LIVE 12:35 UTC (infra `4455c2c`, tag `live/2026-11-03-cc-widget-itinerary`); cusma3 ne treba (chat je samo na cusma2)
 
 Mario 3.11.2026 (John, Catamaran Charter Croatia 2.11.: „Can you suggest a route“ + „No preference where to start“ → itinerar nikad nije stigao): „ako nije specificirao gdje, pošalješ ga na stranicu gdje su svi itinerari“; „Da, pregled i deploy“.
