@@ -1,5 +1,14 @@
 # Backend deploy notes
 
+## 2026-11-03 — ⛵ NauSys ponude na zahtjev idu na aktivni zapis broda (14 dana Namaka Ekolu) — ✅ cusma2 LIVE 3.11. 08:16:31 UTC (jar main `5eb37f3`, md5 104a06bd035b74c65abc5a0f326c6ad4, Flyway up to date, start 12,9 s, health 200; tag `live/2026-11-03-nausys-active-row`); ⏳ cusma3 kroz gate 18:07 UTC
+
+Mario 2.11.: „Idem napravit rezervaciju dva tjedna od 7-21/8 i grešku mi javlja“ → „nausys spaja normalno, trebamo i mi“ → „samo sredi“.
+- **Uzrok:** brod koji je u NauSysu prešao u drugu agenciju zadrži NauSys id; kod nas dobije novi aktivan red, a stari ostane ugašen s istim mappingom (103 NauSys ida, svi stari = `sys_active=false`, novi = true; MMK 0). `syncOffersForAsync` (ponude na zahtjev: stranica broda, search warm, reverifier) uzimao je prvi mapping → netjedna razdoblja pisala su se na ugašeni red. Namaka Ekolu (NauSys 67732855): NauSys za 7.–21.8.2027 vraća FREE 8.739,70 € (probni read-only upit 3.11.), spremalo se na red 2466, stranica čita 19986 → „Not available“. Tjedni noćni sync ide po agenciji i bio je ispravan.
+- **Popravak:** `NauSysYachtOfferSyncService.onDemandYachtRow`: aktivni red, pa najnoviji. Test `NauSysOnDemandYachtRowTests` (RED→GREEN); nausys.* 148 (samo stari NauSysDateTimeWrapperTests); cijeli suite 1802, isti stari padovi (+ InvoiceRepositoryYearsTest = OOM u suiteu, sam 3/3). Pregled jednog Opus agenta: „deploy“.
+- **Provjera LIVE 08:17 UTC:** API za 7.–21.8. vraća ponudu 12648468 FREE 8.302,72 € (naš popust), stranica broda „Total price 8.303 €“ + Reserve, checkout 14 dana 8.303 €.
+- Isti jar ponovno je deployao Contact Center P6 R2 (0510bd7 + dbb1b33) na cusma2; **rollback = cusma2 `webservice.jar.prev`** (= R2 jar, md5 9f0aacac66373df0dfe604617934f4e1).
+- Otvoreno (pregled, sitno): `ReservationSyncService` yacht-swap detektor (`findByExternalIdAndExternalSystemAndType`) baca IncorrectResultSize za 103 twin ida → swap se ne audita; stare ponude na ugašenim redovima ostaju (bezopasno).
+
 ## 2026-11-03 — 🎬 Contact Center P6 R2: popis snimki i player — API — ✅ cusma2 LIVE 3.11. 07:58:24 UTC (jar main `0510bd7`, md5 9f0aacac66373df0dfe604617934f4e1, bez migracije, Flyway up to date, start 13,2 s, health 200); cusma3 ne treba (worker nepromijenjen)
 
 Mario 3.11.2026 („Da, kreni s R2“, „da“). Plan infra `docs/superpowers/plans/2026-10-30-p6-heatmape-snimke.md` (R2), ledger `infra/.superpowers/sdd/2026-10-30-p6-heatmape-snimke/progress.md` (## R2).
