@@ -122,7 +122,7 @@ class ReservationSyncService(
             "DETECTED YACHT SWAP: reservation_id=${reservation.id} number=${reservation.reservationNumber} " +
                 "agency=${agency.id} old_yacht_id=${localYacht.id} old_external=$localExternalYachtId " +
                 "new_external=$partnerYachtId new_internal_yacht_id=$newInternalYachtId " +
-                "external_system=${externalSystem.name}",
+                "external_system_id=${externalSystem.id}",
         )
 
         val action =
@@ -191,7 +191,7 @@ class ReservationSyncService(
         audit: ReservationYachtSwapAudit,
     ) {
         try {
-            reservationEmailService.sendYachtSwapNotification(reservation, audit)
+            reservationEmailService.sendYachtSwapNotification(reservation.id!!, audit)
         } catch (e: Exception) {
             log.warn(
                 "Yacht swap email failed for reservation id=${reservation.id}: ${e.message}",
