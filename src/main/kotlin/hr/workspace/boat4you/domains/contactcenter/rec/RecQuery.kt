@@ -197,10 +197,11 @@ class RecQuery(
         private const val MAX_ERRORS = 500
         private const val MAX_ASSET_PATHS = 50
         private const val PLAYABLE = "p.status = 'CLOSED' AND NOT p.file_purged AND p.file_path IS NOT NULL"
-        private const val DEVICE =
+        /** The visit's device, else read from the viewport width (shared with RecHeatmapQuery). */
+        internal const val DEVICE =
             "COALESCE(v.device_class, CASE WHEN p.viewport_w IS NULL OR p.viewport_w >= 1024 THEN 'DESKTOP' " +
                 "WHEN p.viewport_w < 768 THEN 'MOBILE' ELSE 'TABLET' END)"
-        private const val INQUIRY = "p.visit_id IS NOT NULL AND EXISTS (SELECT 1 FROM cc_event ev WHERE ev.visit_id = p.visit_id AND ev.type = 'INQUIRY')"
+        internal const val INQUIRY = "p.visit_id IS NOT NULL AND EXISTS (SELECT 1 FROM cc_event ev WHERE ev.visit_id = p.visit_id AND ev.type = 'INQUIRY')"
         private const val CHAT = "p.visit_id IS NOT NULL AND EXISTS (SELECT 1 FROM ai_chat_session s WHERE s.visit_id = p.visit_id)"
 
         /** The first click of each burst of 3 or more clicks on one element within 1000 ms, of the page view [pageView] (an SQL expression). */

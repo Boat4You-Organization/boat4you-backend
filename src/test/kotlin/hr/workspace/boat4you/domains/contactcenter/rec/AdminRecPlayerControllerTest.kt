@@ -42,7 +42,7 @@ class AdminRecPlayerControllerTest {
     private val files by lazy { RecFiles(root.toString()) }
     private val mvc by lazy {
         MockMvcBuilders
-            .standaloneSetup(AdminRecController(mock(RecSettingsStore::class.java), query, files))
+            .standaloneSetup(AdminRecController(mock(RecSettingsStore::class.java), query, files, mock(RecHeatmapQuery::class.java)))
             .setControllerAdvice(ApiErrorHandler())
             .build()
     }

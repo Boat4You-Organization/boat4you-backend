@@ -28,6 +28,8 @@ import java.time.Instant
  *
  * The player (P6 R2): the recordings list, a recording's details and timeline marks, its raw file (gzip as stored on cusma3,
  * every view audited in `rec_view_audit`, 503 while the NFS share is stalled) and the archived stylesheets it needs.
+ *
+ * Heatmaps and insights (P6 R3): a heatmap of one site + page type + device, the page types with data, and "what to fix".
  */
 @Controller
 @RequestMapping("/admin/cc/rec")
@@ -36,6 +38,7 @@ class AdminRecController(
     private val settings: RecSettingsStore,
     private val query: RecQuery,
     private val files: RecFiles,
+    private val heatmaps: RecHeatmapQuery,
 ) {
     data class SettingRequest(
         val enabled: Boolean? = null,
@@ -133,6 +136,63 @@ class AdminRecController(
         return ResponseEntity.ok(query.assets(siteId, req.paths.orEmpty()))
     }
 
+    @GetMapping("/heatmap")
+    @ResponseBody
+    @Suppress("ReturnCount")
+    fun heatmap(
+        @RequestParam(required = false) siteId: String?,
+        @RequestParam(required = false) pageType: String?,
+        @RequestParam(required = false) device: String?,
+        @RequestParam(required = false) from: Instant?,
+        @RequestParam(required = false) to: Instant?,
+    ): ResponseEntity<Any> {
+        val site = siteId?.takeIf(SiteIds::isKnown) ?: return bad("site")
+        val type = pageType?.takeIf { p -> PageType.entries.any { it.name == p } } ?: return bad("pageType")
+        val dev = device?.takeIf { d -> DeviceClass.entries.any { it.name == d } } ?: return bad("device")
+        val (start, end) = range(from, to) ?: return bad("range")
+        return ResponseEntity.ok(heatmaps.heatmap(site, type, dev, start, end))
+    }
+
+    @GetMapping("/heatmap/groups")
+    @ResponseBody
+    @Suppress("ReturnCount")
+    fun heatmapGroups(
+        @RequestParam(required = false) siteId: String?,
+        @RequestParam(required = false) device: String?,
+        @RequestParam(required = false) from: Instant?,
+        @RequestParam(required = false) to: Instant?,
+    ): ResponseEntity<Any> {
+        val site = siteId?.takeIf(SiteIds::isKnown) ?: return bad("site")
+        val dev = device?.takeIf { d -> DeviceClass.entries.any { it.name == d } } ?: return bad("device")
+        val (start, end) = range(from, to) ?: return bad("range")
+        return ResponseEntity.ok(heatmaps.groups(site, dev, start, end))
+    }
+
+    @GetMapping("/insights")
+    @ResponseBody
+    @Suppress("ReturnCount")
+    fun insights(
+        @RequestParam(required = false) siteId: String?,
+        @RequestParam(required = false) device: String?,
+        @RequestParam(required = false) from: Instant?,
+        @RequestParam(required = false) to: Instant?,
+    ): ResponseEntity<Any> {
+        val site = siteId?.takeIf(SiteIds::isKnown) ?: return bad("site")
+        val dev = device?.takeIf { d -> DeviceClass.entries.any { it.name == d } } ?: return bad("device")
+        val (start, end) = range(from, to) ?: return bad("range")
+        return ResponseEntity.ok(heatmaps.insights(site, dev, start, end))
+    }
+
+    /** [from, to): the last 30 days by default, at most [MAX_RANGE]; null when empty or too long. */
+    private fun range(
+        from: Instant?,
+        to: Instant?,
+    ): Pair<Instant, Instant>? {
+        val end = to ?: Instant.now()
+        val start = from ?: end.minus(HEATMAP_RANGE)
+        return (start to end).takeIf { start.isBefore(end) && Duration.between(start, end) <= MAX_RANGE }
+    }
+
     private fun bad(error: String): ResponseEntity<Any> = ResponseEntity.badRequest().body(mapOf("error" to error))
 
     private fun notFound(): ResponseEntity<Any> = ResponseEntity.status(HttpStatus.NOT_FOUND).body(mapOf("error" to "not_found"))
@@ -140,6 +200,7 @@ class AdminRecController(
     companion object {
         private val PCT = 0..100
         private val DEFAULT_RANGE: Duration = Duration.ofDays(7)
+        private val HEATMAP_RANGE: Duration = Duration.ofDays(30)
         private val MAX_RANGE: Duration = Duration.ofDays(400)
         private val NDJSON = MediaType("application", "x-ndjson")
     }
