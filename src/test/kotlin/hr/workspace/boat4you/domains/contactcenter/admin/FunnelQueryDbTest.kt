@@ -74,6 +74,22 @@ class FunnelQueryDbTest {
         target,
     )
 
+    /** A CLICK with the widget's P7a [payload] (`{"kind":…,"area":…}`). */
+    private fun click(
+        visitId: Long,
+        pageViewId: Long,
+        label: String,
+        target: String? = null,
+        payload: String? = null,
+    ) = jdbc.update(
+        "INSERT INTO cc_event (visit_id, page_view_id, type, label, target, payload) VALUES (?, ?, 'CLICK', ?, ?, ?::jsonb)",
+        visitId,
+        pageViewId,
+        label,
+        target,
+        payload,
+    )
+
     @Test
     fun `funnel counts each visit once per step in order`() {
         visit().let {
@@ -159,7 +175,33 @@ class FunnelQueryDbTest {
         event(v, "NUDGE_CLICK", boat, label = "Book now")
         event(v, "CLICK", null, label = "Close")
         funnel().clicks shouldContainExactly
-            listOf(TopClick("BOAT", "Book now", 2), TopClick("OTHER", "Close", 1), TopClick("SEARCH", "/en/search?country=hr", 1))
+            listOf(
+                TopClick("BOAT", "Book now", 2, pages = 1, kind = "button", area = null, path = "/en/boat", target = null),
+                TopClick("OTHER", "Close", 1, pages = 0, kind = "button", area = null, path = null, target = null),
+                TopClick("SEARCH", "/en/search?country=hr", 1, pages = 1, kind = "link", area = null, path = "/en/search", target = "/en/search?country=hr"),
+            )
+    }
+
+    @Test
+    fun `top clicks carry kind and area from the widget, the pages, the most clicked page and target`() {
+        val v = visit()
+        val a = page(v, "BOAT", "/en/boat/a")
+        val b = page(v, "BOAT", "/en/boat/b")
+        val gallery = """{"kind":"button","area":"gallery"}"""
+        val link = """{"kind":"link","area":"main"}"""
+        click(v, a, "Next", payload = gallery)
+        click(v, a, "Next", payload = gallery)
+        click(v, b, "Next", payload = gallery)
+        click(v, b, "Next", target = "/x") // the widget before P7a: no payload, a link by its target
+        click(v, a, "Inquire", target = "/en/inquiry", payload = link)
+        click(v, b, "Inquire", target = "/en/inquiry?b", payload = link)
+        click(v, b, "Inquire", target = "/en/inquiry?b", payload = link)
+        funnel().clicks shouldContainExactly
+            listOf(
+                TopClick("BOAT", "Inquire", 3, pages = 2, kind = "link", area = "main", path = "/en/boat/b", target = "/en/inquiry?b"),
+                TopClick("BOAT", "Next", 3, pages = 2, kind = "button", area = "gallery", path = "/en/boat/a", target = null),
+                TopClick("BOAT", "Next", 1, pages = 1, kind = "link", area = null, path = "/en/boat/b", target = "/x"),
+            )
     }
 
     @Test
