@@ -125,6 +125,31 @@ class AdminContactCenterControllerTest {
         mvc.get("/admin/cc/search-engines?from=$from&to=$to&siteId=boat4you&country=US&device=MOBILE").andExpect { status { isOk() } }
         verify(searchEngines).searchEngines(from, to, "boat4you", "US", "MOBILE")
     }
+
+    @Test
+    fun `search engine queries check the page, sort and direction before reading`() {
+        mvc.get("/admin/cc/search-engines/queries?path=/en").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("unknown page") }
+        }
+        mvc.get("/admin/cc/search-engines/queries?siteId=boat4you&path=en").andExpect { status { isBadRequest() } }
+        mvc.get("/admin/cc/search-engines/queries?sort=clicks").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("unknown sort") }
+        }
+        mvc.get("/admin/cc/search-engines/queries?dir=up").andExpect { status { isBadRequest() } }
+        mvc.get("/admin/cc/search-engines/queries?country=usa").andExpect { status { isBadRequest() } }
+        verifyNoInteractions(searchEngines)
+        val from = Instant.parse("2026-10-01T00:00:00Z")
+        val to = Instant.parse("2026-11-01T00:00:00Z")
+        mvc
+            .get("/admin/cc/search-engines/queries?from=$from&to=$to&siteId=boat4you&device=MOBILE&path=/en/a&sort=POSITION&dir=asc")
+            .andExpect { status { isOk() } }
+        verify(searchEngines).googleQueries(from, to, "boat4you", null, "MOBILE", "/en/a", QuerySort.POSITION, true)
+        mvc.get("/admin/cc/search-engines/queries?from=$from&to=$to").andExpect { status { isOk() } }
+        verify(searchEngines).googleQueries(from, to, null, null, null, null, QuerySort.CLICKS, false)
+    }
+
     @Test
     fun `detail links the contact before reading`() {
         `when`(conversations.detail(anyLong())).thenReturn(null)

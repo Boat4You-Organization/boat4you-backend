@@ -144,6 +144,7 @@ class AdminContactCenterControllerSecurityTests {
             mvc.post("/admin/cc/contacts/1/merge", dsl = json("""{"sourceId":2}""")),
             mvc.get("/admin/cc/stats"),
             mvc.get("/admin/cc/search-engines"),
+            mvc.get("/admin/cc/search-engines/queries"),
             mvc.get("/admin/cc/funnel"),
         )
 

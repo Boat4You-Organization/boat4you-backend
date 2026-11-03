@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.contactcenter.SiteIds
 import hr.workspace.boat4you.domains.contactcenter.jpa.ContactStatus
 import hr.workspace.boat4you.domains.contactcenter.jpa.DeviceClass
 import hr.workspace.boat4you.domains.contactcenter.jpa.VisitChannel
+import hr.workspace.boat4you.domains.contactcenter.search.SearchText
 import hr.workspace.boat4you.domains.contactcenter.service.ContactLinker
 import hr.workspace.boat4you.domains.contactcenter.service.ContactService
 import hr.workspace.boat4you.domains.contactcenter.service.ProactiveMessaging
@@ -279,16 +280,56 @@ class AdminContactCenterController(
     ): ResponseEntity<Any> {
         val end = to ?: Instant.now()
         val start = from ?: end.minus(DEFAULT_RANGE)
-        val error =
-            when {
-                siteId != null && !SiteIds.isKnown(siteId) -> "unknown site"
-                country != null && !COUNTRY.matches(country) -> "unknown country"
-                device != null && DeviceClass.entries.none { it.name == device } -> "unknown device"
-                else -> rangeError(start, end)
-            }
+        val error = searchFilterError(siteId, country, device) ?: rangeError(start, end)
         if (error != null) return bad(error)
         return ResponseEntity.ok(searchEngines.searchEngines(start, end, siteId, country, device))
     }
+
+    /** The Google query table in its own order, optionally for one landing page ([path] of [siteId]); filters as [searchEngines]. */
+    @GetMapping("/search-engines/queries")
+    @ResponseBody
+    @Suppress("LongParameterList") // the filters of the section plus the table's page and order
+    fun searchEngineQueries(
+        @RequestParam(required = false) from: Instant?,
+        @RequestParam(required = false) to: Instant?,
+        @RequestParam(required = false) siteId: String?,
+        @RequestParam(required = false) country: String?,
+        @RequestParam(required = false) device: String?,
+        @RequestParam(required = false) path: String?,
+        @RequestParam(required = false) sort: String?,
+        @RequestParam(required = false) dir: String?,
+    ): ResponseEntity<Any> {
+        val end = to ?: Instant.now()
+        val start = from ?: end.minus(DEFAULT_RANGE)
+        val order = QuerySort.entries.firstOrNull { it.name == (sort ?: QuerySort.CLICKS.name) }
+        val error = searchFilterError(siteId, country, device) ?: queryTableError(siteId, path, dir) ?: rangeError(start, end)
+        if (error != null || order == null) return bad(error ?: "unknown sort")
+        return ResponseEntity.ok(searchEngines.googleQueries(start, end, siteId, country, device, path, order, dir == "asc"))
+    }
+
+    /** A landing page is a path of one site; the direction is asc or desc. */
+    private fun queryTableError(
+        siteId: String?,
+        path: String?,
+        dir: String?,
+    ): String? =
+        when {
+            path != null && (siteId == null || !path.startsWith("/") || path.length > SearchText.PATH_MAX) -> "unknown page"
+            dir != null && dir != "asc" && dir != "desc" -> "unknown dir"
+            else -> null
+        }
+
+    private fun searchFilterError(
+        siteId: String?,
+        country: String?,
+        device: String?,
+    ): String? =
+        when {
+            siteId != null && !SiteIds.isKnown(siteId) -> "unknown site"
+            country != null && !COUNTRY.matches(country) -> "unknown country"
+            device != null && DeviceClass.entries.none { it.name == device } -> "unknown device"
+            else -> null
+        }
 
     private fun rangeError(
         start: Instant,
