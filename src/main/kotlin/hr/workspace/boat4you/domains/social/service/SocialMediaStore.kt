@@ -62,21 +62,7 @@ class SocialMediaStore(
         Files.createDirectories(root)
         val tmp = Files.createTempFile(root, "upload-", ".part")
         try {
-            val limit = props.maxVideoMb * MB
-            val digest = MessageDigest.getInstance("SHA-256")
-            var size = 0L
-            Files.newOutputStream(tmp).use { out ->
-                val buf = ByteArray(BUFFER)
-                while (true) {
-                    val n = input.read(buf)
-                    if (n < 0) break
-                    size += n
-                    if (size > limit) throw SocialValidationException("File larger than ${props.maxVideoMb} MB")
-                    digest.update(buf, 0, n)
-                    out.write(buf, 0, n)
-                }
-            }
-            if (size == 0L) throw SocialValidationException("Empty file")
+            val spooled = spool(input, tmp)
             val head = Files.newInputStream(tmp).use { it.readNBytes(HEAD_BYTES) }
             val type = sniff(head) ?: throw SocialValidationException("Only JPEG, PNG, WebP, MP4 or MOV")
             val token = SocialCrypto.randomToken(TOKEN_LENGTH)
@@ -88,36 +74,82 @@ class SocialMediaStore(
                     this.originRef = originRef
                     this.fileName = safeName(originalName, type)
                     this.uploadedBy = uploadedBy
-                    this.sha256 = digest.digest().joinToString("") { "%02x".format(it) }
+                    this.sha256 = spooled.sha256
                 }
-            if (type.kind == SocialMediaKind.IMAGE) {
-                if (size > props.maxImageMb * MB) throw SocialValidationException("Photo larger than ${props.maxImageMb} MB")
-                val jpeg = SocialImages.normalize(Files.readAllBytes(tmp)) ?: throw SocialValidationException("The photo cannot be read")
-                Files.write(dir.resolve("media.jpg"), jpeg.bytes)
-                media.kind = SocialMediaKind.IMAGE
-                media.mimeType = "image/jpeg"
-                media.storagePath = "$token/media.jpg"
-                media.sizeBytes = jpeg.bytes.size.toLong()
-                media.width = jpeg.width
-                media.height = jpeg.height
-            } else {
-                val name = "media.${type.ext}"
-                Files.move(tmp, dir.resolve(name), StandardCopyOption.REPLACE_EXISTING)
-                media.kind = SocialMediaKind.VIDEO
-                media.mimeType = type.mime
-                media.storagePath = "$token/$name"
-                media.sizeBytes = size
-                probeVideo(dir.resolve(name))?.let { (w, h, d) ->
-                    media.width = w
-                    media.height = h
-                    media.durationSec = d
-                }
-                if (thumbnail(dir.resolve(name), dir.resolve("thumb.jpg"))) media.thumbnailPath = "$token/thumb.jpg"
-            }
+            if (type.kind == SocialMediaKind.IMAGE) storeImage(tmp, dir, media, spooled.size) else storeVideo(tmp, dir, type, media, spooled.size)
             return repo.save(media)
         } finally {
             tmp.deleteIfExists()
         }
+    }
+
+    private class Spooled(
+        val size: Long,
+        val sha256: String,
+    )
+
+    /** Copies the stream to [tmp] up to the video limit, hashing it on the way. */
+    private fun spool(
+        input: InputStream,
+        tmp: Path,
+    ): Spooled {
+        val limit = props.maxVideoMb * MB
+        val digest = MessageDigest.getInstance("SHA-256")
+        var size = 0L
+        Files.newOutputStream(tmp).use { out ->
+            val buf = ByteArray(BUFFER)
+            var n = input.read(buf)
+            while (n >= 0) {
+                size += n
+                if (size > limit) throw SocialValidationException("File larger than ${props.maxVideoMb} MB")
+                digest.update(buf, 0, n)
+                out.write(buf, 0, n)
+                n = input.read(buf)
+            }
+        }
+        if (size == 0L) throw SocialValidationException("Empty file")
+        return Spooled(size, digest.digest().joinToString("") { "%02x".format(it) })
+    }
+
+    /** Any photo → JPEG ≤ 2160 px (Instagram takes JPEG only). */
+    private fun storeImage(
+        tmp: Path,
+        dir: Path,
+        media: SocialMedia,
+        size: Long,
+    ) {
+        if (size > props.maxImageMb * MB) throw SocialValidationException("Photo larger than ${props.maxImageMb} MB")
+        val jpeg = SocialImages.normalize(Files.readAllBytes(tmp)) ?: throw SocialValidationException("The photo cannot be read")
+        Files.write(dir.resolve("media.jpg"), jpeg.bytes)
+        media.kind = SocialMediaKind.IMAGE
+        media.mimeType = "image/jpeg"
+        media.storagePath = "${media.token}/media.jpg"
+        media.sizeBytes = jpeg.bytes.size.toLong()
+        media.width = jpeg.width
+        media.height = jpeg.height
+    }
+
+    /** The video as uploaded, plus size / duration (ffprobe) and a JPEG frame (ffmpeg) when those tools exist. */
+    private fun storeVideo(
+        tmp: Path,
+        dir: Path,
+        type: Sniffed,
+        media: SocialMedia,
+        size: Long,
+    ) {
+        val name = "media.${type.ext}"
+        val file = dir.resolve(name)
+        Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING)
+        media.kind = SocialMediaKind.VIDEO
+        media.mimeType = type.mime
+        media.storagePath = "${media.token}/$name"
+        media.sizeBytes = size
+        probeVideo(file)?.let { (w, h, d) ->
+            media.width = w
+            media.height = h
+            media.durationSec = d
+        }
+        if (thumbnail(file, dir.resolve("thumb.jpg"))) media.thumbnailPath = "${media.token}/thumb.jpg"
     }
 
     /**
@@ -236,21 +268,27 @@ class SocialMediaStore(
         private const val NAME_MAX = 120
 
         /** JPEG FF D8 FF, PNG 89 50 4E 47, WebP RIFF....WEBP, MP4/MOV ....ftyp (qt = MOV). */
-        fun sniff(head: ByteArray): Sniffed? {
-            fun at(
-                i: Int,
-                s: String,
-            ) = head.size >= i + s.length && s.indices.all { head[i + it] == s[it].code.toByte() }
-            return when {
-                head.size >= 3 && head[0] == 0xFF.toByte() && head[1] == 0xD8.toByte() && head[2] == 0xFF.toByte() ->
-                    Sniffed(SocialMediaKind.IMAGE, "image/jpeg", "jpg")
-                head.size >= 4 && head[0] == 0x89.toByte() && at(1, "PNG") -> Sniffed(SocialMediaKind.IMAGE, "image/png", "png")
-                at(0, "RIFF") && at(8, "WEBP") -> Sniffed(SocialMediaKind.IMAGE, "image/webp", "webp")
-                at(4, "ftypqt") -> Sniffed(SocialMediaKind.VIDEO, "video/quicktime", "mov")
-                at(4, "ftyp") -> Sniffed(SocialMediaKind.VIDEO, "video/mp4", "mp4")
+        fun sniff(head: ByteArray): Sniffed? =
+            when {
+                startsWith(head, 0, 0xFF, 0xD8, 0xFF) -> Sniffed(SocialMediaKind.IMAGE, "image/jpeg", "jpg")
+                startsWith(head, 0, 0x89, 'P'.code, 'N'.code, 'G'.code) -> Sniffed(SocialMediaKind.IMAGE, "image/png", "png")
+                ascii(head, 0, "RIFF") && ascii(head, 8, "WEBP") -> Sniffed(SocialMediaKind.IMAGE, "image/webp", "webp")
+                ascii(head, 4, "ftypqt") -> Sniffed(SocialMediaKind.VIDEO, "video/quicktime", "mov")
+                ascii(head, 4, "ftyp") -> Sniffed(SocialMediaKind.VIDEO, "video/mp4", "mp4")
                 else -> null
             }
-        }
+
+        private fun startsWith(
+            head: ByteArray,
+            at: Int,
+            vararg bytes: Int,
+        ) = head.size >= at + bytes.size && bytes.indices.all { head[at + it] == bytes[it].toByte() }
+
+        private fun ascii(
+            head: ByteArray,
+            at: Int,
+            s: String,
+        ) = startsWith(head, at, *s.map { it.code }.toIntArray())
 
         fun safeName(
             original: String?,

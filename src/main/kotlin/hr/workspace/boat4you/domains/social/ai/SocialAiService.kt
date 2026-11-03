@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.contactcenter.SiteIds
 import hr.workspace.boat4you.domains.social.dto.SocialAiOverviewDto
 import hr.workspace.boat4you.domains.social.dto.SocialAiRunDto
 import hr.workspace.boat4you.domains.social.dto.SocialAiSettingDto
+import hr.workspace.boat4you.domains.social.dto.SocialPostDto
 import hr.workspace.boat4you.domains.social.dto.SocialPostRequest
 import hr.workspace.boat4you.domains.social.dto.SocialTargetRequest
 import hr.workspace.boat4you.domains.social.jpa.SocialAccount
@@ -18,6 +19,7 @@ import hr.workspace.boat4you.domains.social.jpa.SocialAiSettingRepository
 import hr.workspace.boat4you.domains.social.jpa.SocialGeneration
 import hr.workspace.boat4you.domains.social.jpa.SocialGenerationRepository
 import hr.workspace.boat4you.domains.social.jpa.SocialGenerationStatus
+import hr.workspace.boat4you.domains.social.jpa.SocialMedia
 import hr.workspace.boat4you.domains.social.jpa.SocialMediaKind
 import hr.workspace.boat4you.domains.social.jpa.SocialMediaOrigin
 import hr.workspace.boat4you.domains.social.jpa.SocialMediaRepository
@@ -118,6 +120,7 @@ class SocialAiService(
     }
 
     /** "Napravi sada" from the admin, or the daily job. */
+    @Suppress("TooGenericExceptionCaught") // any failure becomes the run's error for the admin, never a crashed job
     fun run(
         site: String,
         date: LocalDate = LocalDate.now(ZONE),
@@ -166,6 +169,7 @@ class SocialAiService(
             }
         } ?: throw DataIntegrityViolationException("run not claimed")
 
+    @Suppress("ReturnCount") // a guard clause per reason to skip today's post
     private fun produce(
         setting: SocialAiSetting,
         run: SocialAiRun,
@@ -173,19 +177,10 @@ class SocialAiService(
     ): SocialAiRun {
         val site = setting.site!!
         val profile = brands.byId[site]?.ai ?: throw SocialValidationException("No site profile for $site")
-        val channels =
-            accounts.findAllById(setting.accountIds).filter {
-                it.disconnectedAt == null && it.status == SocialAccountStatus.CONNECTED && (it.site == site || it.site == null)
-            }
+        val channels = usableChannels(setting)
         if (channels.isEmpty()) return skip(run, "No connected channel is selected for this site")
-
         val recent = runs.findTop50ByOrderByCreatedAtDesc().filter { it.site == site && it.topic != null }
-        val featured =
-            recent
-                .filter { it.createdAt.isAfter(Instant.now().minus(FEATURE_PAUSE)) }
-                .mapNotNull { YACHT_REF.find(it.topic!!)?.groupValues?.get(1)?.toLongOrNull() }
-                .toSet()
-        val boat = picker.pick(profile, featured, date) ?: return skip(run, "No boat with photos found for this site")
+        val boat = picker.pick(profile, featuredLately(recent), date) ?: return skip(run, "No boat with photos found for this site")
         val photos =
             boat.imageIds.take(PHOTOS).mapNotNull { id ->
                 runCatching {
@@ -193,86 +188,130 @@ class SocialAiService(
                 }.getOrNull()
             }
         if (photos.isEmpty()) return skip(run, "The boat's photos could not be loaded")
-        val instagramPhotos = photos.filter { it.width == null || it.height == null || SocialRules.instagramRatioOk(it.width!!, it.height!!) }
 
         val draft =
             writer.write(
-                siteName = profile.siteName,
-                siteUrl = profile.baseUrl,
-                language = setting.language,
-                guidance = setting.guidance,
-                facts = boat.facts,
-                recentTopics = recent.take(RECENT_TOPICS).mapNotNull { it.topic?.substringAfter(": ", it.topic!!) },
+                WriteRequest(
+                    siteName = profile.siteName,
+                    siteUrl = profile.baseUrl,
+                    language = setting.language,
+                    guidance = setting.guidance,
+                    facts = boat.facts,
+                    recentTopics = recent.take(RECENT_TOPICS).mapNotNull { it.topic?.substringAfter(": ", it.topic!!) },
+                ),
             )
+        val day = DayContext(setting, date, boat, photos, draft)
         val withVideo = setting.useVideo && props.higgsfieldConfigured
-        val videoPlatforms = setOf(SocialPlatform.TIKTOK, SocialPlatform.YOUTUBE)
-        val photoChannels = channels.filter { !(withVideo && it.platform in videoPlatforms) && it.platform != SocialPlatform.YOUTUBE }
-        val photoPost =
-            if (photoChannels.isEmpty()) {
-                null
-            } else {
-                postService
-                    .create(
-                        SocialPostRequest(
-                            text = draft.mainText,
-                            link = boat.url,
-                            mediaIds = photos.map { it.id!! },
-                            targets =
-                                photoChannels.map { a ->
-                                    SocialTargetRequest(
-                                        a.id!!,
-                                        textFor(a, draft),
-                                        if (a.platform == SocialPlatform.TIKTOK) draft.topic.take(TIKTOK_TITLE) else null,
-                                    )
-                                },
-                            action = SocialPostAction.DRAFT,
-                            note = "AI $date: ${boat.facts["name"] ?: boat.slug}",
-                        ),
-                        AI_ACTOR,
-                        site,
-                    ).also { post ->
-                        // Instagram refuses photos outside 4:5–1.91:1: such a channel gets only the photos it accepts.
-                        if (instagramPhotos.size != photos.size && post.targets.any { it.platform == SocialPlatform.INSTAGRAM }) {
-                            log.info("AI post {}: {} photo(s) outside Instagram's ratio", post.id, photos.size - instagramPhotos.size)
-                        }
-                        if (!setting.requireApproval) schedule(post.id, setting, date)
-                    }
-            }
-        if (withVideo) {
-            val videoChannels = channels.filter { it.platform in videoPlatforms }
-            if (videoChannels.isNotEmpty()) {
-                generations.save(
-                    SocialGeneration().apply {
-                        postId = photoPost?.id
-                        provider = "HIGGSFIELD"
-                        kind = SocialMediaKind.VIDEO
-                        prompt = draft.videoPrompt
-                        sourceMediaId = photos.first().id
-                        payload =
-                            mutableMapOf(
-                                "site" to site,
-                                "runId" to run.id,
-                                "date" to date.toString(),
-                                "link" to boat.url,
-                                "note" to "AI $date video: ${boat.facts["name"] ?: boat.slug}",
-                                "targets" to
-                                    videoChannels.map { a ->
-                                        mapOf(
-                                            "accountId" to a.id,
-                                            "text" to if (a.platform == SocialPlatform.YOUTUBE) draft.youtubeDescription else draft.tiktokCaption,
-                                            "title" to if (a.platform == SocialPlatform.YOUTUBE) draft.youtubeTitle else null,
-                                        )
-                                    },
-                            )
-                    },
-                )
-            }
-        }
+        val photoChannels = channels.filter { !(withVideo && it.platform in VIDEO_PLATFORMS) && it.platform != SocialPlatform.YOUTUBE }
+        val photoPost = if (photoChannels.isEmpty()) null else createPhotoPost(day, photoChannels)
+        if (withVideo) queueVideo(day, run, channels.filter { it.platform in VIDEO_PLATFORMS }, photoPost?.id)
         return updateRun(run.id!!) {
             it.status = if (withVideo) SocialAiRunStatus.WAITING_VIDEO else SocialAiRunStatus.DONE
             it.topic = "yacht:${boat.id} ${boat.facts["name"] ?: boat.slug}: ${draft.topic}".take(TOPIC_MAX)
             it.postId = photoPost?.id
         }
+    }
+
+    /** Everything one site's run produced before the posts: the setting, the day, the boat, our photos and the texts. */
+    private data class DayContext(
+        val setting: SocialAiSetting,
+        val date: LocalDate,
+        val boat: PickedBoat,
+        val photos: List<SocialMedia>,
+        val draft: AiPostDraft,
+    )
+
+    /** The site's selected channels that can publish now (its own, or shared ones such as our YouTube). */
+    private fun usableChannels(setting: SocialAiSetting): List<SocialAccount> =
+        accounts.findAllById(setting.accountIds).filter {
+            it.disconnectedAt == null && it.status == SocialAccountStatus.CONNECTED && (it.site == setting.site || it.site == null)
+        }
+
+    /** Boats featured on this site in the last 60 days, from the runs' topics. */
+    private fun featuredLately(recent: List<SocialAiRun>): Set<Long> =
+        recent
+            .filter { it.createdAt.isAfter(Instant.now().minus(FEATURE_PAUSE)) }
+            .mapNotNull { YACHT_REF.find(it.topic!!)?.groupValues?.get(1)?.toLongOrNull() }
+            .toSet()
+
+    /** The day's photo post for the site's non-video channels, as a draft or scheduled per the site's setting. */
+    private fun createPhotoPost(
+        day: DayContext,
+        photoChannels: List<SocialAccount>,
+    ): SocialPostDto {
+        val setting = day.setting
+        val date = day.date
+        val boat = day.boat
+        val photos = day.photos
+        val draft = day.draft
+        val post =
+            postService.create(
+                SocialPostRequest(
+                    text = draft.mainText,
+                    link = boat.url,
+                    mediaIds = photos.map { it.id!! },
+                    targets =
+                        photoChannels.map { a ->
+                            SocialTargetRequest(
+                                a.id!!,
+                                textFor(a, draft),
+                                if (a.platform == SocialPlatform.TIKTOK) draft.topic.take(TIKTOK_TITLE) else null,
+                            )
+                        },
+                    action = SocialPostAction.DRAFT,
+                    note = "AI $date: ${boat.facts["name"] ?: boat.slug}",
+                ),
+                AI_ACTOR,
+                setting.site,
+            )
+        // Instagram refuses photos outside 4:5–1.91:1: the admin sees it on the draft, the AI only notes it.
+        val offRatio = photos.count { it.width != null && it.height != null && !SocialRules.instagramRatioOk(it.width!!, it.height!!) }
+        if (offRatio > 0 && post.targets.any { it.platform == SocialPlatform.INSTAGRAM }) {
+            log.info("AI post {}: {} photo(s) outside Instagram's ratio", post.id, offRatio)
+        }
+        if (!setting.requireApproval) schedule(post.id, setting, date)
+        return post
+    }
+
+    /** Asks Higgsfield for a video of the best photo; pollGenerations makes the TikTok / YouTube post when it is there. */
+    private fun queueVideo(
+        day: DayContext,
+        run: SocialAiRun,
+        videoChannels: List<SocialAccount>,
+        photoPostId: Long?,
+    ) {
+        if (videoChannels.isEmpty()) return
+        val setting = day.setting
+        val date = day.date
+        val boat = day.boat
+        val photos = day.photos
+        val draft = day.draft
+        val site = setting.site!!
+        generations.save(
+            SocialGeneration().apply {
+                postId = photoPostId
+                provider = "HIGGSFIELD"
+                kind = SocialMediaKind.VIDEO
+                prompt = draft.videoPrompt
+                sourceMediaId = photos.first().id
+                payload =
+                    mutableMapOf(
+                        "site" to site,
+                        "runId" to run.id,
+                        "date" to date.toString(),
+                        "link" to boat.url,
+                        "note" to "AI $date video: ${boat.facts["name"] ?: boat.slug}",
+                        "targets" to
+                            videoChannels.map { a ->
+                                mapOf(
+                                    "accountId" to a.id,
+                                    "text" to if (a.platform == SocialPlatform.YOUTUBE) draft.youtubeDescription else draft.tiktokCaption,
+                                    "title" to if (a.platform == SocialPlatform.YOUTUBE) draft.youtubeTitle else null,
+                                )
+                            },
+                    )
+            },
+        )
     }
 
     /** Higgsfield queue: submit queued requests, poll running ones, turn finished videos into the video post. */
@@ -292,6 +331,7 @@ class SocialAiService(
         }
     }
 
+    @Suppress("ReturnCount") // one guard per state of the request: queued, timed out, still running, failed
     private fun advance(g: SocialGeneration) {
         if (g.status == SocialGenerationStatus.QUEUED) {
             val source = g.sourceMediaId?.let { mediaRepository.findById(it).orElse(null) } ?: error("No source photo")
@@ -431,6 +471,7 @@ class SocialAiService(
     companion object {
         val ZONE: ZoneId = ZoneId.of("Europe/Zagreb")
         val AI_ACTOR = SocialActor(userId = null, name = "AI", source = SocialPostSource.AI)
+        private val VIDEO_PLATFORMS = setOf(SocialPlatform.TIKTOK, SocialPlatform.YOUTUBE)
         private val TIME = Regex("""^([01]\d|2[0-3]):[0-5]\d$""")
         private val LANGUAGES = setOf("en", "hr", "de", "it", "fr", "es", "pl", "nl")
         private val YACHT_REF = Regex("""yacht:(\d+)""")

@@ -79,8 +79,8 @@ class ThreadsConnector(
     }
 
     override fun refresh(tokens: Tokens): Tokens? {
-        val expires = tokens.expiresAt ?: return null
-        if (expires.isAfter(Instant.now().plusSeconds(REFRESH_BEFORE_S))) return null
+        val expires = tokens.expiresAt
+        if (expires == null || expires.isAfter(Instant.now().plusSeconds(REFRESH_BEFORE_S))) return null
         val t = http.get(query("$API/refresh_access_token", mapOf("grant_type" to "th_refresh_token", "access_token" to tokens.accessToken)))
         return Tokens(t.path("access_token").asText(), null, Instant.now().plusSeconds(t.path("expires_in").asLong(SIXTY_DAYS_S)))
     }

@@ -55,15 +55,15 @@ class SocialBoatPicker(
                 }.build()
                 .encode()
                 .toUri()
-        val list = objectMapper.readTree(client.get().uri(uri).retrieve().body(String::class.java) ?: return null).path("content")
+        val body = client.get().uri(uri).retrieve().body(String::class.java) ?: return null
         val candidates =
-            list
+            objectMapper
+                .readTree(body)
+                .path("content")
                 .filter { it.path("id").asLong(0) > 0 && it.path("id").asLong() !in exclude && it.path("slug").asText().isNotBlank() }
                 .filter { it.path("mainImageId").asLong(0) > 0 }
                 .take(CANDIDATES)
-        if (candidates.isEmpty()) return null
-        val chosen = candidates[random.nextInt(candidates.size)]
-        return detail(site, chosen.path("slug").asText())
+        return candidates.takeIf { it.isNotEmpty() }?.let { detail(site, it[random.nextInt(it.size)].path("slug").asText()) }
     }
 
     /** The boat page data of [slug] as the site shows it. */
@@ -79,7 +79,6 @@ class SocialBoatPicker(
                 .filter { !it.path("layout").asBoolean(false) && it.path("kind").asText("PARTNER") in PHOTO_KINDS }
                 .sortedWith(compareByDescending<JsonNode> { it.path("mainImage").asBoolean(false) }.thenBy { it.path("position").asInt(Int.MAX_VALUE) })
                 .mapNotNull { it.path("id").asLong(0).takeIf { id -> id > 0 } }
-        if (images.isEmpty()) return null
         val canonical = d.path("slug").asText(slug)
         val url = site.baseUrl + site.boatPath + canonical
         val facts =
@@ -99,7 +98,7 @@ class SocialBoatPicker(
                 "highlights" to d.path("highlights").asText(null)?.take(HIGHLIGHTS_MAX),
                 "pageUrl" to url,
             ).filterValues { it != null && it != "" }
-        return PickedBoat(d.path("id").asLong(), canonical, url, images.take(MAX_IMAGES), facts)
+        return if (images.isEmpty()) null else PickedBoat(d.path("id").asLong(), canonical, url, images.take(MAX_IMAGES), facts)
     }
 
     companion object {

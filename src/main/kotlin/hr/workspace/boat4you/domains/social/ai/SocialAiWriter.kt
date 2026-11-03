@@ -23,6 +23,16 @@ data class AiPostDraft(
     val videoPrompt: String,
 )
 
+/** What the writer needs for one site's post. */
+data class WriteRequest(
+    val siteName: String,
+    val siteUrl: String,
+    val language: String,
+    val guidance: String?,
+    val facts: Map<String, Any?>,
+    val recentTopics: List<String>,
+)
+
 /**
  * Writes the daily post with Claude through the Messages API, the same plain-HTTP way and the same key
  * (`ANTHROPIC_API_KEY`) as the site chat's AnthropicClient. Structured output (`output_config.format` JSON schema), so
@@ -49,15 +59,12 @@ class SocialAiWriter(
             ).build()
     }
 
-    fun write(
-        siteName: String,
-        siteUrl: String,
-        language: String,
-        guidance: String?,
-        facts: Map<String, Any?>,
-        recentTopics: List<String>,
-    ): AiPostDraft {
+    fun write(req: WriteRequest): AiPostDraft {
         if (!props.aiConfigured) throw SocialConfigException("ANTHROPIC_API_KEY is not set")
+        val (siteName, siteUrl, language) = req
+        val guidance = req.guidance
+        val facts = req.facts
+        val recentTopics = req.recentTopics
         val body =
             mapOf(
                 "model" to props.aiModel,

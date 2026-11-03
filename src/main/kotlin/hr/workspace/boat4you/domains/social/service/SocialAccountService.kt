@@ -102,24 +102,48 @@ class SocialAccountService(
         val fallback = props.adminOriginList.firstOrNull()?.let { "$it/social/channels" } ?: "/"
         if (state == null) return withParams(fallback, mapOf("error" to "The connection expired; start it again"))
         states.delete(state)
-        val platform = state.platform!!
-        val back = state.returnUrl
+        val problem = preflightProblem(state, callbackPath, code, error)
+        return if (problem != null) failUrl(state, problem) else exchangeAndSave(state, code!!)
+    }
 
-        fun fail(message: String) = withParams(back, mapOf("error" to message.take(ERROR_MAX), "platform" to platform.name))
-        if (state.createdAt.isBefore(Instant.now().minus(STATE_TTL))) return fail("The connection expired; start it again")
-        if (callbackPathOf(platform) != callbackPath) return fail("Wrong network")
-        if (!error.isNullOrBlank()) return fail(error)
-        if (code.isNullOrBlank()) return fail("The network sent no code")
+    /** Why the callback cannot be used, or null. */
+    private fun preflightProblem(
+        state: SocialOAuthState,
+        callbackPath: String,
+        code: String?,
+        error: String?,
+    ): String? =
+        when {
+            state.createdAt.isBefore(Instant.now().minus(STATE_TTL)) -> "The connection expired; start it again"
+            callbackPathOf(state.platform!!) != callbackPath -> "Wrong network"
+            !error.isNullOrBlank() -> error
+            code.isNullOrBlank() -> "The network sent no code"
+            else -> null
+        }
+
+    private fun failUrl(
+        state: SocialOAuthState,
+        message: String,
+    ) = withParams(state.returnUrl, mapOf("error" to message.take(ERROR_MAX), "platform" to state.platform!!.name))
+
+    private fun exchangeAndSave(
+        state: SocialOAuthState,
+        code: String,
+    ): String {
+        val platform = state.platform!!
         return try {
             val connected = usable(platform).exchange(code, state.codeVerifier)
-            if (connected.isEmpty()) return fail("No page or profile on this login")
-            val saved = save(connected, state.site, state.adminUserId)
-            withParams(back, mapOf("connected" to platform.name, "count" to saved.size.toString()))
+            if (connected.isEmpty()) {
+                failUrl(state, "No page or profile on this login")
+            } else {
+                val saved = save(connected, state.site, state.adminUserId)
+                withParams(state.returnUrl, mapOf("connected" to platform.name, "count" to saved.size.toString()))
+            }
         } catch (e: PublishException) {
             log.warn("Social connect {} refused: {}", platform, e.message)
-            fail(e.message ?: "refused")
+            failUrl(state, e.message ?: "refused")
         } catch (e: SocialConfigException) {
-            fail(e.message ?: "not configured")
+            failUrl(state, e.message ?: "not configured")
         }
     }
 

@@ -5,6 +5,8 @@ import hr.workspace.boat4you.domains.social.dto.SocialMediaDto
 import hr.workspace.boat4you.domains.social.dto.SocialPostDto
 import hr.workspace.boat4you.domains.social.dto.SocialPostRequest
 import hr.workspace.boat4you.domains.social.dto.SocialPostTargetDto
+import hr.workspace.boat4you.domains.social.dto.SocialTargetRequest
+import hr.workspace.boat4you.domains.social.jpa.SocialAccount
 import hr.workspace.boat4you.domains.social.jpa.SocialAccountRepository
 import hr.workspace.boat4you.domains.social.jpa.SocialAccountStatus
 import hr.workspace.boat4you.domains.social.jpa.SocialGenerationRepository
@@ -180,36 +182,8 @@ class SocialPostService(
             val account = accountById[it.accountId]
             if (account == null || account.disconnectedAt != null) throw SocialValidationException("Unknown channel ${it.accountId}")
         }
-        if (action != SocialPostAction.DRAFT) {
-            if (wanted.isEmpty()) throw SocialValidationException("Pick at least one channel")
-            val problems =
-                wanted.flatMap { t ->
-                    val account = accountById.getValue(t.accountId)
-                    val errs = mutableListOf<String>()
-                    if (account.status != SocialAccountStatus.CONNECTED) errs += "connect it again"
-                    errs +=
-                        SocialRules.errors(
-                            account.platform!!,
-                            t.text?.trim()?.ifBlank { null } ?: text,
-                            t.title,
-                            media.map { SocialRules.MediaInfo(it.kind, it.width, it.height) },
-                        )
-                    errs.map { "${account.platform} ${account.name}: $it" }
-                }
-            if (problems.isNotEmpty()) throw SocialValidationException(problems.joinToString("; "))
-            if (post.id != null && generations.findAllByPostId(post.id!!).any { it.status in OPEN_GENERATION }) {
-                throw SocialConflictException("The video for this post is still being made")
-            }
-        }
-        val at: Instant? =
-            when (action) {
-                SocialPostAction.SCHEDULE -> {
-                    val s = req.scheduledAt ?: throw SocialValidationException("Pick the date and time")
-                    if (s.isBefore(Instant.now().plusSeconds(MIN_LEAD_S))) throw SocialValidationException("Pick a time at least 1 minute from now")
-                    s
-                }
-                else -> null
-            }
+        if (action != SocialPostAction.DRAFT) checkPublishable(post, wanted, accountById, text, media)
+        val at = scheduleOf(action, req)
 
         post.text = text
         post.link = link
@@ -223,10 +197,55 @@ class SocialPostService(
                 SocialPostAction.SCHEDULE -> SocialPostStatus.SCHEDULED
                 SocialPostAction.PUBLISH_NOW -> SocialPostStatus.PUBLISHING
             }
-        val targetStatus = if (action == SocialPostAction.DRAFT) SocialTargetStatus.PENDING else SocialTargetStatus.SCHEDULED
-        val due = if (action == SocialPostAction.DRAFT) null else at ?: Instant.now()
+        syncTargets(post, wanted, accountById, action, at)
+        val sites = post.targets.mapNotNull { it.account?.site }.toSet()
+        post.site = explicitSite?.takeIf { SiteIds.isKnown(it) } ?: sites.singleOrNull()
+    }
 
-        // Update channels in place (the (post, account) pair is unique; delete-then-insert would collide on flush).
+    /** Before a post may be scheduled or published: a channel, every channel connected and within its network's rules. */
+    private fun checkPublishable(
+        post: SocialPost,
+        wanted: List<SocialTargetRequest>,
+        accountById: Map<Long?, SocialAccount>,
+        text: String,
+        media: List<SocialMedia>,
+    ) {
+        if (wanted.isEmpty()) throw SocialValidationException("Pick at least one channel")
+        val mediaInfo = media.map { SocialRules.MediaInfo(it.kind, it.width, it.height) }
+        val problems =
+            wanted.flatMap { t ->
+                val account = accountById.getValue(t.accountId)
+                val errs = mutableListOf<String>()
+                if (account.status != SocialAccountStatus.CONNECTED) errs += "connect it again"
+                errs += SocialRules.errors(account.platform!!, t.text?.trim()?.ifBlank { null } ?: text, t.title, mediaInfo)
+                errs.map { "${account.platform} ${account.name}: $it" }
+            }
+        if (problems.isNotEmpty()) throw SocialValidationException(problems.joinToString("; "))
+        if (post.id != null && generations.findAllByPostId(post.id!!).any { it.status in OPEN_GENERATION }) {
+            throw SocialConflictException("The video for this post is still being made")
+        }
+    }
+
+    private fun scheduleOf(
+        action: SocialPostAction,
+        req: SocialPostRequest,
+    ): Instant? {
+        if (action != SocialPostAction.SCHEDULE) return null
+        val s = req.scheduledAt ?: throw SocialValidationException("Pick the date and time")
+        if (s.isBefore(Instant.now().plusSeconds(MIN_LEAD_S))) throw SocialValidationException("Pick a time at least 1 minute from now")
+        return s
+    }
+
+    /** Channels in place (the (post, account) pair is unique; delete-then-insert would collide on flush). */
+    private fun syncTargets(
+        post: SocialPost,
+        wanted: List<SocialTargetRequest>,
+        accountById: Map<Long?, SocialAccount>,
+        action: SocialPostAction,
+        at: Instant?,
+    ) {
+        val draft = action == SocialPostAction.DRAFT
+        val due = if (draft) null else at ?: Instant.now()
         val keep = wanted.map { it.accountId }.toSet()
         post.targets.removeIf { it.account?.id !in keep }
         wanted.forEach { w ->
@@ -237,14 +256,12 @@ class SocialPostService(
                         it.account = accountById.getValue(w.accountId)
                         post.targets.add(it)
                     }
-            target.text = w.text?.trim()?.ifBlank { null }?.takeIf { it != text }
+            target.text = w.text?.trim()?.ifBlank { null }?.takeIf { it != post.text }
             target.title = w.title?.trim()?.ifBlank { null }?.take(MAX_TITLE)
-            target.status = targetStatus
+            target.status = if (draft) SocialTargetStatus.PENDING else SocialTargetStatus.SCHEDULED
             target.dueAt = due
             target.error = null
         }
-        val sites = post.targets.mapNotNull { it.account?.site }.toSet()
-        post.site = explicitSite?.takeIf { SiteIds.isKnown(it) } ?: sites.singleOrNull()
     }
 
     private fun load(id: Long): SocialPost = posts.findById(id).orElseThrow { NoSuchElementException("Post $id") }

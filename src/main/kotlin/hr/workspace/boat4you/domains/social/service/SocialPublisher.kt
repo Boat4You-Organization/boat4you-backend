@@ -72,51 +72,9 @@ class SocialPublisher(
     }
 
     /** One claimed target: load, refresh the token if needed, publish, record. */
+    @Suppress("TooGenericExceptionCaught") // a connector bug must not leave the target PUBLISHING forever
     fun publishOne(targetId: Long) {
-        val job =
-            tx.execute {
-                val t = targetRepo.findById(targetId).orElse(null) ?: return@execute null
-                if (t.status != SocialTargetStatus.PUBLISHING) return@execute null
-                val a = t.account!!
-                val p = t.post!!
-                if (a.status != SocialAccountStatus.CONNECTED || a.disconnectedAt != null || a.accessTokenEnc == null) {
-                    t.status = SocialTargetStatus.FAILED
-                    t.error = "${a.name} is not connected; connect it again and retry"
-                    t.dueAt = null
-                    targetRepo.save(t)
-                    p.status = SocialPostService.deriveStatus(p.targets.map { it.status }, p.status)
-                    postRepo.save(p)
-                    return@execute null
-                }
-                PreparedJob(
-                    platformAccountId = a.id!!,
-                    job =
-                        PublishJob(
-                            platform = a.platform!!,
-                            externalId = a.externalId!!,
-                            tokens = Tokens(crypto.decrypt(a.accessTokenEnc!!), crypto.decryptOrNull(a.refreshTokenEnc), a.tokenExpiresAt),
-                            meta = a.meta.toMap(),
-                            privateOnly = a.privateOnly,
-                            text = t.text ?: p.text,
-                            title = t.title,
-                            link = p.link,
-                            media =
-                                p.media.map { m ->
-                                    PublishMedia(
-                                        kind = m.kind,
-                                        url = store.publicUrl(m),
-                                        file = store.file(m),
-                                        mimeType = m.mimeType,
-                                        sizeBytes = m.sizeBytes,
-                                        width = m.width,
-                                        height = m.height,
-                                        jpegAtMost = { max -> store.jpegAtMost(m, max) },
-                                    )
-                                },
-                        ),
-                )
-            } ?: return
-
+        val job = prepare(targetId) ?: return
         val connector = accountService.connectorFor(job.job.platform)
         try {
             if (connector == null) throw PublishException("${job.job.platform} is not available yet")
@@ -137,6 +95,51 @@ class SocialPublisher(
             onFailure(targetId, job.platformAccountId, PublishException("Unexpected error: ${e.javaClass.simpleName}", retryable = true))
         }
     }
+
+    /** The target's job with the account's decrypted tokens; null when it is gone, not PUBLISHING, or its channel is not connected (then FAILED). */
+    private fun prepare(targetId: Long): PreparedJob? =
+        tx.execute {
+            val t = targetRepo.findById(targetId).orElse(null) ?: return@execute null
+            if (t.status != SocialTargetStatus.PUBLISHING) return@execute null
+            val a = t.account!!
+            val p = t.post!!
+            if (a.status != SocialAccountStatus.CONNECTED || a.disconnectedAt != null || a.accessTokenEnc == null) {
+                t.status = SocialTargetStatus.FAILED
+                t.error = "${a.name} is not connected; connect it again and retry"
+                t.dueAt = null
+                targetRepo.save(t)
+                p.status = SocialPostService.deriveStatus(p.targets.map { it.status }, p.status)
+                postRepo.save(p)
+                return@execute null
+            }
+            PreparedJob(
+                platformAccountId = a.id!!,
+                job =
+                    PublishJob(
+                        platform = a.platform!!,
+                        externalId = a.externalId!!,
+                        tokens = Tokens(crypto.decrypt(a.accessTokenEnc!!), crypto.decryptOrNull(a.refreshTokenEnc), a.tokenExpiresAt),
+                        meta = a.meta.toMap(),
+                        privateOnly = a.privateOnly,
+                        text = t.text ?: p.text,
+                        title = t.title,
+                        link = p.link,
+                        media =
+                            p.media.map { m ->
+                                PublishMedia(
+                                    kind = m.kind,
+                                    url = store.publicUrl(m),
+                                    file = store.file(m),
+                                    mimeType = m.mimeType,
+                                    sizeBytes = m.sizeBytes,
+                                    width = m.width,
+                                    height = m.height,
+                                    jpegAtMost = { max -> store.jpegAtMost(m, max) },
+                                )
+                            },
+                    ),
+            )
+        }
 
     private data class PreparedJob(
         val platformAccountId: Long,

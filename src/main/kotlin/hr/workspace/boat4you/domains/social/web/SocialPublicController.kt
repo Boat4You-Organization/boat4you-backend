@@ -31,6 +31,7 @@ class SocialPublicController(
     private val store: SocialMediaStore,
 ) {
     @GetMapping("/oauth/{network}/callback")
+    @Suppress("LongParameterList") // every query parameter a network may send back
     fun callback(
         @PathVariable network: String,
         @RequestParam(required = false) code: String?,
@@ -51,19 +52,24 @@ class SocialPublicController(
     ): ResponseEntity<Resource> {
         val thumb = file.endsWith(".thumb.jpg")
         val token = if (thumb) file.removeSuffix(".thumb.jpg") else file.substringBeforeLast('.')
-        if (!TOKEN.matches(token)) return ResponseEntity.notFound().build()
-        val m = media.findByToken(token) ?: return ResponseEntity.notFound().build()
-        val path = (if (thumb) store.thumbnailFile(m) else store.file(m)) ?: return ResponseEntity.notFound().build()
-        if (!Files.exists(path)) return ResponseEntity.notFound().build()
-        val type = if (thumb) MediaType.IMAGE_JPEG else MediaType.parseMediaType(m.mimeType)
-        return ResponseEntity
-            .ok()
-            .contentType(type)
-            .contentLength(Files.size(path))
-            .cacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePublic())
-            .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-            .header("X-Content-Type-Options", "nosniff")
-            .body(FileSystemResource(path))
+        val found =
+            token
+                .takeIf { TOKEN.matches(it) }
+                ?.let { media.findByToken(it) }
+                ?.let { m -> (if (thumb) store.thumbnailFile(m) else store.file(m))?.takeIf { Files.exists(it) }?.let { path -> m to path } }
+        return if (found == null) {
+            ResponseEntity.notFound().build()
+        } else {
+            val (m, path) = found
+            ResponseEntity
+                .ok()
+                .contentType(if (thumb) MediaType.IMAGE_JPEG else MediaType.parseMediaType(m.mimeType))
+                .contentLength(Files.size(path))
+                .cacheControl(CacheControl.maxAge(1, TimeUnit.DAYS).cachePublic())
+                .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(FileSystemResource(path))
+        }
     }
 
     private companion object {

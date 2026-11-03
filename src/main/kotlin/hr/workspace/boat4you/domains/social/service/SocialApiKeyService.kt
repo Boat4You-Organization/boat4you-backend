@@ -53,8 +53,7 @@ class SocialApiKeyService(
     /** The key for this secret, or null (unknown, revoked or over the hourly limit). Marks it used. */
     @Transactional
     fun authenticate(secret: String?): SocialApiKey? {
-        if (secret.isNullOrBlank() || !secret.startsWith(PREFIX)) return null
-        val key = keys.findBySecretSha256AndRevokedAtIsNull(SocialCrypto.sha256Hex(secret.trim())) ?: return null
+        val key = secret?.trim()?.takeIf { it.startsWith(PREFIX) }?.let { keys.findBySecretSha256AndRevokedAtIsNull(SocialCrypto.sha256Hex(it)) } ?: return null
         if (!withinLimit(key.id!!)) throw SocialRateLimitException()
         key.lastUsedAt = Instant.now()
         return keys.save(key)

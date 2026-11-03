@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component
  * OAuth network: `{publicApiUrl}/public/social/oauth/{platform}/callback`.
  */
 @Component
+@Suppress("LongParameterList") // one @Value per setting, like ElevenLabsProperties; every secret comes from the env
 class SocialProperties(
     /** Base64 of 32 random bytes; AES-256-GCM key for network tokens. Blank = connecting any network is refused. */
     @Value("\${social.token-key:}") val tokenKey: String,

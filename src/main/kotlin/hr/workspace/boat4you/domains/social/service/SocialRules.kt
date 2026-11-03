@@ -50,7 +50,10 @@ object SocialRules {
     private val URL = Regex("""\bhttps?://[^\s<>"]+|\bwww\.[^\s<>"]+""", RegexOption.IGNORE_CASE)
     private val HASHTAG = Regex("""(^|\s)#[\p{L}\p{N}_]+""")
 
-    private fun xWeight(cp: Int) = if (cp in 0..4351 || cp in 8192..8205 || cp in 8208..8223 || cp in 8242..8247) 1 else 2
+    /** twitter-text v3: these code points weigh 1, everything else (CJK, emoji) 2. */
+    private val X_SINGLE_WEIGHT = listOf(0..4351, 8192..8205, 8208..8223, 8242..8247)
+
+    private fun xWeight(cp: Int) = if (X_SINGLE_WEIGHT.any { cp in it }) 1 else 2
 
     fun count(
         text: String,
@@ -86,39 +89,75 @@ object SocialRules {
         media: List<MediaInfo>,
     ): List<String> {
         val r = RULES.getValue(platform)
+        return textErrors(r, text, media) + mediaErrors(r, media) + titleErrors(platform, r, text, title) + instagramErrors(platform, media)
+    }
+
+    private fun textErrors(
+        r: Rule,
+        text: String,
+        media: List<MediaInfo>,
+    ): List<String> {
         val out = mutableListOf<String>()
-        val images = media.count { it.kind == SocialMediaKind.IMAGE }
-        val videos = media.count { it.kind == SocialMediaKind.VIDEO }
         if (text.isBlank() && media.isEmpty()) out += "nothing to publish"
         val chars = count(text, r.counting)
         if (chars > r.maxChars) out += "text too long ($chars/${r.maxChars})"
+        r.maxHashtags?.let { max -> hashtags(text).takeIf { it > max }?.let { out += "at most $max hashtags ($it)" } }
+        return out
+    }
+
+    private fun mediaErrors(
+        r: Rule,
+        media: List<MediaInfo>,
+    ): List<String> {
+        val images = media.count { it.kind == SocialMediaKind.IMAGE }
+        val videos = media.count { it.kind == SocialMediaKind.VIDEO }
+        val out = mutableListOf<String>()
         if (r.videoRequired && videos == 0) {
             out += "needs a video"
         } else if (r.mediaRequired && media.isEmpty()) {
             out += "needs a photo or video"
         }
-        if (images > 0 && r.maxImages == 0) {
-            out += "photos are not supported"
-        } else if (images > r.maxImages) {
-            out += "at most ${r.maxImages} photos"
+        out += countErrors(images, r.maxImages, "photos")
+        out += countErrors(videos, r.maxVideos, "video")
+        val mixed = images > 0 && videos > 0
+        val bothAllowed = r.maxImages > 0 && r.maxVideos > 0
+        if (!r.allowMixed && mixed && bothAllowed) out += "photos and a video cannot go together"
+        return out
+    }
+
+    private fun countErrors(
+        n: Int,
+        max: Int,
+        what: String,
+    ): List<String> =
+        when {
+            n > 0 && max == 0 -> listOf("$what ${if (what == "video") "is" else "are"} not supported")
+            n > max -> listOf("at most $max $what")
+            else -> emptyList()
         }
-        if (videos > 0 && r.maxVideos == 0) {
-            out += "video is not supported"
-        } else if (videos > r.maxVideos) {
-            out += "at most ${r.maxVideos} video"
-        }
-        if (!r.allowMixed && images > 0 && videos > 0 && r.maxImages > 0 && r.maxVideos > 0) out += "photos and a video cannot go together"
+
+    private fun titleErrors(
+        platform: SocialPlatform,
+        r: Rule,
+        text: String,
+        title: String?,
+    ): List<String> {
+        val out = mutableListOf<String>()
         val t = title.orEmpty()
         if (r.titleRequired && t.isBlank()) out += "title required"
         if (r.maxTitle > 0 && t.codePointCount(0, t.length) > r.maxTitle) out += "title too long (max ${r.maxTitle})"
         if (platform == SocialPlatform.YOUTUBE && (t + text).any { it == '<' || it == '>' }) out += "YouTube refuses < and >"
-        r.maxHashtags?.let { max -> hashtags(text).takeIf { it > max }?.let { out += "at most $max hashtags ($it)" } }
-        if (platform == SocialPlatform.INSTAGRAM &&
-            media.any { it.kind == SocialMediaKind.IMAGE && it.width != null && it.height != null && !instagramRatioOk(it.width, it.height) }
-        ) {
-            out += "Instagram photos must be between 4:5 and 1.91:1"
-        }
         return out
+    }
+
+    private fun instagramErrors(
+        platform: SocialPlatform,
+        media: List<MediaInfo>,
+    ): List<String> = if (platform == SocialPlatform.INSTAGRAM && media.any { badInstagramRatio(it) }) listOf("Instagram photos must be between 4:5 and 1.91:1") else emptyList()
+
+    private fun badInstagramRatio(m: MediaInfo): Boolean {
+        val (w, h) = m.width to m.height
+        return m.kind == SocialMediaKind.IMAGE && w != null && h != null && !instagramRatioOk(w, h)
     }
 
     fun instagramRatioOk(

@@ -48,6 +48,7 @@ import java.time.Instant
 @RestController
 @RequestMapping("/admin/social")
 @PreAuthorize("hasRole('SYSTEM_ADMIN')")
+@Suppress("TooManyFunctions") // one function per endpoint of the Objave page
 class AdminSocialController(
     private val posts: SocialPostService,
     private val accounts: SocialAccountService,
@@ -100,6 +101,7 @@ class AdminSocialController(
     // ---- Posts ----
 
     @GetMapping("/posts")
+    @Suppress("LongParameterList") // the list filters
     fun list(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) from: Instant?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) to: Instant?,

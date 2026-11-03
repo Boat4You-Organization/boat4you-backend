@@ -83,8 +83,8 @@ class TikTokConnector(
     }
 
     override fun refresh(tokens: Tokens): Tokens? {
-        val expires = tokens.expiresAt ?: return null
-        if (expires.isAfter(Instant.now().plusSeconds(REFRESH_MARGIN_S))) return null
+        val expires = tokens.expiresAt
+        if (expires == null || expires.isAfter(Instant.now().plusSeconds(REFRESH_MARGIN_S))) return null
         val refresh = tokens.refreshToken ?: throw PublishException("TikTok token expired; connect again", tokenInvalid = true)
         val t =
             http.postForm(
