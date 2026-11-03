@@ -31,6 +31,7 @@ class MmkOfferSyncRunSummaryTest {
                         upserted = 5
                         skippedMissingYachtMapping = 2
                         skippedLocked = 3
+                        routeGone = 4
                     },
             ),
         )
@@ -40,7 +41,7 @@ class MmkOfferSyncRunSummaryTest {
         assertEquals(15, summary.upsert.upserted)
         assertEquals(
             "MMK offer sync (near-term): agencies=3 calls=3 failures=1 timedOutBatches=1 " +
-                "upserted=15 removed=0 skippedMissingLocation=1 skippedMissingYachtMapping=2 skippedLocked=3",
+                "upserted=15 removed=0 skippedMissingLocation=1 skippedMissingYachtMapping=2 skippedLocked=3 routeGone=4",
             summary.toLogLine(),
         )
     }

@@ -162,7 +162,7 @@ class MmkYachtOfferIntegrationService(
 
         if (response.isNotEmpty()) {
             try {
-                mmkYachtOfferSyncService.syncOffers(response)
+                mmkYachtOfferSyncService.syncOffers(response, judgeRoutes = true)
             } catch (e: Exception) {
                 log.error(
                     "Error syncing offers for yacht: $externalYachtId, date range: $syncStartDate to $syncEndDate, error: ${e.message}",

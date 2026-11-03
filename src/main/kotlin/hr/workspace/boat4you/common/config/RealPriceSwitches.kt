@@ -74,6 +74,9 @@ class RealPriceSwitches(
     /** `NAUSYS_D3_MODE`: D3 in the nightly / near-term NauSys `syncOffers` disappearance pass. */
     enum class NauSysD3Mode { LEGACY, LOG, WRITE }
 
+    /** `MMK_D3_MODE`: ROUTE_GONE in the MMK per-yacht offer upsert (MmkRouteGone). */
+    enum class MmkD3Mode { OFF, LOG, WRITE }
+
     /** All switch values at one moment. The constructor defaults are the defaults of the switches (= today). */
     data class Snapshot(
         val searchPredicate: SearchPredicate = SearchPredicate.LEGACY,
@@ -90,6 +93,7 @@ class RealPriceSwitches(
         val reverifyDigest: OnOff = OnOff.ON,
         /** `GALLERY_EXTENDED`: model and marina photos in the boat page gallery (YachtGalleryService); not a search switch. */
         val galleryExtended: OnOff = OnOff.OFF,
+        val mmkD3Mode: MmkD3Mode = MmkD3Mode.OFF,
     ) {
         /** How many switches differ from their default (today's behaviour). */
         val nonDefaultCount: Int
@@ -110,6 +114,7 @@ class RealPriceSwitches(
                 nausysWarmLongRanges,
                 reverifyDigest,
                 galleryExtended,
+                mmkD3Mode,
             )
 
         private companion object {
@@ -148,6 +153,7 @@ class RealPriceSwitches(
     val nausysWarmLongRanges: OnOff get() = snapshot().nausysWarmLongRanges
     val reverifyDigest: OnOff get() = snapshot().reverifyDigest
     val galleryExtended: OnOff get() = snapshot().galleryExtended
+    val mmkD3Mode: MmkD3Mode get() = snapshot().mmkD3Mode
 
     /** The SEARCH_* part of the current snapshot, for search cache keys (see [Snapshot.searchKey]). */
     fun searchCacheKey(): String = snapshot().searchKey
@@ -215,6 +221,7 @@ class RealPriceSwitches(
             nausysWarmLongRanges = v(NAUSYS_WARM_LONG_RANGES_SPEC),
             reverifyDigest = v(REVERIFY_DIGEST_SPEC),
             galleryExtended = v(GALLERY_EXTENDED_SPEC),
+            mmkD3Mode = v(MMK_D3_MODE_SPEC),
         )
     }
 
@@ -306,6 +313,7 @@ class RealPriceSwitches(
         val NAUSYS_WARM_LONG_RANGES_SPEC = enumSpec(SettingsKeyEnum.NAUSYS_WARM_LONG_RANGES, OnOff.OFF)
         val REVERIFY_DIGEST_SPEC = enumSpec(SettingsKeyEnum.REVERIFY_DIGEST, OnOff.ON)
         val GALLERY_EXTENDED_SPEC = enumSpec(SettingsKeyEnum.GALLERY_EXTENDED, OnOff.OFF)
+        val MMK_D3_MODE_SPEC = enumSpec(SettingsKeyEnum.MMK_D3_MODE, MmkD3Mode.OFF)
 
         val SPECS: List<Spec<*>> =
             listOf(
@@ -322,6 +330,7 @@ class RealPriceSwitches(
                 NAUSYS_WARM_LONG_RANGES_SPEC,
                 REVERIFY_DIGEST_SPEC,
                 GALLERY_EXTENDED_SPEC,
+                MMK_D3_MODE_SPEC,
             )
 
         /** Allowed values per switch key, default first. Keys absent here are not real-price switches. */

@@ -62,6 +62,7 @@ class AdminSettingsService(
             SettingsKeyEnum.NAUSYS_WARM_LONG_RANGES,
             SettingsKeyEnum.REVERIFY_DIGEST,
             SettingsKeyEnum.GALLERY_EXTENDED,
+            SettingsKeyEnum.MMK_D3_MODE,
             -> validateRealPriceSwitchValue(setting.name, setting.value)
         }
     }

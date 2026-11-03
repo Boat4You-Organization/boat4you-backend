@@ -18,6 +18,9 @@ object ReverifyJobs {
     const val NAUSYS_REVERIFY = "NAUSYS_REVERIFY"
     const val NAUSYS_D3 = "NAUSYS_D3"
 
+    /** ROUTE_GONE in the MMK per-yacht offer upsert (MmkRouteGone); its flip-log rows have no run. */
+    const val MMK_SYNC = "MMK_SYNC"
+
     /** An admin undo of another run (PartnerFlipUndoService); its flip-log rows carry reason `UNDO`. */
     const val UNDO = "UNDO"
 }

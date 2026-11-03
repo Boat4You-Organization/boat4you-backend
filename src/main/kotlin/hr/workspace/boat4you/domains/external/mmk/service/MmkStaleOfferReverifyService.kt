@@ -203,7 +203,7 @@ class MmkStaleOfferReverifyService(
             return false
         }
         checks += check(combo, MmkQuotes.result(response, combo.dateFrom, combo.dateTo))
-        mmkYachtOfferSyncService.syncOffers(response)
+        mmkYachtOfferSyncService.syncOffers(response, judgeRoutes = true)
         // MMK sells the week again: whatever the free-offer reverifier recorded about it is void.
         mmkFreeOfferReverifyService.clearStrike(combo.yachtId, combo.dateFrom, combo.dateTo)
         return true
