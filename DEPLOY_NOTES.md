@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-11-03 — 📊 Contact Center Tražilice F1: Google Search Console + Bing u Statistici (V9_119) — ✅ cusma2 LIVE 3.11. 13:24:22 UTC (main `0d23449`, md5 30b6aa1932cd4d1c852807d4a4f9dc1c, Flyway „9.119 - seo search stats“ 0,016 s, start 12,9 s, health 200); ⏳ cusma3 18:12 UTC kroz gate istim jarom (rezerva 21:08 UTC)
+## 2026-11-03 — 📊 Contact Center Tražilice F1: Google Search Console + Bing u Statistici (V9_119) — ✅ cusma2 LIVE 3.11. 13:24:22 UTC (main `0d23449`, md5 30b6aa1932cd4d1c852807d4a4f9dc1c, Flyway „9.119 - seo search stats“ 0,016 s, start 12,9 s, health 200); ✅ cusma3 LIVE 18:08:03 UTC istim jarom (deploy BOAT4YOU 3, jedan restart; vidi ROUTE_GONE niže); ✅ prvi uvoz 18:23:14 UTC
 
 Mario 3.11.: „Da, kreni s F1“, pa „Da, deployaj“. Plan i pristupi: side-session-notes `cc-stats-gsc-ga4-bing-plan-2026-11-03.md`; stanje `cc-search-engines-f1-deploy-2026-11-03.md`.
 - **V9_119** (V9_118 je zauzet u nespojenoj grani `claude/blissful-wright-sn6a9f`, Objave S1): `seo_site_day`, `seo_page_day`, `seo_query_day` (path '' = pojam za cijeli sajt, brojke GSC izvještaja Upiti; inače pojam po stranici), `seo_import_day`. Samo zbirni podaci, nikad posjetitelj. Indeks (day, site_id). Bez retencije namjerno (povijest dulja od Googleovih 16 mj.; ~0,6 GB/god, cusma4 27 GB slobodno 3.11.).
@@ -8,6 +8,7 @@ Mario 3.11.: „Da, kreni s F1“, pa „Da, deployaj“. Plan i pristupi: side-
 - **Ključevi samo na cusma3**: `SEO_GOOGLE_KEY_FILE=/home/cusma3/boat4you/secrets/seo-google-sa.json` (service account claude-seo@boat4you-seo, 600, postavljeno 13:23 UTC s `infra/deploy-scripts/seo_keys_set.sh`). `SEO_BING_API_KEY` još nema (Mario: Bing Webmaster → API key); prazno = Bing isključen. cusma2 ne treba ključeve.
 - **`GET /admin/cc/search-engines`** (SYSTEM_ADMIN, pravila raspona kao /stats; country ISO alpha-2, device): Google/Bing po sajtu uz naše ORGANIC posjete i upite, posjeti po tražilici (referrer), top pojmovi, ulazne stranice (Googleovi klikovi + 3 glavna pojma uz naše organske ulaze).
 - **Provjere:** contactcenter + chat 515/515 na spojenom stablu; lokalno s pravim GSC-om 7 dana × 7 sajtova = 67.770 redova / 61 s, upit 0,11 s. Neovisni pregled (Opus): 0 blokera; should-fix popravljeni u `08d57de` (pojmovi po cijelom sajtu, top pojmovi bez sort spilla 5,5 → 1,2 s, Bing tihi neuspjesi vidljivi u logu, greška ključa bez teksta datoteke).
+- **Prvi uvoz cusma3 18:20 → 18:23:14 UTC:** `Result(googleDays=210, bingDays=0, rows=430650, failures=0)` = 7 sajtova × 30 dana (3.10.–1.11.); u bazi `seo_site_day` 25.281, `seo_page_day` 78.920, `seo_query_day` 326.449 redova, 54 MB s indeksima (→ ~0,9 GB za 480 dana). Ostatak povijesti puni se svaki sat u :20. Bing 0 = još nema ključa.
 - **Bing nije provjeren protiv pravog API-ja** (nema ključa): prvi run logira „Bing <grain> for <url>: N rows on D days“, to pogledati.
 - **Rollback:** cusma2 `webservice.jar.prev` = f8fe7979 (Iris `8c737cc`, nema V9_119 → 9.119 „future“, start OK). Tablice V9_119 ne smetaju starom jaru.
 
