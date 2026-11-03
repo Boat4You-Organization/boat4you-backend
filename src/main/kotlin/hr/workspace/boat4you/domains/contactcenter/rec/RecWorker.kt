@@ -288,8 +288,12 @@ class RecWorker(
         var viewport: Pair<Int?, Int?>? = null
         var document: Pair<Int?, Int?>? = null
         var visitKey: String? = null
+        val mutations = ArrayList<Long>()
+        var endMs = 0L
 
         fun add(p: RecExtractor.Payload) {
+            mutations += p.mutations
+            endMs = maxOf(endMs, p.envelope.start + p.envelope.duration)
             for (e in p.events) {
                 when (e.type) {
                     RecExtractor.EVENT_CLICK -> clicks += e
@@ -309,10 +313,11 @@ class RecWorker(
         rel: String,
         f: Facts,
     ) {
+        val dead = deadClicks(f)
         jdbc.batchUpdate(
-            "INSERT INTO rec_click (page_view_id, t_ms, x, y, ex, ey, target, hash, hash_beta, button, reaction, context, trust, w, h, tag, text, link) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            f.clicks.map { c ->
+            "INSERT INTO rec_click (page_view_id, t_ms, x, y, ex, ey, target, hash, hash_beta, button, reaction, context, trust, w, h, tag, text, link, dead) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f.clicks.mapIndexed { i, c ->
                 arrayOf<Any?>(
                     id,
                     c.time.ms(),
@@ -332,6 +337,7 @@ class RecWorker(
                     c.str("tag", TAG_MAX),
                     c.str("text", TEXT_MAX),
                     c.str("link", LINK_MAX),
+                    dead[i],
                 )
             },
         )
@@ -441,6 +447,63 @@ class RecWorker(
 
     fun quotaBytes(): Long = quotaBytes
 
+    /**
+     * Dead clicks of page views closed before V9_115 (or whose close could not tell): read from their files while the files
+     * exist, at most [limit] page views per call. A file that cannot be read leaves its clicks not dead. Returns the page views done.
+     */
+    @Suppress("TooGenericExceptionCaught") // one unreadable file must not stop the others
+    fun backfillDead(limit: Int): Int {
+        val pending =
+            jdbc.query(
+                "SELECT p.id, p.file_path FROM rec_page_view p WHERE p.status <> 'OPEN' AND NOT p.file_purged AND p.file_path IS NOT NULL " +
+                    "AND EXISTS (SELECT 1 FROM rec_click c WHERE c.page_view_id = p.id AND c.dead IS NULL) ORDER BY p.id LIMIT $limit",
+                { rs, _ -> rs.getLong(1) to rs.getString(2) },
+            )
+        pending.forEach { (id, rel) ->
+            try {
+                backfillOne(id, rel)
+            } catch (e: Exception) {
+                log.warn("rec: dead clicks of page view {} not read from its file: {}", id, e.toString())
+                jdbc.update("UPDATE rec_click SET dead = FALSE WHERE page_view_id = ? AND dead IS NULL", id)
+            }
+        }
+        return pending.size
+    }
+
+    private fun backfillOne(
+        id: Long,
+        rel: String,
+    ) {
+        val file = root.resolve(rel).normalize()
+        require(file.startsWith(root)) { "outside the recordings folder" }
+        val facts = Facts()
+        GZIPInputStream(Files.newInputStream(file)).bufferedReader(Charsets.UTF_8).useLines { lines ->
+            lines.filter { it.isNotBlank() }.forEach { line -> runCatching { RecExtractor.parse(line) }.onSuccess(facts::add) }
+        }
+        val dead = deadClicks(facts)
+        val ids = jdbc.queryForList("SELECT id FROM rec_click WHERE page_view_id = ? ORDER BY id", Long::class.java, id)
+        if (ids.size != dead.size) {
+            jdbc.update("UPDATE rec_click SET dead = FALSE WHERE page_view_id = ? AND dead IS NULL", id)
+            return
+        }
+        jdbc.batchUpdate("UPDATE rec_click SET dead = ? WHERE id = ?", ids.zip(dead).map { (clickId, d) -> arrayOf<Any?>(d, clickId) })
+    }
+
+    /**
+     * Per click of [f], in order: dead when it has no link, is not on a form field, and neither a DOM change nor the end of the page
+     * view follows within [REACT_MS] (the page did not react; Clarity's own definition is the same idea).
+     */
+    private fun deadClicks(f: Facts): List<Boolean> {
+        val mutations = f.mutations.sorted()
+        return f.clicks.map { c ->
+            val t = c.time ?: 0
+            val link = c.str("link", LINK_MAX)?.takeIf { it.isNotBlank() }
+            val tag = c.str("tag", TAG_MAX)?.lowercase()
+            val reacted = mutations.any { it > t && it <= t + REACT_MS }
+            link == null && tag !in FIELD_TAGS && !reacted && f.endMs - t > REACT_MS
+        }
+    }
+
     companion object {
         const val STATUS_OPEN = "OPEN"
         const val SPOOL_BAD = "spool-bad"
@@ -463,6 +526,8 @@ class RecWorker(
         private const val MAX_ELAPSED_MS = 7L * 24 * 60 * 60 * 1000
         private val BAD_KEEP: Duration = Duration.ofDays(7)
         private val STALE_TMP: Duration = Duration.ofDays(1)
+        private const val REACT_MS = 1500L
+        private val FIELD_TAGS = setOf("input", "textarea", "select", "option")
     }
 }
 

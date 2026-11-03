@@ -37,6 +37,10 @@ class RecJobs(
         runCatching { worker.runOnce() }
             .onSuccess { if (it.payloads + it.closed + it.dropped > 0) log.info("rec worker: {}", it) }
             .onFailure { log.error("rec worker failed", it) }
+        // Dead clicks of the page views closed before they were computed (P6 R3), a few per minute while their files exist.
+        runCatching { worker.backfillDead(DEAD_BACKFILL_BATCH) }
+            .onSuccess { if (it > 0) log.info("rec dead clicks back-filled for {} page views", it) }
+            .onFailure { log.error("rec dead click back-fill failed", it) }
     }
 
     @Scheduled(cron = "0 17 * * * *", zone = "UTC")
@@ -83,6 +87,7 @@ class RecJobs(
 
     companion object {
         const val WARN_PERCENT = 70
+        private const val DEAD_BACKFILL_BATCH = 20
         private const val ASSET_UNUSED_DAYS = 67L
         private const val BYTES_PER_GB = 1_073_741_824.0
         private const val ADMIN_URL = "https://admin.boat4you.com/contact-center"

@@ -315,4 +315,65 @@ class RecWorkerDbTest {
         Files.exists(orphan) shouldBe false
         Files.exists(missing) shouldBe false
     }
+
+    /** A page view of one payload from 0 to 11 s with [events]; the end payload closes it. */
+    private fun pageOf(events: String) =
+        """{"e":["0.8.73",1,0,11000,"boat4you","u1","s1",1,0,1,0,"https://www.boat4you.com/boat/x"],"a":[$events]}"""
+
+    private fun c(
+        t: Int,
+        link: String,
+        tag: String,
+    ) = """[$t,9,17,100,200,5000,6000,0,1,0,"x","$link","h$t.b$t",1,0,120,40,"$tag"]"""
+
+    @Test
+    fun `a click the page did not react to within 1500 ms is dead - not one on a link, a form field, before a DOM change or near the end`() {
+        val events =
+            listOf(
+                c(1000, "", "div"),
+                c(3000, "", "div"),
+                "[3400,6,1,\"x\"]",
+                c(5000, "/boat/x/book", "a"),
+                c(7000, "", "INPUT"),
+                c(9800, "", "div"),
+            ).joinToString(",")
+        spool(now.minus(Duration.ofMinutes(5)), pageOf(events))
+        worker().runOnce().closed shouldBe 1
+        jdbc.query("SELECT t_ms, dead FROM rec_click ORDER BY t_ms", { rs, _ -> rs.getInt(1) to rs.getBoolean(2) }) shouldContainExactly
+            listOf(1000 to true, 3000 to false, 5000 to false, 7000 to false, 9800 to false)
+    }
+
+    @Test
+    fun `older recordings get their dead clicks from their files, a purged one stays unknown`() {
+        fun closedWithFile(
+            session: String,
+            purged: Boolean,
+        ): Long {
+            val rel = "boat4you/2026-11-01/$session.ndjson.gz"
+            val file = root.resolve(rel).also { Files.createDirectories(it.parent) }
+            GZIPOutputStream(Files.newOutputStream(file)).bufferedWriter().use {
+                it.write(pageOf(listOf(c(1000, "", "div"), c(3000, "", "div"), "[3400,6,1,\"x\"]").joinToString(",")) + "\n")
+            }
+            val at = Timestamp.from(now.minus(Duration.ofDays(2)))
+            val id =
+                jdbc.queryForObject(
+                    "INSERT INTO rec_page_view (site_id, project_id, user_id, session_id, page_num, started_at, last_payload_at, status, file_path, file_purged) " +
+                        "VALUES ('boat4you', 'boat4you', 'u', ?, 1, ?, ?, 'CLOSED', ?, ?) RETURNING id",
+                    Long::class.java,
+                    session,
+                    at,
+                    at,
+                    rel,
+                    purged,
+                )!!
+            jdbc.update("INSERT INTO rec_click (page_view_id, t_ms) VALUES (?, 1000), (?, 3000)", id, id)
+            return id
+        }
+        val kept = closedWithFile("old1", purged = false)
+        val purged = closedWithFile("old2", purged = true)
+        worker().backfillDead(10) shouldBe 1
+        jdbc.queryForList("SELECT dead FROM rec_click WHERE page_view_id = ? ORDER BY id", Boolean::class.java, kept) shouldContainExactly listOf(true, false)
+        jdbc.queryForList("SELECT dead FROM rec_click WHERE page_view_id = ? ORDER BY id", Boolean::class.javaObjectType, purged) shouldContainExactly listOf(null, null)
+        worker().backfillDead(10) shouldBe 0
+    }
 }
