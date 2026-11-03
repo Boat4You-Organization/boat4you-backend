@@ -47,6 +47,7 @@ class AdminContactCenterController(
     private val contacts: ContactService,
     private val stats: StatsQuery,
     private val funnel: FunnelQuery,
+    private val searchEngines: SearchEngineQuery,
 ) {
     /** The visitor's tracker key travels in the body, never in the URL (it would land in the nginx access log). */
     data class MessageRequest(
@@ -266,6 +267,29 @@ class AdminContactCenterController(
         return ResponseEntity.ok(funnel.funnel(start, end, siteId, device, channel))
     }
 
+    /** Google and Bing next to our organic visits (search engines F1), with the range rules of [stats]; [country] is ISO alpha-2. */
+    @GetMapping("/search-engines")
+    @ResponseBody
+    fun searchEngines(
+        @RequestParam(required = false) from: Instant?,
+        @RequestParam(required = false) to: Instant?,
+        @RequestParam(required = false) siteId: String?,
+        @RequestParam(required = false) country: String?,
+        @RequestParam(required = false) device: String?,
+    ): ResponseEntity<Any> {
+        val end = to ?: Instant.now()
+        val start = from ?: end.minus(DEFAULT_RANGE)
+        val error =
+            when {
+                siteId != null && !SiteIds.isKnown(siteId) -> "unknown site"
+                country != null && !COUNTRY.matches(country) -> "unknown country"
+                device != null && DeviceClass.entries.none { it.name == device } -> "unknown device"
+                else -> rangeError(start, end)
+            }
+        if (error != null) return bad(error)
+        return ResponseEntity.ok(searchEngines.searchEngines(start, end, siteId, country, device))
+    }
+
     private fun rangeError(
         start: Instant,
         end: Instant,
@@ -297,5 +321,6 @@ class AdminContactCenterController(
             )
         private val DEFAULT_RANGE: Duration = Duration.ofDays(30)
         private val MAX_RANGE: Duration = Duration.ofDays(400)
+        private val COUNTRY = Regex("^[A-Z]{2}$")
     }
 }

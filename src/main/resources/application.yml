@@ -311,3 +311,12 @@ calls:
     agent-id: ${ELEVENLABS_AGENT_ID:}
     phone-number-id: ${ELEVENLABS_PHONE_NUMBER_ID:}
     webhook-secret: ${ELEVENLABS_WEBHOOK_SECRET:}
+
+# Search engine statistics (Contact Center F1, Mario 3.11.2026): SearchImportJob on the scheduler node copies Google Search
+# Console and Bing Webmaster Tools into V9_119. Both are read-only and live only in boat4youscheduler_vars.env on cusma3:
+# the path of the Google service-account JSON key (chmod 600, never in git) and the Bing account API key. Blank = off.
+seo:
+  google-key-file: ${SEO_GOOGLE_KEY_FILE:}
+  bing-api-key: ${SEO_BING_API_KEY:}
+  # Google days per site and hourly run: the first runs after deploy fill the 16 months of history in about 16 hours.
+  backfill-days-per-run: ${SEO_BACKFILL_DAYS_PER_RUN:30}
