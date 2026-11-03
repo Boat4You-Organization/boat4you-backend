@@ -11,16 +11,20 @@ class MmkOfferUpsertCounters {
     var skippedMissingYachtMapping = 0
     var skippedLocked = 0
 
+    /** FREE rows of a route the partner stopped sending: hidden (MMK_D3_MODE WRITE) or that WRITE would hide (LOG). */
+    var routeGone = 0
+
     fun addAll(other: MmkOfferUpsertCounters) {
         upserted += other.upserted
         skippedMissingLocation += other.skippedMissingLocation
         skippedMissingYachtMapping += other.skippedMissingYachtMapping
         skippedLocked += other.skippedLocked
+        routeGone += other.routeGone
     }
 
     override fun toString(): String =
         "upserted=$upserted removed=0 skippedMissingLocation=$skippedMissingLocation " +
-            "skippedMissingYachtMapping=$skippedMissingYachtMapping skippedLocked=$skippedLocked"
+            "skippedMissingYachtMapping=$skippedMissingYachtMapping skippedLocked=$skippedLocked routeGone=$routeGone"
 }
 
 /**
