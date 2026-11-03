@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.contactcenter.rec
 
+import com.fasterxml.jackson.annotation.JsonProperty
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.SingleConnectionDataSource
@@ -28,17 +29,20 @@ data class HeatmapElement(
     val hoverMs: Int = 0,
 )
 
-/** Clicks at one spot of an element; eX/eY are clarity's 0..32767 within the element (the centre of a 1024 grid cell). */
+/**
+ * Clicks at one spot of an element; eX/eY are clarity's 0..32767 within the element (the centre of a 1024 grid cell). Named in
+ * JSON as the admin reads them: Jackson would call a Kotlin `eX` "ex" (3.11.2026: the map had no real points for that).
+ */
 data class HeatPoint(
-    val eX: Int,
-    val eY: Int,
+    @get:JsonProperty("eX") val eX: Int,
+    @get:JsonProperty("eY") val eY: Int,
     val clicks: Int,
 )
 
 /** Where the mouse rested within an element (P6 R4): a 1024-grid cell centre (0..32767) and the milliseconds there. */
 data class HoverPoint(
-    val eX: Int,
-    val eY: Int,
+    @get:JsonProperty("eX") val eX: Int,
+    @get:JsonProperty("eY") val eY: Int,
     val ms: Int,
 )
 

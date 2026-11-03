@@ -18,7 +18,11 @@ class AdminRecHeatmapControllerTest {
         mock(RecHeatmapQuery::class.java) { inv ->
             calls += inv.arguments.toList()
             when (inv.method.name) {
-                "heatmap" -> Heatmap("boat4you", "BOAT", "MOBILE", 3, 1, 8, emptyList(), emptyMap(), emptyList(), 20, 7L)
+                "heatmap" ->
+                    Heatmap(
+                        "boat4you", "BOAT", "MOBILE", 3, 1, 8, emptyList(), mapOf("h1" to listOf(HeatPoint(512, 1536, 4))), emptyList(), 20, 7L,
+                        hover = mapOf("h1" to listOf(HoverPoint(512, 1536, 900))),
+                    )
                 "groups" -> listOf(HeatmapGroup("BOAT", 3, 8))
                 "insights" -> listOf(RecInsight("DEAD", "BOAT", "photo", "", "img", 4, 100, 3))
                 else -> null
@@ -45,6 +49,10 @@ class AdminRecHeatmapControllerTest {
         mvc.get("/admin/cc/rec/heatmap?siteId=boat4you&pageType=BOAT&device=MOBILE").andExpect {
             status { isOk() }
             jsonPath("$.background") { value(7) }
+            // The admin reads eX/eY: Jackson would otherwise call a Kotlin eX "ex" (3.11.2026, the map had no real points).
+            jsonPath("$.points.h1[0].eX") { value(512) }
+            jsonPath("$.points.h1[0].eY") { value(1536) }
+            jsonPath("$.hover.h1[0].eX") { value(512) }
         }
         calls.last().take(3) shouldBe listOf("boat4you", "BOAT", "MOBILE")
         val from = calls.last()[3] as java.time.Instant
