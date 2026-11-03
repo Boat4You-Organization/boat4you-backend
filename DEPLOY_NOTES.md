@@ -19,6 +19,17 @@ Deploy:
 - [ ] nginx limit za `/admin/social/media`.
 - [ ] Jar s V9_118 (nove tablice; lock samo nad njima) → zatim admin `/social`.
 
+## 2026-11-03 — 📊 Contact Center Tražilice F1: Google Search Console + Bing u Statistici (V9_119) — ✅ cusma2 LIVE 3.11. 13:24:22 UTC (main `0d23449`, md5 30b6aa1932cd4d1c852807d4a4f9dc1c, Flyway „9.119 - seo search stats“ 0,016 s, start 12,9 s, health 200); ⏳ cusma3 18:12 UTC kroz gate istim jarom (rezerva 21:08 UTC)
+
+Mario 3.11.: „Da, kreni s F1“, pa „Da, deployaj“. Plan i pristupi: side-session-notes `cc-stats-gsc-ga4-bing-plan-2026-11-03.md`; stanje `cc-search-engines-f1-deploy-2026-11-03.md`.
+- **V9_119** (V9_118 je zauzet u nespojenoj grani `claude/blissful-wright-sn6a9f`, Objave S1): `seo_site_day`, `seo_page_day`, `seo_query_day` (path '' = pojam za cijeli sajt, brojke GSC izvještaja Upiti; inače pojam po stranici), `seo_import_day`. Samo zbirni podaci, nikad posjetitelj. Indeks (day, site_id). Bez retencije namjerno (povijest dulja od Googleovih 16 mj.; ~0,6 GB/god, cusma4 27 GB slobodno 3.11.).
+- **SearchImportJob** (samo `data-sync` = cusma3, svaki sat :20 UTC, ShedLock `seoSearchImport` 15 min; deploy gate ga ignorira, infra d122cb9): Google po sajtu najnoviji dan prvi, 30 dana po runu do 480 dana unatrag (prvih ~16 h puni povijest, ~5 min/run), dan se ponovno uvozi dok Google ne ustali podatke (4 dana), ne češće od 12 h. Bing jednom u 20 h, sve što drži; zamjenjuje samo dane koje još javlja.
+- **Ključevi samo na cusma3**: `SEO_GOOGLE_KEY_FILE=/home/cusma3/boat4you/secrets/seo-google-sa.json` (service account claude-seo@boat4you-seo, 600, postavljeno 13:23 UTC s `infra/deploy-scripts/seo_keys_set.sh`). `SEO_BING_API_KEY` još nema (Mario: Bing Webmaster → API key); prazno = Bing isključen. cusma2 ne treba ključeve.
+- **`GET /admin/cc/search-engines`** (SYSTEM_ADMIN, pravila raspona kao /stats; country ISO alpha-2, device): Google/Bing po sajtu uz naše ORGANIC posjete i upite, posjeti po tražilici (referrer), top pojmovi, ulazne stranice (Googleovi klikovi + 3 glavna pojma uz naše organske ulaze).
+- **Provjere:** contactcenter + chat 515/515 na spojenom stablu; lokalno s pravim GSC-om 7 dana × 7 sajtova = 67.770 redova / 61 s, upit 0,11 s. Neovisni pregled (Opus): 0 blokera; should-fix popravljeni u `08d57de` (pojmovi po cijelom sajtu, top pojmovi bez sort spilla 5,5 → 1,2 s, Bing tihi neuspjesi vidljivi u logu, greška ključa bez teksta datoteke).
+- **Bing nije provjeren protiv pravog API-ja** (nema ključa): prvi run logira „Bing <grain> for <url>: N rows on D days“, to pogledati.
+- **Rollback:** cusma2 `webservice.jar.prev` = f8fe7979 (Iris `8c737cc`, nema V9_119 → 9.119 „future“, start OK). Tablice V9_119 ne smetaju starom jaru.
+
 ## 2026-11-03 — 🧭 Iris: upit za rutu bez mjesta → stranica svih itinerara; nikad prošli datumi — ✅ cusma2 LIVE 3.11. 12:55:46 UTC (jar `8c737cc` = fix + main `aa42729`, md5 f8fe7979b3d1d010f26be05d4d0317a3, bez migracije, start 12,7 s, health 200); widget `b4y-cc.719d9f3b.js` LIVE 12:35 UTC (infra `4455c2c`, tag `live/2026-11-03-cc-widget-itinerary`); cusma3 ne treba (chat je samo na cusma2)
 
 Mario 3.11.2026 (John, Catamaran Charter Croatia 2.11.: „Can you suggest a route“ + „No preference where to start“ → itinerar nikad nije stigao): „ako nije specificirao gdje, pošalješ ga na stranicu gdje su svi itinerari“; „Da, pregled i deploy“.
