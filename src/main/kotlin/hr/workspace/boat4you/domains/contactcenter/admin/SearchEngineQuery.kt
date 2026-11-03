@@ -147,7 +147,11 @@ class SearchEngineQuery(
             lastDay = lastDays(),
             google = googleSites.values.fold(NONE, Sums::plus).totals(),
             googleClicksWithQuery =
-                jdbc.queryForObject("SELECT COALESCE(sum(clicks), 0) FROM seo_query_day WHERE ${google.where}", Long::class.java, *google.args.toTypedArray())!!,
+                jdbc.queryForObject(
+                    "SELECT COALESCE(sum(clicks), 0) FROM ${SearchGrain.QUERY.table} WHERE ${google.where} AND path = ''",
+                    Long::class.java,
+                    *google.args.toTypedArray(),
+                )!!,
             bing = bing?.let { bingSites.values.fold(NONE, Sums::plus).totals() },
             organicVisits = organic.sumOf { it.visits },
             organicInquiries = organic.sumOf { it.inquiries },
@@ -176,10 +180,12 @@ class SearchEngineQuery(
                 *seo.args.toTypedArray(),
             ).toMap()
 
+    /** The top queries from the whole-site rows (path ''), the numbers of Google's Queries report; grouped per site first, no sort spill. */
     private fun queries(seo: Seo): List<QueryStat> =
         jdbc.query(
-            "SELECT query, array_agg(DISTINCT site_id ORDER BY site_id) AS sites, $SUMS FROM ${SearchGrain.QUERY.table} WHERE ${seo.where} " +
-                "GROUP BY query ORDER BY sum(clicks) DESC, sum(impressions) DESC, query LIMIT $TOP_QUERIES",
+            "SELECT query, array_agg(site_id ORDER BY site_id) AS sites, sum(c) AS c, sum(i) AS i, sum(ps) AS ps, sum(pi) AS pi " +
+                "FROM (SELECT query, site_id, $SUMS FROM ${SearchGrain.QUERY.table} WHERE ${seo.where} AND path = '' GROUP BY query, site_id) q " +
+                "GROUP BY query ORDER BY sum(c) DESC, sum(i) DESC, query LIMIT $TOP_QUERIES",
             { rs, _ ->
                 val s = sums(rs).totals()
                 @Suppress("UNCHECKED_CAST")
@@ -263,7 +269,7 @@ class SearchEngineQuery(
         private const val TOP_PAGES = 30
         private const val TOP_PAGE_QUERIES = 3
         private const val SUMS =
-            "sum(clicks) AS c, sum(impressions) AS i, COALESCE(sum(position_sum) FILTER (WHERE position_sum > 0), 0) AS ps, " +
+            "sum(clicks) AS c, sum(impressions) AS i, COALESCE(sum(position_sum::float8) FILTER (WHERE position_sum > 0), 0) AS ps, " +
                 "COALESCE(sum(impressions) FILTER (WHERE position_sum > 0), 0) AS pi"
 
         /** The path of `v.landing_url` by the rule of [hr.workspace.boat4you.domains.contactcenter.search.SearchText.path]. */

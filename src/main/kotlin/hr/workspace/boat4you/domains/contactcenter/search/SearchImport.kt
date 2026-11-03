@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 import java.sql.Date
+import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -29,6 +31,9 @@ class SearchImport(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
     private val tx = TransactionTemplate(txManager)
+
+    /** When this node last asked Bing: an answer that stores nothing must not make every hourly run ask again. */
+    @Volatile private var bingAskedAt: Instant? = null
 
     data class Result(
         val googleDays: Int,
@@ -90,12 +95,14 @@ class SearchImport(
     }
 
     private fun bingDue(): Boolean =
-        jdbc.queryForObject(
-            "SELECT NOT EXISTS (SELECT 1 FROM seo_import_day WHERE engine = 'BING' AND imported_at > now() - make_interval(hours => $BING_EVERY_HOURS))",
-            Boolean::class.java,
-        ) == true
+        bingAskedAt?.isAfter(Instant.now().minus(Duration.ofHours(BING_EVERY_HOURS.toLong()))) != true &&
+            jdbc.queryForObject(
+                "SELECT NOT EXISTS (SELECT 1 FROM seo_import_day WHERE engine = 'BING' AND imported_at > now() - make_interval(hours => $BING_EVERY_HOURS))",
+                Boolean::class.java,
+            ) == true
 
     private fun bingSites(): Result {
+        bingAskedAt = Instant.now()
         val sites =
             try {
                 bing.sites()
@@ -103,6 +110,7 @@ class SearchImport(
                 log.warn("Bing Webmaster site list failed: {}", e.message)
                 return Result(0, 0, 0, 1)
             }
+        if (sites.isEmpty()) log.warn("Bing Webmaster lists none of the seven sites as verified")
         var result = Result(0, 0, 0, 0)
         for ((siteId, url) in sites) {
             val report =

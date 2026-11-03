@@ -1,9 +1,10 @@
 -- Contact Center statistics, search engines (F1, Mario 3.11.2026): what Google Search Console and Bing Webmaster Tools
--- report for the seven sites, imported nightly on the scheduler node (SearchImportJob). Aggregates only: neither engine
+-- report for the seven sites, imported every hour on the scheduler node (SearchImportJob). Aggregates only: neither engine
 -- gives anything per visitor. Each table is replaced per (engine, site_id, day) on import, so no unique key on the text.
 --   seo_site_day  the site's totals (Google by property, per country and device; Bing per day, no country or device);
 --   seo_page_day  per landing page, `path` without host and query;
---   seo_query_day per search query, Google also per page; Bing has no page there (path '').
+--   seo_query_day per search query: path '' = the whole site (Google by property, as its Queries report; Bing only so),
+--                 and Google also per query and landing page.
 -- engine is GOOGLE or BING; country is ISO alpha-2 and device DESKTOP / MOBILE / TABLET, '' when the engine gives none.
 -- position_sum = average position × impressions, so a range averages by impression: sum(position_sum) / sum(impressions).
 -- Bing dates its query and page rows by week. INTEGER, never SMALLINT (V9_94); no JPA entity reads these tables.

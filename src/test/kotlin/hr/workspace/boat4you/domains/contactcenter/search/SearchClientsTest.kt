@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.contactcenter.search
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
@@ -35,11 +36,25 @@ class SearchClientsTest {
                 """{"keys":["catamaran charter croatia","https://www.catamaran-croatia-charter.com/catamarans/","usa","MOBILE"],
                    "clicks":2,"impressions":6,"ctr":0.33,"position":2.5}""",
             )
-        SearchConsoleClient.row(node, SearchConsoleClient.DIMENSIONS.getValue(SearchGrain.QUERY)) shouldBe
+        SearchConsoleClient.row(node, SearchConsoleClient.REQUESTS.getValue(SearchGrain.QUERY)[1]) shouldBe
             SearchRow("catamaran charter croatia", "/catamarans", "US", "MOBILE", 2, 6, 15.0)
         val site = mapper.readTree("""{"keys":["deu","DESKTOP"],"clicks":0,"impressions":3,"position":11.0}""")
-        SearchConsoleClient.row(site, SearchConsoleClient.DIMENSIONS.getValue(SearchGrain.SITE)) shouldBe
+        SearchConsoleClient.row(site, SearchConsoleClient.REQUESTS.getValue(SearchGrain.SITE).single()) shouldBe
             SearchRow(country = "DE", device = "DESKTOP", clicks = 0, impressions = 3, positionSum = 33.0)
+    }
+
+    @Test
+    fun `a whole-site query row has no path`() {
+        val node = mapper.readTree("""{"keys":["boat4you","hrv","DESKTOP"],"clicks":1,"impressions":4,"position":1.5}""")
+        SearchConsoleClient.row(node, SearchConsoleClient.REQUESTS.getValue(SearchGrain.QUERY)[0]) shouldBe
+            SearchRow("boat4you", "", "HR", "DESKTOP", 1, 4, 6.0)
+    }
+
+    @Test
+    fun `a failing bing call never carries the key in its message`() {
+        val e = shouldThrow<IllegalStateException> { BingWebmasterClient("SECRET-KEY-123", "http://127.0.0.1:9").sites() }
+        e.message shouldBe "Bing GetUserSites failed: ResourceAccessException"
+        e.cause shouldBe null
     }
 
     @Test

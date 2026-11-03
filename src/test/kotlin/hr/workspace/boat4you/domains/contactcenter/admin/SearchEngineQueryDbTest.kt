@@ -83,7 +83,8 @@ class SearchEngineQueryDbTest {
         row("seo_site_day", day = LocalDate.of(2026, 11, 2), clicks = 99, impressions = 99) // after the range
         row("seo_site_day", engine = "BING", country = "", device = "", clicks = 3, impressions = 30, position = 0.0)
         row("seo_site_day", site = "europe-yachts", clicks = 1, impressions = 10)
-        row("seo_query_day", query = "boat4you", path = "/", clicks = 4, impressions = 20)
+        row("seo_query_day", query = "boat4you", clicks = 4, impressions = 20)
+        row("seo_query_day", query = "boat4you", path = "/", clicks = 4, impressions = 20) // per page: not counted again
         organic(landing = "https://www.boat4you.com/en?gclid=x", inquiry = true)
         organic(landing = "https://www.boat4you.com/en/", referrer = "https://www.bing.com/")
         organic(landing = "https://www.boat4you.com/en", referrer = "https://duckduckgo.com/")
@@ -123,15 +124,17 @@ class SearchEngineQueryDbTest {
     }
 
     @Test
-    fun `top queries add up across pages and list their sites`() {
-        row("seo_query_day", query = "lagoon 42", path = "/en/a", clicks = 3, impressions = 30, position = 2.0)
-        row("seo_query_day", query = "lagoon 42", path = "/en/b", clicks = 1, impressions = 10, position = 6.0)
-        row("seo_query_day", site = "europe-yachts", query = "lagoon 42", path = "/x", clicks = 1, impressions = 10, position = 6.0)
-        row("seo_query_day", query = "bali 4.2", path = "/en/a", clicks = 1, impressions = 50)
+    fun `top queries come from the whole-site rows and list their sites`() {
+        row("seo_query_day", query = "lagoon 42", clicks = 4, impressions = 40, position = 3.0)
+        row("seo_query_day", query = "lagoon 42", country = "DE", clicks = 0, impressions = 10, position = 8.0)
+        row("seo_query_day", site = "europe-yachts", query = "lagoon 42", clicks = 1, impressions = 10, position = 6.0)
+        row("seo_query_day", query = "bali 4.2", clicks = 1, impressions = 50)
+        row("seo_query_day", query = "lagoon 42", path = "/en/a", clicks = 9, impressions = 90) // per page: never in the top list
+        row("seo_query_day", query = "per page only", path = "/en/a", clicks = 20, impressions = 90)
 
         val q = result().googleQueries
         q.map { it.query } shouldBe listOf("lagoon 42", "bali 4.2")
-        q.first() shouldBe QueryStat("lagoon 42", listOf("boat4you", "europe-yachts"), 5, 50, (60.0 + 60.0 + 60.0) / 50)
+        q.first() shouldBe QueryStat("lagoon 42", listOf("boat4you", "europe-yachts"), 5, 60, (120.0 + 80.0 + 60.0) / 60)
     }
 
     @Test

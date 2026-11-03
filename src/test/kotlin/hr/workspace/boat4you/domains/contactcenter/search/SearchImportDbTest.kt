@@ -149,6 +149,15 @@ class SearchImportDbTest {
     }
 
     @Test
+    fun `a bing answer that stores nothing is not asked again every hour`() {
+        val bing = FakeBing(emptyMap())
+        val import = import(FakeGoogle(enabled = false), bing)
+        import.run(today) shouldBe SearchImport.Result(0, 0, 0, 0)
+        import.run(today) shouldBe SearchImport.Result(0, 0, 0, 0)
+        bing.siteCalls shouldBe 1
+    }
+
+    @Test
     fun `every site of the list is imported`() {
         import(days = 1).run(today)
         jdbc.queryForList("SELECT DISTINCT site_id FROM seo_import_day ORDER BY 1", String::class.java) shouldBe SiteIds.ALL.sorted()

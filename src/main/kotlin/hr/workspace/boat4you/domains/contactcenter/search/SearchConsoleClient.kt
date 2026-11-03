@@ -52,13 +52,19 @@ class SearchConsoleClient(
     )
 
     private val key: Key by lazy {
-        val json = mapper.readTree(File(keyFile))
-        val der = Base64.getMimeDecoder().decode(json.path("private_key").asText().replace(PEM_ARMOUR, ""))
-        Key(
-            email = json.path("client_email").asText(),
-            tokenUri = json.path("token_uri").asText(TOKEN_URI),
-            privateKey = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(der)),
-        )
+        // No cause and no parser message: a broken file would quote its own text (the private key) into the hourly log.
+        @Suppress("TooGenericExceptionCaught", "SwallowedException")
+        try {
+            val json = mapper.readTree(File(keyFile))
+            val der = Base64.getMimeDecoder().decode(json.path("private_key").asText().replace(PEM_ARMOUR, ""))
+            Key(
+                email = json.path("client_email").asText(),
+                tokenUri = json.path("token_uri").asText(TOKEN_URI),
+                privateKey = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(der)),
+            )
+        } catch (e: Exception) {
+            error("Google key file unreadable (${e.javaClass.simpleName})")
+        }
     }
 
     @Volatile private var token: Pair<String, Instant>? = null
@@ -69,7 +75,15 @@ class SearchConsoleClient(
         grain: SearchGrain,
     ): List<SearchRow> {
         val uri = URI("$API/sites/${URLEncoder.encode(siteUrl(siteId), Charsets.UTF_8)}/searchAnalytics/query")
-        val dimensions = DIMENSIONS.getValue(grain)
+        return REQUESTS.getValue(grain).flatMap { query(uri, day, it) }
+    }
+
+    /** All rows of one Search Analytics request, page by page. */
+    private fun query(
+        uri: URI,
+        day: LocalDate,
+        dimensions: List<String>,
+    ): List<SearchRow> {
         val out = mutableListOf<SearchRow>()
         var start = 0
         do {
@@ -144,11 +158,15 @@ class SearchConsoleClient(
         private val READ_TIMEOUT = Duration.ofSeconds(90)
         private val PEM_ARMOUR = Regex("-----[A-Z ]+-----")
 
-        val DIMENSIONS: Map<SearchGrain, List<String>> =
+        /**
+         * The requests of each grain. QUERY takes two: per query for the whole site (path '', Google aggregates by property,
+         * the numbers of its Queries report) and per query and page (what brings visitors to each landing page).
+         */
+        val REQUESTS: Map<SearchGrain, List<List<String>>> =
             mapOf(
-                SearchGrain.SITE to listOf("country", "device"),
-                SearchGrain.PAGE to listOf("page", "country", "device"),
-                SearchGrain.QUERY to listOf("query", "page", "country", "device"),
+                SearchGrain.SITE to listOf(listOf("country", "device")),
+                SearchGrain.PAGE to listOf(listOf("page", "country", "device")),
+                SearchGrain.QUERY to listOf(listOf("query", "country", "device"), listOf("query", "page", "country", "device")),
             )
 
         /** The URL-prefix property of a site: `https://www.<host>/`. */

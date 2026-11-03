@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.contactcenter.search
 
 import com.fasterxml.jackson.databind.JsonNode
 import hr.workspace.boat4you.domains.contactcenter.SiteIds
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Component
@@ -23,7 +24,11 @@ import java.time.ZoneOffset
 @Component
 class BingWebmasterClient(
     @Value("\${seo.bing-api-key:}") private val apiKey: String,
+    // Override for tests only.
+    @Value("\${seo.bing-base-url:https://ssl.bing.com/webmaster/api.svc/json}") private val api: String = API,
 ) : BingSearchApi {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     override val enabled: Boolean get() = apiKey.isNotBlank()
 
     private val http: RestClient =
@@ -47,10 +52,15 @@ class BingWebmasterClient(
     override fun rows(
         siteUrl: String,
         grain: SearchGrain,
-    ): Map<LocalDate, List<SearchRow>> =
-        call(METHODS.getValue(grain), siteUrl)
-            .mapNotNull { n -> day(n.path("Date").asText())?.let { it to row(n, grain) } }
-            .groupBy({ it.first }, { it.second })
+    ): Map<LocalDate, List<SearchRow>> {
+        val nodes = call(METHODS.getValue(grain), siteUrl)
+        val rows = nodes.mapNotNull { n -> day(n.path("Date").asText())?.let { it to row(n, grain) } }.groupBy({ it.first }, { it.second })
+        // Bing's shapes come from its docs, not from a real answer yet: say what arrived, so a changed shape is seen at once.
+        val undated = nodes.size - rows.values.sumOf { it.size }
+        if (undated > 0) log.warn("Bing {} for {}: {} of {} rows without a readable date", grain, siteUrl, undated, nodes.size)
+        log.info("Bing {} for {}: {} rows on {} days ({}..{})", grain, siteUrl, nodes.size, rows.size, rows.keys.minOrNull(), rows.keys.maxOrNull())
+        return rows
+    }
 
     private fun call(
         method: String,
@@ -58,7 +68,7 @@ class BingWebmasterClient(
     ): List<JsonNode> {
         val uri =
             UriComponentsBuilder
-                .fromUriString("$API/$method")
+                .fromUriString("$api/$method")
                 .queryParam("apikey", apiKey)
                 .apply { if (siteUrl != null) queryParam("siteUrl", siteUrl) }
                 .encode()
@@ -76,7 +86,7 @@ class BingWebmasterClient(
     }
 
     companion object {
-        private const val API = "https://ssl.bing.com/webmaster/api.svc/json"
+        const val API = "https://ssl.bing.com/webmaster/api.svc/json"
         private val CONNECT_TIMEOUT = Duration.ofSeconds(10)
         private val READ_TIMEOUT = Duration.ofSeconds(90)
         private val METHODS =
