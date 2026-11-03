@@ -45,6 +45,7 @@ class RouteGoneAgency1579RestMigrationTest {
         private const val PULA = 1932L
         private const val MONTENEGRO = 1466L
         private const val OTHER_YACHT = 999L
+        private const val OLBIA = 30L
     }
 
     private lateinit var dataSource: HikariDataSource
@@ -104,6 +105,7 @@ class RouteGoneAgency1579RestMigrationTest {
         offer(134, 18643, -3, 14, PULA) // in the past
         offer(135, OTHER_YACHT, 2, 14, PULA) // a yacht outside the three
         offer(136, 18707, 7, 7, 958, to = MONTENEGRO) // a one-way the partner still sends
+        offer(137, 18643, 12, 14, OLBIA) // a round trip of a base that is neither home nor the known old base
 
         // as Flyway runs them, V9_117 twice: a second pass finds nothing left to flip
         jdbc.execute("BEGIN; ${migration("V9_116__route_gone_agency_1579.sql")}; COMMIT;")

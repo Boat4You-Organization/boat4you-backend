@@ -6,9 +6,10 @@
 -- yacht: the exact 14-, 28- and 7-night periods and the whole of 2027) that it no longer sends any round trip from the
 -- old bases: 18643 only Propriano, 18707 only its new base (one one-way ends in Montenegro), 18753 only Pula.
 --
--- Same guards and flip log as V9_116, without the home-base twin requirement: a future FREE or OPTION round trip of a
--- base other than the yacht's current home, no reservation flow, no overlapping partner option / reservation /
--- service. OPTION_WAITING is never touched; nothing is deleted; a route MMK sends again is written back by the upsert.
+-- Same guards and flip log as V9_116, without the home-base twin requirement: a future FREE or OPTION round trip of the
+-- yacht's NAMED old base (18643: 1932 Pula; 18707 and 18753: 1466, MMK base 498501610000100000), which is also not its
+-- current home, no reservation flow, no overlapping partner option / reservation / service. OPTION_WAITING is never
+-- touched; nothing is deleted; a route MMK sends again is written back by the upsert.
 SET LOCAL lock_timeout = '5s';
 
 WITH cand AS (
@@ -20,6 +21,7 @@ WITH cand AS (
       AND b.status IN ('FREE', 'OPTION')
       AND b.location_from = b.location_to
       AND b.location_from <> y.location_id
+      AND ((b.yacht_id = 18643 AND b.location_from = 1932) OR (b.yacht_id IN (18707, 18753) AND b.location_from = 1466))
       AND NOT EXISTS (SELECT 1 FROM reservation_flow rf WHERE rf.offer_id = b.id)
       AND NOT EXISTS (SELECT 1 FROM external_reservations r
                       WHERE r.yacht_id = b.yacht_id AND r.status IN ('OPTION', 'RESERVATION', 'SERVICE')
