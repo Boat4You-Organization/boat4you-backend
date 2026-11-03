@@ -54,6 +54,8 @@ class SecurityConfiguration(
                             pathMatcher.matcher("/nausys_v6.openapi.yaml"),
                             pathMatcher.matcher("/mmk_api_2_1_3.json"),
                             pathMatcher.matcher("/public/**"),
+                            // Objave automation API: every call checks its own X-Api-Key (SocialApiController).
+                            pathMatcher.matcher("/api/social/v1/**"),
                             // /admin/nausys/** + /admin/mmk/** removed from
                             // permitAll on 23.4.2026 — endpoints were reachable
                             // by anyone (curl -m 3 → 000 = sync actually started).
