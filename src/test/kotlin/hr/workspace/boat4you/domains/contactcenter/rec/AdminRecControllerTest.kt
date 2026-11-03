@@ -53,7 +53,7 @@ class AdminRecControllerTest {
                 }
             }
 
-        @Bean fun adminRecController(store: RecSettingsStore) = AdminRecController(store)
+        @Bean fun adminRecController(store: RecSettingsStore) = AdminRecController(store, mock(RecQuery::class.java), RecFiles("/nonexistent"))
     }
 
     @Autowired private lateinit var controller: AdminRecController

@@ -146,4 +146,16 @@ class RecQueryDbTest {
             mapOf("/_next/static/chunks/x1.css" to "/replay-assets/www.boat4you.com/abc.css")
         query.assets("catamaran-greece", listOf("/_next/static/chunks/x1.css")) shouldBe emptyMap()
     }
+
+    @Test
+    fun `the file of a playable recording, never of an open or purged one, and every view is audited`() {
+        val w = world()
+        query.filePath(w.desktop) shouldBe "boat4you/2026-11-03/x-30.ndjson.gz"
+        val open = jdbc.queryForObject("SELECT id FROM rec_page_view WHERE status = 'OPEN'", Long::class.java)!!
+        val purged = jdbc.queryForObject("SELECT id FROM rec_page_view WHERE file_purged", Long::class.java)!!
+        query.filePath(open) shouldBe null
+        query.filePath(purged) shouldBe null
+        query.audit(w.desktop, 7)
+        jdbc.queryForList("SELECT user_id FROM rec_view_audit WHERE page_view_id = ?", Long::class.java, w.desktop) shouldContainExactly listOf(7L)
+    }
 }

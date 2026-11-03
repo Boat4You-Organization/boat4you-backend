@@ -73,6 +73,15 @@ class PublicEndpointRateLimiterTest {
     }
 
     @Test
+    fun `the replay assets the admin player loads have their own budget per IP, rec-config is not counted`() {
+        limiter.clock = CcTestClock()
+        val css = "/public/cc/v1/replay-assets/www.boat4you.com/${"a".repeat(64)}.css"
+        repeat(600) { hit(css, method = "GET").status shouldBe 200 }
+        hit(css, method = "GET").status shouldBe 429
+        hit("/public/cc/v1/rec-config", method = "GET").status shouldBe 200
+    }
+
+    @Test
     fun `without a usable X-Real-IP the realIp rules key on the socket address, a forged X-Forwarded-For buys nothing`() {
         limiter.clock = CcTestClock() // frozen, so the rule does not refill while the loop runs
         repeat(5) { hit("/public/chat/sessions", xri = null, xff = "10.0.0.$it").status shouldBe 200 }

@@ -204,6 +204,8 @@ class PublicEndpointRateLimiter(
             Rule("POST", "/public/cc/v1/beat", capacity = ccBeatCapacity, windowSeconds = ccBeatWindowSeconds, label = "cc-beat", realIp = true),
             // The session recorder's payloads (P6 R1): the beat's budget, nginx has its own zone in front.
             Rule("POST", "/public/cc/v1/r", capacity = ccBeatCapacity, windowSeconds = ccBeatWindowSeconds, label = "cc-rec", realIp = true),
+            // The archived CSS and fonts the admin player loads (P6 R2): the beat's budget, its own bucket.
+            Rule("GET", "/public/cc/v1/replay-assets/", prefix = true, capacity = ccBeatCapacity, windowSeconds = ccBeatWindowSeconds, label = "cc-replay-assets", realIp = true),
             Rule("POST", "/public/cc/v1/handoff", capacity = ccHandoffCapacity, windowSeconds = ccHandoffWindowSeconds, label = "cc-handoff", realIp = true),
         )
     }

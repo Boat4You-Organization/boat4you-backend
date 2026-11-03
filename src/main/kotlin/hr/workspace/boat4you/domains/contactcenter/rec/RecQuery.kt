@@ -140,6 +140,17 @@ class RecQuery(
         return RecDetail(row, pages, clicks, rage, errors)
     }
 
+    /** The file of a playable recording, relative to the recordings folder; null when it is open, purged or unknown. */
+    fun filePath(id: Long): String? = jdbc.queryForList("SELECT file_path FROM rec_page_view p WHERE id = ? AND $PLAYABLE", String::class.java, id).firstOrNull()
+
+    /** Who watched which recording: one row per view of a raw recording. */
+    fun audit(
+        pageViewId: Long,
+        userId: Long,
+    ) {
+        jdbc.update("INSERT INTO rec_view_audit (page_view_id, user_id) VALUES (?, ?)", pageViewId, userId)
+    }
+
     /** The archived copies of [paths] (Next.js stylesheets) on [siteId]'s own site, as `/replay-assets/…` paths; unknown ones are left out. */
     fun assets(
         siteId: String,

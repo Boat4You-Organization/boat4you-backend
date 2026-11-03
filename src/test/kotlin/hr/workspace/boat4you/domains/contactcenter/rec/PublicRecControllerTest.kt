@@ -41,7 +41,9 @@ class PublicRecControllerTest {
 
     private val spool by lazy { RecSpool(root.toString()) }
 
-    private fun controller() = PublicRecController(settings, spool)
+    private val files by lazy { RecFiles(root.toString()) }
+
+    private fun controller() = PublicRecController(settings, spool, files)
 
     private fun post(
         body: ByteArray,
@@ -155,5 +157,25 @@ class PublicRecControllerTest {
         }
         controller().config("evil").statusCode.value() shouldBe 400
         controller().config(null).statusCode.value() shouldBe 400
+    }
+
+    @Test
+    fun `an archived asset of one of the seven sites is served for a year with its own CSP, anything else is 404`() {
+        val sha = "a".repeat(64)
+        Files.createDirectories(root.resolve("assets/www.boat4you.com"))
+        Files.writeString(root.resolve("assets/www.boat4you.com/$sha.css"), ".a{color:red}")
+        Files.writeString(root.resolve("assets/www.boat4you.com/$sha.woff2"), "w")
+        controller().replayAsset("www.boat4you.com", "$sha.css").let {
+            it.statusCode.value() shouldBe 200
+            it.headers.contentType.toString() shouldBe "text/css"
+            it.headers.cacheControl shouldBe "max-age=31536000, public, immutable"
+            it.headers.getFirst("Content-Security-Policy") shouldBe "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:"
+            it.headers.getFirst("X-Content-Type-Options") shouldBe "nosniff"
+            String(it.body as ByteArray) shouldBe ".a{color:red}"
+        }
+        controller().replayAsset("www.boat4you.com", "$sha.woff2").headers.contentType.toString() shouldBe "font/woff2"
+        controller().replayAsset("evil.example", "$sha.css").statusCode.value() shouldBe 404
+        controller().replayAsset("www.boat4you.com", "../../secret.css").statusCode.value() shouldBe 404
+        controller().replayAsset("www.boat4you.com", "${"b".repeat(64)}.css").statusCode.value() shouldBe 404
     }
 }
