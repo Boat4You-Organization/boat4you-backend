@@ -3,7 +3,7 @@ package hr.workspace.boat4you.domains.contactcenter.search
 import java.time.LocalDate
 import java.util.Locale
 
-/** The three tables of V9_118, one per level of detail an engine reports. */
+/** The three tables of V9_119, one per level of detail an engine reports. */
 enum class SearchGrain(
     val table: String,
 ) {

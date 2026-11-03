@@ -73,7 +73,7 @@ data class CcSearchEngines(
     val pages: List<LandingPage>,
 )
 
-/** The search engine section of Statistics (F1): V9_118 next to `cc_visit` ORGANIC visits; bots and staff are never counted. */
+/** The search engine section of Statistics (F1): V9_119 next to `cc_visit` ORGANIC visits; bots and staff are never counted. */
 @Service
 class SearchEngineQuery(
     private val jdbc: JdbcTemplate,

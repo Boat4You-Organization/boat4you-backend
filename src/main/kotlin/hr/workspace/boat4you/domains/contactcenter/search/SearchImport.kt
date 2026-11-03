@@ -14,7 +14,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * Copies the search engine reports into V9_118. Google: every site, newest day first, the days never imported or imported
+ * Copies the search engine reports into V9_119. Google: every site, newest day first, the days never imported or imported
  * before Google settled them ([SETTLED_DAYS]) and not in the last [REFRESH_HOURS] hours, at most [daysPerRun] per site, back to
  * [GOOGLE_HISTORY_DAYS] (Google keeps 16 months), so the first runs fill the history and later runs refresh the recent days.
  * Bing: once in [BING_EVERY_HOURS], all it still keeps. A day is replaced per engine, site and grain in one transaction;
