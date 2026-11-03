@@ -162,6 +162,9 @@ class RecAssetArchiver(
         private const val HTTP_OK = 200
         private const val URL_MAX = 1000
 
+        /** True for a Next.js stylesheet path, the only kind the archive fetches (`/_next/static/chunks|css/<name>.css`). */
+        fun isStylesheetPath(path: String): Boolean = CSS_PATH.matches(path)
+
         /** The Next.js stylesheets a recording's text names, relative or on [host] itself; another host is ignored. */
         fun stylesheets(
             text: String,
