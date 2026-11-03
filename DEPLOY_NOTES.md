@@ -1,5 +1,17 @@
 # Backend deploy notes
 
+## 2026-11-03 — 🎬 Contact Center P6 R2: popis snimki i player — API — ✅ cusma2 LIVE 3.11. 07:58:24 UTC (jar main `0510bd7`, md5 9f0aacac66373df0dfe604617934f4e1, bez migracije, Flyway up to date, start 13,2 s, health 200); cusma3 ne treba (worker nepromijenjen)
+
+Mario 3.11.2026 („Da, kreni s R2“, „da“). Plan infra `docs/superpowers/plans/2026-10-30-p6-heatmape-snimke.md` (R2), ledger `infra/.superpowers/sdd/2026-10-30-p6-heatmape-snimke/progress.md` (## R2).
+
+- `GET /admin/cc/rec/page-views` (sajt, uređaj, vrsta stranice, bijesni klikovi, bez upita, posjet, razgovor; 7 dana zadano, najviše 400; bez staff/bot posjeta), `GET /page-views/{id}` (stranice posjeta, klikovi, početci bijesnih klikova, greške), `GET /page-views/{id}/raw` (gzip kakav je spremljen, `Content-Encoding: gzip`, svaki pregled u `rec_view_audit`), `POST /admin/cc/rec/assets` (SYSTEM_ADMIN).
+- `GET /public/cc/v1/replay-assets/{host}/{sha256}.{ext}`: arhivirani CSS i fontovi 7 sajtova, godinu dana immutable, vlastiti CSP `default-src 'none'`, nosniff; admin ih služi kao `admin.boat4you.com/replay-assets/` (cusma1 proxy, ograničenje po klijentu). Bez pravila u app rate limiteru (svi admini dolaze s jedne IP adrese proxyja).
+- `RecFiles`: svako čitanje s cusma3 diska kroz ograničena mjesta (4 za snimke, 2 za javne datoteke), 503 `busy` odmah kad NFS zastane — API nikad ne visi.
+- Bijesni klik = 3+ klika na isti element unutar 1000 ms (SQL, bez migracije).
+- Testovi: rec.* + limiter 64/64, ktlint 0; završni pregled (Opus): 0 kritičnih, 2 važna (+3 podignuta) popravljena testom, sitni u ledgeru.
+- Provjera izvana: admin endpointi bez prijave 403; nepoznata/strana datoteka 404; stvarni arhivirani CSS 200 `text/css` s `url(/replay-assets/…)`.
+- Rollback: `webservice.jar.prev` na cusma2 + restart (prethodni jar `629547e`, md5 ad1e58d0…).
+
 ## 2026-11-01 — 🎥 Contact Center P6 R1: snimke posjeta — prijem, worker, arhiva stilova, prekidači (V9_114) — ✅ cusma2 LIVE 1.11. 10:34:31 UTC (jar main `629547e`, md5 ad1e58d0034f7aefed778829ed67b522, Flyway „9.114 - cc rec“ 0,037 s, start 12,9 s, health 200); cusma3 (worker) ✅ LIVE 13:02:14 UTC kroz gate (prozor 13:00, bez crona i ShedLocka, 0 sync redaka; `/mnt/data/rec` cusma3 uid 1000 = cusma2)
 
 Mario 1.11.2026 („Da, nastavi R1“, „Da, deployaj R1“). Plan infra `docs/superpowers/plans/2026-10-30-p6-heatmape-snimke.md` (R1), ledger `infra/.superpowers/sdd/2026-10-30-p6-heatmape-snimke/progress.md`.
