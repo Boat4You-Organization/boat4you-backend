@@ -292,6 +292,41 @@ application:
     # Absolute base for push click-through URLs (…/trip/{token}?push=tag).
     web-base-url: ${TRIP_PUSH_WEB_BASE_URL:https://www.boat4you.com}
 
+# Objave — our own social publisher (boat4you-admin docs/superpowers/specs/2026-11-03-social-publisher-design.md).
+# Every network is off until its developer app keys are in the env; the admin shows which are missing. OAuth redirect
+# URI for every network: {SOCIAL_PUBLIC_API_URL}/public/social/oauth/{meta|tiktok|youtube|threads|linkedin}/callback.
+social:
+  token-key: ${SOCIAL_TOKEN_KEY:}
+  public-api-url: ${SOCIAL_PUBLIC_API_URL:${server.host}}
+  admin-origins: ${SOCIAL_ADMIN_ORIGINS:${server.host-admin-public}}
+  media-dir: ${SOCIAL_MEDIA_DIR:${application.upload.directory:/tmp/boat4you_data}/social}
+  meta:
+    app-id: ${SOCIAL_META_APP_ID:}
+    app-secret: ${SOCIAL_META_APP_SECRET:}
+    graph-version: ${SOCIAL_META_GRAPH_VERSION:v23.0}
+  threads:
+    app-id: ${SOCIAL_THREADS_APP_ID:}
+    app-secret: ${SOCIAL_THREADS_APP_SECRET:}
+  tiktok:
+    client-key: ${SOCIAL_TIKTOK_CLIENT_KEY:}
+    client-secret: ${SOCIAL_TIKTOK_CLIENT_SECRET:}
+    audited: ${SOCIAL_TIKTOK_AUDITED:false}
+  google:
+    client-id: ${SOCIAL_GOOGLE_CLIENT_ID:}
+    client-secret: ${SOCIAL_GOOGLE_CLIENT_SECRET:}
+  linkedin:
+    client-id: ${SOCIAL_LINKEDIN_CLIENT_ID:}
+    client-secret: ${SOCIAL_LINKEDIN_CLIENT_SECRET:}
+    scopes: ${SOCIAL_LINKEDIN_SCOPES:openid profile w_member_social}
+  ai:
+    model: ${SOCIAL_AI_MODEL:claude-opus-5-5}
+  higgsfield:
+    api-key-id: ${SOCIAL_HIGGSFIELD_API_KEY_ID:}
+    api-key-secret: ${SOCIAL_HIGGSFIELD_API_KEY_SECRET:}
+    base-url: ${SOCIAL_HIGGSFIELD_BASE_URL:https://api.higgsfield.ai}
+    image-to-video-path: ${SOCIAL_HIGGSFIELD_I2V_PATH:/wan/v2.7/image-to-video}
+    status-path: ${SOCIAL_HIGGSFIELD_STATUS_PATH:/requests/{id}/status}
+
 # AI site chat assistant (Mario 19.7.2026). Disabled until ANTHROPIC_API_KEY
 # is present in the server env — public endpoints then return 503 and the
 # web widget hides itself, so this is safe to deploy dark.
