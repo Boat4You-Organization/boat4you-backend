@@ -19,14 +19,19 @@ import jakarta.persistence.OrderColumn
 import jakarta.persistence.PreUpdate
 import jakarta.persistence.Table
 import jakarta.persistence.Version
+import org.hibernate.annotations.BatchSize
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 import java.time.Instant
 import java.time.LocalDate
 
+/** Lazy collections and the channel of a target load for a whole page of posts at once (no query per post). */
+private const val BATCH = 100
+
 /** One page / profile / channel we publish to (V9_118). Tokens are AES-GCM ciphertext (SocialCrypto); never serialized. */
 @Entity
 @Table(name = "social_account")
+@BatchSize(size = BATCH)
 open class SocialAccount {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -267,6 +272,7 @@ open class SocialPost {
     open var version: Long = 0
 
     @ManyToMany(fetch = FetchType.LAZY)
+    @BatchSize(size = BATCH)
     @JoinTable(
         name = "social_post_media",
         joinColumns = [JoinColumn(name = "post_id")],
@@ -276,6 +282,7 @@ open class SocialPost {
     open var media: MutableList<SocialMedia> = mutableListOf()
 
     @OneToMany(mappedBy = "post", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
+    @BatchSize(size = BATCH)
     @OrderBy("id ASC")
     open var targets: MutableList<SocialPostTarget> = mutableListOf()
 
@@ -332,6 +339,11 @@ open class SocialPostTarget {
 
     @Column(name = "published_at")
     open var publishedAt: Instant? = null
+
+    /** Bumped by every change, including the publisher's raw claim: an edit loaded before the claim cannot overwrite it. */
+    @Version
+    @Column(name = "version", nullable = false)
+    open var version: Long = 0
 }
 
 @Entity

@@ -121,6 +121,8 @@ CREATE TABLE social_post_target (
     error         VARCHAR(1000),
     attempts      INTEGER      NOT NULL DEFAULT 0,
     published_at  TIMESTAMPTZ,
+    -- Optimistic lock: the publisher's claim bumps it too, so an admin edit loaded before the claim answers 409.
+    version       BIGINT       NOT NULL DEFAULT 0,
     CONSTRAINT uq_social_post_target UNIQUE (post_id, account_id)
 );
 

@@ -15,17 +15,21 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import org.springframework.transaction.support.TransactionTemplate
+import java.security.GeneralSecurityException
 import java.time.Duration
 import java.time.Instant
 
 /**
- * Sends due channels to their networks. Every 20 s one node (ShedLock) claims up to 10 targets whose time has come
- * (`FOR UPDATE SKIP LOCKED`, status SCHEDULED → PUBLISHING, attempts + 1 in the same statement, so a target is never
- * taken twice), then publishes them one by one outside any transaction (uploads can take minutes). Outcome per target:
- * PUBLISHED with the network's id and link; a passing failure (5xx, 429, still processing) → SCHEDULED again after
- * 1 / 5 / 15 minutes, at most 3 attempts; anything else → FAILED with the network's words. A refused token marks the
- * channel EXPIRED. A target left PUBLISHING for 30 minutes (node died mid-upload) becomes FAILED, never retried
- * automatically: the network may have the post already, so a person decides.
+ * Sends due channels to their networks. Every 20 s one node (ShedLock) claims one target whose time has come
+ * (`FOR UPDATE SKIP LOCKED`, status SCHEDULED → PUBLISHING, claimed_at, attempts + 1 and version + 1 in the same
+ * statement, so a target is never taken twice and an admin edit loaded before the claim fails with 409), publishes it
+ * outside any transaction (uploads can take minutes), then claims the next, until nothing is due or the tick has run
+ * [TICK_BUDGET] (no target waits claimed while others upload). Outcome per target: PUBLISHED with the network's id and
+ * link; a passing failure before the post was sent (5xx, 429, still processing) → SCHEDULED again after 1 / 5 / 15
+ * minutes, at most 4 attempts; anything else → FAILED with the network's words (a failure after the send is never
+ * retried, see pointOfNoReturn). A refused token marks the channel EXPIRED. A target left PUBLISHING for 45 minutes
+ * (node died mid-upload; longer than the longest single upload) becomes FAILED, never retried automatically: the
+ * network may have the post already, so a person decides.
  */
 @Component
 class SocialPublisher(
@@ -44,7 +48,9 @@ class SocialPublisher(
     @SchedulerLock(name = "social_publisher", lockAtMostFor = "PT40M")
     fun tick() {
         failStuck()
-        claimDue(BATCH).forEach { id ->
+        val until = Instant.now().plus(TICK_BUDGET)
+        while (Instant.now().isBefore(until)) {
+            val id = claimDue(1).firstOrNull() ?: return
             runCatching { publishOne(id) }.onFailure { log.error("Social publish of target {} crashed", id, it) }
         }
     }
@@ -60,7 +66,7 @@ class SocialPublisher(
     fun failStuck() {
         val stuck =
             jdbc.queryForList(
-                "SELECT id FROM social_post_target WHERE status = 'PUBLISHING' AND claimed_at < now() - interval '30 minutes'",
+                "SELECT id FROM social_post_target WHERE status = 'PUBLISHING' AND claimed_at < now() - interval '45 minutes'",
                 Long::class.java,
             )
         stuck.forEach { id ->
@@ -74,13 +80,30 @@ class SocialPublisher(
     /** One claimed target: load, refresh the token if needed, publish, record. */
     @Suppress("TooGenericExceptionCaught") // a connector bug must not leave the target PUBLISHING forever
     fun publishOne(targetId: Long) {
-        val job = prepare(targetId) ?: return
+        val job =
+            try {
+                prepare(targetId) ?: return
+            } catch (e: Exception) {
+                // Nothing was sent. A crypto failure means SOCIAL_TOKEN_KEY is missing or differs between the nodes.
+                log.error("Social target {} cannot be prepared: {}", targetId, e.javaClass.simpleName)
+                finish(targetId) { t ->
+                    t.status = SocialTargetStatus.FAILED
+                    t.error =
+                        when (e) {
+                            is GeneralSecurityException -> "Token cannot be decrypted (check SOCIAL_TOKEN_KEY is identical on both nodes)"
+                            is SocialConfigException -> e.message
+                            else -> "Could not be prepared (${e.javaClass.simpleName}); nothing was sent"
+                        }
+                    t.dueAt = null
+                }
+                return
+            }
         val connector = accountService.connectorFor(job.job.platform)
         try {
             if (connector == null) throw PublishException("${job.job.platform} is not available yet")
             val refreshed = connector.refresh(job.job.tokens)
             if (refreshed != null) saveTokens(job.platformAccountId, refreshed)
-            val result = connector.publish(job.job.copy(tokens = refreshed ?: job.job.tokens))
+            val result = connector.publish(job.job.copy(tokens = refreshed ?: job.job.tokens, accepted = { id -> saveAccepted(targetId, id) }))
             finish(targetId) { t ->
                 t.status = SocialTargetStatus.PUBLISHED
                 t.externalId = result.externalId.take(EXTERNAL_ID_MAX)
@@ -91,9 +114,18 @@ class SocialPublisher(
         } catch (e: PublishException) {
             onFailure(targetId, job.platformAccountId, e)
         } catch (e: Exception) {
+            // Unknown where it broke: the network may have the post, so a person decides (never retried by itself).
             log.error("Social publish of target {} failed", targetId, e)
-            onFailure(targetId, job.platformAccountId, PublishException("Unexpected error: ${e.javaClass.simpleName}", retryable = true))
+            onFailure(targetId, job.platformAccountId, PublishException("Unexpected error: ${e.javaClass.simpleName}; check the channel before retrying"))
         }
+    }
+
+    /** The network's id for a post it accepted but has not finished (TikTok publish_id), stored before anything else can fail. */
+    private fun saveAccepted(
+        targetId: Long,
+        externalId: String,
+    ) {
+        jdbc.update("UPDATE social_post_target SET external_id = ? WHERE id = ?", externalId.take(EXTERNAL_ID_MAX), targetId)
     }
 
     /** The target's job with the account's decrypted tokens; null when it is gone, not PUBLISHING, or its channel is not connected (then FAILED). */
@@ -103,6 +135,7 @@ class SocialPublisher(
             if (t.status != SocialTargetStatus.PUBLISHING) return@execute null
             val a = t.account!!
             val p = t.post!!
+            if (p.media.isNotEmpty()) store.requireShared()
             if (a.status != SocialAccountStatus.CONNECTED || a.disconnectedAt != null || a.accessTokenEnc == null) {
                 t.status = SocialTargetStatus.FAILED
                 t.error = "${a.name} is not connected; connect it again and retry"
@@ -124,6 +157,7 @@ class SocialPublisher(
                         text = t.text ?: p.text,
                         title = t.title,
                         link = p.link,
+                        resumeId = t.externalId,
                         media =
                             p.media.map { m ->
                                 PublishMedia(
@@ -201,11 +235,18 @@ class SocialPublisher(
     companion object {
         /** Due SCHEDULED targets → PUBLISHING (attempts + 1), skipping rows another transaction holds; their ids. */
         const val CLAIM_SQL =
-            "UPDATE social_post_target SET status = 'PUBLISHING', claimed_at = now(), attempts = attempts + 1 " +
+            "UPDATE social_post_target SET status = 'PUBLISHING', claimed_at = now(), attempts = attempts + 1, version = version + 1 " +
                 "WHERE id IN (SELECT id FROM social_post_target WHERE status = 'SCHEDULED' AND due_at <= now() " +
                 "ORDER BY due_at LIMIT ? FOR UPDATE SKIP LOCKED) RETURNING id"
-        private const val BATCH = 10
-        private const val MAX_ATTEMPTS = 3
+
+        /**
+         * A tick stops taking new targets after this. Should the last upload outlive lockAtMostFor (40 min), the other
+         * node may tick meanwhile: claims are atomic, and failStuck only takes targets claimed more than 45 min ago.
+         */
+        private val TICK_BUDGET: Duration = Duration.ofMinutes(25)
+
+        /** The first try and three retries, after 1, 5 and 15 minutes. */
+        private const val MAX_ATTEMPTS = 4
         private const val ERROR_MAX = 1000
         private const val EXTERNAL_ID_MAX = 200
         private const val URL_MAX = 1000

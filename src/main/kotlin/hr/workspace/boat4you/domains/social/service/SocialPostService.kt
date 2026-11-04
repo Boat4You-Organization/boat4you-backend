@@ -146,6 +146,8 @@ class SocialPostService(
             it.status = SocialTargetStatus.SCHEDULED
             it.dueAt = Instant.now()
             it.error = null
+            // A person decided to send again: forget what the network accepted last time (TikTok publish_id).
+            it.externalId = null
         }
         post.status = SocialPostStatus.PUBLISHING
         return toDto(posts.save(post))
@@ -246,6 +248,8 @@ class SocialPostService(
     ) {
         val draft = action == SocialPostAction.DRAFT
         val due = if (draft) null else at ?: Instant.now()
+        // Never rewrite a channel the publisher has taken (also guarded by the target's version against a claim meanwhile).
+        if (post.targets.any { it.status in TAKEN }) throw SocialConflictException("This post already went out; duplicate it instead")
         val keep = wanted.map { it.accountId }.toSet()
         post.targets.removeIf { it.account?.id !in keep }
         wanted.forEach { w ->
@@ -327,6 +331,7 @@ class SocialPostService(
         private const val MAX_TITLE = 200
         private const val MIN_LEAD_S = 60L
         private val EDITABLE = setOf(SocialPostStatus.DRAFT, SocialPostStatus.SCHEDULED)
+        private val TAKEN = setOf(SocialTargetStatus.PUBLISHING, SocialTargetStatus.PUBLISHED)
         val OPEN_GENERATION = setOf(SocialGenerationStatus.QUEUED, SocialGenerationStatus.RUNNING)
         private val DELETABLE = setOf(SocialPostStatus.DRAFT, SocialPostStatus.CANCELLED, SocialPostStatus.FAILED)
 
