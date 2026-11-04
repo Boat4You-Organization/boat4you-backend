@@ -73,6 +73,16 @@ data class CcSearchEngines(
     val pages: List<LandingPage>,
 )
 
+/** The order of a query table; CTR and position only rank queries with at least [SearchEngineQuery.MIN_IMPRESSIONS] impressions. */
+enum class QuerySort(
+    internal val sql: String,
+) {
+    CLICKS("sum(c)"),
+    IMPRESSIONS("sum(i)"),
+    CTR("sum(c)::float8 / NULLIF(sum(i), 0)"),
+    POSITION("sum(ps) / NULLIF(sum(pi), 0)"),
+}
+
 /** The search engine section of Statistics (F1): V9_119 next to `cc_visit` ORGANIC visits; bots and staff are never counted. */
 @Service
 class SearchEngineQuery(
@@ -167,6 +177,26 @@ class SearchEngineQuery(
         )
     }
 
+    /**
+     * Google's top queries of the range for the query table's own order and, with [path], for one landing page of [siteId]
+     * (Google's query-by-page rows); without [path] the whole-site rows, as in [searchEngines].
+     */
+    @Suppress("LongParameterList") // the section's filters plus the table's page and order
+    fun googleQueries(
+        from: Instant,
+        to: Instant,
+        siteId: String?,
+        country: String?,
+        device: String?,
+        path: String?,
+        sort: QuerySort,
+        ascending: Boolean,
+    ): List<QueryStat> {
+        val fromDay = from.atZone(ZONE).toLocalDate()
+        val toDay = to.minusMillis(1).atZone(ZONE).toLocalDate()
+        return queries(Seo("GOOGLE", fromDay, toDay, siteId, country, device), path.orEmpty(), sort, ascending)
+    }
+
     private fun lastDays(): Map<String, LocalDate> =
         jdbc
             .query("SELECT engine, max(day) AS d FROM seo_import_day GROUP BY engine") { rs, _ -> rs.getString("engine") to rs.getDate("d").toLocalDate() }
@@ -180,19 +210,30 @@ class SearchEngineQuery(
                 *seo.args.toTypedArray(),
             ).toMap()
 
-    /** The top queries from the whole-site rows (path ''), the numbers of Google's Queries report; grouped per site first, no sort spill. */
-    private fun queries(seo: Seo): List<QueryStat> =
-        jdbc.query(
+    /**
+     * The top queries of [path], '' = the whole-site rows (the numbers of Google's Queries report); grouped per site first, no
+     * sort spill. Ties go to more clicks, then more impressions.
+     */
+    private fun queries(
+        seo: Seo,
+        path: String = "",
+        sort: QuerySort = QuerySort.CLICKS,
+        ascending: Boolean = false,
+    ): List<QueryStat> {
+        val having = if (sort == QuerySort.CTR || sort == QuerySort.POSITION) "HAVING sum(i) >= $MIN_IMPRESSIONS " else ""
+        return jdbc.query(
             "SELECT query, array_agg(site_id ORDER BY site_id) AS sites, sum(c) AS c, sum(i) AS i, sum(ps) AS ps, sum(pi) AS pi " +
-                "FROM (SELECT query, site_id, $SUMS FROM ${SearchGrain.QUERY.table} WHERE ${seo.where} AND path = '' GROUP BY query, site_id) q " +
-                "GROUP BY query ORDER BY sum(c) DESC, sum(i) DESC, query LIMIT $TOP_QUERIES",
+                "FROM (SELECT query, site_id, $SUMS FROM ${SearchGrain.QUERY.table} WHERE ${seo.where} AND path = ? GROUP BY query, site_id) q " +
+                "GROUP BY query $having" +
+                "ORDER BY ${sort.sql} ${if (ascending) "ASC" else "DESC"} NULLS LAST, sum(c) DESC, sum(i) DESC, query LIMIT $TOP_QUERIES",
             { rs, _ ->
                 val s = sums(rs).totals()
                 @Suppress("UNCHECKED_CAST")
                 QueryStat(rs.getString("query"), (rs.getArray("sites").array as Array<String>).toList(), s.clicks, s.impressions, s.position)
             },
-            *seo.args.toTypedArray(),
+            *(seo.args + path).toTypedArray(),
         )
+    }
 
     /**
      * The landing pages: Google's top pages by clicks and our top organic landing pages by visits, Google's numbers and top
@@ -268,6 +309,7 @@ class SearchEngineQuery(
         private const val TOP_QUERIES = 50
         private const val TOP_PAGES = 30
         private const val TOP_PAGE_QUERIES = 3
+        const val MIN_IMPRESSIONS = 10
         private const val SUMS =
             "sum(clicks) AS c, sum(impressions) AS i, COALESCE(sum(position_sum::float8) FILTER (WHERE position_sum > 0), 0) AS ps, " +
                 "COALESCE(sum(impressions) FILTER (WHERE position_sum > 0), 0) AS pi"
