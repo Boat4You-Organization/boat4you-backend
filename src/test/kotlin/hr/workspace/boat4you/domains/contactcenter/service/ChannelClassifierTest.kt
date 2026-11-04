@@ -56,4 +56,25 @@ class ChannelClassifierTest {
         on(ccSrc = "not-a-site").channel shouldBe "DIRECT" // only a known site id counts as a sister
         on(site = "catamaran-greece", ref = "catamaran-charter-greece.com").channel shouldBe "DIRECT"
     }
+
+    @Test
+    fun `AI assistants are their own channel, by referrer or by the utm_source ChatGPT appends`() {
+        on(ref = "chatgpt.com").channel shouldBe "AI"
+        on(ref = "chat.openai.com").channel shouldBe "AI"
+        on(ref = "www.perplexity.ai").channel shouldBe "AI"
+        on(ref = "gemini.google.com").channel shouldBe "AI"
+        on(ref = "copilot.microsoft.com").channel shouldBe "AI"
+        on(ref = "claude.ai").channel shouldBe "AI"
+        on(ref = "www.meta.ai").channel shouldBe "AI"
+        on(ref = "chat.mistral.ai").channel shouldBe "AI"
+        on(ref = "duck.ai").channel shouldBe "AI"
+        on(ref = "grok.com").channel shouldBe "AI"
+        on(ref = "chat.deepseek.com").channel shouldBe "AI"
+        on(utm = Utm(source = "chatgpt.com")).channel shouldBe "AI" // ChatGPT appends ?utm_source=chatgpt.com
+        on(utm = Utm(source = "Perplexity", medium = "referral")).channel shouldBe "AI"
+        on(ref = "chatgpt.com", gclid = "x").channel shouldBe "ADS" // an ad click still wins
+        on(ref = "evil-claude.ai").channel shouldBe "REFERRAL" // anchored like the other host lists
+        on(ref = "www.google.com").channel shouldBe "ORGANIC" // gemini only on its own host
+        on(utm = Utm(source = "partner-ai")).channel shouldBe "OTHER" // a source merely containing "ai" is not an assistant
+    }
 }
