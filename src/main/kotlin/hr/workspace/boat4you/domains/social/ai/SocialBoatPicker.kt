@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import hr.workspace.boat4you.domains.branding.AiSiteProfile
 import hr.workspace.boat4you.domains.social.service.SocialProperties
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import org.springframework.web.util.UriComponentsBuilder
 import java.time.DayOfWeek
+import java.time.Duration
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import kotlin.random.Random
@@ -31,7 +33,14 @@ class SocialBoatPicker(
     private val props: SocialProperties,
     private val objectMapper: ObjectMapper,
 ) {
-    private val client: RestClient by lazy { RestClient.builder().baseUrl(props.selfBaseUrl).build() }
+    private val client: RestClient by lazy {
+        val timeouts =
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(Duration.ofSeconds(CONNECT_S))
+                setReadTimeout(Duration.ofSeconds(READ_S))
+            }
+        RestClient.builder().baseUrl(props.selfBaseUrl).requestFactory(timeouts).build()
+    }
 
     fun pick(
         site: AiSiteProfile,
@@ -103,6 +112,8 @@ class SocialBoatPicker(
 
     companion object {
         private const val WEEK = 7L
+        private const val CONNECT_S = 10L
+        private const val READ_S = 60L
         private const val PAGE = 60
         private const val CANDIDATES = 25
         private const val MAX_IMAGES = 5

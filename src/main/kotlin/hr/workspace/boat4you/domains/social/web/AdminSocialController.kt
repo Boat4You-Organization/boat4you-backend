@@ -175,11 +175,14 @@ class AdminSocialController(
         @RequestBody body: SocialAiSettingDto,
     ): SocialAiSettingDto = ai.saveSetting(site, body, actor().userId)
 
-    /** "Napravi sada": today's AI post for this site now (once a day; a failed or skipped run can be repeated). */
+    /**
+     * "Napravi sada": today's AI post for this site (once a day; a failed, skipped or abandoned run can be repeated).
+     * Answers the RUNNING run at once; the post is made in the background and shows up in the run list.
+     */
     @PostMapping("/ai/{site}/run")
     fun runAi(
         @PathVariable site: String,
-    ): SocialAiRunDto = ai.run(site)
+    ): SocialAiRunDto = ai.start(site)
 
     private fun actor(): SocialActor {
         val principal = SecurityContextHolder.getContext().authentication?.principal as? UserDomainEntity

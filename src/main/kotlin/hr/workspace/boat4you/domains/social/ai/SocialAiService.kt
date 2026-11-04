@@ -33,6 +33,7 @@ import hr.workspace.boat4you.domains.social.service.SocialPostService
 import hr.workspace.boat4you.domains.social.service.SocialProperties
 import hr.workspace.boat4you.domains.social.service.SocialRules
 import hr.workspace.boat4you.domains.social.service.SocialValidationException
+import jakarta.annotation.PreDestroy
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.LoggerFactory
 import org.springframework.dao.DataIntegrityViolationException
@@ -45,6 +46,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * The daily AI post per site ("AI dnevne objave"). For every site with AI on, a few hours before its publish time:
@@ -71,6 +74,9 @@ class SocialAiService(
     private val tx: TransactionTemplate,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    /** One "Napravi sada" at a time per node, off the request thread. */
+    private val background: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "social-ai-run").apply { isDaemon = true } }
 
     fun overview(): SocialAiOverviewDto {
         val saved = settings.findAll().associateBy { it.site }
@@ -119,15 +125,43 @@ class SocialAiService(
         }
     }
 
-    /** "Napravi sada" from the admin, or the daily job. */
-    @Suppress("TooGenericExceptionCaught") // any failure becomes the run's error for the admin, never a crashed job
+    /**
+     * "Napravi sada" from the admin: claims today's run (409 when it is made already) and makes it on [background]
+     * (Claude and the photo downloads take minutes, longer than the proxy waits); answers the RUNNING run at once, the
+     * admin polls the run list until it is done.
+     */
+    fun start(site: String): SocialAiRunDto {
+        val setting = settings.findById(site).orElseThrow { SocialValidationException("Set up the AI for $site first") }
+        store.requireShared()
+        val date = LocalDate.now(ZONE)
+        val run = claimRun(site, date, force = true)
+        background.execute { produceOrFail(setting, run, date) }
+        return runDto(run)
+    }
+
+    /** The daily job's run for one site, made in the caller's thread. */
     fun run(
         site: String,
         date: LocalDate = LocalDate.now(ZONE),
         force: Boolean = true,
     ): SocialAiRunDto {
         val setting = settings.findById(site).orElseThrow { SocialValidationException("Set up the AI for $site first") }
-        val run = claimRun(site, date, force)
+        store.requireShared()
+        return produceOrFail(setting, claimRun(site, date, force), date)
+    }
+
+    @PreDestroy
+    fun stopBackground() {
+        background.shutdownNow()
+    }
+
+    @Suppress("TooGenericExceptionCaught") // any failure becomes the run's error for the admin, never a crashed job
+    private fun produceOrFail(
+        setting: SocialAiSetting,
+        run: SocialAiRun,
+        date: LocalDate,
+    ): SocialAiRunDto {
+        val site = setting.site!!
         try {
             val result = produce(setting, run, date)
             return runDto(result)
@@ -157,7 +191,7 @@ class SocialAiService(
                             runDate = date
                         },
                     )
-                force && existing.status in setOf(SocialAiRunStatus.FAILED, SocialAiRunStatus.SKIPPED) ->
+                force && (existing.status in setOf(SocialAiRunStatus.FAILED, SocialAiRunStatus.SKIPPED) || abandoned(existing)) ->
                     existing
                         .apply {
                             status = SocialAiRunStatus.RUNNING
@@ -168,6 +202,9 @@ class SocialAiService(
                 else -> throw SocialConflictException("Today's AI post for this site is already made")
             }
         } ?: throw DataIntegrityViolationException("run not claimed")
+
+    /** A run still RUNNING long after any run ends: its node died or restarted mid-run; the admin may make it again. */
+    private fun abandoned(r: SocialAiRun): Boolean = r.status == SocialAiRunStatus.RUNNING && r.updatedAt.isBefore(Instant.now().minus(RUN_ABANDONED))
 
     @Suppress("ReturnCount") // a guard clause per reason to skip today's post
     private fun produce(
@@ -204,9 +241,9 @@ class SocialAiService(
         val withVideo = setting.useVideo && props.higgsfieldConfigured
         val photoChannels = channels.filter { !(withVideo && it.platform in VIDEO_PLATFORMS) && it.platform != SocialPlatform.YOUTUBE }
         val photoPost = if (photoChannels.isEmpty()) null else createPhotoPost(day, photoChannels)
-        if (withVideo) queueVideo(day, run, channels.filter { it.platform in VIDEO_PLATFORMS }, photoPost?.id)
+        val videoQueued = withVideo && queueVideo(day, run, channels.filter { it.platform in VIDEO_PLATFORMS }, photoPost?.id)
         return updateRun(run.id!!) {
-            it.status = if (withVideo) SocialAiRunStatus.WAITING_VIDEO else SocialAiRunStatus.DONE
+            it.status = if (videoQueued) SocialAiRunStatus.WAITING_VIDEO else SocialAiRunStatus.DONE
             it.topic = "yacht:${boat.id} ${boat.facts["name"] ?: boat.slug}: ${draft.topic}".take(TOPIC_MAX)
             it.postId = photoPost?.id
         }
@@ -273,14 +310,17 @@ class SocialAiService(
         return post
     }
 
-    /** Asks Higgsfield for a video of the best photo; pollGenerations makes the TikTok / YouTube post when it is there. */
+    /**
+     * Asks Higgsfield for a video of the best photo; pollGenerations makes the TikTok / YouTube post when it is there.
+     * False when no video channel is selected (nothing to wait for).
+     */
     private fun queueVideo(
         day: DayContext,
         run: SocialAiRun,
         videoChannels: List<SocialAccount>,
         photoPostId: Long?,
-    ) {
-        if (videoChannels.isEmpty()) return
+    ): Boolean {
+        if (videoChannels.isEmpty()) return false
         val setting = day.setting
         val date = day.date
         val boat = day.boat
@@ -312,6 +352,7 @@ class SocialAiService(
                     )
             },
         )
+        return true
     }
 
     /** Higgsfield queue: submit queued requests, poll running ones, turn finished videos into the video post. */
@@ -479,6 +520,7 @@ class SocialAiService(
         private val EARLIEST: LocalTime = LocalTime.of(6, 0)
         private val FEATURE_PAUSE: Duration = Duration.ofDays(60)
         private val GENERATION_TIMEOUT: Duration = Duration.ofMinutes(45)
+        private val RUN_ABANDONED: Duration = Duration.ofMinutes(30)
         private const val DEFAULT_TIME = "18:00"
         private const val PHOTOS = 4
         private const val PHOTO_WIDTH = 2160
