@@ -1,5 +1,13 @@
 # Backend deploy notes
 
+## 2026-11-04 — 🖱️ Contact Center P6 R4: hover mapa (gdje miš stoji, po elementu; V9_120 `rec_hover`) — ✅ cusma2 LIVE 4.11. 08:32:29 UTC (`da92a83` = R4 `adf5b11` + main `f137c13`, md5 da6c40dd540a53c534a88b3422bd7bb1, Flyway „9.120 - rec hover“ 0,018 s, start 13,7 s, health 200); ⏳ cusma3 (worker, hover redovi) isti jar u večernjem gate prozoru (cron 18:07 UTC); admin `index-DWIzU6w7.js` LIVE 07:47 UTC; widget F8 live od 3.11. (`b4y-rec.70c2a794.js`)
+
+Mario 3.11.: „nama klijenti dolaze preko desktop, mobile i tablet tako da bi volio da imamo i mouse tracker“; „Da, kreni s R4“; „Da, sutra“ (deploy). Plan: infra `docs/superpowers/plans/2026-10-30-p6-heatmape-snimke.md` (R4 dio).
+- **V9_120 `rec_hover`** (page_view_id → rec_page_view ON DELETE CASCADE, hash, hash_beta, ex, ey, ms, n; indeks po page_view_id): jedan red po elementu i 1024-ćeliji unutar njega — milisekunde koje je pokazivač tamo stajao (svaki uzorak najviše 2 s, parkirani miš ne broji minute) i broj uzoraka. Piše ga worker (samo cusma3) kad se pregled stranice zatvori; pregled s dodirom (touch) ne dobiva redove; snimke prije F8 recordera nemaju element uz pokret → bez redova. `purgeHover` 95 dana (svaki sat), najviše 2000 ćelija po pregledu (najdulji boravci), `HOVER_MAX_POINTS` 120 po karti (pregled I2/#7).
+- **`GET /admin/cc/rec/heatmap`** (SYSTEM_ADMIN): uz `clicks`/`scroll` sada `hover` (ćelije po elementu, eX/eY — `@JsonProperty`, Jackson bi Kotlin `eX` inače zvao `ex`), `hoverMs` po elementu u tablici, `hoverPageViews` (EXISTS); insights bez hover zbrojeva. `RecExtractor.moves/touches` čita F8 tokene 7–9 iza isPrimary (hash.hashBeta, eX, eY).
+- **Provjere:** rec.* + contactcenter.admin.* + ktlint na spojenom stablu (da92a83) zeleni; neovisni pregled (Opus 5.5 high) 3.11.: 0 kritičnih, I1 (fixed/sticky položaj) + I2 (trošak hover redova) popravljeni, #6/#8 odgođeni (vidi ledger). Flyway preflight OK (9.120 slobodna; 9.118 drži nespojena grana, 9.119 tražilice). Deploy jutros prvi put stao 07:45 na prijavi cusma3 → cusma2 (nestale `/tmp/.aud_pw*`; cusma2 netaknut), drugi put 08:32 s Mariovom datotekom.
+- **Rollback:** cusma2 `webservice.jar.prev` = c0e3d355 (main `e3e8eda`, nema V9_120 → 9.120 „future“, start OK; tablica `rec_hover` ne smeta starom jaru). Admin podnosi oba backenda.
+
 ## 2026-11-03 — 📊 CC Tražilice: tablica Google pojmova — filtar ulazne stranice + sortiranje — ✅ cusma2 LIVE 3.11. 22:50:05 UTC (main `e3e8eda`, md5 c0e3d3550abd5974e1c062504c87ed0b, bez migracije, start 13,0 s, health 200); cusma3 ne treba (samo API)
 
 Mario 3.11. (preko sesije ADMIN), „Da, pregled + deploy“. Admin isti dan 22:50:32 UTC.
