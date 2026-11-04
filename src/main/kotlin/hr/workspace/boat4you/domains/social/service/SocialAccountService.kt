@@ -17,6 +17,7 @@ import hr.workspace.boat4you.domains.social.jpa.SocialTargetStatus
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import org.springframework.web.util.UriComponentsBuilder
 import java.net.URI
 import java.time.Duration
@@ -38,6 +39,8 @@ class SocialAccountService(
     private val posts: SocialPostRepository,
     private val crypto: SocialCrypto,
     private val props: SocialProperties,
+    private val tx: TransactionTemplate,
+    private val store: SocialMediaStore,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -57,7 +60,7 @@ class SocialAccountService(
             when {
                 c == null -> "Not available yet"
                 !crypto.configured -> "SOCIAL_TOKEN_KEY is not set"
-                else -> c.notConfiguredReason()
+                else -> c.notConfiguredReason() ?: store.unavailableReason()
             }
         }
 
@@ -89,22 +92,31 @@ class SocialAccountService(
 
     /**
      * The network sent the browser back. Always answers a URL of the admin to redirect to: `?connected=…&count=…` or
-     * `?error=…&platform=…` (the admin shows a toast). An unknown or stale state gives the first admin origin.
+     * `?error=…&platform=…` (the admin shows a toast). An unknown or stale state gives the first admin origin. The state
+     * is used up in its own transaction first (single use even when the exchange fails); the exchange with the network
+     * runs outside any transaction and only the save of the channels takes one.
      */
-    @Transactional
     fun finishConnect(
         callbackPath: String,
         code: String?,
         stateValue: String?,
         error: String?,
     ): String {
-        val state = stateValue?.let { states.findById(it).orElse(null) }
+        val state = stateValue?.let { consumeState(it) }
         val fallback = props.adminOriginList.firstOrNull()?.let { "$it/social/channels" } ?: "/"
         if (state == null) return withParams(fallback, mapOf("error" to "The connection expired; start it again"))
-        states.delete(state)
         val problem = preflightProblem(state, callbackPath, code, error)
         return if (problem != null) failUrl(state, problem) else exchangeAndSave(state, code!!)
     }
+
+    /** Loads and deletes the state in one committed transaction; null when unknown or already used. */
+    private fun consumeState(value: String): SocialOAuthState? =
+        tx.execute {
+            states.findById(value).orElse(null)?.also {
+                states.delete(it)
+                states.flush()
+            }
+        }
 
     /** Why the callback cannot be used, or null. */
     private fun preflightProblem(
@@ -126,6 +138,7 @@ class SocialAccountService(
         message: String,
     ) = withParams(state.returnUrl, mapOf("error" to message.take(ERROR_MAX), "platform" to state.platform!!.name))
 
+    @Suppress("TooGenericExceptionCaught") // the browser must always land back in the admin, never on a 500 page
     private fun exchangeAndSave(
         state: SocialOAuthState,
         code: String,
@@ -136,7 +149,7 @@ class SocialAccountService(
             if (connected.isEmpty()) {
                 failUrl(state, "No page or profile on this login")
             } else {
-                val saved = save(connected, state.site, state.adminUserId)
+                val saved = tx.execute { save(connected, state.site, state.adminUserId) }.orEmpty()
                 withParams(state.returnUrl, mapOf("connected" to platform.name, "count" to saved.size.toString()))
             }
         } catch (e: PublishException) {
@@ -144,6 +157,10 @@ class SocialAccountService(
             failUrl(state, e.message ?: "refused")
         } catch (e: SocialConfigException) {
             failUrl(state, e.message ?: "not configured")
+        } catch (e: Exception) {
+            // Class and message only, with anything token-like blanked out; never the stack or a body.
+            log.error("Social connect {} failed: {}: {}", platform, e.javaClass.name, e.message?.replace(TOKEN_LIKE, "[redacted]")?.take(ERROR_MAX))
+            failUrl(state, "Connection failed")
         }
     }
 
@@ -275,6 +292,7 @@ class SocialAccountService(
         private const val NAME_MAX = 200
         private const val HANDLE_MAX = 300
         private const val URL_MAX = 1000
+        private val TOKEN_LIKE = Regex("[A-Za-z0-9._~+/=-]{24,}")
 
         /** The path segment of the OAuth callback per network (Meta covers Facebook and Instagram). */
         fun callbackPathOf(platform: SocialPlatform): String =
