@@ -15,8 +15,8 @@ Mario 3.11.2026: „alat s kojim ćemo moći objavljivati jednu objavu na više 
 
 Deploy:
 
-- [ ] `SOCIAL_MEDIA_DIR` na dijeljenom NFS-u (vidi Env), direktorij napraviti i provjeriti da cusma2 preko NFS-a može pisati; `SOCIAL_TOKEN_KEY` generirati (`openssl rand -base64 32`), `SOCIAL_PUBLIC_API_URL`, `SOCIAL_ADMIN_ORIGINS` — na oba čvora.
-- [ ] nginx limit za `/admin/social/media` i `/api/social/v1/media`.
+- [x] 4.11. ~10:33 UTC (Mario „Da, kreni“; `infra/deploy-scripts/social_env_set.sh`): `SOCIAL_TOKEN_KEY` generiran jednom i upisan ISTI na oba čvora, `SOCIAL_MEDIA_DIR` (cusma3 `/mnt/data/social` = cusma2 `/mnt/shared/social`, 755 cusma3:cusma3 kao data-upload, pisanje kao cusma3 i cusma2 OK, marker `.objave-shared` vidljiv s oba), `SOCIAL_PUBLIC_API_URL`, `SOCIAL_ADMIN_ORIGINS` (env backup `.bak-<ts>-social`). ⚠️ ffmpeg/ffprobe NEMA ni na jednom čvoru → video bez sličice i dimenzija (ne ruši); instalirati kad krenu video objave.
+- [x] 4.11. ~10:34 UTC nginx cusma2 `boat4you.conf`: `location /admin/social/media` + `/api/social/v1/media` (512m, `proxy_request_buffering off`, 300 s), `nginx -t` ok, reload; backup `.bak-<ts>-social`.
 - [ ] Jar s V9_118 (nove tablice; lock samo nad njima; ide out-of-order jer je V9_119 već live) na cusma2 pa cusma3 (prozor VM3 iz README_PROD) → zatim admin `/social`. Provjera: health 200, Flyway „9.118 - social publisher“, `GET /admin/social/platforms` (SYSTEM_ADMIN) vraća razloge „not configured“, admin Objave se otvara s praznim popisom.
 - [ ] Developer aplikacije (Meta, TikTok, Google, LinkedIn, Threads) i ključevi u env — kasnije, bez njih kanali pišu „Nije postavljeno na serveru“.
 - [ ] Prije starta: `SOCIAL_TOKEN_KEY` isti na oba čvora (usporediti sha256 vrijednosti, ne ispisivati ključ), `.objave-shared` vidljiv s oba čvora (`ls $SOCIAL_MEDIA_DIR/.objave-shared` na cusma2 i cusma3).
