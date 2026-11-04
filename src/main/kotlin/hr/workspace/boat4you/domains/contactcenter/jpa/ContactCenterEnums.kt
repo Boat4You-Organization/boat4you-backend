@@ -3,8 +3,11 @@ package hr.workspace.boat4you.domains.contactcenter.jpa
 /** Where a contact stands in the broker's pipeline (`cc_contact.status`, VARCHAR(20)). */
 enum class ContactStatus { NEW, REPLIED, OFFER_SENT, NEGOTIATING, WON, LOST, SPAM }
 
-/** How a visit reached the site (`cc_visit.channel`, VARCHAR(20)); SISTER = another of our own sites. */
-enum class VisitChannel { ORGANIC, ADS, SISTER, DIRECT, REFERRAL, SOCIAL, EMAIL, OTHER }
+/**
+ * How a visit reached the site (`cc_visit.channel`, VARCHAR(20)); SISTER = another of our own sites, AI = a link in an AI
+ * assistant's answer (ChatGPT, Perplexity, Gemini, Copilot, Claude, …).
+ */
+enum class VisitChannel { ORGANIC, ADS, SISTER, DIRECT, REFERRAL, SOCIAL, EMAIL, AI, OTHER }
 
 /** `cc_visit.device_class`, VARCHAR(10). */
 enum class DeviceClass { DESKTOP, TABLET, MOBILE }

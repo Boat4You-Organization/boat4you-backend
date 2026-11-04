@@ -1,5 +1,16 @@
 # Backend deploy notes
 
+## 2026-11-04 — 🤖 Contact Center: kanal „AI asistenti“ (`VisitChannel.AI`) — posjeti iz ChatGPT-a, Perplexityja, Geminija, Copilota, Claudea i dr. više se ne skrivaju pod Referral — ✅ cusma2 LIVE 4.11.2026 19:55:46 UTC (`63812df` = `feat/cc-ai-channel` `4014c56` + main `66287db`, md5 5a20132ca3b02545ff8904f7c067bb2c, bez nove migracije — jar nosi 204 migracije uklj. V9_118 Objave i V9_120, Flyway „Schema up to date“, start 13,7 s, lokalni health 200 nakon ~18 s, javni 200; `.prev` = d2efcc9a Objave); ✅ cusma3 LIVE 20:16:39 UTC istim jarom kroz gate (prozor, bez sync cronova 15 min, bez ShedLocka, 0 sync linija; running prije d2efcc9a; start 13,6 s) — **LIVE OBA ČVORA**; admin filtar lijevka u istoj večeri (admin DEPLOY_NOTES)
+
+Mario 4.11.2026 („Da, kanal“, „Večeras nakon Objava“): analiza AI vidljivosti pokazala je da AI botovi puno čitaju (ClaudeBot, PerplexityBot), a posjete iz AI odgovora padaju u REFERRAL, pa se ne vide. PR boat4you-backend#20.
+
+- `ContactCenterEnums.kt`: `VisitChannel.AI` (stupac `cc_visit.channel` je VARCHAR(20) → bez migracije).
+- `ChannelClassifier.kt`: pravilo `fromAssistant(referrerHost, utmSource)` iza EMAIL, prije SOCIAL: referrer na `chatgpt.com`, `openai.com`, `perplexity.ai`, `claude.ai`, `meta.ai`, `mistral.ai`, `duck.ai`, `grok.com`, `deepseek.com`, `you.com`, `phind.com`, `poe.com`, `gemini.google.com`/`bard.google.com`, `copilot.microsoft.com` (sidrene domene, `evil-claude.ai` ostaje REFERRAL) ili `utm_source` koji ChatGPT sam dodaje (`chatgpt.com`, i `perplexity`, `gemini`, `copilot`, `claude`, `deepseek`, `grok`, `openai`). Handoff/cc_src, ADS (gclid/fbclid) i EMAIL i dalje imaju prednost.
+- Test `ChannelClassifierTest` (RED → GREEN): 11 domena → AI, utm bez referrera → AI, chatgpt + gclid → ADS, google → ORGANIC, `partner-ai` → OTHER. ktlint 0; detekt pada već na mainu (nije gate).
+- Admin lijevak `GET /admin/cc/funnel?channel=AI` prolazi validaciju `VisitChannel.entries` (prije = „unknown channel“) → jar PRIJE admina.
+- Danas pokazuje ~0 (nginx 3.–4.11.: 0 AI referrera) = bazna crta za test vidljivosti.
+- Rollback: `webservice.jar.prev` (d2efcc9a) + restart (cusma3 samo kroz gate); nema migracije.
+
 ## 2026-11-03 — 📣 Objave (social publisher S1): kanali po sajtu, objavljivanje i zakazivanje, AI dnevne objave, Higgsfield video (V9_118) — ✅ cusma2 LIVE 4.11.2026 18:30:23 UTC (`30fd837` = grana `claude/blissful-wright-sn6a9f` + main `2ca226b`, md5 d2efcc9a0467bb771da13d2c8b039d42, Flyway „9.118 - social publisher“ [out of order] 0,039 s, start 14,0 s, health 200, `/admin/social/platforms` bez prijave 403, `/api/social/v1/accounts` bez ključa 401); ✅ admin `/social` LIVE 18:52:57 UTC (`index-BChUh6VF.js`); ✅ cusma3 isti jar LIVE 19:14:21 UTC (gate 18:51 ABORT ShedLock `imageDownload`, 19:13 prošao; „Schema up to date“, start 13,5 s) — OBA ČVORA; tag `live/2026-11-04-objave-s1`
 
 Mario 3.11.2026: „alat s kojim ćemo moći objavljivati jednu objavu na više kanala … sve inhouse“ i „za svaki web Facebook, Instagram i TikTok, YouTube jedan za sve; samostalne objave; AI radi dnevne objave uz Higgsfield i slike koje već imamo; cijeli centar“. Admin: boat4you-admin `/social` (PR na istoj grani), dizajn `docs/superpowers/specs/2026-11-03-social-publisher-design.md` (admin repo).
