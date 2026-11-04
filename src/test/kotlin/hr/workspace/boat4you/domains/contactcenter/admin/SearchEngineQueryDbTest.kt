@@ -123,6 +123,42 @@ class SearchEngineQueryDbTest {
         result().bingQueries.map { it.query } shouldBe listOf("yacht")
     }
 
+    private fun googleQueries(
+        siteId: String? = null,
+        path: String? = null,
+        sort: QuerySort = QuerySort.CLICKS,
+        ascending: Boolean = false,
+    ) = query.googleQueries(from, to, siteId, null, null, path, sort, ascending).map { it.query }
+
+    @Test
+    fun `query tables sort by any column, ctr and position only from ten impressions`() {
+        row("seo_query_day", query = "a", clicks = 5, impressions = 100, position = 8.0)
+        row("seo_query_day", query = "b", clicks = 3, impressions = 10, position = 2.0)
+        row("seo_query_day", query = "c", clicks = 1, impressions = 1, position = 1.0)
+        row("seo_query_day", query = "d", clicks = 0, impressions = 300, position = 20.0)
+
+        googleQueries() shouldBe listOf("a", "b", "c", "d")
+        googleQueries(sort = QuerySort.CLICKS, ascending = true) shouldBe listOf("d", "c", "b", "a")
+        googleQueries(sort = QuerySort.IMPRESSIONS) shouldBe listOf("d", "a", "b", "c")
+        googleQueries(sort = QuerySort.CTR) shouldBe listOf("b", "a", "d")
+        googleQueries(sort = QuerySort.POSITION, ascending = true) shouldBe listOf("b", "a", "d")
+        googleQueries(sort = QuerySort.POSITION) shouldBe listOf("d", "a", "b")
+    }
+
+    @Test
+    fun `a landing page lists the queries of that page of that site only`() {
+        row("seo_query_day", query = "whole site", clicks = 50, impressions = 500)
+        row("seo_query_day", query = "lagoon 42", path = "/en/a", clicks = 9, impressions = 90, position = 3.0)
+        row("seo_query_day", query = "lagoon 42", path = "/en/a", country = "DE", clicks = 1, impressions = 10, position = 7.0)
+        row("seo_query_day", query = "bali 4.2", path = "/en/b", clicks = 20, impressions = 90)
+        row("seo_query_day", site = "europe-yachts", query = "other site", path = "/en/a", clicks = 30, impressions = 90)
+
+        googleQueries(siteId = "boat4you", path = "/en/a") shouldBe listOf("lagoon 42")
+        query.googleQueries(from, to, "boat4you", null, null, "/en/a", QuerySort.CLICKS, false).single() shouldBe
+            QueryStat("lagoon 42", listOf("boat4you"), 10, 100, (270.0 + 70.0) / 100)
+        googleQueries(siteId = "boat4you") shouldBe listOf("whole site")
+    }
+
     @Test
     fun `top queries come from the whole-site rows and list their sites`() {
         row("seo_query_day", query = "lagoon 42", clicks = 4, impressions = 40, position = 3.0)

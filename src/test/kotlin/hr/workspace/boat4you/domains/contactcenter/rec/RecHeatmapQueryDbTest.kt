@@ -70,6 +70,15 @@ class RecHeatmapQueryDbTest {
         dead,
     )
 
+    private fun hover(
+        pv: Long,
+        hash: String,
+        ex: Int,
+        ey: Int,
+        ms: Int,
+        n: Int = 1,
+    ) = jdbc.update("INSERT INTO rec_hover (page_view_id, hash, hash_beta, ex, ey, ms, n) VALUES (?, ?, ?, ?, ?, ?, ?)", pv, "a$hash", hash, ex, ey, ms, n)
+
     private fun inquiry(
         visit: Long,
         at: Instant,
@@ -208,5 +217,29 @@ class RecHeatmapQueryDbTest {
         query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second).clicks shouldBe 9
         click(w.b, 5000, "specs", "Specs")
         query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second).clicks shouldBe 9
+    }
+
+    @Test
+    fun `where the mouse rested - cells per element, seconds per element, page views with mouse data`() {
+        val w = world()
+        hover(w.a, "photo", 512, 1536, 2500, 2)
+        hover(w.b, "photo", 512, 1536, 500)
+        hover(w.b, "specs", 16896, 16896, 1200)
+        hover(w.b, "menu", 512, 512, 300) // hovered, never clicked: on the map, not in the element table
+        val h = query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second)
+        h.hoverPageViews shouldBe 2
+        h.hover.getValue("photo").single() shouldBe HoverPoint(512, 1536, 3000)
+        h.hover.getValue("menu").single().ms shouldBe 300
+        h.elements.first { it.hash == "photo" }.hoverMs shouldBe 3000
+        h.elements.first { it.hash == "reach" }.hoverMs shouldBe 0
+    }
+
+    @Test
+    fun `the hover map keeps up to 120 cells per element, the longest first`() {
+        val w = world()
+        (0 until 150).forEach { i -> hover(w.b, "photo", (i % 32) * 1024 + 512, (i / 32) * 1024 + 512, 10 + i) }
+        val cells = query.heatmap("boat4you", "BOAT", "DESKTOP", range.first, range.second).hover.getValue("photo")
+        cells.size shouldBe 120
+        cells.first().ms shouldBe 159
     }
 }

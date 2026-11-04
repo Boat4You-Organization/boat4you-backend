@@ -15,12 +15,15 @@ object RecExtractor {
     const val EVENT_MUTATION = 6
     const val EVENT_DOCUMENT = 8
     const val EVENT_CLICK = 9
+    const val EVENT_MOUSE_MOVE = 12
+    const val EVENT_TOUCH_START = 17
     const val EVENT_SCROLL = 10
     const val EVENT_RESIZE = 11
     const val EVENT_NAVIGATION = 29
     const val EVENT_SCRIPT_ERROR = 31
     const val EVENT_VARIABLE = 34
     const val EVENT_SUMMARY = 36
+    private const val MOVE_HASH = 7
 
     /** Metric id of TotalBytes (clarity-js types/data.d.ts, Data.Metric). */
     private const val METRIC_TOTAL_BYTES = "2"
@@ -70,12 +73,25 @@ object RecExtractor {
         val data: Map<String, Any?>,
     )
 
+    /** A mouse move the F8 recorder tagged with its element: the hover map's sample (P6 R4). */
+    data class Move(
+        val time: Long,
+        val hash: String?,
+        val hashBeta: String?,
+        val eX: Int,
+        val eY: Int,
+    )
+
     data class Payload(
         val envelope: Envelope,
         val events: List<Event>,
         val variables: Map<String, List<String>>,
         /** Times of the DOM changes (Mutation events), for telling a click the page reacted to from a dead one. */
         val mutations: List<Long> = emptyList(),
+        /** The mouse moves that carry their element (recorder F8); older recordings have none. */
+        val moves: List<Move> = emptyList(),
+        /** Touches: a page view with any is a touch screen, whose synthetic mouse moves say nothing about attention. */
+        val touches: Int = 0,
     )
 
     /** One payload (one line of a recording): its envelope, the kept events in arrival order, and its variables. */
@@ -84,26 +100,46 @@ object RecExtractor {
         val events = ArrayList<Event>()
         val variables = LinkedHashMap<String, List<String>>()
         val mutations = ArrayList<Long>()
+        val moves = ArrayList<Move>()
+        var touches = 0
         for (entry in entries) {
             @Suppress("UNCHECKED_CAST")
             val t = entry as? Tokens ?: continue
             val type = eventType(t) ?: continue
-            if (type == EVENT_MUTATION) {
-                (t.getOrNull(0) as? Number)?.toLong()?.let(mutations::add)
-                continue
+            when (type) {
+                EVENT_MUTATION -> (t.getOrNull(0) as? Number)?.toLong()?.let(mutations::add)
+                EVENT_MOUSE_MOVE -> move(t)?.let(moves::add)
+                EVENT_TOUCH_START -> touches++
+                EVENT_VARIABLE -> variables(t, variables)
+                else -> decode(type, t, payloadJson)?.let { events += Event(type, (t.getOrNull(0) as? Number)?.toLong(), it) }
             }
-            if (type == EVENT_VARIABLE) {
-                var v = 2
-                while (v + 1 < t.size) {
-                    val values = t[v + 1]
-                    variables[jsKey(t[v])] = if (values is List<*>) values.map { it.toString() } else listOf(values.toString())
-                    v += 2
-                }
-                continue
-            }
-            decode(type, t, payloadJson)?.let { events += Event(type, (t.getOrNull(0) as? Number)?.toLong(), it) }
         }
-        return Payload(envelope(e), events, variables, mutations)
+        return Payload(envelope(e), events, variables, mutations, moves, touches)
+    }
+
+    /** A Variable event's `key, values` pairs from token 2 on, into [into]. */
+    private fun variables(
+        t: Tokens,
+        into: MutableMap<String, List<String>>,
+    ) {
+        var v = 2
+        while (v + 1 < t.size) {
+            val values = t[v + 1]
+            into[jsKey(t[v])] = if (values is List<*>) values.map { it.toString() } else listOf(values.toString())
+            v += 2
+        }
+    }
+
+    /** A move's F8 tokens: `[time, 12, target, x, y, id, isPrimary, "hash.hashBeta", eX, eY]`; null for a move without them. */
+    private fun move(t: Tokens): Move? {
+        val hashes = (t.getOrNull(MOVE_HASH) as? String)?.takeIf { it.isNotBlank() }?.split('.')
+        val eX = (t.getOrNull(MOVE_HASH + 1) as? Number)?.toInt()
+        val eY = (t.getOrNull(MOVE_HASH + 2) as? Number)?.toInt()
+        return if (hashes == null || eX == null || eY == null) {
+            null
+        } else {
+            Move((t.getOrNull(0) as? Number)?.toLong() ?: 0, hashes[0].ifBlank { null }, hashes.getOrNull(1), eX, eY)
+        }
     }
 
     /** Only the envelope of a payload: the worker routes and dedupes on it without decoding the events. */
