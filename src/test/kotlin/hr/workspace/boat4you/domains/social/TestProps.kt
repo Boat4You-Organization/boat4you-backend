@@ -6,17 +6,19 @@ import java.net.http.HttpRequest
 import java.util.concurrent.Flow
 
 object TestProps {
+    @Suppress("LongParameterList") // each override a test needs
     fun props(
         tokenKey: String = "",
         metaAppId: String = "meta-app",
         metaAppSecret: String = "meta-secret",
         tiktokKey: String = "tt-key",
         tiktokSecret: String = "tt-secret",
+        mediaDir: String = "/tmp/social-test",
     ) = SocialProperties(
         tokenKey = tokenKey,
         publicApiUrl = "https://api.boat4you.com",
         adminOrigins = "https://admin.boat4you.com",
-        mediaDir = "/tmp/social-test",
+        mediaDir = mediaDir,
         maxImageMb = 20,
         maxVideoMb = 500,
         metaAppId = metaAppId,

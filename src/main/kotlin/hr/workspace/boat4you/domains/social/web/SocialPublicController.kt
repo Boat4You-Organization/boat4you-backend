@@ -50,6 +50,7 @@ class SocialPublicController(
     fun file(
         @PathVariable file: String,
     ): ResponseEntity<Resource> {
+        store.requireShared()
         val thumb = file.endsWith(".thumb.jpg")
         val token = if (thumb) file.removeSuffix(".thumb.jpg") else file.substringBeforeLast('.')
         val found =

@@ -26,6 +26,7 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Duration
 import java.util.concurrent.TimeUnit
+import javax.imageio.ImageIO
 import kotlin.io.path.deleteIfExists
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -35,6 +36,10 @@ import kotlin.math.roundToInt
  * Instagram takes JPEG only) or `{token}/media.mp4|mov` plus `{token}/thumb.jpg` (ffmpeg, when installed). Served
  * publicly at [publicUrl] so Instagram and Threads, which fetch by URL, can read them; the 30-character token makes
  * the URL unguessable. Type is decided by magic bytes, never by the client's Content-Type or name.
+ *
+ * Both nodes must see the same files (NFS): the directory must hold the marker file `.objave-shared`, created by the
+ * deploy (infra social_env_set.sh), never by this code. Without it nothing is stored, served or generated
+ * ([unavailableReason]), so a node with the share not mounted fails loudly instead of writing to its local disk.
  */
 @Component
 class SocialMediaStore(
@@ -51,6 +56,14 @@ class SocialMediaStore(
             .followRedirects(HttpClient.Redirect.NEVER)
             .build()
 
+    /** Why media cannot be stored or served on this node (the shared directory is not there), or null. */
+    fun unavailableReason(): String? =
+        if (Files.isRegularFile(root.resolve(SHARED_MARKER))) null else "SOCIAL_MEDIA_DIR is not the shared directory (marker $SHARED_MARKER missing)"
+
+    fun requireShared() {
+        unavailableReason()?.let { throw SocialConfigException(it) }
+    }
+
     /** Store a stream (admin upload, automation upload, downloaded URL, generated video) and its row. */
     fun store(
         input: InputStream,
@@ -59,7 +72,7 @@ class SocialMediaStore(
         origin: SocialMediaOrigin = SocialMediaOrigin.UPLOAD,
         originRef: String? = null,
     ): SocialMedia {
-        Files.createDirectories(root)
+        requireShared()
         val tmp = Files.createTempFile(root, "upload-", ".part")
         try {
             val spooled = spool(input, tmp)
@@ -119,6 +132,9 @@ class SocialMediaStore(
         size: Long,
     ) {
         if (size > props.maxImageMb * MB) throw SocialValidationException("Photo larger than ${props.maxImageMb} MB")
+        // A small file can still claim a huge canvas (decompression bomb): the header decides before anything is decoded.
+        val (w, h) = SocialImages.headerSize(tmp) ?: throw SocialValidationException("The photo cannot be read")
+        if (w.toLong() * h > MAX_PIXELS) throw SocialValidationException("Photo larger than ${MAX_PIXELS / 1_000_000} megapixels")
         val jpeg = SocialImages.normalize(Files.readAllBytes(tmp)) ?: throw SocialValidationException("The photo cannot be read")
         Files.write(dir.resolve("media.jpg"), jpeg.bytes)
         media.kind = SocialMediaKind.IMAGE
@@ -153,8 +169,9 @@ class SocialMediaStore(
     }
 
     /**
-     * Download a picture or video for the automation / the AI. Our own API (`publicApiUrl`, e.g. a catalogue photo at
-     * /public/image/{id}) is always allowed; any other host must be https and resolve to public addresses only (SSRF guard).
+     * Download a picture or video for the automation / the AI. A catalogue photo of our own API (`publicApiUrl` or
+     * `selfBaseUrl` + /public/image/…) is always allowed; any other address must be https and resolve to public addresses
+     * only (SSRF guard).
      */
     fun storeFromUrl(
         url: String,
@@ -162,9 +179,9 @@ class SocialMediaStore(
         origin: SocialMediaOrigin = SocialMediaOrigin.URL,
         originRef: String? = null,
     ): SocialMedia {
-        val uri = runCatching { URI(url.trim()) }.getOrNull() ?: throw SocialValidationException("Bad media URL")
-        val own = url.trim().startsWith(props.publicApiUrl.trimEnd('/') + "/") || url.trim().startsWith(props.selfBaseUrl.trimEnd('/') + "/")
-        if (!own) assertPublicHttps(uri)
+        requireShared()
+        val uri = runCatching { URI(url.trim()).normalize() }.getOrNull() ?: throw SocialValidationException("Bad media URL")
+        if (!isOwnImage(uri)) assertPublicHttps(uri)
         val res =
             http.send(
                 HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(DOWNLOAD_TIMEOUT_S)).GET().build(),
@@ -195,6 +212,14 @@ class SocialMediaStore(
         return SocialImages.shrink(bytes, maxBytes) ?: throw SocialValidationException("The photo cannot be made small enough")
     }
 
+    private fun isOwnImage(uri: URI): Boolean =
+        uri.userInfo == null &&
+            listOf(props.publicApiUrl, props.selfBaseUrl).any { base ->
+                val b = runCatching { URI(base.trimEnd('/')) }.getOrNull()
+                b != null && uri.scheme == b.scheme && uri.host.equals(b.host, ignoreCase = true) && uri.port == b.port &&
+                    uri.rawPath.orEmpty().startsWith("${b.rawPath.orEmpty()}/public/image/")
+            }
+
     private fun assertPublicHttps(uri: URI) {
         if (uri.scheme != "https" || uri.host.isNullOrBlank() || uri.userInfo != null) throw SocialValidationException("Media URL must be https")
         val addresses = runCatching { InetAddress.getAllByName(uri.host).toList() }.getOrDefault(emptyList())
@@ -204,36 +229,43 @@ class SocialMediaStore(
     private fun isPublic(a: InetAddress): Boolean =
         !(a.isAnyLocalAddress || a.isLoopbackAddress || a.isLinkLocalAddress || a.isSiteLocalAddress || a.isMulticastAddress) &&
             !(a is Inet4Address && (a.address[0].toInt() and 0xff) == CGNAT_FIRST && (a.address[1].toInt() and 0xc0) == CGNAT_SECOND_MASK) &&
+            // 0.0.0.0/8 ("this network") and 198.18.0.0/15 (benchmarking) are not public either.
+            !(a is Inet4Address && ((a.address[0].toInt() and 0xff) == 0 || ((a.address[0].toInt() and 0xff) == BENCH_FIRST && (a.address[1].toInt() and 0xfe) == BENCH_SECOND))) &&
             !(a.hostAddress.startsWith("fc") || a.hostAddress.startsWith("fd"))
 
-    private fun probeVideo(path: Path): Triple<Int?, Int?, Int?>? =
-        runCatching {
-            val p =
-                ProcessBuilder(
-                    "ffprobe",
-                    "-v",
-                    "error",
-                    "-select_streams",
-                    "v:0",
-                    "-show_entries",
-                    "stream=width,height:format=duration",
-                    "-of",
-                    "json",
-                    path.toString(),
-                ).redirectErrorStream(true).start()
-            val out = p.inputStream.readBytes().decodeToString()
-            if (!p.waitFor(PROBE_TIMEOUT_S, TimeUnit.SECONDS)) {
-                p.destroyForcibly()
-                return null
-            }
-            val json = jacksonObjectMapper().readTree(out)
-            val stream = json.path("streams").path(0)
-            Triple(
-                stream.path("width").asInt(0).takeIf { it > 0 },
-                stream.path("height").asInt(0).takeIf { it > 0 },
-                json.path("format").path("duration").asText("").toDoubleOrNull()?.roundToInt(),
-            )
-        }.onFailure { log.info("ffprobe unavailable or failed: {}", it.message) }.getOrNull()
+    /** ffprobe's JSON goes to a temp file (not a pipe that blocks until exit), so the timeout really ends a stuck run. */
+    private fun probeVideo(path: Path): Triple<Int?, Int?, Int?>? {
+        val out = Files.createTempFile("ffprobe-", ".json")
+        return try {
+            runCatching {
+                val p =
+                    ProcessBuilder(
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-select_streams",
+                        "v:0",
+                        "-show_entries",
+                        "stream=width,height:format=duration",
+                        "-of",
+                        "json",
+                        path.toString(),
+                    ).redirectOutput(out.toFile())
+                        .redirectError(ProcessBuilder.Redirect.DISCARD)
+                        .start()
+                if (!finished(p)) return null
+                val json = jacksonObjectMapper().readTree(out.toFile())
+                val stream = json.path("streams").path(0)
+                Triple(
+                    stream.path("width").asInt(0).takeIf { it > 0 },
+                    stream.path("height").asInt(0).takeIf { it > 0 },
+                    json.path("format").path("duration").asText("").toDoubleOrNull()?.roundToInt(),
+                )
+            }.onFailure { log.info("ffprobe unavailable or failed: {}", it.message) }.getOrNull()
+        } finally {
+            out.deleteIfExists()
+        }
+    }
 
     private fun thumbnail(
         video: Path,
@@ -242,11 +274,20 @@ class SocialMediaStore(
         runCatching {
             val p =
                 ProcessBuilder("ffmpeg", "-y", "-loglevel", "error", "-ss", "1", "-i", video.toString(), "-frames:v", "1", "-vf", "scale=720:-2", out.toString())
-                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
                     .start()
-            p.inputStream.readBytes()
-            p.waitFor(PROBE_TIMEOUT_S, TimeUnit.SECONDS) && p.exitValue() == 0 && Files.exists(out)
+            (finished(p) && Files.exists(out)).also { ok -> if (!ok) out.deleteIfExists() }
         }.getOrDefault(false)
+
+    /** Waits up to [PROBE_TIMEOUT_S]; a process still running then is killed and counts as failed, like a non-zero exit. */
+    private fun finished(p: Process): Boolean {
+        if (!p.waitFor(PROBE_TIMEOUT_S, TimeUnit.SECONDS)) {
+            p.destroyForcibly()
+            return false
+        }
+        return p.exitValue() == 0
+    }
 
     data class Sniffed(
         val kind: SocialMediaKind,
@@ -265,6 +306,10 @@ class SocialMediaStore(
         private const val ORIGIN_REF_MAX = 200
         private const val CGNAT_FIRST = 100
         private const val CGNAT_SECOND_MASK = 0x40
+        private const val BENCH_FIRST = 198
+        private const val BENCH_SECOND = 18
+        private const val MAX_PIXELS = 50_000_000L
+        const val SHARED_MARKER = ".objave-shared"
         private const val NAME_MAX = 120
 
         /** JPEG FF D8 FF, PNG 89 50 4E 47, WebP RIFF....WEBP, MP4/MOV ....ftyp (qt = MOV). */
@@ -330,6 +375,47 @@ object SocialImages {
         } finally {
             runCatching { release() }
         }
+
+    /**
+     * Width and height from the file's header, without decoding the pixels: JPEG and PNG through ImageIO's readers
+     * (they read the header only), WebP from its VP8 / VP8L / VP8X chunk. Null when the header cannot be read.
+     */
+    fun headerSize(file: Path): Pair<Int, Int>? = imageIoSize(file) ?: webpSize(Files.newInputStream(file).use { it.readNBytes(WEBP_HEAD) })
+
+    private fun imageIoSize(file: Path): Pair<Int, Int>? =
+        runCatching {
+            ImageIO.createImageInputStream(file.toFile())?.use { input ->
+                val reader = ImageIO.getImageReaders(input).asSequence().firstOrNull() ?: return@use null
+                try {
+                    reader.input = input
+                    reader.getWidth(0) to reader.getHeight(0)
+                } finally {
+                    reader.dispose()
+                }
+            }
+        }.getOrNull()
+
+    @Suppress("MagicNumber", "ReturnCount") // byte offsets of the WebP container (RIFF), as the format defines them; one return per chunk kind
+    fun webpSize(h: ByteArray): Pair<Int, Int>? {
+        if (h.size < WEBP_HEAD || String(h, 0, 4, Charsets.US_ASCII) != "RIFF" || String(h, 8, 4, Charsets.US_ASCII) != "WEBP") return null
+
+        fun u(i: Int) = h[i].toInt() and 0xff
+        return when (String(h, 12, 4, Charsets.US_ASCII)) {
+            "VP8X" -> (1 + (u(24) or (u(25) shl 8) or (u(26) shl 16))) to (1 + (u(27) or (u(28) shl 8) or (u(29) shl 16)))
+            "VP8L" -> {
+                if (u(20) != 0x2F) return null
+                val bits = u(21) or (u(22) shl 8) or (u(23) shl 16) or (u(24) shl 24)
+                (1 + (bits and 0x3FFF)) to (1 + ((bits shr 14) and 0x3FFF))
+            }
+            "VP8 " -> {
+                if (u(23) != 0x9D || u(24) != 0x01 || u(25) != 0x2A) return null
+                ((u(26) or (u(27) shl 8)) and 0x3FFF) to ((u(28) or (u(29) shl 8)) and 0x3FFF)
+            }
+            else -> null
+        }
+    }
+
+    private const val WEBP_HEAD = 30
 
     /** Any JPEG / PNG / WebP → JPEG, longest side ≤ 2160; null when undecodable. */
     fun normalize(bytes: ByteArray): Jpeg? =
