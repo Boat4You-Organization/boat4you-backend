@@ -118,8 +118,11 @@ class YouTubeConnector(
                     mapOf("X-Upload-Content-Type" to video.mimeType, "X-Upload-Content-Length" to video.sizeBytes.toString()),
             )
         val location = start.header("Location") ?: throw PublishException("YouTube gave no upload address", retryable = true)
-        val done = http.putFile(location, video.file, bearer(job.tokens.accessToken) + mapOf("Content-Type" to video.mimeType))
-        val id = done.body.path("id").asText()
+        // The upload session holds nothing public; the PUT of the file creates the video.
+        val id =
+            pointOfNoReturn(YOUTUBE) {
+                http.putFile(location, video.file, bearer(job.tokens.accessToken) + mapOf("Content-Type" to video.mimeType)).body.path("id").asText().sentOr(YOUTUBE)
+            }
         return PublishResult(id, "https://www.youtube.com/watch?v=$id")
     }
 
@@ -131,5 +134,6 @@ class YouTubeConnector(
         const val MAX_TITLE = 100
         const val MAX_DESCRIPTION = 5000
         const val TRAVEL = "19"
+        const val YOUTUBE = "YouTube"
     }
 }

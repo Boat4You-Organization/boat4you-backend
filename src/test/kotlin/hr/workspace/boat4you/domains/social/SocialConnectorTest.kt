@@ -1,15 +1,20 @@
 package hr.workspace.boat4you.domains.social
 
+import hr.workspace.boat4you.domains.social.connectors.LinkedInConnector
 import hr.workspace.boat4you.domains.social.connectors.MetaConnector
+import hr.workspace.boat4you.domains.social.connectors.PublishException
 import hr.workspace.boat4you.domains.social.connectors.PublishJob
 import hr.workspace.boat4you.domains.social.connectors.PublishMedia
 import hr.workspace.boat4you.domains.social.connectors.TikTokConnector
 import hr.workspace.boat4you.domains.social.connectors.Tokens
 import hr.workspace.boat4you.domains.social.jpa.SocialMediaKind
 import hr.workspace.boat4you.domains.social.jpa.SocialPlatform
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.junit.jupiter.api.Test
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 
@@ -103,6 +108,143 @@ class SocialConnectorTest {
         http.calls.single().body shouldContain "grant_type=refresh_token"
     }
 }
+
+/**
+ * Retries after the point of no return: once the call that makes a post public was sent, a lost answer must never lead
+ * to an automatic second post. [timeoutOn] fails a call the way SocialHttp turns an IOException (HttpTimeoutException)
+ * into a retryable PublishException.
+ */
+class SocialConnectorRetryTest {
+    private fun job(
+        platform: SocialPlatform,
+        media: List<PublishMedia>,
+        meta: Map<String, String> = emptyMap(),
+        resumeId: String? = null,
+        accepted: (String) -> Unit = {},
+    ) = PublishJob(platform, "123", Tokens("tok", null, null), meta, false, "Kornati by catamaran", "Kornati", null, media, resumeId, accepted)
+
+    private fun photo() =
+        PublishMedia(SocialMediaKind.IMAGE, "https://api.boat4you.com/public/social/media/tok1.jpg", Path.of("/tmp/x1.jpg"), "image/jpeg", 100, 1600, 1200) {
+            ByteArray(0)
+        }
+
+    private fun timeoutOn(
+        failing: String,
+        routes: (String) -> String,
+    ) = object : SocialHttpRoutes() {
+        override fun answer(url: String): String = routes(url)
+
+        override fun send(request: java.net.http.HttpRequest): Answer {
+            if (request.uri().toString().contains(failing)) {
+                calls += FakeHttp.Call(request.method(), request.uri().toString(), "")
+                throw PublishException("${request.uri().host} not reachable: HttpTimeoutException", retryable = true)
+            }
+            return super.send(request)
+        }
+    }
+
+    @Test
+    fun `Instagram media_publish timing out is not retried - the post may be live`() {
+        val http =
+            timeoutOn("/media_publish") { url ->
+                when {
+                    url.contains("/17841/media") -> """{"id":"CONTAINER"}"""
+                    url.contains("/CONTAINER?") -> """{"status_code":"FINISHED"}"""
+                    else -> error(url)
+                }
+            }
+        val meta = MetaConnector(TestProps.props()).also { it.http = http }
+        val e = shouldThrow<PublishException> { meta.publish(job(SocialPlatform.INSTAGRAM, listOf(photo()), mapOf("igUserId" to "17841"))) }
+        e.retryable shouldBe false
+        e.message!! shouldContain "Sent to Instagram, not confirmed"
+    }
+
+    @Test
+    fun `Facebook feed post timing out is not retried, a failing container before it still is`() {
+        val feed = timeoutOn("/123/feed") { error(it) }
+        val e = shouldThrow<PublishException> { MetaConnector(TestProps.props()).also { it.http = feed }.publish(job(SocialPlatform.FACEBOOK, emptyList())) }
+        e.retryable shouldBe false
+        e.message!! shouldContain "Sent to Facebook, not confirmed"
+
+        // An Instagram container is a private draft: failing to create one may be retried.
+        val container = timeoutOn("/17841/media") { error(it) }
+        val prep =
+            shouldThrow<PublishException> {
+                MetaConnector(TestProps.props()).also { it.http = container }.publish(job(SocialPlatform.INSTAGRAM, listOf(photo()), mapOf("igUserId" to "17841")))
+            }
+        prep.retryable shouldBe true
+    }
+
+    @Test
+    fun `LinkedIn answering 201 without a post id is sent, not retried`() {
+        val http = SocialHttpRoutesOf { """{}""" }
+        val e = shouldThrow<PublishException> { LinkedInConnector(TestProps.props()).also { it.http = http }.publish(job(SocialPlatform.LINKEDIN, emptyList())) }
+        e.retryable shouldBe false
+        e.message!! shouldContain "Sent to LinkedIn, not confirmed"
+    }
+
+    @Test
+    fun `TikTok photos - publish_id is handed over at once, then polled`() {
+        val accepted = mutableListOf<String>()
+        val http =
+            FakeHttp(
+                listOf(
+                    "/creator_info/query/" to """{"data":{"privacy_level_options":["SELF_ONLY"]}}""",
+                    "/content/init/" to """{"data":{"publish_id":"PUB1"}}""",
+                    "/status/fetch/" to """{"data":{"status":"PUBLISH_COMPLETE"}}""",
+                ),
+            )
+        val result =
+            TikTokConnector(TestProps.props()).also { it.http = http }.publish(job(SocialPlatform.TIKTOK, listOf(photo()), accepted = { accepted += it }))
+        accepted shouldContainExactly listOf("PUB1")
+        result.externalId shouldBe "PUB1"
+    }
+
+    @Test
+    fun `TikTok retry with a stored publish_id only polls its status, never uploads again`() {
+        val http = FakeHttp(listOf("/status/fetch/" to """{"data":{"status":"PUBLISH_COMPLETE","publicaly_available_post_id":["7300"]}}"""))
+        val result =
+            TikTokConnector(TestProps.props())
+                .also { it.http = http }
+                .publish(job(SocialPlatform.TIKTOK, listOf(photo()), mapOf("username" to "boat4you"), resumeId = "PUB1"))
+        http.calls.map { it.url.substringAfter("tiktokapis.com") } shouldContainExactly listOf("/v2/post/publish/status/fetch/")
+        http.calls.single().body shouldContain "PUB1"
+        result.url shouldBe "https://www.tiktok.com/@boat4you/video/7300"
+    }
+
+    @Test
+    fun `TikTok video - a chunk upload breaking off after init is not retried, the publish_id is already stored`() {
+        val file = Files.createTempFile("tiktok-", ".mp4").also { Files.write(it, ByteArray(1000)) }
+        try {
+            val accepted = mutableListOf<String>()
+            val http =
+                timeoutOn("upload.tiktok") { url ->
+                    when {
+                        url.contains("/creator_info/query/") -> """{"data":{"privacy_level_options":["SELF_ONLY"]}}"""
+                        url.contains("/video/init/") -> """{"data":{"publish_id":"PUB9","upload_url":"https://upload.tiktok.example/u/1"}}"""
+                        else -> error(url)
+                    }
+                }
+            val video = PublishMedia(SocialMediaKind.VIDEO, "https://api.boat4you.com/v.mp4", file, "video/mp4", 1000, 1080, 1920) { ByteArray(0) }
+            val e =
+                shouldThrow<PublishException> {
+                    TikTokConnector(TestProps.props()).also { it.http = http }.publish(job(SocialPlatform.TIKTOK, listOf(video), accepted = { accepted += it }))
+                }
+            accepted shouldContainExactly listOf("PUB9")
+            e.retryable shouldBe false
+            e.message!! shouldContain "Sent to TikTok, not confirmed"
+        } finally {
+            Files.deleteIfExists(file)
+        }
+    }
+}
+
+/** Routes computed per URL, answering without headers. */
+@Suppress("FunctionName")
+fun SocialHttpRoutesOf(answer: (String) -> String) =
+    object : SocialHttpRoutes() {
+        override fun answer(url: String): String = answer(url)
+    }
 
 /** A FakeHttp whose answer is computed per URL. */
 abstract class SocialHttpRoutes : hr.workspace.boat4you.domains.social.connectors.SocialHttp() {

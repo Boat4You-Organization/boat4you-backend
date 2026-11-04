@@ -99,7 +99,9 @@ data class CredentialsRequest(
     val identifier: String,
     val secret: String,
     val site: String? = null,
-)
+) {
+    override fun toString() = "CredentialsRequest($platform $identifier)"
+}
 
 data class AccountPatch(
     /** Site id, or "" / null for "all sites" (shared channel such as our YouTube). */

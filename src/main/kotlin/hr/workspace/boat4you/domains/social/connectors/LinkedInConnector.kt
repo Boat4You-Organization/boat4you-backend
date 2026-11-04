@@ -130,8 +130,11 @@ class LinkedInConnector(
                 put("isReshareDisabledByAuthor", false)
                 content?.let { put("content", it) }
             }
-        val res = http.postJson("https://api.linkedin.com/rest/posts", body, rest(token))
-        val urn = res.header("x-restli-id") ?: res.header("x-linkedin-id") ?: throw PublishException("LinkedIn gave no post id", retryable = true)
+        val urn =
+            pointOfNoReturn(LINKEDIN) {
+                val res = http.postJson("https://api.linkedin.com/rest/posts", body, rest(token))
+                (res.header("x-restli-id") ?: res.header("x-linkedin-id")).orEmpty().sentOr(LINKEDIN)
+            }
         return PublishResult(urn, "https://www.linkedin.com/feed/update/${URLEncoder.encode(urn, Charsets.UTF_8)}")
     }
 
@@ -193,6 +196,7 @@ class LinkedInConnector(
 
     private companion object {
         const val SIXTY_DAYS_S = 60L * 86_400
+        const val LINKEDIN = "LinkedIn"
 
         /** LinkedIn "little text format": these characters must be escaped in commentary or the post is cut there. */
         private val RESERVED = Regex("""([\\|{}@\[\]()<>#*_~])""")

@@ -19,6 +19,9 @@ import java.time.Instant
  * `status/fetch` until PUBLISH_COMPLETE. Photos (1–35): `content/init` with PULL_FROM_URL — TikTok fetches our public
  * media URLs, so their URL prefix must be verified in the TikTok developer portal. Until TikTok audits our app every
  * post is SELF_ONLY (private; `social.tiktok.audited=false`).
+ *
+ * The publish_id TikTok answers on init is handed to [PublishJob.accepted] at once (the publisher stores it on the
+ * target): once TikTok has it, the post goes out without us, so a later attempt only polls that id, never uploads again.
  */
 @Component
 class TikTokConnector(
@@ -106,17 +109,7 @@ class TikTokConnector(
 
     override fun publish(job: PublishJob): PublishResult {
         val auth = bearer(job.tokens.accessToken)
-        val creator = http.postJson("$API/v2/post/publish/creator_info/query/", emptyMap<String, Any>(), auth).body.path("data")
-        val options = creator.path("privacy_level_options").map { it.asText() }
-        val privacy =
-            when {
-                !job.privateOnly && "PUBLIC_TO_EVERYONE" in options -> "PUBLIC_TO_EVERYONE"
-                "SELF_ONLY" in options -> "SELF_ONLY"
-                else -> options.firstOrNull() ?: "SELF_ONLY"
-            }
-        val video = job.media.firstOrNull { it.kind == SocialMediaKind.VIDEO }
-        val publishId =
-            if (video != null) uploadVideo(job, video, privacy, auth) else postPhotos(job, privacy, auth)
+        val publishId = job.resumeId?.takeIf { it.isNotBlank() } ?: start(job, auth)
         val done = waitPublished(publishId, auth)
         val username = job.meta["username"].orEmpty()
         val postId = done.path("publicaly_available_post_id").path(0).asText("").ifBlank { null }
@@ -127,6 +120,23 @@ class TikTokConnector(
                 else -> null
             }
         return PublishResult(postId ?: publishId, url)
+    }
+
+    /** First attempt: privacy options, then the upload; the publish_id. */
+    private fun start(
+        job: PublishJob,
+        auth: Map<String, String>,
+    ): String {
+        val creator = http.postJson("$API/v2/post/publish/creator_info/query/", emptyMap<String, Any>(), auth).body.path("data")
+        val options = creator.path("privacy_level_options").map { it.asText() }
+        val privacy =
+            when {
+                !job.privateOnly && "PUBLIC_TO_EVERYONE" in options -> "PUBLIC_TO_EVERYONE"
+                "SELF_ONLY" in options -> "SELF_ONLY"
+                else -> options.firstOrNull() ?: "SELF_ONLY"
+            }
+        val video = job.media.firstOrNull { it.kind == SocialMediaKind.VIDEO }
+        return if (video != null) uploadVideo(job, video, privacy, auth) else postPhotos(job, privacy, auth)
     }
 
     private fun uploadVideo(
@@ -158,22 +168,27 @@ class TikTokConnector(
                 ).body
                 .path("data")
         val uploadUrl = init.path("upload_url").asText()
-        RandomAccessFile(video.file.toFile(), "r").use { file ->
-            for (i in 0 until count) {
-                val first = i * chunk
-                // The last chunk carries the remainder (TikTok: total_chunk_count = floor(size / chunk_size)).
-                val last = if (i == count - 1) size - 1 else first + chunk - 1
-                val bytes = ByteArray((last - first + 1).toInt())
-                file.seek(first)
-                file.readFully(bytes)
-                http.put(
-                    uploadUrl,
-                    HttpRequest.BodyPublishers.ofByteArray(bytes),
-                    mapOf("Content-Type" to video.mimeType, "Content-Range" to "bytes $first-$last/$size"),
-                )
+        val publishId = init.path("publish_id").asText("").ifBlank { throw PublishException("TikTok gave no publish id") }
+        job.accepted(publishId)
+        // TikTok publishes by itself once the last chunk is in: an upload that breaks off is never sent again.
+        pointOfNoReturn(TIKTOK) {
+            RandomAccessFile(video.file.toFile(), "r").use { file ->
+                for (i in 0 until count) {
+                    val first = i * chunk
+                    // The last chunk carries the remainder (TikTok: total_chunk_count = floor(size / chunk_size)).
+                    val last = if (i == count - 1) size - 1 else first + chunk - 1
+                    val bytes = ByteArray((last - first + 1).toInt())
+                    file.seek(first)
+                    file.readFully(bytes)
+                    http.put(
+                        uploadUrl,
+                        HttpRequest.BodyPublishers.ofByteArray(bytes),
+                        mapOf("Content-Type" to video.mimeType, "Content-Range" to "bytes $first-$last/$size"),
+                    )
+                }
             }
         }
-        return init.path("publish_id").asText()
+        return publishId
     }
 
     private fun postPhotos(
@@ -183,29 +198,37 @@ class TikTokConnector(
     ): String {
         val photos = job.media.filter { it.kind == SocialMediaKind.IMAGE }
         if (photos.isEmpty()) throw PublishException("TikTok needs a video or photos")
-        return http
-            .postJson(
-                "$API/v2/post/publish/content/init/",
-                mapOf(
-                    "post_info" to
+        // PULL_FROM_URL: TikTok fetches the photos and publishes by itself, so this init is the point of no return.
+        val publishId =
+            pointOfNoReturn(TIKTOK) {
+                http
+                    .postJson(
+                        "$API/v2/post/publish/content/init/",
                         mapOf(
-                            "title" to (job.title?.takeIf { it.isNotBlank() } ?: job.text.lineSequence().first()).take(MAX_PHOTO_TITLE),
-                            "description" to job.text.take(MAX_PHOTO_DESCRIPTION),
-                            "privacy_level" to privacy,
-                            "disable_comment" to false,
-                            "auto_add_music" to true,
+                            "post_info" to
+                                mapOf(
+                                    "title" to (job.title?.takeIf { it.isNotBlank() } ?: job.text.lineSequence().first()).take(MAX_PHOTO_TITLE),
+                                    "description" to job.text.take(MAX_PHOTO_DESCRIPTION),
+                                    "privacy_level" to privacy,
+                                    "disable_comment" to false,
+                                    "auto_add_music" to true,
+                                ),
+                            "source_info" to mapOf("source" to "PULL_FROM_URL", "photo_cover_index" to 0, "photo_images" to photos.map { it.url }),
+                            "post_mode" to "DIRECT_POST",
+                            "media_type" to "PHOTO",
                         ),
-                    "source_info" to mapOf("source" to "PULL_FROM_URL", "photo_cover_index" to 0, "photo_images" to photos.map { it.url }),
-                    "post_mode" to "DIRECT_POST",
-                    "media_type" to "PHOTO",
-                ),
-                auth,
-            ).body
-            .path("data")
-            .path("publish_id")
-            .asText()
+                        auth,
+                    ).body
+                    .path("data")
+                    .path("publish_id")
+                    .asText()
+                    .sentOr(TIKTOK)
+            }
+        job.accepted(publishId)
+        return publishId
     }
 
+    /** Only reads the status of [publishId]: safe to repeat on a later attempt (a passing failure here is retryable). */
     private fun waitPublished(
         publishId: String,
         auth: Map<String, String>,
@@ -223,6 +246,7 @@ class TikTokConnector(
 
     private companion object {
         const val API = "https://open.tiktokapis.com"
+        const val TIKTOK = "TikTok"
         const val DAY_S = 86_400L
         const val REFRESH_MARGIN_S = 600L
         const val CHUNK = 10L * 1024 * 1024

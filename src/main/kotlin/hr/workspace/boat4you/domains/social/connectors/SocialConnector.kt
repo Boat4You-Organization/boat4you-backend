@@ -49,7 +49,9 @@ data class Tokens(
     val accessToken: String,
     val refreshToken: String?,
     val expiresAt: Instant?,
-)
+) {
+    override fun toString() = "Tokens(expiresAt=$expiresAt)"
+}
 
 data class ConnectedAccount(
     val platform: SocialPlatform,
@@ -60,7 +62,9 @@ data class ConnectedAccount(
     val tokens: Tokens,
     val meta: Map<String, String> = emptyMap(),
     val privateOnly: Boolean = false,
-)
+) {
+    override fun toString() = "ConnectedAccount($platform $externalId $name)"
+}
 
 data class PublishMedia(
     val kind: SocialMediaKind,
@@ -85,7 +89,13 @@ data class PublishJob(
     val title: String?,
     val link: String?,
     val media: List<PublishMedia>,
-)
+    /** What the network answered on an earlier attempt that it accepted (TikTok publish_id): check that, do not send again. */
+    val resumeId: String? = null,
+    /** Called as soon as the network accepted the post and gave an id to follow it by; the publisher stores it at once. */
+    val accepted: (String) -> Unit = {},
+) {
+    override fun toString() = "PublishJob($platform $externalId, ${media.size} media, resumeId=$resumeId)"
+}
 
 data class PublishResult(
     val externalId: String,
@@ -105,3 +115,30 @@ class PublishException(
         const val MAX_MESSAGE = 900
     }
 }
+
+/**
+ * Runs the call that makes a post public. Past this point the network may have the post even when its answer is lost
+ * (timeout, reset, 5xx, an unreadable body, no id), so nothing that fails here is retried automatically: a person checks
+ * the channel first. A plain refusal (4xx, not retryable) keeps the network's own words.
+ */
+@Suppress("TooGenericExceptionCaught") // whatever breaks after the send, the post may exist
+inline fun <T> pointOfNoReturn(
+    network: String,
+    call: () -> T,
+): T =
+    try {
+        call()
+    } catch (e: PublishException) {
+        if (!e.retryable) throw e
+        throw notConfirmed(network, e.message)
+    } catch (e: Exception) {
+        throw notConfirmed(network, e.javaClass.simpleName)
+    }
+
+fun notConfirmed(
+    network: String,
+    detail: String?,
+) = PublishException("Sent to $network, not confirmed \u2013 check the channel before retrying" + (detail?.let { " ($it)" } ?: ""))
+
+/** The id the network answered for the post just sent; blank = sent but not confirmed. */
+fun String.sentOr(network: String): String = ifBlank { throw notConfirmed(network, "no post id in the answer") }

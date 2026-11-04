@@ -134,18 +134,25 @@ class MetaConnector(
         return when {
             video != null -> {
                 val id =
-                    http
-                        .postForm("$graph/$page/videos", mapOf("file_url" to video.url, "description" to job.text, "access_token" to token))
-                        .path("id")
-                        .asText()
+                    pointOfNoReturn(FACEBOOK) {
+                        http
+                            .postForm("$graph/$page/videos", mapOf("file_url" to video.url, "description" to job.text, "access_token" to token))
+                            .path("id")
+                            .asText()
+                            .sentOr(FACEBOOK)
+                    }
                 PublishResult(id, "https://www.facebook.com/$page/videos/$id")
             }
             photos.size == 1 -> {
-                val res = http.postForm("$graph/$page/photos", mapOf("url" to photos[0].url, "message" to withLink(job), "access_token" to token))
-                val postId = res.path("post_id").asText("").ifBlank { res.path("id").asText() }
+                val postId =
+                    pointOfNoReturn(FACEBOOK) {
+                        val res = http.postForm("$graph/$page/photos", mapOf("url" to photos[0].url, "message" to withLink(job), "access_token" to token))
+                        res.path("post_id").asText("").ifBlank { res.path("id").asText() }.sentOr(FACEBOOK)
+                    }
                 PublishResult(postId, "https://www.facebook.com/$postId")
             }
             photos.size > 1 -> {
+                // Unpublished photos are not visible; only the feed post below makes the post public.
                 val ids =
                     photos.map {
                         http.postForm("$graph/$page/photos", mapOf("url" to it.url, "published" to "false", "access_token" to token)).path("id").asText()
@@ -154,11 +161,18 @@ class MetaConnector(
                     mutableMapOf<String, String?>("message" to withLink(job), "access_token" to token).apply {
                         ids.forEachIndexed { i, id -> put("attached_media[$i]", """{"media_fbid":"$id"}""") }
                     }
-                val id = http.postForm("$graph/$page/feed", form).path("id").asText()
+                val id = pointOfNoReturn(FACEBOOK) { http.postForm("$graph/$page/feed", form).path("id").asText().sentOr(FACEBOOK) }
                 PublishResult(id, "https://www.facebook.com/$id")
             }
             else -> {
-                val id = http.postForm("$graph/$page/feed", mapOf("message" to job.text, "link" to job.link, "access_token" to token)).path("id").asText()
+                val id =
+                    pointOfNoReturn(FACEBOOK) {
+                        http
+                            .postForm("$graph/$page/feed", mapOf("message" to job.text, "link" to job.link, "access_token" to token))
+                            .path("id")
+                            .asText()
+                            .sentOr(FACEBOOK)
+                    }
                 PublishResult(id, "https://www.facebook.com/$id")
             }
         }
@@ -185,7 +199,11 @@ class MetaConnector(
                     .asText()
             }
         waitIg(container, token)
-        val mediaId = http.postForm("$graph/$ig/media_publish", mapOf("creation_id" to container, "access_token" to token)).path("id").asText()
+        // Containers are private drafts; media_publish makes the post public.
+        val mediaId =
+            pointOfNoReturn(INSTAGRAM) {
+                http.postForm("$graph/$ig/media_publish", mapOf("creation_id" to container, "access_token" to token)).path("id").asText().sentOr(INSTAGRAM)
+            }
         val permalink = runCatching { http.get(query("$graph/$mediaId", mapOf("fields" to "permalink", "access_token" to token))).path("permalink").asText("") }
         return PublishResult(mediaId, permalink.getOrNull()?.ifBlank { null })
     }
@@ -231,5 +249,7 @@ class MetaConnector(
             "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management"
         const val POLLS = 120
         const val POLL_MS = 5000L
+        const val FACEBOOK = "Facebook"
+        const val INSTAGRAM = "Instagram"
     }
 }

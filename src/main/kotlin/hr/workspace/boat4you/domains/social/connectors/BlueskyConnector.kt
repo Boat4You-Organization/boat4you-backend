@@ -87,12 +87,20 @@ class BlueskyConnector(
                 linkFacets(text).takeIf { it.isNotEmpty() }?.let { put("facets", it) }
                 if (images.isNotEmpty()) put("embed", mapOf("\$type" to "app.bsky.embed.images", "images" to images))
             }
-        val res = http.postJson("$xrpc/com.atproto.repo.createRecord", mapOf("repo" to s.did, "collection" to "app.bsky.feed.post", "record" to record), auth).body
-        val uri = res.path("uri").asText()
+        val uri =
+            pointOfNoReturn(BLUESKY) {
+                http
+                    .postJson("$xrpc/com.atproto.repo.createRecord", mapOf("repo" to s.did, "collection" to "app.bsky.feed.post", "record" to record), auth)
+                    .body
+                    .path("uri")
+                    .asText()
+                    .sentOr(BLUESKY)
+            }
         return PublishResult(uri, "https://bsky.app/profile/${s.handle}/post/${uri.substringAfterLast('/')}")
     }
 
     companion object {
+        private const val BLUESKY = "Bluesky"
         private const val MAX_IMAGES = 4
         private const val MAX_IMAGE_BYTES = 950_000
         private val URL = Regex("""https?://[^\s<>"]+""")

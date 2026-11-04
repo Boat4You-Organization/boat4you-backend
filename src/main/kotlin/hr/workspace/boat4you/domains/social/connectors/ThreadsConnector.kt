@@ -100,7 +100,11 @@ class ThreadsConnector(
                 }
             }
         wait(container, token)
-        val id = http.postForm("$API/v1.0/$user/threads_publish", mapOf("creation_id" to container, "access_token" to token)).path("id").asText()
+        // Containers are private drafts; threads_publish makes the post public.
+        val id =
+            pointOfNoReturn(THREADS) {
+                http.postForm("$API/v1.0/$user/threads_publish", mapOf("creation_id" to container, "access_token" to token)).path("id").asText().sentOr(THREADS)
+            }
         val permalink = runCatching { http.get(query("$API/v1.0/$id", mapOf("fields" to "permalink", "access_token" to token))).path("permalink").asText("") }
         return PublishResult(id, permalink.getOrNull()?.ifBlank { null })
     }
@@ -147,5 +151,6 @@ class ThreadsConnector(
         const val REFRESH_BEFORE_S = 7L * 86_400
         const val POLLS = 120
         const val POLL_MS = 5000L
+        const val THREADS = "Threads"
     }
 }
