@@ -33,6 +33,7 @@ object ContactCenterTestDb {
             "V9_114__cc_rec.sql",
             "V9_115__rec_click_dead.sql",
             "V9_119__seo_search_stats.sql",
+            "V9_120__rec_hover.sql",
         )
 
     private val postgres: PostgreSQLContainer<Nothing> by lazy {

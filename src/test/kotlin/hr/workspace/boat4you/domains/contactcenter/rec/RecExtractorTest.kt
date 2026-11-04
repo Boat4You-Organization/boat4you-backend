@@ -52,4 +52,16 @@ class RecExtractorTest {
         p.events.single().data["hash"] shouldBe "abc"
         p.variables shouldBe mapOf("ccv" to listOf("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
     }
+
+    @Test
+    fun `a mouse move with the element (F8) is kept for the hover map, an older one and a touch are only counted`() {
+        val p =
+            RecExtractor.parse(
+                """{"e":["0.8.73",3,1200,450,"boat4you","u1","s1",2,0,1,0,"https://www.boat4you.com/boat/x"],""" +
+                    """"a":[[1400,12,17,100,200,"","true","abc.def",1000,2000],[1450,12,17,120,200,"","true"],[1500,17,17,100,200,"","true"]]}""",
+            )
+        p.moves shouldContainExactly listOf(RecExtractor.Move(1400, "abc", "def", 1000, 2000))
+        p.events shouldBe emptyList()
+        p.touches shouldBe 1
+    }
 }
