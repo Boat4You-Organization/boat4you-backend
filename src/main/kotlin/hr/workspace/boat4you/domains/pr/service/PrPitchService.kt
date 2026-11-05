@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.pr.dto.PrPitchDto
 import hr.workspace.boat4you.domains.pr.dto.PrPitchUpdateRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrContact
 import hr.workspace.boat4you.domains.pr.jpa.PrContactRepository
+import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrOutlet
 import hr.workspace.boat4you.domains.pr.jpa.PrOutletRepository
 import hr.workspace.boat4you.domains.pr.jpa.PrPitch
@@ -17,18 +18,23 @@ import hr.workspace.boat4you.domains.pr.rules.PitchCheckInput
 import hr.workspace.boat4you.domains.pr.rules.PitchDecision
 import hr.workspace.boat4you.domains.pr.rules.PrComplianceRules
 import jakarta.persistence.criteria.Predicate
+import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Sort
 import org.springframework.data.jpa.domain.Specification
+import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
 import java.time.Instant
 
 /**
  * Pitch drafts (written by Mario in the admin or by a Claude session through PrApiController), the per-pitch send
- * decision, follow-up drafts and the statuses typed in by hand after sending. Nothing here sends: a pitch leaves DRAFT
- * only through sending (Task 6). One main pitch per contact and study (a study-less pitch is not limited), at most one
- * follow-up per main pitch, and only after it was SENT. TripAdvisor is refused in every subject and body we store.
+ * decision, sending ([send], the one way out of DRAFT; FAILED -> DRAFT by hand is the retry), follow-up drafts and the
+ * statuses typed in by hand after sending. One main pitch per contact and study (a study-less pitch is not limited), at
+ * most one follow-up per main pitch, and only after it was SENT. TripAdvisor is refused in every subject and body we store.
  */
 @Service
 class PrPitchService(
@@ -39,8 +45,15 @@ class PrPitchService(
     private val suppressions: EmailSuppressionRepository,
     private val contactService: PrContactService,
     private val props: PrProperties,
+    private val mail: PrMailSender,
+    txManager: PlatformTransactionManager,
     private val clock: Clock = Clock.systemUTC(),
 ) {
+    private val log = LoggerFactory.getLogger(PrPitchService::class.java)
+
+    /** The outcome of a send is saved in its own transaction, after SMTP (which runs outside any transaction). */
+    private val newTx = TransactionTemplate(txManager).apply { propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW }
+
     /** Newest first; both filters optional. */
     @Transactional(readOnly = true)
     fun list(
@@ -125,8 +138,60 @@ class PrPitchService(
     }
 
     /**
+     * Sends one pitch to its contact from press@, 1:1, plain text with the footer. Deliberately NOT one transaction:
+     * (1) kill switch, (1b) SMTP settings, (2) the send decision, all before anything changes; (3) the atomic
+     * DRAFT -> SENDING commits on its own, so a second call (double click, second admin) gets 409 and the pitch can
+     * never be sent twice; (4) SMTP outside any transaction; (5) SENT, or (6) FAILED + error, saved in a new
+     * transaction. A pitch whose outcome cannot be saved stays SENDING: never re-sendable, logged for a manual fix.
+     */
+    fun send(pitchId: Long): PrPitchDto {
+        val m = props.mail
+        if (!m.enabled) throw PrException.conflict("MAIL_DISABLED", "Sending is switched off (PR_MAIL_ENABLED=false)")
+        if (m.host.isBlank() || m.username.isBlank() || m.password.isBlank()) {
+            throw PrException.conflict("MAIL_NOT_CONFIGURED", "PR mail is on but PR_MAIL_HOST, PR_MAIL_USERNAME or PR_MAIL_PASSWORD is empty")
+        }
+        val decision = decision(pitchId)
+        if (decision is PitchDecision.Blocked) throw PrException.conflict(decision.code, "Pitch $pitchId may not be sent: ${decision.code}")
+        if (pitches.markSending(pitchId) == 0) {
+            throw PrException.conflict("ALREADY_SENDING_OR_SENT", "Pitch $pitchId is no longer a draft: it is being sent or was sent")
+        }
+        // Only this call owns the pitch now. Re-read what was frozen and check it again: an opt-out or bounce that landed
+        // between the check above and the freeze must still stop it (FAILED, retry by hand after a look).
+        val pitch = pitch(pitchId)
+        val l = lookups(listOf(pitch))
+        val frozen = decide(pitch, l)
+        if (frozen is PitchDecision.Blocked) {
+            recordFailed(pitchId, "Blocked at send time: ${frozen.code}")
+            throw PrException.conflict(frozen.code, "Pitch $pitchId may not be sent: ${frozen.code}")
+        }
+        val contact = l.contacts.getValue(pitch.contactId!!)
+        val inReplyTo = pitch.parentPitchId?.let { pitch(it).messageId }
+        val messageId =
+            try {
+                mail.send(contact.email, pitch.subject, PrFooter.appendTo(pitch.body, props.privacyUrl), inReplyTo)
+            } catch (e: Exception) {
+                log.warn("PR pitch {} not sent: {}", pitchId, e.javaClass.simpleName)
+                recordFailed(pitchId, shortError(e))
+                return dto(pitch(pitchId))
+            }
+        try {
+            recordSent(pitchId, messageId)
+        } catch (e: Exception) {
+            log.error("PR pitch {} WAS SENT (Message-ID {}) but saving SENT failed; it stays SENDING and is never re-sent. Fix it by hand.", pitchId, messageId, e)
+            throw PrException(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "SENT_NOT_RECORDED",
+                "Pitch $pitchId was sent, but its status could not be saved: it stays SENDING and will not be sent again",
+            )
+        }
+        log.info("PR pitch {} sent, Message-ID {}", pitchId, messageId)
+        return dto(pitch(pitchId))
+    }
+
+    /**
      * What happened after sending, typed in by hand (the module never reads the inbox): REPLIED, DECLINED, PUBLISHED or
      * BOUNCED, from SENT or one of the first three. BOUNCED also suppresses the address (PrContactService.markBounced).
+     * DRAFT only from FAILED (clears the error): the retry. SENDING is never changed here.
      */
     @Transactional
     fun setStatus(
@@ -136,9 +201,11 @@ class PrPitchService(
     ): PrPitchDto {
         if (status !in MANUAL_TARGETS) throw PrException.badRequest("STATUS_NOT_ALLOWED", "Status can be set by hand only to ${MANUAL_TARGETS.joinToString()}")
         val pitch = pitch(pitchId)
-        if (pitch.status !in MANUAL_SOURCES) {
+        val sources = if (status == PrPitchStatus.DRAFT) setOf(PrPitchStatus.FAILED) else MANUAL_SOURCES
+        if (pitch.status !in sources) {
             throw PrException.conflict("STATUS_TRANSITION_NOT_ALLOWED", "Pitch $pitchId is ${pitch.status}: it cannot become $status")
         }
+        if (status == PrPitchStatus.DRAFT) pitch.error = null
         pitch.status = status
         replyNote?.trim()?.ifEmpty { null }?.let { pitch.replyNote = it }
         val saved = pitches.save(pitch)
@@ -151,6 +218,45 @@ class PrPitchService(
     fun decision(pitchId: Long): PitchDecision = pitch(pitchId).let { decide(it, lookups(listOf(it))) }
 
     // ---- internals ----
+
+    /** SENDING -> SENT with its Message-ID; the contact was contacted now, and a consent request moves ACTIVE to CONSENT_REQUESTED. */
+    private fun recordSent(
+        pitchId: Long,
+        messageId: String,
+    ) = newTx.executeWithoutResult {
+        val now = clock.instant()
+        val pitch = pitch(pitchId)
+        check(pitch.status == PrPitchStatus.SENDING) { "Pitch $pitchId is ${pitch.status}, expected SENDING" }
+        pitch.status = PrPitchStatus.SENT
+        pitch.sentAt = now
+        pitch.messageId = messageId
+        pitch.error = null
+        pitches.save(pitch)
+        val contact = contacts.findById(pitch.contactId!!).orElseThrow()
+        contact.lastContactedAt = now
+        // Consent already given (CONSENTED) is never taken back by a consent request.
+        if (pitch.template == PrPitchTemplate.CONSENT_REQUEST && contact.status == PrContactStatus.ACTIVE) contact.status = PrContactStatus.CONSENT_REQUESTED
+        contacts.save(contact)
+    }
+
+    /** SENDING -> FAILED with a short reason. If even this cannot be saved, the pitch stays SENDING (never re-sendable). */
+    private fun recordFailed(
+        pitchId: Long,
+        error: String,
+    ) = newTx.executeWithoutResult {
+        val pitch = pitch(pitchId)
+        check(pitch.status == PrPitchStatus.SENDING) { "Pitch $pitchId is ${pitch.status}, expected SENDING" }
+        pitch.status = PrPitchStatus.FAILED
+        pitch.error = error
+        pitches.save(pitch)
+    }
+
+    /** Type and message of the SMTP error, cut short; never the body, and the password masked should a server echo it. */
+    private fun shortError(e: Exception): String {
+        val text = "${e.javaClass.simpleName}: ${e.message ?: "no message"}"
+        val masked = props.mail.password.takeIf { it.isNotEmpty() }?.let { text.replace(it, "***") } ?: text
+        return masked.take(ERROR) + " Check the press@ copy (BCC) before retrying."
+    }
 
     /** Everything a set of pitches needs for their DTOs and decisions, loaded once per set (no query per pitch). */
     private class Lookups(
@@ -253,7 +359,9 @@ class PrPitchService(
     companion object {
         const val ALLOWED = "ALLOWED"
         private const val SUBJECT = 300
-        private val MANUAL_TARGETS = setOf(PrPitchStatus.REPLIED, PrPitchStatus.DECLINED, PrPitchStatus.PUBLISHED, PrPitchStatus.BOUNCED)
+        private const val ERROR = 500
+        private val MANUAL_TARGETS =
+            setOf(PrPitchStatus.REPLIED, PrPitchStatus.DECLINED, PrPitchStatus.PUBLISHED, PrPitchStatus.BOUNCED, PrPitchStatus.DRAFT)
         private val MANUAL_SOURCES = setOf(PrPitchStatus.SENT, PrPitchStatus.REPLIED, PrPitchStatus.DECLINED, PrPitchStatus.PUBLISHED)
     }
 }

@@ -62,8 +62,11 @@ interface PrPitchRepository :
         body: String,
     ): Int
 
-    /** Atomic DRAFT -> SENDING: 1 = this caller may send, 0 = someone else already took it (or it is not a draft). */
-    @Modifying
+    /**
+     * Atomic DRAFT -> SENDING: 1 = this caller may send, 0 = someone else already took it (or it is not a draft). Clears
+     * the persistence context so a re-read after it sees SENDING, never a stale DRAFT.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
     @Query(value = "UPDATE pr_pitch SET status = 'SENDING', updated_at = now() WHERE id = :id AND status = 'DRAFT'", nativeQuery = true)
     fun markSending(id: Long): Int

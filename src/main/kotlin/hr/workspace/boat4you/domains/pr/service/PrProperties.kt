@@ -31,7 +31,9 @@ data class PrProperties(
     data class Mail(
         val enabled: Boolean = false,
         val host: String = "",
-        val port: Int = 587,
+        /** 465 = SMTPS, like the app mail on mail.boat4you.com; with `ssl = false` (e.g. 587) STARTTLS is required. */
+        val port: Int = 465,
+        val ssl: Boolean = true,
         val username: String = "",
         val password: String = "",
         val from: String = "Mario Kuzmanić | Boat4you Group <press@boat4you.com>",

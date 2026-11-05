@@ -122,6 +122,7 @@ class AdminPrSecurityTest {
             mvc.patch("/admin/pr/pitches/1", dsl = json("""{"body":"B2"}""")),
             mvc.post("/admin/pr/pitches/1/follow-up", dsl = json("""{"body":"F"}""")),
             mvc.patch("/admin/pr/pitches/1/status", dsl = json("""{"status":"REPLIED","replyNote":"n"}""")),
+            mvc.post("/admin/pr/pitches/1/send"),
         )
 
     @Test
@@ -141,6 +142,8 @@ class AdminPrSecurityTest {
         mvc.get("/admin/pr/studies").andExpect { status { isOk() } }
         mvc.get("/admin/pr/pitches?studyId=1&status=SENT").andExpect { status { isOk() } }
         verify(pitches).list(1, PrPitchStatus.SENT)
+        mvc.post("/admin/pr/pitches/7/send").andExpect { status { isOk() } }
+        verify(pitches).send(7)
         `when`(service.optOut(anyLong(), org.mockito.ArgumentMatchers.anyString()))
             .thenThrow(PrException(HttpStatus.NOT_FOUND, "CONTACT_NOT_FOUND", "Contact 9 not found"))
         mvc.post("/admin/pr/contacts/9/opt-out").andExpect {

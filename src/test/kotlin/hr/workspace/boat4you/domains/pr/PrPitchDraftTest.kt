@@ -18,6 +18,7 @@ import hr.workspace.boat4you.domains.pr.rules.PitchDecision
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
 import hr.workspace.boat4you.domains.pr.service.PrFooter
+import hr.workspace.boat4you.domains.pr.service.PrMailSender
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
@@ -37,7 +38,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 
 /** Pitch drafts, the per-pitch send decision, follow-up drafts and manual status changes against the real V9_121 schema. Nothing is sent. */
-@Import(PrPitchService::class, PrPitchDraftTest.Beans::class)
+@Import(PrPitchService::class, PrMailSender::class, PrPitchDraftTest.Beans::class)
 class PrPitchDraftTest : PrJpaTest() {
     // PrProperties comes from the app's own binding (defaults: privacy URL https://www.boat4you.com/press/privacy).
 
@@ -299,7 +300,8 @@ class PrPitchDraftTest : PrJpaTest() {
 
         fails { service.setStatus(pitch.id, PrPitchStatus.REPLIED, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
         fails { service.setStatus(pitch.id, PrPitchStatus.SENT, null) }.shouldBe(HttpStatus.BAD_REQUEST, "STATUS_NOT_ALLOWED")
-        fails { service.setStatus(pitch.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.BAD_REQUEST, "STATUS_NOT_ALLOWED")
+        // DRAFT is a target only from FAILED (the retry path, PrSendTest).
+        fails { service.setStatus(pitch.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
         fails { service.setStatus(999, PrPitchStatus.REPLIED, null) }.shouldBe(HttpStatus.NOT_FOUND, "PITCH_NOT_FOUND")
         markSent(pitch.id, start)
 

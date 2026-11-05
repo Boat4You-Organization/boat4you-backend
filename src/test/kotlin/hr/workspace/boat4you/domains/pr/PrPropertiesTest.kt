@@ -33,6 +33,8 @@ class PrPropertiesTest {
             p shouldBe PrProperties()
             p.clearedMarkets() shouldBe setOf("US", "GB", "AU", "NZ", "FR", "HR", "GR")
             p.mail.enabled shouldBe false
+            p.mail.port shouldBe 465
+            p.mail.ssl shouldBe true
             p.mail.from shouldBe "Mario Kuzmanić | Boat4you Group <press@boat4you.com>"
             p.mail.bcc shouldBe "press@boat4you.com"
             p.privacyUrl shouldBe "https://www.boat4you.com/press/privacy"
@@ -47,7 +49,8 @@ class PrPropertiesTest {
             "PR_MARKETS_CLEARED" to "gb, uk ,DE,xx1",
             "PR_MAIL_ENABLED" to "true",
             "PR_MAIL_HOST" to "mail.example.com",
-            "PR_MAIL_PORT" to "465",
+            "PR_MAIL_PORT" to "587",
+            "PR_MAIL_SSL" to "false",
             "PR_MAIL_USERNAME" to "press@example.com",
             "PR_MAIL_PASSWORD" to "secret",
             "PR_PRIVACY_URL" to "https://example.com/privacy",
@@ -58,7 +61,8 @@ class PrPropertiesTest {
             p.clearedMarkets() shouldBe setOf("GB", "DE")
             p.mail.enabled shouldBe true
             p.mail.host shouldBe "mail.example.com"
-            p.mail.port shouldBe 465
+            p.mail.port shouldBe 587
+            p.mail.ssl shouldBe false
             p.mail.username shouldBe "press@example.com"
             p.mail.password shouldBe "secret"
             p.privacyUrl shouldBe "https://example.com/privacy"

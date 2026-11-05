@@ -365,7 +365,9 @@ pr:
   mail:
     enabled: ${PR_MAIL_ENABLED:false}
     host: ${PR_MAIL_HOST:}
-    port: ${PR_MAIL_PORT:587}
+    # SMTPS on 465 by default (same server as the app mail); PR_MAIL_SSL=false = STARTTLS (required), e.g. port 587.
+    port: ${PR_MAIL_PORT:465}
+    ssl: ${PR_MAIL_SSL:true}
     username: ${PR_MAIL_USERNAME:}
     password: ${PR_MAIL_PASSWORD:}
     from: "Mario Kuzmanić | Boat4you Group <press@boat4you.com>"

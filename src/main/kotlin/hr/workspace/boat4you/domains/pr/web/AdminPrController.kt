@@ -112,7 +112,7 @@ class AdminPrController(
         @RequestBody body: PrStudyRequest,
     ): PrStudyDto = studies.update(id, body)
 
-    // ---- Pitches (drafts and hand-typed statuses; sending is a separate route) ----
+    // ---- Pitches (drafts, sending, hand-typed statuses) ----
 
     @GetMapping("/pitches")
     fun pitches(
@@ -138,6 +138,16 @@ class AdminPrController(
         @RequestBody body: PrFollowUpRequest,
     ): PrPitchDto = pitches.createFollowUpDraft(id, body.body)
 
+    /**
+     * Sends the pitch from press@ now: 409 MAIL_DISABLED / MAIL_NOT_CONFIGURED / a send-rule code / ALREADY_SENDING_OR_SENT.
+     * An SMTP failure answers 200 with status FAILED and `error`; PATCH .../status to DRAFT is the retry.
+     */
+    @PostMapping("/pitches/{id}/send")
+    fun send(
+        @PathVariable id: Long,
+    ): PrPitchDto = pitches.send(id)
+
+    /** REPLIED / DECLINED / PUBLISHED / BOUNCED after sending; DRAFT only from FAILED (retry). */
     @PatchMapping("/pitches/{id}/status")
     fun setPitchStatus(
         @PathVariable id: Long,
