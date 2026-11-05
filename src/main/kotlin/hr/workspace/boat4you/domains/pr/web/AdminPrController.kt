@@ -1,10 +1,14 @@
 package hr.workspace.boat4you.domains.pr.web
 
 import hr.workspace.boat4you.domains.pr.dto.ImportResult
+import hr.workspace.boat4you.domains.pr.dto.PrAlertFeedDto
+import hr.workspace.boat4you.domains.pr.dto.PrAlertFeedRequest
 import hr.workspace.boat4you.domains.pr.dto.PrContactDto
 import hr.workspace.boat4you.domains.pr.dto.PrContactFilter
 import hr.workspace.boat4you.domains.pr.dto.PrContactRequest
 import hr.workspace.boat4you.domains.pr.dto.PrFollowUpRequest
+import hr.workspace.boat4you.domains.pr.dto.PrMentionDto
+import hr.workspace.boat4you.domains.pr.dto.PrMentionStatusRequest
 import hr.workspace.boat4you.domains.pr.dto.PrOutletDto
 import hr.workspace.boat4you.domains.pr.dto.PrOutletRequest
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDraftRequest
@@ -16,8 +20,10 @@ import hr.workspace.boat4you.domains.pr.dto.PrPlacementRequest
 import hr.workspace.boat4you.domains.pr.dto.PrStudyDto
 import hr.workspace.boat4you.domains.pr.dto.PrStudyRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
+import hr.workspace.boat4you.domains.pr.jpa.PrMentionStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
 import hr.workspace.boat4you.domains.pr.links.PrLinkCheckService
+import hr.workspace.boat4you.domains.pr.mentions.PrMentionService
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
@@ -47,6 +53,7 @@ class AdminPrController(
     private val pitches: PrPitchService,
     private val placements: PrPlacementService,
     private val linkCheck: PrLinkCheckService,
+    private val mentions: PrMentionService,
 ) {
     // ---- Outlets ----
 
@@ -192,4 +199,39 @@ class AdminPrController(
     fun clearPlacementAlert(
         @PathVariable id: Long,
     ): PrPlacementDto = placements.clearAlert(id)
+
+    // ---- Alert feeds (Google Alerts / Talkwalker RSS) and the mentions found in them ----
+
+    @GetMapping("/feeds")
+    fun feeds(): List<PrAlertFeedDto> = mentions.listFeeds()
+
+    /** name and url required (400 FEED_NAME_REQUIRED / FEED_URL_INVALID); 409 FEED_EXISTS for a URL already listed. */
+    @PostMapping("/feeds")
+    fun createFeed(
+        @RequestBody body: PrAlertFeedRequest,
+    ): PrAlertFeedDto = mentions.createFeed(body)
+
+    @PatchMapping("/feeds/{id}")
+    fun updateFeed(
+        @PathVariable id: Long,
+        @RequestBody body: PrAlertFeedRequest,
+    ): PrAlertFeedDto = mentions.updateFeed(id, body)
+
+    /** Newest first; status and linksToUs filter when given. */
+    @GetMapping("/mentions")
+    fun mentions(
+        @RequestParam(required = false) status: PrMentionStatus?,
+        @RequestParam(required = false) linksToUs: Boolean?,
+        @RequestParam(defaultValue = "0") page: Int,
+        @RequestParam(defaultValue = "50") size: Int,
+    ): PagedModel<PrMentionDto> = PagedModel(mentions.listMentions(status, linksToUs, page, size))
+
+    @PatchMapping("/mentions/{id}")
+    fun setMentionStatus(
+        @PathVariable id: Long,
+        @RequestBody body: PrMentionStatusRequest,
+    ): PrMentionDto {
+        val status = body.status ?: throw PrException.badRequest("STATUS_REQUIRED", "status is required")
+        return mentions.setMentionStatus(id, status)
+    }
 }

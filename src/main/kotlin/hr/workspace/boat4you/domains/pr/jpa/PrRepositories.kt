@@ -142,8 +142,32 @@ interface PrPlacementRepository : JpaRepository<PrPlacement, Long> {
     fun clearAlert(id: Long): Int
 }
 
-interface PrMentionRepository : JpaRepository<PrMention, Long> {
+interface PrMentionRepository :
+    JpaRepository<PrMention, Long>,
+    JpaSpecificationExecutor<PrMention> {
     fun existsByUrl(url: String): Boolean
 }
 
-interface PrAlertFeedRepository : JpaRepository<PrAlertFeed, Long>
+interface PrAlertFeedRepository : JpaRepository<PrAlertFeed, Long> {
+    fun findAllByEnabledTrueOrderByIdAsc(): List<PrAlertFeed>
+
+    fun findFirstByUrl(url: String): PrAlertFeed?
+
+    /** A run read the feed: one UPDATE, so a PATCH saved during the run (name, enabled) is not overwritten. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(value = "UPDATE pr_alert_feed SET last_fetched_at = :at, last_error = NULL WHERE id = :id", nativeQuery = true)
+    fun recordSuccess(
+        id: Long,
+        at: Instant,
+    ): Int
+
+    /** A run could not fetch or parse the feed; last_fetched_at keeps the last good read. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(value = "UPDATE pr_alert_feed SET last_error = :error WHERE id = :id", nativeQuery = true)
+    fun recordError(
+        id: Long,
+        error: String,
+    ): Int
+}

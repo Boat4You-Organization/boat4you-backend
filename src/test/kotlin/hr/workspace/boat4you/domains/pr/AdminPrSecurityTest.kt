@@ -2,8 +2,11 @@ package hr.workspace.boat4you.domains.pr
 
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.domains.calls.CallsTestJson
+import hr.workspace.boat4you.domains.pr.dto.PrAlertFeedRequest
+import hr.workspace.boat4you.domains.pr.jpa.PrMentionStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
 import hr.workspace.boat4you.domains.pr.links.PrLinkCheckService
+import hr.workspace.boat4you.domains.pr.mentions.PrMentionService
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
@@ -68,13 +71,17 @@ class AdminPrSecurityTest {
         fun prLinkCheckService(): PrLinkCheckService = mock(PrLinkCheckService::class.java)
 
         @Bean
+        fun prMentionService(): PrMentionService = mock(PrMentionService::class.java)
+
+        @Bean
         fun adminPrController(
             service: PrContactService,
             studies: PrStudyService,
             pitches: PrPitchService,
             placements: PrPlacementService,
             linkCheck: PrLinkCheckService,
-        ) = AdminPrController(service, studies, pitches, placements, linkCheck)
+            mentions: PrMentionService,
+        ) = AdminPrController(service, studies, pitches, placements, linkCheck, mentions)
     }
 
     @Autowired private lateinit var controller: AdminPrController
@@ -89,6 +96,8 @@ class AdminPrSecurityTest {
 
     @Autowired private lateinit var linkCheck: PrLinkCheckService
 
+    @Autowired private lateinit var mentions: PrMentionService
+
     private val mvc: MockMvc by lazy {
         MockMvcBuilders
             .standaloneSetup(controller)
@@ -98,7 +107,7 @@ class AdminPrSecurityTest {
     }
 
     @BeforeEach
-    fun resetMocks() = reset(service, studies, pitches, placements, linkCheck)
+    fun resetMocks() = reset(service, studies, pitches, placements, linkCheck, mentions)
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -142,6 +151,11 @@ class AdminPrSecurityTest {
             mvc.patch("/admin/pr/placements/1", dsl = json("""{"anchorText":"a"}""")),
             mvc.post("/admin/pr/placements/1/check"),
             mvc.post("/admin/pr/placements/1/clear-alert"),
+            mvc.get("/admin/pr/feeds"),
+            mvc.post("/admin/pr/feeds", dsl = json("""{"name":"Google: boat4you","url":"https://www.google.com/alerts/feeds/1/2"}""")),
+            mvc.patch("/admin/pr/feeds/1", dsl = json("""{"enabled":false}""")),
+            mvc.get("/admin/pr/mentions?status=NEW&linksToUs=false"),
+            mvc.patch("/admin/pr/mentions/1", dsl = json("""{"status":"IGNORED"}""")),
         )
 
     @Test
@@ -151,7 +165,7 @@ class AdminPrSecurityTest {
         SecurityContextHolder.getContext().authentication =
             AnonymousAuthenticationToken("key", "anonymousUser", listOf(SimpleGrantedAuthority("ROLE_ANONYMOUS")))
         every().forEach { it.andExpect { status { isForbidden() } } }
-        verifyNoInteractions(service, studies, pitches, placements, linkCheck)
+        verifyNoInteractions(service, studies, pitches, placements, linkCheck, mentions)
     }
 
     @Test
@@ -175,6 +189,23 @@ class AdminPrSecurityTest {
             status { isNotFound() }
             jsonPath("$.code") { value("CONTACT_NOT_FOUND") }
             jsonPath("$.message") { value("Contact 9 not found") }
+        }
+        mvc.get("/admin/pr/feeds").andExpect { status { isOk() } }
+        verify(mentions).listFeeds()
+        `when`(mentions.createFeed(PrAlertFeedRequest("G", "https://www.google.com/alerts/feeds/1/2")))
+            .thenThrow(PrException(HttpStatus.CONFLICT, "FEED_EXISTS", "A feed for https://www.google.com/alerts/feeds/1/2 already exists"))
+        mvc.post("/admin/pr/feeds", dsl = json("""{"name":"G","url":"https://www.google.com/alerts/feeds/1/2"}""")).andExpect {
+            status { isConflict() }
+            jsonPath("$.code") { value("FEED_EXISTS") }
+        }
+        `when`(mentions.listMentions(PrMentionStatus.NEW, true, 0, 50)).thenReturn(org.springframework.data.domain.Page.empty())
+        mvc.get("/admin/pr/mentions?status=NEW&linksToUs=true").andExpect { status { isOk() } }
+        verify(mentions).listMentions(PrMentionStatus.NEW, true, 0, 50)
+        mvc.patch("/admin/pr/mentions/3", dsl = json("""{"status":"ASK_FOR_LINK"}""")).andExpect { status { isOk() } }
+        verify(mentions).setMentionStatus(3, PrMentionStatus.ASK_FOR_LINK)
+        mvc.patch("/admin/pr/mentions/3", dsl = json("{}")).andExpect {
+            status { isBadRequest() }
+            jsonPath("$.code") { value("STATUS_REQUIRED") }
         }
         mvc.patch("/admin/pr/contacts/1", dsl = json("""{"status":"NOPE"}""")).andExpect {
             status { isBadRequest() }

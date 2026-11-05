@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.pr.dto
 
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrLinkState
+import hr.workspace.boat4you.domains.pr.jpa.PrMentionStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchTemplate
 import hr.workspace.boat4you.domains.pr.jpa.PrStudyStatus
@@ -195,4 +196,47 @@ data class PrPlacementRequest(
     val publishedOn: LocalDate? = null,
     val targetUrl: String? = null,
     val anchorText: String? = null,
+)
+
+/** A Google Alerts / Talkwalker / other RSS or Atom feed read every 6 h; lastError is the last run's problem (null when it went fine). */
+data class PrAlertFeedDto(
+    val id: Long,
+    val name: String,
+    val url: String,
+    val enabled: Boolean,
+    val lastFetchedAt: Instant?,
+    val lastError: String?,
+    val createdAt: Instant,
+)
+
+/**
+ * POST needs name and url (http/https, at most 1000 characters, unique: 409 FEED_EXISTS); enabled defaults to true.
+ * PATCH changes only the fields sent; a new url clears lastFetchedAt and lastError.
+ */
+data class PrAlertFeedRequest(
+    val name: String? = null,
+    val url: String? = null,
+    val enabled: Boolean? = null,
+)
+
+/**
+ * A page that names us, found in a feed. url is normalised (Google redirect unwrapped, utm_* / fbclid / gclid and the
+ * #fragment dropped, host lowercase); source is GOOGLE_ALERTS, TALKWALKER or RSS. linksToUs: true / false from one
+ * fetch of the page when it was found, null when the page refused us (403, 429, ...) or could not be fetched.
+ */
+data class PrMentionDto(
+    val id: Long,
+    val url: String,
+    val title: String?,
+    val source: String,
+    val feedId: Long?,
+    val feedName: String?,
+    val linksToUs: Boolean?,
+    val status: PrMentionStatus,
+    val foundAt: Instant,
+)
+
+/** status: NEW, ASK_FOR_LINK, ASKED, LINKED or IGNORED (400 STATUS_REQUIRED without one). */
+data class PrMentionStatusRequest(
+    val status: PrMentionStatus? = null,
 )

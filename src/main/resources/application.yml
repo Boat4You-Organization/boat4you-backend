@@ -390,3 +390,6 @@ pr:
   links:
     # Daily (05:30 Europe/Zagreb): link check of placements published in the last 14 days, older ones weekly; max 200 per run.
     cron: "0 30 5 * * *"
+  mentions:
+    # Every 6 h at :15 (00:15, 06:15, 12:15, 18:15 Europe/Zagreb): read the enabled alert feeds; at most 50 article pages per run.
+    cron: "0 15 */6 * * *"

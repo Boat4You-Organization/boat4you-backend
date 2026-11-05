@@ -42,12 +42,10 @@ object PrLinkInspector {
         baseUrl: String? = null,
     ): LinkInspection {
         val doc = Jsoup.parse(html, baseUrl.orEmpty())
-        val domains = ourDomains.map { it.trim().lowercase(Locale.ROOT).trimEnd('.') }.filter { it.isNotEmpty() }
         val links =
             doc.select("a[href]").mapNotNull { a ->
                 val href = a.absUrl("href").ifEmpty { return@mapNotNull null }
-                val host = hostOf(href) ?: return@mapNotNull null
-                if (domains.none { host == it || host.endsWith(".$it") }) return@mapNotNull null
+                if (!isOurUrl(href, ourDomains)) return@mapNotNull null
                 val rel = a.attr("rel").lowercase(Locale.ROOT).split(WHITESPACE).filter { it.isNotEmpty() }.toSet()
                 FoundLink(href, rel, a.text().trim())
             }
@@ -84,6 +82,15 @@ object PrLinkInspector {
                 if (followed && !pageNofollow) PrLinkState.OK_FOLLOW else PrLinkState.OK_NOFOLLOW
             }
         }
+    }
+
+    /** True when [url]'s host is one of [ourDomains] or a subdomain of one (`www.` included), case-insensitive. */
+    fun isOurUrl(
+        url: String,
+        ourDomains: List<String>,
+    ): Boolean {
+        val host = hostOf(url) ?: return false
+        return ourDomains.map { it.trim().lowercase(Locale.ROOT).trimEnd('.') }.any { it.isNotEmpty() && (host == it || host.endsWith(".$it")) }
     }
 
     private fun robotsTokens(value: String): List<String> = value.lowercase(Locale.ROOT).split(ROBOTS_TOKENS).filter { it.isNotEmpty() }
