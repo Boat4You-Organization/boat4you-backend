@@ -79,6 +79,11 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
+          # build/generated holds the OpenAPI generator's own template pom.xml
+          # (Spring Boot 3.1.3), not this project's dependencies. Trivy
+          # resolves it online and Maven Central answers the runner with 429,
+          # which fails the step.
+          skip-dirs: build/generated
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '0'
