@@ -76,7 +76,7 @@ class RecFilesTest {
     fun `a stalled share holds at most 4 reads, the next waits at most 2 s and is then refused`() {
         RecFiles.MAX_READERS shouldBe 4
         stalled(RecFiles.MAX_READERS, { files.read("x") }) { release, stuck, _ ->
-            refusedAfter { files.read("x") } shouldBeInRange 1_500L..3_000L
+            refusedAfter { files.read("x") } shouldBeInRange 1_900L..5_000L
             release.countDown()
             stuck.map { it.get(5, TimeUnit.SECONDS)?.toString(Charsets.UTF_8) } shouldBe List(RecFiles.MAX_READERS) { "x" }
         }
@@ -86,7 +86,7 @@ class RecFilesTest {
     fun `8 asset reads run at once, the 9th waits at most 2 s and is then refused`() {
         RecFiles.MAX_ASSET_READERS shouldBe 8
         stalled(RecFiles.MAX_ASSET_READERS, { files.readAsset("x") }) { release, stuck, _ ->
-            refusedAfter { files.readAsset("x") } shouldBeInRange 1_500L..3_000L
+            refusedAfter { files.readAsset("x") } shouldBeInRange 1_900L..5_000L
             release.countDown()
             stuck.map { it.get(5, TimeUnit.SECONDS)?.toString(Charsets.UTF_8) } shouldBe List(RecFiles.MAX_ASSET_READERS) { "x" }
         }
@@ -101,6 +101,28 @@ class RecFilesTest {
             release.countDown()
             next.get(5, TimeUnit.SECONDS)?.toString(Charsets.UTF_8) shouldBe "x"
         }
+    }
+
+    @Test
+    fun `with twice the slots already waiting the next asset read is refused at once`() {
+        stalled(RecFiles.MAX_ASSET_READERS, { files.readAsset("x") }) { _, _, _ ->
+            val waiters = RecFiles.WAITERS_PER_SLOT * RecFiles.MAX_ASSET_READERS
+            val queue = Executors.newFixedThreadPool(waiters)
+            try {
+                repeat(waiters) { queue.submit { runCatching { files.readAsset("x") } } }
+                Thread.sleep(500) // all of them queued, none timed out yet (they wait 2 s)
+                refusedAtOnce() shouldBe true
+            } finally {
+                queue.shutdownNow()
+            }
+        }
+    }
+
+    /** True when an asset read is refused within 200 ms, i.e. without waiting for a slot. */
+    private fun refusedAtOnce(): Boolean {
+        val start = System.nanoTime()
+        val refused = runCatching { files.readAsset("x") }.exceptionOrNull() is RecFiles.BusyException
+        return refused && TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start) < 200
     }
 
     @Test

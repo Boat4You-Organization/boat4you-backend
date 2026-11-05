@@ -113,6 +113,7 @@ class AdminRecController(
             } catch (e: RecFiles.BusyException) {
                 return ResponseEntity
                     .status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .cacheControl(CacheControl.noStore())
                     .header("Retry-After", RecFiles.RETRY_AFTER_SECONDS.toString())
                     .body(mapOf("error" to "busy"))
             } ?: return notFound()

@@ -11,9 +11,10 @@ import java.util.concurrent.TimeUnit
 /**
  * Reading recordings and archived assets on cusma2 (P6 R2). [root] is the NFS share of cusma3's /mnt/data/rec, a hard mount:
  * while cusma3 is away every file call waits, so at most [MAX_READERS] reads run at once; the next waits at most
- * [SLOT_WAIT_MS] for a slot and is then refused with [BusyException], so a stalled share never queues Tomcat threads without
- * end. The public archived assets have their own [MAX_ASSET_READERS] slots, enough for the 4 stylesheets and 6-7 fonts a
- * replay asks for at once (5.11.2026: with 2 slots and no wait 22 % of them were refused). Only paths inside [root] are read.
+ * [SLOT_WAIT_MS] for a slot and is then refused with [BusyException]; with [WAITERS_PER_SLOT] × slots already waiting it
+ * is refused at once, so a stalled share holds a fixed number of Tomcat threads at most (cusma2 is the only API node). The
+ * public archived assets have their own [MAX_ASSET_READERS] slots, enough for the 4 stylesheets and 6-7 fonts a replay
+ * asks for at once (5.11.2026: with 2 slots and no wait 22 % of them were refused). Only paths inside [root] are read.
  */
 @Component
 class RecFiles(
@@ -32,15 +33,17 @@ class RecFiles(
     fun read(
         rel: String,
         max: Long = MAX_BYTES,
-    ): ByteArray? = read(rel, max, readers)
+    ): ByteArray? = read(rel, max, readers, WAITERS_PER_SLOT * MAX_READERS)
 
     private fun read(
         rel: String,
         max: Long,
         slots: Semaphore,
+        maxWaiting: Int,
     ): ByteArray? {
         val file = root.resolve(rel.removePrefix("/")).normalize()
         if (!file.startsWith(root)) return null
+        if (slots.queueLength >= maxWaiting) throw BusyException()
         val acquired =
             try {
                 slots.tryAcquire(SLOT_WAIT_MS, TimeUnit.MILLISECONDS)
@@ -61,7 +64,7 @@ class RecFiles(
     fun readAsset(
         rel: String,
         max: Long = MAX_BYTES,
-    ): ByteArray? = read(rel, max, assetReaders)
+    ): ByteArray? = read(rel, max, assetReaders, WAITERS_PER_SLOT * MAX_ASSET_READERS)
 
     /** All slots stayed taken for [SLOT_WAIT_MS], most likely by a stalled share. */
     class BusyException : IOException("rec files busy")
@@ -70,6 +73,7 @@ class RecFiles(
         const val MAX_READERS = 4
         const val MAX_ASSET_READERS = 8
         const val SLOT_WAIT_MS = 2_000L
+        const val WAITERS_PER_SLOT = 2
         const val RETRY_AFTER_SECONDS = 2
         const val MAX_BYTES = 64L * 1024 * 1024
     }
