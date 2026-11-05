@@ -1,9 +1,11 @@
 package hr.workspace.boat4you.domains.pr.dto
 
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
+import hr.workspace.boat4you.domains.pr.jpa.PrLinkState
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchTemplate
 import hr.workspace.boat4you.domains.pr.jpa.PrStudyStatus
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 
@@ -154,4 +156,42 @@ data class PrFollowUpRequest(
 data class PrPitchStatusRequest(
     val status: PrPitchStatus? = null,
     val replyNote: String? = null,
+)
+
+/**
+ * An article that used one of our studies, with the result of its last link check. lastHttpStatus is the status of
+ * the last hop, -1 when nothing was fetched (address refused, timeout, network error). alert stays true until POST
+ * .../clear-alert; alertReason is e.g. "OK_FOLLOW→LINK_MISSING". domainRank is Open PageRank (0-10) or null.
+ */
+data class PrPlacementDto(
+    val id: Long,
+    val studyId: Long?,
+    val outletId: Long?,
+    val outletName: String?,
+    val pitchId: Long?,
+    val articleUrl: String,
+    val publishedOn: LocalDate?,
+    val targetUrl: String?,
+    val anchorText: String?,
+    val linkState: PrLinkState,
+    val lastHttpStatus: Int?,
+    val lastCheckedAt: Instant?,
+    val alert: Boolean,
+    val alertReason: String?,
+    val domainRank: BigDecimal?,
+    val createdAt: Instant,
+)
+
+/**
+ * POST needs articleUrl (http/https, unique: 409 PLACEMENT_EXISTS); studyId / outletId / pitchId must exist (404).
+ * PATCH changes only the fields sent (a blank optional text clears it); a new articleUrl resets the check result.
+ */
+data class PrPlacementRequest(
+    val studyId: Long? = null,
+    val outletId: Long? = null,
+    val pitchId: Long? = null,
+    val articleUrl: String? = null,
+    val publishedOn: LocalDate? = null,
+    val targetUrl: String? = null,
+    val anchorText: String? = null,
 )

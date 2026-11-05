@@ -2,6 +2,8 @@ package hr.workspace.boat4you.domains.pr
 
 import hr.workspace.boat4you.domains.pr.service.PrProperties
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.junit.jupiter.api.Test
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.env.YamlPropertySourceLoader
@@ -69,5 +71,23 @@ class PrPropertiesTest {
             p.apiKey shouldBe "k1"
             p.oprApiKey shouldBe "k2"
         }
+    }
+
+    @Test
+    fun `toString never prints a secret`() {
+        val p = PrProperties(apiKey = "api-secret-1", oprApiKey = "opr-secret-2", mail = PrProperties.Mail(username = "press@boat4you.com", password = "smtp-secret-3"))
+
+        listOf(p.toString(), p.mail.toString()).forEach { text ->
+            listOf("api-secret-1", "opr-secret-2", "smtp-secret-3").forEach { secret -> text shouldNotContain secret }
+        }
+        p.toString() shouldContain "apiKey=****"
+        p.toString() shouldContain "oprApiKey=****"
+        p.mail.toString() shouldContain "password=****"
+        p.mail.toString() shouldContain "username=press@boat4you.com"
+        // A blank secret shows as blank, so a missing key is visible in a log.
+        PrProperties().toString() shouldContain "apiKey=,"
+        PrProperties().mail.toString() shouldContain "password=,"
+        // Equality still compares the real values.
+        (p == p.copy(apiKey = "other")) shouldBe false
     }
 }

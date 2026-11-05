@@ -11,13 +11,17 @@ import hr.workspace.boat4you.domains.pr.dto.PrPitchDraftRequest
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDto
 import hr.workspace.boat4you.domains.pr.dto.PrPitchStatusRequest
 import hr.workspace.boat4you.domains.pr.dto.PrPitchUpdateRequest
+import hr.workspace.boat4you.domains.pr.dto.PrPlacementDto
+import hr.workspace.boat4you.domains.pr.dto.PrPlacementRequest
 import hr.workspace.boat4you.domains.pr.dto.PrStudyDto
 import hr.workspace.boat4you.domains.pr.dto.PrStudyRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
+import hr.workspace.boat4you.domains.pr.links.PrLinkCheckService
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
+import hr.workspace.boat4you.domains.pr.service.PrPlacementService
 import hr.workspace.boat4you.domains.pr.service.PrStudyService
 import org.springframework.data.web.PagedModel
 import org.springframework.security.access.prepost.PreAuthorize
@@ -41,6 +45,8 @@ class AdminPrController(
     private val contacts: PrContactService,
     private val studies: PrStudyService,
     private val pitches: PrPitchService,
+    private val placements: PrPlacementService,
+    private val linkCheck: PrLinkCheckService,
 ) {
     // ---- Outlets ----
 
@@ -156,4 +162,34 @@ class AdminPrController(
         val status = body.status ?: throw PrException.badRequest("STATUS_NOT_ALLOWED", "status is required")
         return pitches.setStatus(id, status, body.replyNote)
     }
+
+    // ---- Placements (articles that used a study) and their link checks ----
+
+    @GetMapping("/placements")
+    fun placements(
+        @RequestParam(required = false) studyId: Long?,
+    ): List<PrPlacementDto> = placements.list(studyId)
+
+    /** 409 PLACEMENT_EXISTS for an article already listed; the page is not fetched here ("Provjeri sad" does that). */
+    @PostMapping("/placements")
+    fun createPlacement(
+        @RequestBody body: PrPlacementRequest,
+    ): PrPlacementDto = placements.create(body)
+
+    @PatchMapping("/placements/{id}")
+    fun updatePlacement(
+        @PathVariable id: Long,
+        @RequestBody body: PrPlacementRequest,
+    ): PrPlacementDto = placements.update(id, body)
+
+    /** "Provjeri sad": fetches the article now (up to ~15 s) and stores the result. */
+    @PostMapping("/placements/{id}/check")
+    fun checkPlacement(
+        @PathVariable id: Long,
+    ): PrPlacementDto = linkCheck.check(id)
+
+    @PostMapping("/placements/{id}/clear-alert")
+    fun clearPlacementAlert(
+        @PathVariable id: Long,
+    ): PrPlacementDto = placements.clearAlert(id)
 }

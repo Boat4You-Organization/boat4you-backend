@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
 import jakarta.persistence.PreUpdate
 import jakarta.persistence.Table
+import org.hibernate.annotations.DynamicUpdate
 import org.hibernate.annotations.JdbcTypeCode
 import org.hibernate.type.SqlTypes
 import java.math.BigDecimal
@@ -202,9 +203,13 @@ open class PrPitch {
     }
 }
 
-/** An article that used our study, and the state of its link to us from the last check. */
+/**
+ * An article that used our study, and the state of its link to us from the last check. @DynamicUpdate: an admin edit
+ * writes only the columns it changed, so it cannot undo a link check stored meanwhile (PrPlacementRepository.recordCheck).
+ */
 @Entity
 @Table(name = "pr_placement")
+@DynamicUpdate
 open class PrPlacement {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

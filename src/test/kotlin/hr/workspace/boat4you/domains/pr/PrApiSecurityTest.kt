@@ -5,14 +5,18 @@ import hr.workspace.boat4you.domains.calls.CallsTestJson
 import hr.workspace.boat4you.domains.pr.dto.ImportResult
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDraftRequest
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDto
+import hr.workspace.boat4you.domains.pr.dto.PrPlacementDto
+import hr.workspace.boat4you.domains.pr.dto.PrPlacementRequest
 import hr.workspace.boat4you.domains.pr.dto.PrStudyDto
 import hr.workspace.boat4you.domains.pr.dto.PrStudyRequest
+import hr.workspace.boat4you.domains.pr.jpa.PrLinkState
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchTemplate
 import hr.workspace.boat4you.domains.pr.jpa.PrStudyStatus
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrFooter
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
+import hr.workspace.boat4you.domains.pr.service.PrPlacementService
 import hr.workspace.boat4you.domains.pr.service.PrProperties
 import hr.workspace.boat4you.domains.pr.service.PrStudyService
 import hr.workspace.boat4you.domains.pr.web.PrApiController
@@ -90,12 +94,16 @@ class PrApiSecurityTest {
         fun prStudyService(): PrStudyService = mock(PrStudyService::class.java)
 
         @Bean
+        fun prPlacementService(): PrPlacementService = mock(PrPlacementService::class.java)
+
+        @Bean
         fun prApiController(
             props: PrProperties,
             pitches: PrPitchService,
             contacts: PrContactService,
             studies: PrStudyService,
-        ) = PrApiController(props, pitches, contacts, studies)
+            placements: PrPlacementService,
+        ) = PrApiController(props, pitches, contacts, studies, placements)
 
         @Bean
         fun prErrorAdvice() = PrErrorAdvice()
@@ -116,6 +124,8 @@ class PrApiSecurityTest {
 
     @Autowired private lateinit var studies: PrStudyService
 
+    @Autowired private lateinit var placements: PrPlacementService
+
     private val mvc: MockMvc by lazy {
         MockMvcBuilders
             .webAppContextSetup(context)
@@ -124,11 +134,15 @@ class PrApiSecurityTest {
     }
 
     @BeforeEach
-    fun resetMocks() = reset(pitches, contacts, studies)
+    fun resetMocks() = reset(pitches, contacts, studies, placements)
 
     private val draft = PrPitchDraftRequest(studyId = 3, contactId = 7, template = PrPitchTemplate.DATA_PITCH, subject = "S", body = "B")
 
     private val draftJson = """{"studyId":3,"contactId":7,"template":"DATA_PITCH","subject":"S","body":"B"}"""
+
+    private val placement = PrPlacementRequest(studyId = 3, articleUrl = "https://www.example-news.co.uk/travel/a", anchorText = "study")
+
+    private val placementJson = """{"studyId":3,"articleUrl":"https://www.example-news.co.uk/travel/a","anchorText":"study"}"""
 
     private fun json(
         body: String,
@@ -150,6 +164,7 @@ class PrApiSecurityTest {
             },
             mvc.post("/api/pr/v1/studies", dsl = json("""{"number":1,"siteId":"boat4you","title":"T"}""", key)),
             mvc.get("/api/pr/v1/pitches?studyId=3") { key?.let { header("X-Api-Key", it) } },
+            mvc.post("/api/pr/v1/placements", dsl = json(placementJson, key)),
         )
 
     private fun pitchDto() =
@@ -175,6 +190,26 @@ class PrApiSecurityTest {
             updatedAt = Instant.parse("2026-11-05T10:00:00Z"),
         )
 
+    private fun placementDto() =
+        PrPlacementDto(
+            id = 21,
+            studyId = 3,
+            outletId = null,
+            outletName = null,
+            pitchId = null,
+            articleUrl = "https://www.example-news.co.uk/travel/a",
+            publishedOn = null,
+            targetUrl = null,
+            anchorText = "study",
+            linkState = PrLinkState.NOT_CHECKED,
+            lastHttpStatus = null,
+            lastCheckedAt = null,
+            alert = false,
+            alertReason = null,
+            domainRank = null,
+            createdAt = Instant.parse("2026-11-05T10:00:00Z"),
+        )
+
     @Test
     fun apiRejectsMissingOrWrongKey() {
         listOf(null, "", "wrong", KEY.dropLast(1), "$KEY ", KEY.uppercase()).forEach { key ->
@@ -186,14 +221,14 @@ class PrApiSecurityTest {
                 }
             }
         }
-        verifyNoInteractions(pitches, contacts, studies)
+        verifyNoInteractions(pitches, contacts, studies, placements)
     }
 
     @Test
     fun blankConfiguredKeyClosesTheApi() {
         val closed =
             MockMvcBuilders
-                .standaloneSetup(PrApiController(PrProperties(apiKey = " "), pitches, contacts, studies))
+                .standaloneSetup(PrApiController(PrProperties(apiKey = " "), pitches, contacts, studies, placements))
                 .setControllerAdvice(PrErrorAdvice())
                 .setMessageConverters(*CallsTestJson.converters())
                 .build()
@@ -201,8 +236,9 @@ class PrApiSecurityTest {
         listOf(null, "", " ", "anything").forEach { key ->
             closed.post("/api/pr/v1/pitches", dsl = json(draftJson, key)).andExpect { status { isUnauthorized() } }
             closed.get("/api/pr/v1/pitches") { key?.let { header("X-Api-Key", it) } }.andExpect { status { isUnauthorized() } }
+            closed.post("/api/pr/v1/placements", dsl = json(placementJson, key)).andExpect { status { isUnauthorized() } }
         }
-        verifyNoInteractions(pitches, contacts, studies)
+        verifyNoInteractions(pitches, contacts, studies, placements)
     }
 
     @Test
@@ -226,12 +262,18 @@ class PrApiSecurityTest {
             .thenReturn(PrStudyDto(1, 1, "boat4you", "T", null, PrStudyStatus.DRAFT, null, null, Instant.parse("2026-11-05T10:00:00Z")))
         `when`(pitches.list(3, null)).thenReturn(listOf(pitchDto()))
         `when`(pitches.createDraft(draft)).thenReturn(pitchDto())
+        `when`(placements.create(placement)).thenReturn(placementDto())
 
         every(KEY).forEach { it.andExpect { status { isOk() } } }
 
         verify(contacts).importCsv("market,outlet,tier,email\n")
         verify(studies).create(PrStudyRequest(number = 1, siteId = "boat4you", title = "T"))
         verify(pitches).list(3, null)
+        verify(placements).create(placement)
+        mvc.post("/api/pr/v1/placements", dsl = json(placementJson, KEY)).andExpect {
+            jsonPath("$.id") { value(21) }
+            jsonPath("$.linkState") { value("NOT_CHECKED") }
+        }
         mvc.get("/api/pr/v1/pitches?studyId=3") { header("X-Api-Key", KEY) }.andExpect { jsonPath("$[0].id") { value(11) } }
     }
 
@@ -257,9 +299,10 @@ class PrApiSecurityTest {
                 "GET /api/pr/v1/pitches",
                 "POST /api/pr/v1/contacts/import",
                 "POST /api/pr/v1/studies",
+                "POST /api/pr/v1/placements",
                 "ANY /api/pr/v1/**",
             )
-        verifyNoInteractions(pitches, contacts, studies)
+        verifyNoInteractions(pitches, contacts, studies, placements)
     }
 
     @Test

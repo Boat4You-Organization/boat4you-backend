@@ -387,3 +387,6 @@ pr:
   retention:
     # Monthly (1st, 03:30 Europe/Zagreb): delete contacts without activity for 24 months; email_suppression stays.
     cron: "0 30 3 1 * *"
+  links:
+    # Daily (05:30 Europe/Zagreb): link check of placements published in the last 14 days, older ones weekly; max 200 per run.
+    cron: "0 30 5 * * *"

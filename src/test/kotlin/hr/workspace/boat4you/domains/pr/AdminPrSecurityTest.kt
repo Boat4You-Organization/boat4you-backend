@@ -3,9 +3,11 @@ package hr.workspace.boat4you.domains.pr
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.domains.calls.CallsTestJson
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
+import hr.workspace.boat4you.domains.pr.links.PrLinkCheckService
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
+import hr.workspace.boat4you.domains.pr.service.PrPlacementService
 import hr.workspace.boat4you.domains.pr.service.PrStudyService
 import hr.workspace.boat4you.domains.pr.web.AdminPrController
 import hr.workspace.boat4you.domains.pr.web.PrErrorAdvice
@@ -60,11 +62,19 @@ class AdminPrSecurityTest {
         fun prPitchService(): PrPitchService = mock(PrPitchService::class.java)
 
         @Bean
+        fun prPlacementService(): PrPlacementService = mock(PrPlacementService::class.java)
+
+        @Bean
+        fun prLinkCheckService(): PrLinkCheckService = mock(PrLinkCheckService::class.java)
+
+        @Bean
         fun adminPrController(
             service: PrContactService,
             studies: PrStudyService,
             pitches: PrPitchService,
-        ) = AdminPrController(service, studies, pitches)
+            placements: PrPlacementService,
+            linkCheck: PrLinkCheckService,
+        ) = AdminPrController(service, studies, pitches, placements, linkCheck)
     }
 
     @Autowired private lateinit var controller: AdminPrController
@@ -75,6 +85,10 @@ class AdminPrSecurityTest {
 
     @Autowired private lateinit var pitches: PrPitchService
 
+    @Autowired private lateinit var placements: PrPlacementService
+
+    @Autowired private lateinit var linkCheck: PrLinkCheckService
+
     private val mvc: MockMvc by lazy {
         MockMvcBuilders
             .standaloneSetup(controller)
@@ -84,7 +98,7 @@ class AdminPrSecurityTest {
     }
 
     @BeforeEach
-    fun resetMocks() = reset(service, studies, pitches)
+    fun resetMocks() = reset(service, studies, pitches, placements, linkCheck)
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -123,6 +137,11 @@ class AdminPrSecurityTest {
             mvc.post("/admin/pr/pitches/1/follow-up", dsl = json("""{"body":"F"}""")),
             mvc.patch("/admin/pr/pitches/1/status", dsl = json("""{"status":"REPLIED","replyNote":"n"}""")),
             mvc.post("/admin/pr/pitches/1/send"),
+            mvc.get("/admin/pr/placements?studyId=1"),
+            mvc.post("/admin/pr/placements", dsl = json("""{"articleUrl":"https://news.example/a"}""")),
+            mvc.patch("/admin/pr/placements/1", dsl = json("""{"anchorText":"a"}""")),
+            mvc.post("/admin/pr/placements/1/check"),
+            mvc.post("/admin/pr/placements/1/clear-alert"),
         )
 
     @Test
@@ -132,7 +151,7 @@ class AdminPrSecurityTest {
         SecurityContextHolder.getContext().authentication =
             AnonymousAuthenticationToken("key", "anonymousUser", listOf(SimpleGrantedAuthority("ROLE_ANONYMOUS")))
         every().forEach { it.andExpect { status { isForbidden() } } }
-        verifyNoInteractions(service, studies, pitches)
+        verifyNoInteractions(service, studies, pitches, placements, linkCheck)
     }
 
     @Test
@@ -144,6 +163,12 @@ class AdminPrSecurityTest {
         verify(pitches).list(1, PrPitchStatus.SENT)
         mvc.post("/admin/pr/pitches/7/send").andExpect { status { isOk() } }
         verify(pitches).send(7)
+        mvc.post("/admin/pr/placements/5/check").andExpect { status { isOk() } }
+        verify(linkCheck).check(5)
+        mvc.post("/admin/pr/placements/5/clear-alert").andExpect { status { isOk() } }
+        verify(placements).clearAlert(5)
+        mvc.get("/admin/pr/placements").andExpect { status { isOk() } }
+        verify(placements).list(null)
         `when`(service.optOut(anyLong(), org.mockito.ArgumentMatchers.anyString()))
             .thenThrow(PrException(HttpStatus.NOT_FOUND, "CONTACT_NOT_FOUND", "Contact 9 not found"))
         mvc.post("/admin/pr/contacts/9/opt-out").andExpect {

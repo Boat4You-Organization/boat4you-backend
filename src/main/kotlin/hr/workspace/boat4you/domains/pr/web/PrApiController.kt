@@ -3,11 +3,14 @@ package hr.workspace.boat4you.domains.pr.web
 import hr.workspace.boat4you.domains.pr.dto.ImportResult
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDraftRequest
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDto
+import hr.workspace.boat4you.domains.pr.dto.PrPlacementDto
+import hr.workspace.boat4you.domains.pr.dto.PrPlacementRequest
 import hr.workspace.boat4you.domains.pr.dto.PrStudyDto
 import hr.workspace.boat4you.domains.pr.dto.PrStudyRequest
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
+import hr.workspace.boat4you.domains.pr.service.PrPlacementService
 import hr.workspace.boat4you.domains.pr.service.PrProperties
 import hr.workspace.boat4you.domains.pr.service.PrStudyService
 import org.springframework.http.HttpStatus
@@ -23,7 +26,7 @@ import java.security.MessageDigest
 /**
  * PR API for automated Claude sessions: header `X-Api-Key` must equal `pr.api-key` (env PR_API_KEY; blank = every call
  * 401). permitAll in the security chain; every call checks the key itself (401 `{code: UNAUTHORIZED}` otherwise). It
- * writes drafts, contacts and studies only: there is deliberately no send route, sending stays a click in the admin.
+ * writes drafts, contacts, studies and placements only: there is deliberately no send route, sending stays a click in the admin.
  */
 @RestController
 @RequestMapping("/api/pr/v1")
@@ -32,6 +35,7 @@ class PrApiController(
     private val pitches: PrPitchService,
     private val contacts: PrContactService,
     private val studies: PrStudyService,
+    private val placements: PrPlacementService,
 ) {
     @PostMapping("/pitches")
     fun createPitch(
@@ -68,6 +72,16 @@ class PrApiController(
     ): PrStudyDto {
         auth(key)
         return studies.create(body)
+    }
+
+    /** An article that used a study; 409 PLACEMENT_EXISTS when it is already listed. The link is checked later, not here. */
+    @PostMapping("/placements")
+    fun createPlacement(
+        @RequestHeader(name = HEADER, required = false) key: String?,
+        @RequestBody body: PrPlacementRequest,
+    ): PrPlacementDto {
+        auth(key)
+        return placements.create(body)
     }
 
     /**

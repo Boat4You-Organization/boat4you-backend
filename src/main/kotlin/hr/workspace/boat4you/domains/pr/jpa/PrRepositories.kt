@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.LocalDate
 
 interface PrOutletRepository : JpaRepository<PrOutlet, Long> {
     /** The unique key of pr_outlet: (lower(name), market). */
@@ -72,7 +73,60 @@ interface PrPitchRepository :
     fun markSending(id: Long): Int
 }
 
-interface PrPlacementRepository : JpaRepository<PrPlacement, Long>
+interface PrPlacementRepository : JpaRepository<PrPlacement, Long> {
+    fun findFirstByArticleUrl(articleUrl: String): PrPlacement?
+
+    fun findAllByStudyId(studyId: Long): List<PrPlacement>
+
+    /**
+     * Placements the daily job checks: published (or, without a date, created) on or after [recentSince] every run,
+     * older ones when their last check is before [staleBefore] or never; never-checked first, then oldest check.
+     */
+    @Query(
+        value = """
+            SELECT * FROM pr_placement
+            WHERE coalesce(published_on, CAST(created_at AT TIME ZONE 'Europe/Zagreb' AS date)) >= :recentSince
+               OR last_checked_at IS NULL OR last_checked_at < :staleBefore
+            ORDER BY last_checked_at NULLS FIRST, id
+            LIMIT :max
+        """,
+        nativeQuery = true,
+    )
+    fun findDue(
+        recentSince: LocalDate,
+        staleBefore: Instant,
+        max: Int,
+    ): List<PrPlacement>
+
+    /**
+     * Stores one check result in one UPDATE, so a PATCH saved meanwhile is not overwritten. [raise] sets the alert and
+     * its reason; an alert already set is never cleared here (only clearAlert does that).
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(
+        value = """
+            UPDATE pr_placement
+            SET link_state = :state, last_http_status = :httpStatus, last_checked_at = :checkedAt,
+                alert = (alert OR :raise), alert_reason = CASE WHEN :raise THEN :reason ELSE alert_reason END
+            WHERE id = :id
+        """,
+        nativeQuery = true,
+    )
+    fun recordCheck(
+        id: Long,
+        state: String,
+        httpStatus: Int,
+        checkedAt: Instant,
+        raise: Boolean,
+        reason: String,
+    ): Int
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(value = "UPDATE pr_placement SET alert = false, alert_reason = NULL WHERE id = :id", nativeQuery = true)
+    fun clearAlert(id: Long): Int
+}
 
 interface PrMentionRepository : JpaRepository<PrMention, Long> {
     fun existsByUrl(url: String): Boolean

@@ -39,11 +39,22 @@ data class PrProperties(
         val from: String = "Mario Kuzmanić | Boat4you Group <press@boat4you.com>",
         /** A copy of every pitch lands in the press mailbox. */
         val bcc: String = "press@boat4you.com",
-    )
+    ) {
+        /** The password never reaches a log (data class toString would print it). */
+        override fun toString(): String =
+            "Mail(enabled=$enabled, host=$host, port=$port, ssl=$ssl, username=$username, password=${mask(password)}, from=$from, bcc=$bcc)"
+    }
+
+    /** The API and Open PageRank keys never reach a log (data class toString would print them). */
+    override fun toString(): String =
+        "PrProperties(markets=$markets, mail=$mail, privacyUrl=$privacyUrl, apiKey=${mask(apiKey)}, oprApiKey=${mask(oprApiKey)}, ourDomains=$ourDomains)"
 
     fun clearedMarkets(): Set<String> = markets.cleared.split(",").mapNotNull { PrComplianceRules.normaliseMarket(it) }.toSet()
 
     companion object {
+        /** "****" for a set secret, "" for a blank one (so a missing key still shows). */
+        private fun mask(secret: String) = if (secret.isBlank()) "" else "****"
+
         val OUR_DOMAINS =
             listOf(
                 "boat4you.com",
