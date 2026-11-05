@@ -100,6 +100,7 @@ class PrLinkInspectorTest {
     @Test
     fun classifyByStatus() {
         val anyLink = LinkInspection(listOf(FoundLink("https://www.boat4you.com/", emptySet(), "b")), metaNoindex = false)
+
         fun status(code: Int) = PrLinkInspector.classify(FetchResult(code, "https://n.example/a", null, null), anyLink)
 
         listOf(-1, 401, 402, 403, 429, 503, 500, 502, 301, 999).forEach { status(it) shouldBe PrLinkState.BLOCKED_UNKNOWN }

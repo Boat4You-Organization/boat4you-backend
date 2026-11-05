@@ -86,6 +86,9 @@ CREATE TABLE pr_placement (
     target_url        VARCHAR(1000),
     anchor_text       VARCHAR(500),
     link_state        VARCHAR(20)   NOT NULL DEFAULT 'NOT_CHECKED',
+    -- Last OK_FOLLOW / OK_NOFOLLOW seen (or the loss acknowledged by clear-alert); alerts compare against it, so a
+    -- BLOCKED_UNKNOWN check in between cannot hide a drop. NULL until the first good check.
+    last_good_state   VARCHAR(20),
     last_http_status  INT,
     last_checked_at   TIMESTAMPTZ,
     alert             BOOLEAN       NOT NULL DEFAULT false,

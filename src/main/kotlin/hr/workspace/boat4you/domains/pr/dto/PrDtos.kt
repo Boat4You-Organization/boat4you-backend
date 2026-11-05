@@ -174,6 +174,7 @@ data class PrPlacementDto(
     val targetUrl: String?,
     val anchorText: String?,
     val linkState: PrLinkState,
+    val lastGoodState: PrLinkState?,
     val lastHttpStatus: Int?,
     val lastCheckedAt: Instant?,
     val alert: Boolean,

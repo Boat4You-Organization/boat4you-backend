@@ -41,8 +41,7 @@ data class PrProperties(
         val bcc: String = "press@boat4you.com",
     ) {
         /** The password never reaches a log (data class toString would print it). */
-        override fun toString(): String =
-            "Mail(enabled=$enabled, host=$host, port=$port, ssl=$ssl, username=$username, password=${mask(password)}, from=$from, bcc=$bcc)"
+        override fun toString(): String = "Mail(enabled=$enabled, host=$host, port=$port, ssl=$ssl, username=$username, password=${mask(password)}, from=$from, bcc=$bcc)"
     }
 
     /** The API and Open PageRank keys never reach a log (data class toString would print them). */

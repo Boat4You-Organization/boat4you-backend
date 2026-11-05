@@ -56,7 +56,7 @@ class PrPlacementService(
         return toDtos(listOf(placements.save(placement))).single()
     }
 
-    /** Only the fields sent change. A new article URL is another page: its check result is reset (the alert stays). */
+    /** Only the fields sent change. A new article URL is another page: its check result and last good state are reset (the alert stays). */
     @Transactional
     fun update(
         id: Long,
@@ -73,6 +73,7 @@ class PrPlacementService(
         if (url != null && url != placement.articleUrl) {
             placement.articleUrl = url
             placement.linkState = PrLinkState.NOT_CHECKED
+            placement.lastGoodState = null
             placement.lastHttpStatus = null
             placement.lastCheckedAt = null
         }
@@ -85,7 +86,10 @@ class PrPlacementService(
         return toDtos(listOf(placements.save(placement))).single()
     }
 
-    /** The only way an alert goes away: the link checker never clears one. */
+    /**
+     * The only way an alert goes away: the link checker never clears one. A loss still showing becomes the acknowledged
+     * last good state, so the next daily check does not raise it again; a link that comes back (OK_FOLLOW) resets it.
+     */
     fun clearAlert(id: Long): PrPlacementDto {
         if (placements.clearAlert(id) == 0) throw notFound(id)
         return get(id)
@@ -113,6 +117,7 @@ class PrPlacementService(
                 targetUrl = it.targetUrl,
                 anchorText = it.anchorText,
                 linkState = it.linkState,
+                lastGoodState = it.lastGoodState,
                 lastHttpStatus = it.lastHttpStatus,
                 lastCheckedAt = it.lastCheckedAt,
                 alert = it.alert,

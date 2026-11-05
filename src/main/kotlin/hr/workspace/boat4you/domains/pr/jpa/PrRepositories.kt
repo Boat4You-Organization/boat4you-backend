@@ -99,8 +99,10 @@ interface PrPlacementRepository : JpaRepository<PrPlacement, Long> {
     ): List<PrPlacement>
 
     /**
-     * Stores one check result in one UPDATE, so a PATCH saved meanwhile is not overwritten. [raise] sets the alert and
-     * its reason; an alert already set is never cleared here (only clearAlert does that).
+     * Stores one check result in one UPDATE, so a PATCH saved meanwhile is not overwritten. Applies only while
+     * last_good_state still equals [expectedGood] ("" = NULL), the value the alert decision was made against; 0 = it
+     * changed meanwhile (clear-alert, another check) or the row is gone. [good] non-empty replaces last_good_state.
+     * [raise] sets the alert and its reason; an alert already set is never cleared here (only clearAlert does that).
      */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
@@ -108,23 +110,35 @@ interface PrPlacementRepository : JpaRepository<PrPlacement, Long> {
         value = """
             UPDATE pr_placement
             SET link_state = :state, last_http_status = :httpStatus, last_checked_at = :checkedAt,
+                last_good_state = CASE WHEN :good <> '' THEN :good ELSE last_good_state END,
                 alert = (alert OR :raise), alert_reason = CASE WHEN :raise THEN :reason ELSE alert_reason END
-            WHERE id = :id
+            WHERE id = :id AND coalesce(last_good_state, '') = :expectedGood
         """,
         nativeQuery = true,
     )
     fun recordCheck(
         id: Long,
+        expectedGood: String,
         state: String,
         httpStatus: Int,
         checkedAt: Instant,
+        good: String,
         raise: Boolean,
         reason: String,
     ): Int
 
+    /** Clears the alert; a loss still showing (LINK_MISSING / PAGE_GONE / OK_NOFOLLOW) becomes the acknowledged last_good_state, so it is not raised again. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Transactional
-    @Query(value = "UPDATE pr_placement SET alert = false, alert_reason = NULL WHERE id = :id", nativeQuery = true)
+    @Query(
+        value = """
+            UPDATE pr_placement
+            SET alert = false, alert_reason = NULL,
+                last_good_state = CASE WHEN link_state IN ('LINK_MISSING', 'PAGE_GONE', 'OK_NOFOLLOW') THEN link_state ELSE last_good_state END
+            WHERE id = :id
+        """,
+        nativeQuery = true,
+    )
     fun clearAlert(id: Long): Int
 }
 

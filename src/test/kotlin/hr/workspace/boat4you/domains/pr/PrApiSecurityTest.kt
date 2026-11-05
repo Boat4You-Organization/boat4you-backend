@@ -202,6 +202,7 @@ class PrApiSecurityTest {
             targetUrl = null,
             anchorText = "study",
             linkState = PrLinkState.NOT_CHECKED,
+            lastGoodState = null,
             lastHttpStatus = null,
             lastCheckedAt = null,
             alert = false,

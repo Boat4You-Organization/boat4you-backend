@@ -240,6 +240,11 @@ open class PrPlacement {
     @Column(name = "link_state", length = 20, nullable = false)
     open var linkState: PrLinkState = PrLinkState.NOT_CHECKED
 
+    /** Last OK_FOLLOW / OK_NOFOLLOW seen, or the loss acknowledged by clear-alert: the alert rules compare against it. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "last_good_state", length = 20)
+    open var lastGoodState: PrLinkState? = null
+
     @Column(name = "last_http_status")
     open var lastHttpStatus: Int? = null
 

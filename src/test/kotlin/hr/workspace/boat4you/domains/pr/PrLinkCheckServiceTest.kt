@@ -40,8 +40,9 @@ import java.time.temporal.ChronoUnit
 
 /**
  * Placements and their link checks against the real V9_121 schema. The page fetcher and Open PageRank are Mockito
- * mocks (no network); "now" is a TestClock. Alert rule: OK_FOLLOW -> anything but BLOCKED_UNKNOWN, or OK_NOFOLLOW ->
- * LINK_MISSING / PAGE_GONE; an alert is cleared only by hand.
+ * mocks (no network); "now" is a TestClock. Alert rule (R31), against last_good_state: OK_FOLLOW -> LINK_MISSING /
+ * PAGE_GONE / OK_NOFOLLOW, or OK_NOFOLLOW -> LINK_MISSING / PAGE_GONE; BLOCKED_UNKNOWN never alerts nor changes
+ * last_good_state; an alert is cleared only by hand, which also acknowledges the loss.
  */
 @Import(PrPlacementService::class, PrLinkCheckService::class, PrLinkCheckServiceTest.Beans::class)
 class PrLinkCheckServiceTest : PrJpaTest() {
@@ -109,12 +110,14 @@ class PrLinkCheckServiceTest : PrJpaTest() {
         state: PrLinkState = PrLinkState.NOT_CHECKED,
         publishedOn: LocalDate? = today.minusDays(3),
         lastCheckedAt: Instant? = null,
+        lastGood: PrLinkState? = state.takeIf { it == PrLinkState.OK_FOLLOW || it == PrLinkState.OK_NOFOLLOW },
     ): Long =
         placements
             .save(
                 PrPlacement().apply {
                     articleUrl = url
                     linkState = state
+                    lastGoodState = lastGood
                     this.publishedOn = publishedOn
                     this.lastCheckedAt = lastCheckedAt
                 },
@@ -172,6 +175,7 @@ class PrLinkCheckServiceTest : PrJpaTest() {
         page(url, 200, fixture("article-follow.html"))
         service.check(id).let {
             it.linkState shouldBe PrLinkState.OK_FOLLOW
+            it.lastGoodState shouldBe PrLinkState.OK_FOLLOW
             it.alert shouldBe false
         }
 
@@ -195,7 +199,93 @@ class PrLinkCheckServiceTest : PrJpaTest() {
             it.alert shouldBe false
             it.alertReason shouldBe null
             it.linkState shouldBe PrLinkState.OK_FOLLOW
+            it.lastGoodState shouldBe PrLinkState.OK_FOLLOW
         }
+    }
+
+    @Test
+    fun followToBlockedToMissingStillAlerts() {
+        val url = "https://www.example-news.co.uk/travel/a"
+        val id = placement(url = url, state = PrLinkState.OK_FOLLOW)
+
+        page(url, 403)
+        service.check(id).let {
+            it.linkState shouldBe PrLinkState.BLOCKED_UNKNOWN
+            it.alert shouldBe false
+        }
+        page(url, 200, fixture("article-no-link.html"))
+        service.check(id).let {
+            it.linkState shouldBe PrLinkState.LINK_MISSING
+            it.alert shouldBe true
+            it.alertReason shouldBe "OK_FOLLOW\u2192LINK_MISSING"
+        }
+    }
+
+    @Test
+    fun alertClearedDuringTheFetchIsNotReRaised() {
+        val url = "https://www.example-news.co.uk/travel/a"
+        val id = placement(url = url, state = PrLinkState.OK_FOLLOW)
+        page(url, 200, fixture("article-no-link.html"))
+        service.check(id).alert shouldBe true
+        // The admin presses "Ukloni upozorenje" while the next check is still fetching the page.
+        `when`(fetcher.fetch(url)).thenAnswer {
+            placementService.clearAlert(id)
+            FetchResult(200, url, fixture("article-no-link.html"), null)
+        }
+
+        service.check(id).let {
+            it.alert shouldBe false
+            it.lastGoodState shouldBe PrLinkState.LINK_MISSING
+        }
+    }
+
+    @Test
+    fun blockedNeverAlertsOrChangesLastGood() {
+        listOf(PrLinkState.OK_FOLLOW, PrLinkState.OK_NOFOLLOW, null).forEachIndexed { i, lastGood ->
+            val url = "https://n.example/blocked-$i"
+            val id = placement(url = url, state = PrLinkState.LINK_MISSING, lastGood = lastGood)
+            listOf(403, 429, -1).forEach { status ->
+                page(url, status)
+                service.check(id).let {
+                    it.linkState shouldBe PrLinkState.BLOCKED_UNKNOWN
+                    it.lastHttpStatus shouldBe status
+                    it.lastCheckedAt shouldBe now
+                    it.lastGoodState shouldBe lastGood
+                    it.alert shouldBe false
+                    it.alertReason shouldBe null
+                }
+            }
+        }
+    }
+
+    @Test
+    fun clearedLossIsNotReRaised() {
+        val url = "https://www.example-news.co.uk/travel/a"
+        val id = placement(url = url, state = PrLinkState.OK_FOLLOW)
+        page(url, 200, fixture("article-no-link.html"))
+        service.check(id).alert shouldBe true
+
+        placementService.clearAlert(id).let {
+            it.alert shouldBe false
+            it.lastGoodState shouldBe PrLinkState.LINK_MISSING
+        }
+        service.check(id).alert shouldBe false
+        // Gone after the acknowledged loss: still no alert (nothing good to lose)...
+        page(url, 404)
+        service.check(id).alert shouldBe false
+        // ...until the link comes back and drops again.
+        page(url, 200, fixture("article-follow.html"))
+        service.check(id).lastGoodState shouldBe PrLinkState.OK_FOLLOW
+        page(url, 200, fixture("article-nofollow.html"))
+        service.check(id).let {
+            it.alert shouldBe true
+            it.alertReason shouldBe "OK_FOLLOW\u2192OK_NOFOLLOW"
+            it.lastGoodState shouldBe PrLinkState.OK_NOFOLLOW
+        }
+        // An acknowledged OK_NOFOLLOW still alerts when that link goes too.
+        placementService.clearAlert(id).lastGoodState shouldBe PrLinkState.OK_NOFOLLOW
+        page(url, 410)
+        service.check(id).alertReason shouldBe "OK_NOFOLLOW\u2192PAGE_GONE"
     }
 
     @Test
@@ -387,10 +477,19 @@ class PrLinkCheckServiceTest : PrJpaTest() {
 
     @Test
     fun invalidArticleUrlIsRejected() {
-        listOf(null, "", "  ", "ftp://news.example/a", "javascript:alert(1)", "news.example/a", "https:///a", "https://user:pw@news.example/a", "https://news.example/${"a".repeat(1000)}")
-            .forEach {
-                shouldThrow<PrException> { placementService.create(PrPlacementRequest(articleUrl = it)) }.shouldBeError(HttpStatus.BAD_REQUEST, "ARTICLE_URL_INVALID")
-            }
+        listOf(
+            null,
+            "",
+            "  ",
+            "ftp://news.example/a",
+            "javascript:alert(1)",
+            "news.example/a",
+            "https:///a",
+            "https://user:pw@news.example/a",
+            "https://news.example/${"a".repeat(1000)}",
+        ).forEach {
+            shouldThrow<PrException> { placementService.create(PrPlacementRequest(articleUrl = it)) }.shouldBeError(HttpStatus.BAD_REQUEST, "ARTICLE_URL_INVALID")
+        }
         placements.count() shouldBe 0
     }
 
@@ -421,6 +520,7 @@ class PrLinkCheckServiceTest : PrJpaTest() {
         val moved = placementService.update(id, PrPlacementRequest(articleUrl = "https://news.example/b"))
         moved.articleUrl shouldBe "https://news.example/b"
         moved.linkState shouldBe PrLinkState.NOT_CHECKED
+        moved.lastGoodState shouldBe null
         moved.lastHttpStatus shouldBe null
         moved.lastCheckedAt shouldBe null
 

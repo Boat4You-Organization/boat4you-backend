@@ -20,9 +20,12 @@ import java.util.Locale
 
 /**
  * Checks whether a placement's article still links to us (PrPageFetcher -> PrLinkInspector) and stores the result.
- * Alert when the state drops from OK_FOLLOW to anything but BLOCKED_UNKNOWN, or from OK_NOFOLLOW to LINK_MISSING /
- * PAGE_GONE (alertReason "OK_FOLLOW→LINK_MISSING"); a blocked page (403 / 429 / ...) is never an alert. An alert is
- * cleared only by hand (PrPlacementService.clearAlert). No DB transaction is held while a page is fetched.
+ * Alerts compare against last_good_state (the last OK_FOLLOW / OK_NOFOLLOW seen, or a loss acknowledged by
+ * clear-alert), not the previous check, so OK_FOLLOW -> 403 -> no link still alerts: last good OK_FOLLOW and now
+ * LINK_MISSING / PAGE_GONE / OK_NOFOLLOW, or last good OK_NOFOLLOW and now LINK_MISSING / PAGE_GONE (alertReason
+ * "OK_FOLLOW→LINK_MISSING"). A blocked page (BLOCKED_UNKNOWN: 403 / 429 / ...) never alerts and never changes
+ * last_good_state. An alert is cleared only by hand (PrPlacementService.clearAlert). No DB transaction is held while
+ * a page is fetched.
  */
 @Service
 class PrLinkCheckService(
@@ -42,16 +45,27 @@ class PrLinkCheckService(
     internal var runBudget: Duration = Duration.ofMinutes(25)
 
     fun check(placementId: Long): PrPlacementDto {
-        val placement = placements.findById(placementId).orElseThrow { PrException.notFound("PLACEMENT_NOT_FOUND", "Placement $placementId not found") }
-        val before = placement.linkState
-        val fetch = fetcher.fetch(placement.articleUrl)
+        val url = placement(placementId).articleUrl
+        val fetch = fetcher.fetch(url)
         val inspection = fetch.html?.takeIf { fetch.status in 200..299 }?.let { PrLinkInspector.inspect(it, props.ourDomains, fetch.finalUrl) }
         val after = PrLinkInspector.classify(fetch, inspection)
-        val raise = raisesAlert(before, after)
-        val reason = if (raise) "$before$ARROW$after" else ""
-        placements.recordCheck(placementId, after.name, fetch.status, clock.instant(), raise, reason)
-        if (before != after) log.info("PR link check: placement {} {} -> {} (HTTP {}){}", placementId, before, after, fetch.status, if (raise) " ALERT" else "")
-        return placementService.get(placementId)
+        val good = if (after == PrLinkState.OK_FOLLOW || after == PrLinkState.OK_NOFOLLOW) after.name else ""
+        // The UPDATE applies only while last_good_state is still the one the decision was made against; a clear-alert
+        // or another check landing during the fetch makes it 0, and the decision is made again on the fresh row.
+        repeat(RECORD_ATTEMPTS) {
+            val current = placement(placementId)
+            val lastGood = current.lastGoodState
+            val raise = raisesAlert(lastGood, after)
+            val reason = if (raise) "$lastGood$ARROW$after" else ""
+            val updated = placements.recordCheck(placementId, lastGood?.name.orEmpty(), after.name, fetch.status, clock.instant(), good, raise, reason)
+            if (updated == 1) {
+                if (current.linkState != after || raise) {
+                    log.info("PR link check: placement {} {} -> {} (HTTP {}){}", placementId, current.linkState, after, fetch.status, if (raise) " ALERT" else "")
+                }
+                return placementService.get(placementId)
+            }
+        }
+        throw PrException.conflict("CONFLICT", "Placement $placementId changed during the check; check it again")
     }
 
     /**
@@ -95,18 +109,21 @@ class PrLinkCheckService(
         runCatching { checkDue() }.onFailure { log.error("PR link check run failed", it) }
     }
 
+    private fun placement(id: Long) = placements.findById(id).orElseThrow { PrException.notFound("PLACEMENT_NOT_FOUND", "Placement $id not found") }
+
     private fun raisesAlert(
-        before: PrLinkState,
+        lastGood: PrLinkState?,
         after: PrLinkState,
     ): Boolean =
-        when (before) {
-            PrLinkState.OK_FOLLOW -> after != PrLinkState.OK_FOLLOW && after != PrLinkState.BLOCKED_UNKNOWN
+        when (lastGood) {
+            PrLinkState.OK_FOLLOW -> after in setOf(PrLinkState.LINK_MISSING, PrLinkState.PAGE_GONE, PrLinkState.OK_NOFOLLOW)
             PrLinkState.OK_NOFOLLOW -> after == PrLinkState.LINK_MISSING || after == PrLinkState.PAGE_GONE
             else -> false
         }
 
     private companion object {
         const val MAX_PER_RUN = 200
+        const val RECORD_ATTEMPTS = 3
         const val RECENT_DAYS = 14L
         const val STALE_DAYS = 7L
         const val PAUSE_MS = 2_000L

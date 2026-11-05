@@ -24,7 +24,9 @@ class OpenPageRankClientTest {
         }
     }
 
-    private val okBody = """{"status_code":200,"response":[{"status_code":200,"error":"","page_rank_integer":5,"page_rank_decimal":4.52,"rank":"123","domain":"example-news.co.uk"}],"last_updated":"1st Nov 2026"}"""
+    private val okBody =
+        """{"status_code":200,"response":[{"status_code":200,"error":"","page_rank_integer":5,"page_rank_decimal":4.52,""" +
+            """"rank":"123","domain":"example-news.co.uk"}],"last_updated":"1st Nov 2026"}"""
 
     @Test
     fun oprSkippedWithoutKey() {
