@@ -67,33 +67,42 @@ class MatchersTests {
         assertTrue(
             Matchers.extrasNameMatch(
                 setOf("bbq", "barbecue", "case-substring:BBQ"),
-                "Charter Pack (fully fuelled outboard engine, gas for kitchen and BBQ (if any), final cleaning)",
+                "Charter Pack (outboard engine, gas and BBQ (if any), final cleaning)",
             ),
         )
         assertFalse(
             Matchers.extrasNameMatch(
                 setOf("charter pack", "final cleaning", "transit log"),
-                "Charter Pack (fully fuelled outboard engine, gas for kitchen and BBQ (if any), final cleaning)",
+                "Charter Pack (outboard engine, gas and BBQ (if any), final cleaning)",
             ),
         )
         assertTrue(
             Matchers.extrasNameMatch(
                 setOf("charter pack", "final cleaning", "transit log", "token-match:charter pack"),
-                "Charter Pack (fully fuelled outboard engine, gas for kitchen and BBQ (if any), final cleaning)",
+                "Charter Pack (outboard engine, gas and BBQ (if any), final cleaning)",
             ),
         )
         assertFalse(
             Matchers.extrasNameMatch(
                 setOf("bbq", "barbecue", "case-substring:BBQ", "not:charter pack", "not:transit log"),
-                "Charter Pack (fully fuelled outboard engine, gas for kitchen and BBQ (if any), final cleaning)",
+                "Charter Pack (outboard engine, gas and BBQ (if any), final cleaning)",
             ),
         )
         assertFalse(
             Matchers.extrasNameMatch(
                 setOf("case-substring:SUP", "full-match:SUP", "case:SUP", "stand up paddle", "not:charter pack", "not:transit log", "not:comfort pack"),
-                " Comfort Pack The Sun (Cleaning + Crew + Bed Linen + Towels + Beach Towels + 1 Kayak + 2 SUP + 2 seabob light + Inflatable floating platform + Outboard with engine)",
+                " Comfort Pack The Sun (Cleaning + Crew + Towels + 1 Kayak + 2 SUP)",
             ),
         )
+    }
+
+    @Test
+    fun `names longer than 70 chars never link`() {
+        val pack = "Charter Pack (fully fuelled outboard engine, gas for kitchen and BBQ (if any), final cleaning)"
+        assertFalse(Matchers.extrasNameMatch(setOf("bbq", "barbecue", "case-substring:BBQ"), pack))
+        assertFalse(Matchers.extrasNameMatch(setOf("token-match:charter pack"), pack))
+        assertTrue(Matchers.extrasNameMatch(setOf("case-substring:BBQ"), "BBQ".padEnd(70, '.')))
+        assertFalse(Matchers.extrasNameMatch(setOf("case-substring:BBQ"), "BBQ".padEnd(71, '.')))
     }
 
     @Test

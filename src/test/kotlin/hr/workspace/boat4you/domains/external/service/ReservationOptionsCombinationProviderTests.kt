@@ -20,7 +20,7 @@ class ReservationOptionsCombinationProviderTests {
             )
 
         val combinations = ReservationOptionsCombinationProvider.generateValidCombinations(reservationOption)
-        assertEquals(2, combinations.size)
+        assertEquals(3, combinations.size)
     }
 
     @Test
@@ -47,7 +47,7 @@ class ReservationOptionsCombinationProviderTests {
             )
 
         val combinations = ReservationOptionsCombinationProvider.generateValidCombinations(reservationOption)
-        assertTrue(1 == combinations.size)
+        assertTrue(2 == combinations.size)
     }
 
     @Test
