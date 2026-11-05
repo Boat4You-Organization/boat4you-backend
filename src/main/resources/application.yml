@@ -355,3 +355,33 @@ seo:
   bing-api-key: ${SEO_BING_API_KEY:}
   # Google days per site and hourly run: the first runs after deploy fill the 16 months of history in about 16 hours.
   backfill-days-per-run: ${SEO_BACKFILL_DAYS_PER_RUN:30}
+
+# PR module (digital-PR outreach, Mario 4.11.2026): 1:1 plain-text pitches from press@boat4you.com to journalists.
+# Kill switch pr.mail.enabled is off until PR_MAIL_ENABLED=true; SMTP credentials and API keys only from the env.
+pr:
+  markets:
+    # ISO-3166 alpha-2 (GB, not UK). DE and ZA have their own consent rules on top.
+    cleared: ${PR_MARKETS_CLEARED:US,GB,AU,NZ,FR,HR,GR}
+  mail:
+    enabled: ${PR_MAIL_ENABLED:false}
+    host: ${PR_MAIL_HOST:}
+    port: ${PR_MAIL_PORT:587}
+    username: ${PR_MAIL_USERNAME:}
+    password: ${PR_MAIL_PASSWORD:}
+    from: "Mario Kuzmanić | Boat4you Group <press@boat4you.com>"
+    bcc: press@boat4you.com
+  privacy-url: ${PR_PRIVACY_URL:https://www.boat4you.com/press/privacy}
+  # Key for the PR public API (blank = closed); Open PageRank key (free, blank = domain rank skipped).
+  api-key: ${PR_API_KEY:}
+  opr-api-key: ${PR_OPR_API_KEY:}
+  our-domains:
+    - boat4you.com
+    - catamaran-croatia-charter.com
+    - croatia-yachting.com
+    - europe-yachts.com
+    - catamaran-charter-greece.com
+    - catamarancharteritaly.com
+    - catamaran-charter-caribbean.com
+  retention:
+    # Monthly (1st, 03:30 Europe/Zagreb): delete contacts without activity for 24 months; email_suppression stays.
+    cron: "0 30 3 1 * *"
