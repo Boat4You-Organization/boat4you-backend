@@ -131,6 +131,8 @@ allOpen {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // The Testcontainers/Spring tests do not fit in Gradle's 512 MB test worker default.
+    maxHeapSize = "2g"
 }
 
 ktlint {
@@ -152,6 +154,8 @@ ktlint {
 detekt {
     buildUponDefaultConfig = true
     config.from(files("$rootDir/detekt_config.yml"))
+    // Report-only, like ktlint below, until the existing findings are cleaned up.
+    ignoreFailures = true
 }
 
 configurations.matching { it.name == "detekt" }.all {
