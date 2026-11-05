@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.social
 
+import hr.workspace.boat4you.EmptyDatabaseShims
 import hr.workspace.boat4you.domains.social.jpa.SocialAccount
 import hr.workspace.boat4you.domains.social.jpa.SocialAiRun
 import hr.workspace.boat4you.domains.social.jpa.SocialAiSetting
@@ -18,9 +19,6 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import jakarta.persistence.OptimisticLockException
 import org.flywaydb.core.Flyway
-import org.flywaydb.core.api.callback.Callback
-import org.flywaydb.core.api.callback.Context
-import org.flywaydb.core.api.callback.Event
 import org.hibernate.SessionFactory
 import org.hibernate.StaleObjectStateException
 import org.hibernate.boot.MetadataSources
@@ -32,7 +30,6 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.boot.orm.jpa.hibernate.SpringImplicitNamingStrategy
-import org.springframework.core.io.ClassPathResource
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.testcontainers.containers.PostgreSQLContainer
@@ -44,11 +41,8 @@ import java.time.LocalDate
  * boots the social entities with `hbm2ddl.auto=validate` and the app's naming strategies, connected as `boat4you_app`
  * like the app (so the V9_118 GRANTs are exercised too).
  *
- * The chain was written against a live database, so an empty one needs three shims, nothing else: V9_18 (a prod data
- * fix) re-links location 2029 to region 5, so both rows are stubbed first (FK targets only); V9_50 reads
- * `reservation_view`, which the repeatable R__1_02 creates and Flyway only runs after all versioned files, so R__1_02 is
- * applied once just before V9_50 (a Flyway callback; Flyway then applies every R__ file itself at the end, as on prod). On prod V9_118
- * runs out of order after 9.120; it creates only its own tables, so the resulting schema is the same.
+ * The chain was written against a live database, so an empty one needs the three shims of [EmptyDatabaseShims], nothing
+ * else. On prod V9_118 runs out of order after 9.120; it creates only its own tables, so the resulting schema is the same.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SocialHibernateValidateTest {
@@ -93,38 +87,6 @@ class SocialHibernateValidateTest {
 
     @AfterAll
     fun stop() = postgres.stop()
-
-    /** The three shims an empty database needs, run on the migration's own connection right before V9_18 and V9_50. */
-    private object EmptyDatabaseShims : Callback {
-        override fun supports(
-            event: Event,
-            context: Context?,
-        ) = event == Event.BEFORE_EACH_MIGRATE
-
-        override fun canHandleInTransaction(
-            event: Event,
-            context: Context?,
-        ) = true
-
-        override fun handle(
-            event: Event,
-            context: Context,
-        ) {
-            val sql =
-                when (context.migrationInfo?.version?.toString()) {
-                    "9.18" ->
-                        "SET LOCAL session_replication_role = replica; " +
-                            "INSERT INTO region (id) VALUES (5); " +
-                            "INSERT INTO location (id, name, country_code, country_id) VALUES (2029, 'stub', 'HR', 0); " +
-                            "SET LOCAL session_replication_role = origin"
-                    "9.50" -> ClassPathResource("db/migration/R__1_02_reservation_view.sql").inputStream.readAllBytes().decodeToString()
-                    else -> return
-                }
-            context.connection.createStatement().use { it.execute(sql) }
-        }
-
-        override fun getCallbackName() = "social-test-empty-db-shims"
-    }
 
     /** The social entities only, as the app maps them (Spring Boot's naming strategies, auto-detected dialect). */
     private fun sessionFactory(): SessionFactory {
