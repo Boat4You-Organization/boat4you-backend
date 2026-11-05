@@ -4,6 +4,7 @@ import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.domains.calls.CallsTestJson
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
+import hr.workspace.boat4you.domains.pr.service.PrStudyService
 import hr.workspace.boat4you.domains.pr.web.AdminPrController
 import hr.workspace.boat4you.domains.pr.web.PrErrorAdvice
 import org.junit.jupiter.api.AfterEach
@@ -50,12 +51,20 @@ class AdminPrSecurityTest {
         fun prContactService(): PrContactService = mock(PrContactService::class.java)
 
         @Bean
-        fun adminPrController(service: PrContactService) = AdminPrController(service)
+        fun prStudyService(): PrStudyService = mock(PrStudyService::class.java)
+
+        @Bean
+        fun adminPrController(
+            service: PrContactService,
+            studies: PrStudyService,
+        ) = AdminPrController(service, studies)
     }
 
     @Autowired private lateinit var controller: AdminPrController
 
     @Autowired private lateinit var service: PrContactService
+
+    @Autowired private lateinit var studies: PrStudyService
 
     private val mvc: MockMvc by lazy {
         MockMvcBuilders
@@ -66,7 +75,7 @@ class AdminPrSecurityTest {
     }
 
     @BeforeEach
-    fun resetMocks() = reset(service)
+    fun resetMocks() = reset(service, studies)
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -96,6 +105,9 @@ class AdminPrSecurityTest {
             },
             mvc.post("/admin/pr/contacts/1/opt-out"),
             mvc.post("/admin/pr/contacts/1/bounce"),
+            mvc.get("/admin/pr/studies"),
+            mvc.post("/admin/pr/studies", dsl = json("""{"number":1,"siteId":"boat4you","title":"T"}""")),
+            mvc.patch("/admin/pr/studies/1", dsl = json("""{"status":"LIVE"}""")),
         )
 
     @Test
@@ -105,13 +117,14 @@ class AdminPrSecurityTest {
         SecurityContextHolder.getContext().authentication =
             AnonymousAuthenticationToken("key", "anonymousUser", listOf(SimpleGrantedAuthority("ROLE_ANONYMOUS")))
         every().forEach { it.andExpect { status { isForbidden() } } }
-        verifyNoInteractions(service)
+        verifyNoInteractions(service, studies)
     }
 
     @Test
     fun `SYSTEM_ADMIN passes and PR errors come back as code and message`() {
         signIn("SYSTEM_ADMIN")
         mvc.get("/admin/pr/outlets").andExpect { status { isOk() } }
+        mvc.get("/admin/pr/studies").andExpect { status { isOk() } }
         `when`(service.optOut(anyLong(), org.mockito.ArgumentMatchers.anyString()))
             .thenThrow(PrException(HttpStatus.NOT_FOUND, "CONTACT_NOT_FOUND", "Contact 9 not found"))
         mvc.post("/admin/pr/contacts/9/opt-out").andExpect {

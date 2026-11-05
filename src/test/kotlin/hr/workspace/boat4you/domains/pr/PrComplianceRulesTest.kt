@@ -58,6 +58,16 @@ class PrComplianceRulesTest {
     }
 
     @Test
+    fun tripAdvisorSpellingVariantsMatch() {
+        listOf("TripAdvisor", "Trip Advisor", "trip-advisor", "TRIP.ADVISOR", "trip_advisor", "Trip -  Advisor").forEach {
+            PrComplianceRules.mentionsTripAdvisor("Unlike $it reviews") shouldBe true
+            PrComplianceRules.check(input(subject = "Beyond $it")) shouldBe blocked("TRIPADVISOR_FORBIDDEN")
+        }
+        PrComplianceRules.mentionsTripAdvisor("A trip with an advisor") shouldBe false
+        PrComplianceRules.mentionsTripAdvisor("Charter prices in Croatia rose 12%") shouldBe false
+    }
+
+    @Test
     fun suppressionMatchesCaseAndWhitespace() {
         PrComplianceRules.normaliseEmail(" Ed@Paper.COM ") shouldBe "ed@paper.com"
     }

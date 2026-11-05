@@ -34,7 +34,9 @@ interface PrContactRepository :
     fun deleteInactiveSince(cutoff: Instant): Int
 }
 
-interface PrStudyRepository : JpaRepository<PrStudy, Long>
+interface PrStudyRepository : JpaRepository<PrStudy, Long> {
+    fun findFirstByNumber(number: Int): PrStudy?
+}
 
 interface PrPitchRepository : JpaRepository<PrPitch, Long> {
     /** Atomic DRAFT -> SENDING: 1 = this caller may send, 0 = someone else already took it (or it is not a draft). */

@@ -6,8 +6,11 @@ import hr.workspace.boat4you.domains.pr.dto.PrContactFilter
 import hr.workspace.boat4you.domains.pr.dto.PrContactRequest
 import hr.workspace.boat4you.domains.pr.dto.PrOutletDto
 import hr.workspace.boat4you.domains.pr.dto.PrOutletRequest
+import hr.workspace.boat4you.domains.pr.dto.PrStudyDto
+import hr.workspace.boat4you.domains.pr.dto.PrStudyRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
 import hr.workspace.boat4you.domains.pr.service.PrContactService
+import hr.workspace.boat4you.domains.pr.service.PrStudyService
 import org.springframework.data.web.PagedModel
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
@@ -28,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController
 @PreAuthorize("hasRole('SYSTEM_ADMIN')")
 class AdminPrController(
     private val contacts: PrContactService,
+    private val studies: PrStudyService,
 ) {
     // ---- Outlets ----
 
@@ -82,4 +86,20 @@ class AdminPrController(
     fun bounce(
         @PathVariable id: Long,
     ): PrContactDto = contacts.markBounced(id)
+
+    // ---- Studies ----
+
+    @GetMapping("/studies")
+    fun studies(): List<PrStudyDto> = studies.list()
+
+    @PostMapping("/studies")
+    fun createStudy(
+        @RequestBody body: PrStudyRequest,
+    ): PrStudyDto = studies.create(body)
+
+    @PatchMapping("/studies/{id}")
+    fun updateStudy(
+        @PathVariable id: Long,
+        @RequestBody body: PrStudyRequest,
+    ): PrStudyDto = studies.update(id, body)
 }

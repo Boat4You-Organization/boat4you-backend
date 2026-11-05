@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.pr.dto
 
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
+import hr.workspace.boat4you.domains.pr.jpa.PrStudyStatus
 import java.time.Instant
 import java.time.LocalDate
 
@@ -75,4 +76,28 @@ data class ImportResult(
     val created: Int,
     val updated: Int,
     val skipped: List<String>,
+)
+
+/** siteId is one of the 7 BrandRegistry site ids (boat4you, catamaran-croatia, ...). */
+data class PrStudyDto(
+    val id: Long,
+    val number: Int,
+    val siteId: String,
+    val title: String,
+    val pageUrl: String?,
+    val status: PrStudyStatus,
+    val publishedOn: LocalDate?,
+    val notes: String?,
+    val createdAt: Instant,
+)
+
+/** POST needs number, siteId and title (status defaults to DRAFT); PATCH changes only the fields sent (a blank optional text clears it). */
+data class PrStudyRequest(
+    val number: Int? = null,
+    val siteId: String? = null,
+    val title: String? = null,
+    val pageUrl: String? = null,
+    val status: PrStudyStatus? = null,
+    val publishedOn: LocalDate? = null,
+    val notes: String? = null,
 )
