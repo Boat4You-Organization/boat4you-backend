@@ -1,7 +1,7 @@
 package hr.workspace.boat4you.domains.pr
 
 import hr.workspace.boat4you.domains.campaign.jpa.EmailSuppressionRepository
-import hr.workspace.boat4you.domains.pr.PrPitchDraftTest.TestClock
+import hr.workspace.boat4you.domains.pr.PrJpaTest.TestClock
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDraftRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrContact
 import hr.workspace.boat4you.domains.pr.jpa.PrContactRepository
@@ -42,15 +42,11 @@ import org.mockito.Mockito.reset
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import org.springframework.mail.MailAuthenticationException
 import org.springframework.mail.MailSendException
 import org.springframework.mail.javamail.JavaMailSender
 import org.springframework.mail.javamail.JavaMailSenderImpl
-import org.springframework.test.context.TestPropertySource
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.io.ByteArrayOutputStream
@@ -61,37 +57,14 @@ import java.time.LocalDate
 /**
  * Sending a pitch from press@ (Task 6) against the real V9_121 schema. SMTP is a Mockito JavaMailSender: nothing leaves
  * the machine. The captured MimeMessage goes through saveChanges() as JavaMailSenderImpl does before transmitting it.
+ *
+ * The shared PR context binds application.yml, where the kill switch is off. Sending therefore goes through [service]:
+ * the same PrPitchService class with the same repositories, transaction manager and clock, but mail switched on
+ * ([mailOn]) and the SMTP mock behind its PrMailSender. Drafts and status changes go through the Spring bean
+ * ([pitchService]). No second Spring context is built for this.
  */
-@Import(PrPitchService::class, PrSendTest.Beans::class)
-@TestPropertySource(
-    properties = [
-        "pr.mail.enabled=true",
-        "pr.mail.host=smtp.test.invalid",
-        "pr.mail.username=press@boat4you.com",
-        "pr.mail.password=pw-never-shown",
-    ],
-)
 class PrSendTest : PrJpaTest() {
-    @TestConfiguration
-    class Beans {
-        @Bean
-        fun clock() = TestClock(Instant.parse("2026-11-05T10:00:00Z"))
-
-        @Bean
-        fun smtp(): JavaMailSender = mock(JavaMailSender::class.java)
-
-        @Bean
-        fun prMailSender(
-            props: PrProperties,
-            smtp: JavaMailSender,
-        ) = PrMailSender(props) { smtp }
-    }
-
-    @Autowired private lateinit var service: PrPitchService
-
-    @Autowired private lateinit var smtp: JavaMailSender
-
-    @Autowired private lateinit var mailSender: PrMailSender
+    @Autowired private lateinit var pitchService: PrPitchService
 
     @Autowired private lateinit var props: PrProperties
 
@@ -110,6 +83,22 @@ class PrSendTest : PrJpaTest() {
     @Autowired private lateinit var contactService: PrContactService
 
     @Autowired private lateinit var txManager: PlatformTransactionManager
+
+    private val smtp: JavaMailSender = mock(JavaMailSender::class.java)
+
+    /** The bound mail settings, switched on and configured with test values (the host does not resolve). */
+    private val mailOn by lazy {
+        props.mail.copy(
+            enabled = true,
+            host = "smtp.test.invalid",
+            username = "press@boat4you.com",
+            password = "pw-never-shown",
+        )
+    }
+
+    private val service: PrPitchService by lazy { serviceWith(mailOn) }
+
+    private val mailSender: PrMailSender by lazy { PrMailSender(props.copy(mail = mailOn)) { smtp } }
 
     private val start = Instant.parse("2026-11-05T10:00:00Z")
 
@@ -154,7 +143,7 @@ class PrSendTest : PrJpaTest() {
         contactId: Long,
         template: PrPitchTemplate = PrPitchTemplate.DATA_PITCH,
         subject: String = "Charter prices in Croatia rose 12% – Split & Hvar",
-    ) = service.createDraft(PrPitchDraftRequest(studyId = null, contactId = contactId, template = template, subject = subject, body = body))
+    ) = pitchService.createDraft(PrPitchDraftRequest(studyId = null, contactId = contactId, template = template, subject = subject, body = body))
 
     /** The one message handed to SMTP, finalised as JavaMailSenderImpl does (saveChanges) before it goes out. */
     private fun sent(): MimeMessage {
@@ -306,7 +295,7 @@ class PrSendTest : PrJpaTest() {
     @Test
     fun disabledKillSwitchIs409() {
         val pitch = draft(contact().id!!)
-        val off = serviceWith(props.mail.copy(enabled = false))
+        val off = serviceWith(mailOn.copy(enabled = false))
 
         fails { off.send(pitch.id) }.shouldBe(HttpStatus.CONFLICT, "MAIL_DISABLED")
         fails { off.send(999) }.shouldBe(HttpStatus.CONFLICT, "MAIL_DISABLED")
@@ -314,6 +303,8 @@ class PrSendTest : PrJpaTest() {
         verify(smtp, never()).send(any(MimeMessage::class.java))
         status(pitch.id) shouldBe "DRAFT"
         PrProperties().mail.enabled shouldBe false
+        props.mail.enabled shouldBe false
+        fails { pitchService.send(pitch.id) }.shouldBe(HttpStatus.CONFLICT, "MAIL_DISABLED")
     }
 
     @Test
@@ -321,14 +312,14 @@ class PrSendTest : PrJpaTest() {
         val pitch = draft(contact().id!!)
 
         listOf(
-            props.mail.copy(host = " "),
-            props.mail.copy(username = ""),
-            props.mail.copy(password = ""),
+            mailOn.copy(host = " "),
+            mailOn.copy(username = ""),
+            mailOn.copy(password = ""),
         ).forEach { mail ->
             fails { serviceWith(mail).send(pitch.id) }.shouldBe(HttpStatus.CONFLICT, "MAIL_NOT_CONFIGURED")
         }
         // The kill switch is checked first.
-        fails { serviceWith(props.mail.copy(enabled = false, host = "")).send(pitch.id) }.shouldBe(HttpStatus.CONFLICT, "MAIL_DISABLED")
+        fails { serviceWith(mailOn.copy(enabled = false, host = "")).send(pitch.id) }.shouldBe(HttpStatus.CONFLICT, "MAIL_DISABLED")
 
         verify(smtp, never()).send(any(MimeMessage::class.java))
         status(pitch.id) shouldBe "DRAFT"
@@ -356,7 +347,7 @@ class PrSendTest : PrJpaTest() {
         fails { service.send(pitch.id) }.shouldBe(HttpStatus.CONFLICT, "ALREADY_SENDING_OR_SENT")
 
         reset(smtp)
-        service.setStatus(pitch.id, PrPitchStatus.DRAFT, null).error shouldBe null
+        pitchService.setStatus(pitch.id, PrPitchStatus.DRAFT, null).error shouldBe null
         service.send(pitch.id).status shouldBe PrPitchStatus.SENT
         verify(smtp, times(1)).send(any(MimeMessage::class.java))
     }
@@ -392,23 +383,23 @@ class PrSendTest : PrJpaTest() {
     @Test
     fun failedPitchCanGoBackToDraftOnlyFromFailed() {
         val draft = draft(contact().id!!)
-        fails { service.setStatus(draft.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
+        fails { pitchService.setStatus(draft.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
 
         val sent = service.send(draft.id)
-        fails { service.setStatus(sent.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
+        fails { pitchService.setStatus(sent.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
 
         val stuck = draft(contact(email = "tom@example.co.uk").id!!)
         pitches.markSending(stuck.id) shouldBe 1
-        fails { service.setStatus(stuck.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
-        fails { service.setStatus(stuck.id, PrPitchStatus.REPLIED, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
+        fails { pitchService.setStatus(stuck.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
+        fails { pitchService.setStatus(stuck.id, PrPitchStatus.REPLIED, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
         status(stuck.id) shouldBe "SENDING"
 
         val failed = draft(contact(email = "ann@example.co.uk").id!!)
         jdbc.update("UPDATE pr_pitch SET status = 'FAILED', error = 'boom' WHERE id = ?", failed.id)
-        fails { service.setStatus(failed.id, PrPitchStatus.REPLIED, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
-        fails { service.setStatus(failed.id, PrPitchStatus.SENT, null) }.shouldBe(HttpStatus.BAD_REQUEST, "STATUS_NOT_ALLOWED")
-        fails { service.setStatus(failed.id, PrPitchStatus.SENDING, null) }.shouldBe(HttpStatus.BAD_REQUEST, "STATUS_NOT_ALLOWED")
-        val back = service.setStatus(failed.id, PrPitchStatus.DRAFT, null)
+        fails { pitchService.setStatus(failed.id, PrPitchStatus.REPLIED, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
+        fails { pitchService.setStatus(failed.id, PrPitchStatus.SENT, null) }.shouldBe(HttpStatus.BAD_REQUEST, "STATUS_NOT_ALLOWED")
+        fails { pitchService.setStatus(failed.id, PrPitchStatus.SENDING, null) }.shouldBe(HttpStatus.BAD_REQUEST, "STATUS_NOT_ALLOWED")
+        val back = pitchService.setStatus(failed.id, PrPitchStatus.DRAFT, null)
         back.status shouldBe PrPitchStatus.DRAFT
         back.error shouldBe null
     }
@@ -419,7 +410,7 @@ class PrSendTest : PrJpaTest() {
         val main = service.send(draft(jane.id!!, subject = "Charter prices in Croatia rose 12%").id)
         reset(smtp)
         clock.now = start + Duration.ofDays(5)
-        val followUp = service.createFollowUpDraft(main.id, "Hi Jane,\n\njust checking you saw this.\n\nMario")
+        val followUp = pitchService.createFollowUpDraft(main.id, "Hi Jane,\n\njust checking you saw this.\n\nMario")
 
         val result = service.send(followUp.id)
 
@@ -473,7 +464,7 @@ class PrSendTest : PrJpaTest() {
         pitches.findById(pitch.id).get().messageId shouldBe null
         contacts.findById(jane.id!!).get().lastContactedAt shouldBe null
         fails { service.send(pitch.id) }.shouldBe(HttpStatus.CONFLICT, "ALREADY_SENDING_OR_SENT")
-        fails { service.setStatus(pitch.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
+        fails { pitchService.setStatus(pitch.id, PrPitchStatus.DRAFT, null) }.shouldBe(HttpStatus.CONFLICT, "STATUS_TRANSITION_NOT_ALLOWED")
         verify(smtp, times(1)).send(any(MimeMessage::class.java))
     }
 

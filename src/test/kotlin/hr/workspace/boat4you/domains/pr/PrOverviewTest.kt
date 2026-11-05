@@ -1,6 +1,6 @@
 package hr.workspace.boat4you.domains.pr
 
-import hr.workspace.boat4you.domains.pr.PrPitchDraftTest.TestClock
+import hr.workspace.boat4you.domains.pr.PrJpaTest.TestClock
 import hr.workspace.boat4you.domains.pr.dto.PrOverviewDto
 import hr.workspace.boat4you.domains.pr.dto.StudyKpi
 import hr.workspace.boat4you.domains.pr.service.PrOverviewService
@@ -8,22 +8,12 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Import
 import java.sql.Timestamp
 import java.time.Duration
 import java.time.Instant
 
 /** The "Pregled" KPIs against the real V9_121 schema; rows are written straight into the tables, "now" is a TestClock. */
-@Import(PrOverviewService::class, PrOverviewTest.Beans::class)
 class PrOverviewTest : PrJpaTest() {
-    @TestConfiguration
-    class Beans {
-        @Bean
-        fun clock() = TestClock(Instant.parse("2026-11-05T10:00:00Z"))
-    }
-
     @Autowired private lateinit var service: PrOverviewService
 
     @Autowired private lateinit var clock: TestClock

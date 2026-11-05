@@ -1,6 +1,6 @@
 package hr.workspace.boat4you.domains.pr
 
-import hr.workspace.boat4you.domains.pr.PrPitchDraftTest.TestClock
+import hr.workspace.boat4you.domains.pr.PrJpaTest.TestClock
 import hr.workspace.boat4you.domains.pr.dto.PrPlacementRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrLinkState
 import hr.workspace.boat4you.domains.pr.jpa.PrOutlet
@@ -22,15 +22,11 @@ import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyString
-import org.mockito.Mockito.mock
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Import
 import org.springframework.core.io.ClassPathResource
 import org.springframework.http.HttpStatus
 import java.math.BigDecimal
@@ -44,20 +40,7 @@ import java.time.temporal.ChronoUnit
  * PAGE_GONE / OK_NOFOLLOW, or OK_NOFOLLOW -> LINK_MISSING / PAGE_GONE; BLOCKED_UNKNOWN never alerts nor changes
  * last_good_state; an alert is cleared only by hand, which also acknowledges the loss.
  */
-@Import(PrPlacementService::class, PrLinkCheckService::class, PrLinkCheckServiceTest.Beans::class)
 class PrLinkCheckServiceTest : PrJpaTest() {
-    @TestConfiguration
-    class Beans {
-        @Bean
-        fun clock() = TestClock(Instant.parse("2026-11-05T04:30:00Z"))
-
-        @Bean
-        fun prPageFetcher(): PrPageFetcher = mock(PrPageFetcher::class.java)
-
-        @Bean
-        fun openPageRankClient(): OpenPageRankClient = mock(OpenPageRankClient::class.java)
-    }
-
     @Autowired private lateinit var service: PrLinkCheckService
 
     @Autowired private lateinit var placementService: PrPlacementService

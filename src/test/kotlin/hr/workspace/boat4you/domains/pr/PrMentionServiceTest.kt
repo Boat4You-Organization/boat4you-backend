@@ -1,6 +1,6 @@
 package hr.workspace.boat4you.domains.pr
 
-import hr.workspace.boat4you.domains.pr.PrPitchDraftTest.TestClock
+import hr.workspace.boat4you.domains.pr.PrJpaTest.TestClock
 import hr.workspace.boat4you.domains.pr.dto.PrAlertFeedRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrAlertFeed
 import hr.workspace.boat4you.domains.pr.jpa.PrAlertFeedRepository
@@ -19,13 +19,9 @@ import io.kotest.matchers.string.shouldContain
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyString
-import org.mockito.Mockito.mock
 import org.mockito.Mockito.reset
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Import
 import org.springframework.core.io.ClassPathResource
 import org.springframework.http.HttpStatus
 import java.time.Instant
@@ -34,17 +30,7 @@ import java.time.Instant
  * Mentions from Google Alerts / Talkwalker feeds against the real V9_121 schema. The fetcher is a Mockito mock that
  * answers from [pages] and records every URL asked for (no network); "now" is a TestClock.
  */
-@Import(PrMentionService::class, PrMentionServiceTest.Beans::class)
 class PrMentionServiceTest : PrJpaTest() {
-    @TestConfiguration
-    class Beans {
-        @Bean
-        fun clock() = TestClock(Instant.parse("2026-11-05T05:15:00Z"))
-
-        @Bean
-        fun prPageFetcher(): PrPageFetcher = mock(PrPageFetcher::class.java)
-    }
-
     @Autowired private lateinit var service: PrMentionService
 
     @Autowired private lateinit var fetcher: PrPageFetcher

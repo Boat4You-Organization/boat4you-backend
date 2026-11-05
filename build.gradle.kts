@@ -134,6 +134,8 @@ allOpen {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    // The suite caches many Spring test contexts in one JVM; the 512 MB default ran out of heap (PR module, Task 12).
+    maxHeapSize = "1g"
 }
 
 ktlint {

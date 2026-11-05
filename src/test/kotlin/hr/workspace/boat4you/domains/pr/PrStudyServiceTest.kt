@@ -11,12 +11,10 @@ import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import java.time.LocalDate
 
 /** Studies (one data study per number, owned by one of the 7 sites) against the real V9_121 schema. */
-@Import(PrStudyService::class, BrandRegistry::class)
 class PrStudyServiceTest : PrJpaTest() {
     @Autowired private lateinit var service: PrStudyService
 

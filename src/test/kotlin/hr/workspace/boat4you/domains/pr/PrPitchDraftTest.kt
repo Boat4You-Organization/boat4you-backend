@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.pr
 
 import hr.workspace.boat4you.domains.campaign.jpa.EmailSuppression
 import hr.workspace.boat4you.domains.campaign.jpa.EmailSuppressionRepository
+import hr.workspace.boat4you.domains.pr.PrJpaTest.TestClock
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDraftRequest
 import hr.workspace.boat4you.domains.pr.dto.PrPitchUpdateRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrContact
@@ -18,46 +19,21 @@ import hr.workspace.boat4you.domains.pr.rules.PitchDecision
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
 import hr.workspace.boat4you.domains.pr.service.PrFooter
-import hr.workspace.boat4you.domains.pr.service.PrMailSender
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.boot.test.context.TestConfiguration
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Import
 import org.springframework.http.HttpStatus
 import java.sql.Timestamp
-import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
-import java.time.ZoneOffset
 
 /** Pitch drafts, the per-pitch send decision, follow-up drafts and manual status changes against the real V9_121 schema. Nothing is sent. */
-@Import(PrPitchService::class, PrMailSender::class, PrPitchDraftTest.Beans::class)
 class PrPitchDraftTest : PrJpaTest() {
     // PrProperties comes from the app's own binding (defaults: privacy URL https://www.boat4you.com/press/privacy).
-
-    /** "now" as the test sets it, so the 5-day follow-up rule is checked without waiting. */
-    class TestClock(
-        var now: Instant,
-    ) : Clock() {
-        override fun getZone(): ZoneId = ZoneOffset.UTC
-
-        override fun withZone(zone: ZoneId?): Clock = this
-
-        override fun instant(): Instant = now
-    }
-
-    @TestConfiguration
-    class Beans {
-        @Bean
-        fun clock() = TestClock(Instant.parse("2026-11-05T10:00:00Z"))
-    }
 
     @Autowired private lateinit var service: PrPitchService
 
