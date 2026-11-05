@@ -1,0 +1,3 @@
+# gitleaks false positives (fingerprint = commit:file:rule:line). Only fixtures that are not real secrets belong here.
+# PR module: the fake X-Api-Key constant in PrApiSecurityTest, never a live key.
+b64e087c58a085e0b8c1d6d95dd0e9101be94f90:src/test/kotlin/hr/workspace/boat4you/domains/pr/PrApiSecurityTest.kt:generic-api-key:108
