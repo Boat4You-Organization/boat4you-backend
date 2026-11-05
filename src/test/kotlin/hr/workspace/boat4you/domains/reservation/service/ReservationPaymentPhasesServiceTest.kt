@@ -38,16 +38,6 @@ class ReservationPaymentPhasesServiceTest {
         }
 
         @Test
-        fun `one month plus a day until startDate`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 1)
-            val reservationStartDate = LocalDate.of(2025, Month.FEBRUARY, 2)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2025, Month.JANUARY, 2), 500.0)
-        }
-
-        @Test
         fun `one year until startDate`() {
             val now = LocalDate.of(2025, Month.JANUARY, 1)
             val reservationStartDate = LocalDate.of(2026, Month.JANUARY, 1)
@@ -78,16 +68,6 @@ class ReservationPaymentPhasesServiceTest {
         }
 
         @Test
-        fun `start date Feb 15 next year`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 1)
-            val reservationStartDate = LocalDate.of(2026, Month.FEBRUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 500.0)
-        }
-
-        @Test
         fun `start date Feb 16 next year`() {
             val now = LocalDate.of(2025, Month.JANUARY, 1)
             val reservationStartDate = LocalDate.of(2026, Month.FEBRUARY, 16)
@@ -107,39 +87,6 @@ class ReservationPaymentPhasesServiceTest {
             result[0] shouldBe Pair(now, 250.0)
             result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
             result[2] shouldBe Pair(LocalDate.of(2026, Month.NOVEMBER, 30), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 1 in two years`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 1)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 1)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 1), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 15 in two years`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 1)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 15), 500.0)
-        }
-
-        @Test
-        fun `start date Feb 15 in two years`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 1)
-            val reservationStartDate = LocalDate.of(2027, Month.FEBRUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2027, Month.JANUARY, 15), 500.0)
         }
 
         @Test
@@ -186,16 +133,6 @@ class ReservationPaymentPhasesServiceTest {
         }
 
         @Test
-        fun `one month plus a day until startDate`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 15)
-            val reservationStartDate = LocalDate.of(2025, Month.FEBRUARY, 16)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2025, Month.JANUARY, 16), 500.0)
-        }
-
-        @Test
         fun `one year until startDate`() {
             val now = LocalDate.of(2025, Month.JANUARY, 15)
             val reservationStartDate = LocalDate.of(2026, Month.JANUARY, 15)
@@ -213,16 +150,6 @@ class ReservationPaymentPhasesServiceTest {
             result.shouldHaveSize(2)
             result[0] shouldBe Pair(now, 500.0)
             result[1] shouldBe Pair(LocalDate.of(2025, Month.DECEMBER, 16), 500.0)
-        }
-
-        @Test
-        fun `start date Feb 15 next year`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 15)
-            val reservationStartDate = LocalDate.of(2026, Month.FEBRUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 500.0)
         }
 
         @Test
@@ -245,39 +172,6 @@ class ReservationPaymentPhasesServiceTest {
             result[0] shouldBe Pair(now, 250.0)
             result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
             result[2] shouldBe Pair(LocalDate.of(2026, Month.NOVEMBER, 30), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 1 in two years`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 15)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 1)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 1), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 15 in two years`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 15)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 15), 500.0)
-        }
-
-        @Test
-        fun `start date Feb 15 in two years`() {
-            val now = LocalDate.of(2025, Month.JANUARY, 15)
-            val reservationStartDate = LocalDate.of(2027, Month.FEBRUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2027, Month.JANUARY, 15), 500.0)
         }
 
         @Test
@@ -324,36 +218,6 @@ class ReservationPaymentPhasesServiceTest {
         }
 
         @Test
-        fun `one month plus a day until startDate`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 15)
-            val reservationStartDate = LocalDate.of(2025, Month.MARCH, 16)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2025, Month.FEBRUARY, 16), 500.0)
-        }
-
-        @Test
-        fun `one year until startDate`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 15)
-            val reservationStartDate = LocalDate.of(2026, Month.FEBRUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 500.0)
-        }
-
-        @Test
-        fun `start date Feb 15 next year`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 15)
-            val reservationStartDate = LocalDate.of(2026, Month.FEBRUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 500.0)
-        }
-
-        @Test
         fun `start date Feb 16 next year`() {
             val now = LocalDate.of(2025, Month.FEBRUARY, 15)
             val reservationStartDate = LocalDate.of(2026, Month.FEBRUARY, 16)
@@ -373,39 +237,6 @@ class ReservationPaymentPhasesServiceTest {
             result[0] shouldBe Pair(now, 250.0)
             result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
             result[2] shouldBe Pair(LocalDate.of(2026, Month.NOVEMBER, 30), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 1 in two years`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 15)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 1)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 1), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 15 in two years`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 15)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 15), 500.0)
-        }
-
-        @Test
-        fun `start date Feb 15 in two years`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 15)
-            val reservationStartDate = LocalDate.of(2027, Month.FEBRUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2027, Month.JANUARY, 15), 500.0)
         }
 
         @Test
@@ -452,26 +283,6 @@ class ReservationPaymentPhasesServiceTest {
         }
 
         @Test
-        fun `one month plus a day until startDate`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 16)
-            val reservationStartDate = LocalDate.of(2025, Month.MARCH, 17)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2025, Month.FEBRUARY, 17), 500.0)
-        }
-
-        @Test
-        fun `one year until startDate`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 16)
-            val reservationStartDate = LocalDate.of(2026, Month.FEBRUARY, 16)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 16), 500.0)
-        }
-
-        @Test
         fun `start date Feb 17 next year`() {
             val now = LocalDate.of(2025, Month.FEBRUARY, 16)
             val reservationStartDate = LocalDate.of(2026, Month.FEBRUARY, 17)
@@ -491,39 +302,6 @@ class ReservationPaymentPhasesServiceTest {
             result[0] shouldBe Pair(now, 250.0)
             result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
             result[2] shouldBe Pair(LocalDate.of(2026, Month.NOVEMBER, 30), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 1 in two years`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 16)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 1)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 1), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 15 in two years`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 16)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 15), 500.0)
-        }
-
-        @Test
-        fun `start date Feb 15 in two years`() {
-            val now = LocalDate.of(2025, Month.FEBRUARY, 16)
-            val reservationStartDate = LocalDate.of(2027, Month.FEBRUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2027, Month.JANUARY, 15), 500.0)
         }
 
         @Test
@@ -567,59 +345,6 @@ class ReservationPaymentPhasesServiceTest {
             val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
             result.shouldHaveSize(1)
             result.first() shouldBe Pair(now, 1000.0)
-        }
-
-        @Test
-        fun `one month plus a day until startDate`() {
-            val now = LocalDate.of(2025, Month.DECEMBER, 31)
-            val reservationStartDate = LocalDate.of(2026, Month.FEBRUARY, 1)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 1), 500.0)
-        }
-
-        @Test
-        fun `one year until startDate`() {
-            val now = LocalDate.of(2025, Month.DECEMBER, 31)
-            val reservationStartDate = LocalDate.of(2026, Month.DECEMBER, 31)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(2)
-            result[0] shouldBe Pair(now, 500.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.NOVEMBER, 30), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 1 in two years`() {
-            val now = LocalDate.of(2025, Month.DECEMBER, 31)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 1)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 1), 500.0)
-        }
-
-        @Test
-        fun `start date Jan 15 in two years`() {
-            val now = LocalDate.of(2025, Month.DECEMBER, 31)
-            val reservationStartDate = LocalDate.of(2027, Month.JANUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2026, Month.DECEMBER, 15), 500.0)
-        }
-
-        @Test
-        fun `start date Feb 15 in two years`() {
-            val now = LocalDate.of(2025, Month.DECEMBER, 31)
-            val reservationStartDate = LocalDate.of(2027, Month.FEBRUARY, 15)
-            val result = service.calculatePaymentPhases(now, reservationStartDate, 1000.0)
-            result.shouldHaveSize(3)
-            result[0] shouldBe Pair(now, 250.0)
-            result[1] shouldBe Pair(LocalDate.of(2026, Month.JANUARY, 15), 250.0)
-            result[2] shouldBe Pair(LocalDate.of(2027, Month.JANUARY, 15), 500.0)
         }
 
         @Test
