@@ -1,0 +1,207 @@
+package hr.workspace.boat4you.domains.pr.jpa
+
+import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor
+import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Query
+import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
+import java.time.LocalDate
+
+interface PrOutletRepository : JpaRepository<PrOutlet, Long> {
+    /** The unique key of pr_outlet: (lower(name), market). */
+    fun findFirstByNameIgnoreCaseAndMarket(
+        name: String,
+        market: String,
+    ): PrOutlet?
+}
+
+interface PrContactRepository :
+    JpaRepository<PrContact, Long>,
+    JpaSpecificationExecutor<PrContact> {
+    /** Every contact with this address, whatever the outlet (emails are stored normalised; the match ignores case too). */
+    fun findAllByEmailIgnoreCase(email: String): List<PrContact>
+
+    /** The unique key of pr_contact: (lower(email), outlet); a null outletId matches a contact without an outlet. */
+    fun findFirstByEmailIgnoreCaseAndOutletId(
+        email: String,
+        outletId: Long?,
+    ): PrContact?
+
+    /**
+     * A pitch to this contact was sent at [at]: one UPDATE (never a whole-entity save, which could write back a status
+     * loaded before a DO_NOT_CONTACT or opt-out saved meanwhile). Only a consent request moves ACTIVE to CONSENT_REQUESTED;
+     * every other status, and every other template, leaves status as the database holds it.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(
+        value = """
+            UPDATE pr_contact
+            SET last_contacted_at = :at, updated_at = now(),
+                status = CASE WHEN :consentRequest AND status = 'ACTIVE' THEN 'CONSENT_REQUESTED' ELSE status END
+            WHERE id = :id
+        """,
+        nativeQuery = true,
+    )
+    fun recordContacted(
+        id: Long,
+        at: Instant,
+        consentRequest: Boolean,
+    ): Int
+
+    /** 24-month retention: one DELETE, the contacts' pitches go with them (ON DELETE CASCADE); email_suppression is untouched. */
+    @Modifying
+    @Transactional
+    @Query(value = "DELETE FROM pr_contact WHERE coalesce(last_contacted_at, created_at) < :cutoff", nativeQuery = true)
+    fun deleteInactiveSince(cutoff: Instant): Int
+}
+
+interface PrStudyRepository : JpaRepository<PrStudy, Long> {
+    fun findFirstByNumber(number: Int): PrStudy?
+}
+
+interface PrPitchRepository :
+    JpaRepository<PrPitch, Long>,
+    JpaSpecificationExecutor<PrPitch> {
+    /**
+     * Is there already a main pitch (not a follow-up) for this study to this address, through any contact row? One person
+     * writing for two outlets is two contact rows with one address, and gets one pitch per study.
+     */
+    @Query(
+        value = """
+            SELECT EXISTS (
+                SELECT 1 FROM pr_pitch p JOIN pr_contact c ON c.id = p.contact_id
+                WHERE p.study_id = :studyId AND p.parent_pitch_id IS NULL AND lower(c.email) = lower(:email)
+            )
+        """,
+        nativeQuery = true,
+    )
+    fun existsMainPitchForStudyAndEmail(
+        studyId: Long,
+        email: String,
+    ): Boolean
+
+    fun existsByParentPitchId(parentPitchId: Long): Boolean
+
+    /**
+     * Edits a draft only while it is still a DRAFT, in one UPDATE: an entity save would write the loaded status back and
+     * could undo a DRAFT -> SENDING that markSending made meanwhile. 0 = no longer a draft.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(value = "UPDATE pr_pitch SET subject = :subject, body = :body, updated_at = now() WHERE id = :id AND status = 'DRAFT'", nativeQuery = true)
+    fun updateDraft(
+        id: Long,
+        subject: String,
+        body: String,
+    ): Int
+
+    /**
+     * Atomic DRAFT -> SENDING: 1 = this caller may send, 0 = someone else already took it (or it is not a draft). Clears
+     * the persistence context so a re-read after it sees SENDING, never a stale DRAFT.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(value = "UPDATE pr_pitch SET status = 'SENDING', updated_at = now() WHERE id = :id AND status = 'DRAFT'", nativeQuery = true)
+    fun markSending(id: Long): Int
+}
+
+interface PrPlacementRepository : JpaRepository<PrPlacement, Long> {
+    fun findFirstByArticleUrl(articleUrl: String): PrPlacement?
+
+    fun findAllByStudyId(studyId: Long): List<PrPlacement>
+
+    /**
+     * Placements the daily job checks: published (or, without a date, created) on or after [recentSince] every run,
+     * older ones when their last check is before [staleBefore] or never; never-checked first, then oldest check.
+     */
+    @Query(
+        value = """
+            SELECT * FROM pr_placement
+            WHERE coalesce(published_on, CAST(created_at AT TIME ZONE 'Europe/Zagreb' AS date)) >= :recentSince
+               OR last_checked_at IS NULL OR last_checked_at < :staleBefore
+            ORDER BY last_checked_at NULLS FIRST, id
+            LIMIT :max
+        """,
+        nativeQuery = true,
+    )
+    fun findDue(
+        recentSince: LocalDate,
+        staleBefore: Instant,
+        max: Int,
+    ): List<PrPlacement>
+
+    /**
+     * Stores one check result in one UPDATE, so a PATCH saved meanwhile is not overwritten. Applies only while
+     * last_good_state still equals [expectedGood] ("" = NULL), the value the alert decision was made against; 0 = it
+     * changed meanwhile (clear-alert, another check) or the row is gone. [good] non-empty replaces last_good_state.
+     * [raise] sets the alert and its reason; an alert already set is never cleared here (only clearAlert does that).
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(
+        value = """
+            UPDATE pr_placement
+            SET link_state = :state, last_http_status = :httpStatus, last_checked_at = :checkedAt,
+                last_good_state = CASE WHEN :good <> '' THEN :good ELSE last_good_state END,
+                alert = (alert OR :raise), alert_reason = CASE WHEN :raise THEN :reason ELSE alert_reason END
+            WHERE id = :id AND coalesce(last_good_state, '') = :expectedGood
+        """,
+        nativeQuery = true,
+    )
+    fun recordCheck(
+        id: Long,
+        expectedGood: String,
+        state: String,
+        httpStatus: Int,
+        checkedAt: Instant,
+        good: String,
+        raise: Boolean,
+        reason: String,
+    ): Int
+
+    /** Clears the alert; a loss still showing (LINK_MISSING / PAGE_GONE / OK_NOFOLLOW) becomes the acknowledged last_good_state, so it is not raised again. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(
+        value = """
+            UPDATE pr_placement
+            SET alert = false, alert_reason = NULL,
+                last_good_state = CASE WHEN link_state IN ('LINK_MISSING', 'PAGE_GONE', 'OK_NOFOLLOW') THEN link_state ELSE last_good_state END
+            WHERE id = :id
+        """,
+        nativeQuery = true,
+    )
+    fun clearAlert(id: Long): Int
+}
+
+interface PrMentionRepository :
+    JpaRepository<PrMention, Long>,
+    JpaSpecificationExecutor<PrMention> {
+    fun existsByUrl(url: String): Boolean
+}
+
+interface PrAlertFeedRepository : JpaRepository<PrAlertFeed, Long> {
+    fun findAllByEnabledTrueOrderByIdAsc(): List<PrAlertFeed>
+
+    fun findFirstByUrl(url: String): PrAlertFeed?
+
+    /** A run read the feed: one UPDATE, so a PATCH saved during the run (name, enabled) is not overwritten. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(value = "UPDATE pr_alert_feed SET last_fetched_at = :at, last_error = NULL WHERE id = :id", nativeQuery = true)
+    fun recordSuccess(
+        id: Long,
+        at: Instant,
+    ): Int
+
+    /** A run could not fetch or parse the feed; last_fetched_at keeps the last good read. */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(value = "UPDATE pr_alert_feed SET last_error = :error WHERE id = :id", nativeQuery = true)
+    fun recordError(
+        id: Long,
+        error: String,
+    ): Int
+}

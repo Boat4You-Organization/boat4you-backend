@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Made-up Talkwalker Alerts feed in the real format (RSS 2.0, direct links with tracking parameters). -->
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Talkwalker Alerts: boat4you</title>
+    <link>https://alerts.talkwalker.com/alerts/rss/ABCDEF0123456789</link>
+    <description>Talkwalker Alerts for "boat4you"</description>
+    <atom:link href="https://alerts.talkwalker.com/alerts/rss/ABCDEF0123456789" rel="self" type="application/rss+xml"/>
+    <item>
+      <title>Croatia yacht charter prices up 8%, says Boat4you study</title>
+      <link>https://www.example-news.co.uk/travel/Croatia-Charter-Prices?utm_source=talkwalker&amp;id=7&amp;UTM_Medium=rss</link>
+      <description>Charter prices on the Adriatic rose 8% this summer ...</description>
+      <pubDate>Wed, 04 Nov 2026 08:10:00 GMT</pubDate>
+      <guid isPermaLink="false">tw-5a1f0c2e9d</guid>
+    </item>
+    <item>
+      <title>&lt;b&gt;Boat4you&lt;/b&gt; &amp;amp; the Greek islands: fleet report</title>
+      <link>https://www.yachting-digest.example/news/greek-fleet-report?page=2&amp;gclid=Cj0KCQ#comments</link>
+      <description>&lt;p&gt;A fleet report ...&lt;/p&gt;</description>
+      <pubDate>Tue, 3 Nov 2026 18:30:00 +0100</pubDate>
+      <guid isPermaLink="false">tw-5a1f0c2e9e</guid>
+    </item>
+    <item>
+      <title>Sailing in Italy with a catamaran</title>
+      <link>https://www.boat4you.com/en/catamaran-charter-italy</link>
+      <description>Our own site.</description>
+      <pubDate>yesterday</pubDate>
+      <guid isPermaLink="false">tw-5a1f0c2e9f</guid>
+    </item>
+  </channel>
+</rss>
