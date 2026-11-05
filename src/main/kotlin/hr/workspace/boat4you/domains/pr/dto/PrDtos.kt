@@ -240,3 +240,33 @@ data class PrMentionDto(
 data class PrMentionStatusRequest(
     val status: PrMentionStatus? = null,
 )
+
+/**
+ * One study's row on "Pregled", counting main pitches only (follow-ups are not counted): sent = has sentAt; replied =
+ * REPLIED, DECLINED or PUBLISHED; published = PUBLISHED; placements = articles listed for the study.
+ */
+data class StudyKpi(
+    val studyId: Long,
+    val number: Int,
+    val title: String,
+    val sent: Int,
+    val replied: Int,
+    val published: Int,
+    val placements: Int,
+)
+
+/**
+ * GET /admin/pr/overview. perStudy has every study, by number. liveFollow / liveNofollow = placements whose last check
+ * found an OK_FOLLOW / OK_NOFOLLOW link; alerts = placements with an open alert; mentionsNew = mentions still NEW;
+ * mentionsUnlinked = mentions known not to link to us (linksToUs false) that are NEW, ASK_FOR_LINK or ASKED;
+ * followUpsDue = main pitches still SENT (no reply typed in) sent 5 or more days ago that have no follow-up yet.
+ */
+data class PrOverviewDto(
+    val perStudy: List<StudyKpi>,
+    val liveFollow: Int,
+    val liveNofollow: Int,
+    val alerts: Int,
+    val mentionsNew: Int,
+    val mentionsUnlinked: Int,
+    val followUpsDue: Int,
+)

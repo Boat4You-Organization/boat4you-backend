@@ -3,12 +3,14 @@ package hr.workspace.boat4you.domains.pr
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.domains.calls.CallsTestJson
 import hr.workspace.boat4you.domains.pr.dto.PrAlertFeedRequest
+import hr.workspace.boat4you.domains.pr.dto.PrOverviewDto
 import hr.workspace.boat4you.domains.pr.jpa.PrMentionStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
 import hr.workspace.boat4you.domains.pr.links.PrLinkCheckService
 import hr.workspace.boat4you.domains.pr.mentions.PrMentionService
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
+import hr.workspace.boat4you.domains.pr.service.PrOverviewService
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
 import hr.workspace.boat4you.domains.pr.service.PrPlacementService
 import hr.workspace.boat4you.domains.pr.service.PrStudyService
@@ -74,6 +76,9 @@ class AdminPrSecurityTest {
         fun prMentionService(): PrMentionService = mock(PrMentionService::class.java)
 
         @Bean
+        fun prOverviewService(): PrOverviewService = mock(PrOverviewService::class.java)
+
+        @Bean
         fun adminPrController(
             service: PrContactService,
             studies: PrStudyService,
@@ -81,7 +86,8 @@ class AdminPrSecurityTest {
             placements: PrPlacementService,
             linkCheck: PrLinkCheckService,
             mentions: PrMentionService,
-        ) = AdminPrController(service, studies, pitches, placements, linkCheck, mentions)
+            overview: PrOverviewService,
+        ) = AdminPrController(service, studies, pitches, placements, linkCheck, mentions, overview)
     }
 
     @Autowired private lateinit var controller: AdminPrController
@@ -98,6 +104,8 @@ class AdminPrSecurityTest {
 
     @Autowired private lateinit var mentions: PrMentionService
 
+    @Autowired private lateinit var overview: PrOverviewService
+
     private val mvc: MockMvc by lazy {
         MockMvcBuilders
             .standaloneSetup(controller)
@@ -107,7 +115,7 @@ class AdminPrSecurityTest {
     }
 
     @BeforeEach
-    fun resetMocks() = reset(service, studies, pitches, placements, linkCheck, mentions)
+    fun resetMocks() = reset(service, studies, pitches, placements, linkCheck, mentions, overview)
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -156,6 +164,7 @@ class AdminPrSecurityTest {
             mvc.patch("/admin/pr/feeds/1", dsl = json("""{"enabled":false}""")),
             mvc.get("/admin/pr/mentions?status=NEW&linksToUs=false"),
             mvc.patch("/admin/pr/mentions/1", dsl = json("""{"status":"IGNORED"}""")),
+            mvc.get("/admin/pr/overview"),
         )
 
     @Test
@@ -165,7 +174,7 @@ class AdminPrSecurityTest {
         SecurityContextHolder.getContext().authentication =
             AnonymousAuthenticationToken("key", "anonymousUser", listOf(SimpleGrantedAuthority("ROLE_ANONYMOUS")))
         every().forEach { it.andExpect { status { isForbidden() } } }
-        verifyNoInteractions(service, studies, pitches, placements, linkCheck, mentions)
+        verifyNoInteractions(service, studies, pitches, placements, linkCheck, mentions, overview)
     }
 
     @Test
@@ -173,6 +182,12 @@ class AdminPrSecurityTest {
         signIn("SYSTEM_ADMIN")
         mvc.get("/admin/pr/outlets").andExpect { status { isOk() } }
         mvc.get("/admin/pr/studies").andExpect { status { isOk() } }
+        `when`(overview.overview()).thenReturn(PrOverviewDto(emptyList(), 1, 0, 0, 0, 0, 2))
+        mvc.get("/admin/pr/overview").andExpect {
+            status { isOk() }
+            jsonPath("$.liveFollow") { value(1) }
+            jsonPath("$.followUpsDue") { value(2) }
+        }
         mvc.get("/admin/pr/pitches?studyId=1&status=SENT").andExpect { status { isOk() } }
         verify(pitches).list(1, PrPitchStatus.SENT)
         mvc.post("/admin/pr/pitches/7/send").andExpect { status { isOk() } }

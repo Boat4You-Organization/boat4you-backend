@@ -11,6 +11,7 @@ import hr.workspace.boat4you.domains.pr.dto.PrMentionDto
 import hr.workspace.boat4you.domains.pr.dto.PrMentionStatusRequest
 import hr.workspace.boat4you.domains.pr.dto.PrOutletDto
 import hr.workspace.boat4you.domains.pr.dto.PrOutletRequest
+import hr.workspace.boat4you.domains.pr.dto.PrOverviewDto
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDraftRequest
 import hr.workspace.boat4you.domains.pr.dto.PrPitchDto
 import hr.workspace.boat4you.domains.pr.dto.PrPitchStatusRequest
@@ -26,6 +27,7 @@ import hr.workspace.boat4you.domains.pr.links.PrLinkCheckService
 import hr.workspace.boat4you.domains.pr.mentions.PrMentionService
 import hr.workspace.boat4you.domains.pr.service.PrContactService
 import hr.workspace.boat4you.domains.pr.service.PrException
+import hr.workspace.boat4you.domains.pr.service.PrOverviewService
 import hr.workspace.boat4you.domains.pr.service.PrPitchService
 import hr.workspace.boat4you.domains.pr.service.PrPlacementService
 import hr.workspace.boat4you.domains.pr.service.PrStudyService
@@ -54,7 +56,13 @@ class AdminPrController(
     private val placements: PrPlacementService,
     private val linkCheck: PrLinkCheckService,
     private val mentions: PrMentionService,
+    private val overview: PrOverviewService,
 ) {
+    // ---- Pregled (KPIs; definitions on PrOverviewDto) ----
+
+    @GetMapping("/overview")
+    fun overview(): PrOverviewDto = overview.overview()
+
     // ---- Outlets ----
 
     @GetMapping("/outlets")

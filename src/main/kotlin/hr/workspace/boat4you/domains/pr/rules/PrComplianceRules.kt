@@ -36,7 +36,8 @@ sealed interface PitchDecision {
  * ZA_CONSENT_REQUIRED, MARKET_NOT_CLEARED, FOLLOWUP_TOO_EARLY.
  */
 object PrComplianceRules {
-    private val FOLLOW_UP_DELAY: Duration = Duration.ofDays(5)
+    /** A follow-up may go 5 days after its pitch was sent (PrOverviewService counts the ones due by the same rule). */
+    val FOLLOW_UP_DELAY: Duration = Duration.ofDays(5)
     private val ISO_ALPHA2 = Regex("[A-Z]{2}")
 
     // Between the words: whitespace, any Unicode space (Z: NBSP, narrow NBSP), dash (Pd: hyphen, en, em) or invisible
