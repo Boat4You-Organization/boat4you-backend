@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.pr
 
 import hr.workspace.boat4you.domains.campaign.jpa.EmailSuppression
 import hr.workspace.boat4you.domains.campaign.jpa.EmailSuppressionRepository
+import hr.workspace.boat4you.domains.pr.dto.PrContactFilter
 import hr.workspace.boat4you.domains.pr.dto.PrContactRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrContact
 import hr.workspace.boat4you.domains.pr.jpa.PrContactRepository
@@ -191,6 +192,39 @@ class PrContactServiceTest : PrJpaTest() {
             it.status shouldBe PrContactStatus.CONSENTED
             it.market shouldBe "GB"
         }
+    }
+
+    @Test
+    fun listContactsFiltersSearchesAndPagesOnTheDatabase() {
+        val gazette = outlet("Example Gazette")
+        val tribune =
+            outlets.save(
+                PrOutlet().apply {
+                    name = "Harbor Tribune"
+                    market = "US"
+                    tier = 1
+                },
+            )
+        val anna = service.createContact(PrContactRequest(outletId = gazette.id, email = "anna_reed@gazette.example", name = "Anna Reed"))
+        val bob = service.createContact(PrContactRequest(outletId = gazette.id, email = "bob@gazette.example", name = "Bob Stone", status = PrContactStatus.CONSENTED))
+        val carl = service.createContact(PrContactRequest(outletId = tribune.id, email = "carl@tribune.example", name = "Carl 100% Sails"))
+        // Would match "anna_reed" if _ were a LIKE wildcard.
+        val annax = service.createContact(PrContactRequest(outletId = tribune.id, email = "annaxreed@tribune.example"))
+        fun ids(filter: PrContactFilter) = service.listContacts(filter).content.map { it.id }
+
+        ids(PrContactFilter(market = "UK")) shouldContainExactlyInAnyOrder listOf(anna.id, bob.id)
+        ids(PrContactFilter(status = PrContactStatus.CONSENTED)) shouldBe listOf(bob.id)
+        ids(PrContactFilter(q = "ANNA_REED")) shouldBe listOf(anna.id)
+        ids(PrContactFilter(q = "stone")) shouldBe listOf(bob.id)
+        ids(PrContactFilter(q = "harbor")) shouldContainExactlyInAnyOrder listOf(carl.id, annax.id)
+        ids(PrContactFilter(q = "%")) shouldBe listOf(carl.id)
+        ids(PrContactFilter(market = "US", q = "anna")) shouldBe listOf(annax.id)
+
+        val first = service.listContacts(PrContactFilter(page = 0, size = 1))
+        first.content.map { it.id } shouldBe listOf(annax.id)
+        first.totalElements shouldBe 4
+        first.content.single().outletName shouldBe "Harbor Tribune"
+        service.listContacts(PrContactFilter(page = 1, size = 1)).content.map { it.id } shouldBe listOf(carl.id)
     }
 
     @Test

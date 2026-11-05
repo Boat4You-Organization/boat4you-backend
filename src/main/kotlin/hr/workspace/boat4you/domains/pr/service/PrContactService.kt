@@ -100,7 +100,7 @@ class PrContactService(
                 filter.status?.let { where += cb.equal(root.get<PrContactStatus>("status"), it) }
                 if (q != null) {
                     val like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-                    val outletIds = requireNotNull(query).subquery(Long::class.java)
+                    val outletIds = requireNotNull(query).subquery(Long::class.javaObjectType)
                     val o = outletIds.from(PrOutlet::class.java)
                     outletIds.select(o.get("id")).where(cb.like(cb.lower(o.get("name")), like, '\\'))
                     where +=
