@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.UnknownHostException
 import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -107,15 +108,31 @@ class PrPageFetcherTest {
 
     private fun hits(path: String) = hits[path]?.get() ?: 0
 
-    /** A fetcher that treats only the stub (127.0.0.1) as public, plus every really public address. */
+    /**
+     * Resolution without the network: IP literals are parsed by the JDK (no lookup), "localhost" is the loopback pair,
+     * any other name fails as an unknown host would. So no test here sends a DNS query, whatever the URL.
+     */
+    private val offlineResolve: (String) -> List<InetAddress> = { host ->
+        when {
+            host == "localhost" -> listOf(loopback, InetAddress.getByName("::1"))
+            LITERAL.matches(host) -> InetAddress.getAllByName(host).toList()
+            else -> throw UnknownHostException(host)
+        }
+    }
+
+    /** The real guard, offline resolution. */
+    private fun guardedFetcher() = PrPageFetcher().apply { resolve = offlineResolve }
+
+    /** A fetcher that treats only the stub (127.0.0.1) as public, plus every really public address; offline resolution. */
     private fun stubFetcher() =
         PrPageFetcher().apply {
+            resolve = offlineResolve
             addressAllowed = { it == loopback || PrPageFetcher.isFetchableAddress(it) }
         }
 
     @Test
     fun privateAddressNeverFetched() {
-        val fetcher = PrPageFetcher()
+        val fetcher = guardedFetcher()
         val port = server.address.port
         listOf(
             "http://169.254.169.254/",
@@ -127,7 +144,6 @@ class PrPageFetcherTest {
             "http://[::127.0.0.1]:$port/article",
             "http://2130706433:$port/article",
             "http://0x7f000001:$port/article",
-            "http://0177.0.0.1:$port/article",
             "http://127.1:$port/article",
             "http://www.boat4you.com@127.0.0.1:$port/article",
             "http://10.0.0.1/",
@@ -141,6 +157,14 @@ class PrPageFetcherTest {
             result.html shouldBe null
         }
         hits("/article") shouldBe 0
+    }
+
+    @Test
+    fun leadingZeroOctetsAreDecimalNotOctal() {
+        // The JDK reads 0177.0.0.1 as 177.0.0.1 (public), not as octal 127.0.0.1, so the check and the connect agree and
+        // the "octal loopback" trick cannot reach this machine. Asserted on the parse only: fetching it would go out.
+        InetAddress.getByName("0177.0.0.1") shouldBe InetAddress.getByName("177.0.0.1")
+        PrPageFetcher.isFetchableAddress(InetAddress.getByName("0177.0.0.1")) shouldBe true
     }
 
     @Test
@@ -174,7 +198,7 @@ class PrPageFetcherTest {
         // "localhost" really connects to the stub; the check sees it resolve to a private address, so the hop never happens.
         val fetcher =
             stubFetcher().apply {
-                resolve = { host -> if (host == "localhost") listOf(InetAddress.getByName("10.1.2.3")) else InetAddress.getAllByName(host).toList() }
+                resolve = { host -> if (host == "localhost") listOf(InetAddress.getByName("10.1.2.3")) else offlineResolve(host) }
             }
         fetcher.fetch("$base/to-localhost").status shouldBe -1
         hits("/to-localhost") shouldBe 1
@@ -243,5 +267,10 @@ class PrPageFetcherTest {
         val fetcher = stubFetcher().apply { timeout = Duration.ofMillis(300) }
 
         fetcher.fetch("$base/slow").status shouldBe -1
+    }
+
+    private companion object {
+        /** Dotted / plain decimal IPv4 (the JDK parses 127.1 and 2130706433 too) or a bracketed IPv6 literal. */
+        val LITERAL = Regex("""^(\d+(\.\d+){0,3}|\[[0-9a-fA-F:.%]+])$""")
     }
 }
