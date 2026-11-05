@@ -153,10 +153,15 @@ data class PrFollowUpRequest(
     val body: String? = null,
 )
 
-/** status is REPLIED, DECLINED, PUBLISHED or BOUNCED; replyNote (typed in by hand) replaces the stored one when given. */
+/**
+ * status is REPLIED, DECLINED, PUBLISHED or BOUNCED; replyNote (typed in by hand) replaces the stored one when given.
+ * optOut (with DECLINED or REPLIED only, ignored otherwise): also opt the contact's address out, as POST
+ * .../contacts/{id}/opt-out does.
+ */
 data class PrPitchStatusRequest(
     val status: PrPitchStatus? = null,
     val replyNote: String? = null,
+    val optOut: Boolean = false,
 )
 
 /**

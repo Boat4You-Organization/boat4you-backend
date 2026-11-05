@@ -28,6 +28,28 @@ interface PrContactRepository :
         outletId: Long?,
     ): PrContact?
 
+    /**
+     * A pitch to this contact was sent at [at]: one UPDATE (never a whole-entity save, which could write back a status
+     * loaded before a DO_NOT_CONTACT or opt-out saved meanwhile). Only a consent request moves ACTIVE to CONSENT_REQUESTED;
+     * every other status, and every other template, leaves status as the database holds it.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(
+        value = """
+            UPDATE pr_contact
+            SET last_contacted_at = :at, updated_at = now(),
+                status = CASE WHEN :consentRequest AND status = 'ACTIVE' THEN 'CONSENT_REQUESTED' ELSE status END
+            WHERE id = :id
+        """,
+        nativeQuery = true,
+    )
+    fun recordContacted(
+        id: Long,
+        at: Instant,
+        consentRequest: Boolean,
+    ): Int
+
     /** 24-month retention: one DELETE, the contacts' pitches go with them (ON DELETE CASCADE); email_suppression is untouched. */
     @Modifying
     @Transactional
@@ -42,10 +64,22 @@ interface PrStudyRepository : JpaRepository<PrStudy, Long> {
 interface PrPitchRepository :
     JpaRepository<PrPitch, Long>,
     JpaSpecificationExecutor<PrPitch> {
-    /** The main pitch (not a follow-up) to this contact for this study, if any: there is at most one. */
-    fun existsByStudyIdAndContactIdAndParentPitchIdIsNull(
+    /**
+     * Is there already a main pitch (not a follow-up) for this study to this address, through any contact row? One person
+     * writing for two outlets is two contact rows with one address, and gets one pitch per study.
+     */
+    @Query(
+        value = """
+            SELECT EXISTS (
+                SELECT 1 FROM pr_pitch p JOIN pr_contact c ON c.id = p.contact_id
+                WHERE p.study_id = :studyId AND p.parent_pitch_id IS NULL AND lower(c.email) = lower(:email)
+            )
+        """,
+        nativeQuery = true,
+    )
+    fun existsMainPitchForStudyAndEmail(
         studyId: Long,
-        contactId: Long,
+        email: String,
     ): Boolean
 
     fun existsByParentPitchId(parentPitchId: Long): Boolean

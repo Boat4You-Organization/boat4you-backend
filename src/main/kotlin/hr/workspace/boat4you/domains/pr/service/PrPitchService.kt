@@ -6,7 +6,6 @@ import hr.workspace.boat4you.domains.pr.dto.PrPitchDto
 import hr.workspace.boat4you.domains.pr.dto.PrPitchUpdateRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrContact
 import hr.workspace.boat4you.domains.pr.jpa.PrContactRepository
-import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrOutlet
 import hr.workspace.boat4you.domains.pr.jpa.PrOutletRepository
 import hr.workspace.boat4you.domains.pr.jpa.PrPitch
@@ -28,13 +27,13 @@ import org.springframework.transaction.TransactionDefinition
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.Clock
-import java.time.Instant
 
 /**
  * Pitch drafts (written by Mario in the admin or by a Claude session through PrApiController), the per-pitch send
  * decision, sending ([send], the one way out of DRAFT; FAILED -> DRAFT by hand is the retry), follow-up drafts and the
- * statuses typed in by hand after sending. One main pitch per contact and study (a study-less pitch is not limited), at
- * most one follow-up per main pitch, and only after it was SENT. TripAdvisor is refused in every subject and body we store.
+ * statuses typed in by hand after sending. One main pitch per address and study (across contact rows; a study-less pitch
+ * is not limited, and a consent request never has a study), at most one follow-up per main pitch, written only after it
+ * was SENT and sendable only while it is still SENT. TripAdvisor is refused in every subject and body we store.
  */
 @Service
 class PrPitchService(
@@ -77,14 +76,19 @@ class PrPitchService(
         if (template == PrPitchTemplate.FOLLOW_UP) {
             throw PrException.badRequest("TEMPLATE_NOT_ALLOWED", "A follow-up is written from its sent pitch (POST .../pitches/{id}/follow-up)")
         }
+        // A consent request is about the contact, not a study: tied to one, it would take the study's one main pitch.
+        if (template == PrPitchTemplate.CONSENT_REQUEST && req.studyId != null) {
+            throw PrException.badRequest("CONSENT_REQUEST_NO_STUDY", "A consent request is not tied to a study; leave studyId empty")
+        }
         val subject = subject(req.subject)
         val body = body(req.body)
-        if (!contacts.existsById(contactId)) throw PrException.notFound("CONTACT_NOT_FOUND", "Contact $contactId not found")
+        val contact = contacts.findById(contactId).orElseThrow { PrException.notFound("CONTACT_NOT_FOUND", "Contact $contactId not found") }
         req.studyId?.let { studyId ->
             if (!studies.existsById(studyId)) throw PrException.notFound("STUDY_NOT_FOUND", "Study $studyId not found")
-            // A race this check loses hits the partial unique index; PrErrorAdvice answers 409 CONFLICT.
-            if (pitches.existsByStudyIdAndContactIdAndParentPitchIdIsNull(studyId, contactId)) {
-                throw PrException.conflict("PITCH_EXISTS", "This contact already has a pitch for study $studyId")
+            // One main pitch per study per address, across every contact row with it (one person, two outlets). A race
+            // this check loses on the same contact row hits the partial unique index; PrErrorAdvice answers 409 CONFLICT.
+            if (pitches.existsMainPitchForStudyAndEmail(studyId, PrComplianceRules.normaliseEmail(contact.email))) {
+                throw PrException.conflict("PITCH_EXISTS", "${contact.email} already has a pitch for study $studyId")
             }
         }
         val pitch =
@@ -191,13 +195,16 @@ class PrPitchService(
     /**
      * What happened after sending, typed in by hand (the module never reads the inbox): REPLIED, DECLINED, PUBLISHED or
      * BOUNCED, from SENT or one of the first three. BOUNCED also suppresses the address (PrContactService.markBounced).
-     * DRAFT only from FAILED (clears the error): the retry. SENDING is never changed here.
+     * DRAFT only from FAILED (clears the error): the retry. SENDING is never changed here. [optOut] with DECLINED or
+     * REPLIED also opts the address out (PrContactService.optOut: suppression row, every contact with it OPTED_OUT), as
+     * the footer promises ("Just reply and I won't email you again"); it is ignored with any other status.
      */
     @Transactional
     fun setStatus(
         pitchId: Long,
         status: PrPitchStatus,
         replyNote: String?,
+        optOut: Boolean = false,
     ): PrPitchDto {
         if (status !in MANUAL_TARGETS) throw PrException.badRequest("STATUS_NOT_ALLOWED", "Status can be set by hand only to ${MANUAL_TARGETS.joinToString()}")
         val pitch = pitch(pitchId)
@@ -210,6 +217,7 @@ class PrPitchService(
         replyNote?.trim()?.ifEmpty { null }?.let { pitch.replyNote = it }
         val saved = pitches.save(pitch)
         if (status == PrPitchStatus.BOUNCED) contactService.markBounced(saved.contactId!!)
+        if (optOut && status in OPT_OUT_TARGETS) contactService.optOut(saved.contactId!!)
         return dto(saved)
     }
 
@@ -219,7 +227,10 @@ class PrPitchService(
 
     // ---- internals ----
 
-    /** SENDING -> SENT with its Message-ID; the contact was contacted now, and a consent request moves ACTIVE to CONSENT_REQUESTED. */
+    /**
+     * SENDING -> SENT with its Message-ID; the contact was contacted now, and a consent request moves ACTIVE to
+     * CONSENT_REQUESTED. The contact gets a targeted UPDATE, so a DO_NOT_CONTACT or opt-out saved during the send stays.
+     */
     private fun recordSent(
         pitchId: Long,
         messageId: String,
@@ -232,11 +243,8 @@ class PrPitchService(
         pitch.messageId = messageId
         pitch.error = null
         pitches.save(pitch)
-        val contact = contacts.findById(pitch.contactId!!).orElseThrow()
-        contact.lastContactedAt = now
-        // Consent already given (CONSENTED) is never taken back by a consent request.
-        if (pitch.template == PrPitchTemplate.CONSENT_REQUEST && contact.status == PrContactStatus.ACTIVE) contact.status = PrContactStatus.CONSENT_REQUESTED
-        contacts.save(contact)
+        // Consent already given (CONSENTED) is never taken back by a consent request: the UPDATE moves ACTIVE only.
+        contacts.recordContacted(pitch.contactId!!, now, pitch.template == PrPitchTemplate.CONSENT_REQUEST)
     }
 
     /** SENDING -> FAILED with a short reason. If even this cannot be saved, the pitch stays SENDING (never re-sendable). */
@@ -262,14 +270,14 @@ class PrPitchService(
     private class Lookups(
         val contacts: Map<Long, PrContact>,
         val outlets: Map<Long, PrOutlet>,
-        val parentSentAt: Map<Long, Instant?>,
+        val parents: Map<Long, PrPitch>,
         val suppressed: Set<String>,
     )
 
     private fun lookups(list: List<PrPitch>): Lookups {
         val contactMap = contacts.findAllById(list.mapNotNull { it.contactId }.toSet()).associateBy { it.id!! }
         val outletMap = outlets.findAllById(contactMap.values.mapNotNull { it.outletId }.toSet()).associateBy { it.id!! }
-        val parents = pitches.findAllById(list.mapNotNull { it.parentPitchId }.toSet()).associate { it.id!! to it.sentAt }
+        val parents = pitches.findAllById(list.mapNotNull { it.parentPitchId }.toSet()).associateBy { it.id!! }
         // Few distinct addresses per list; one exists-query each keeps the shared suppression repository untouched.
         val suppressed =
             contactMap.values
@@ -286,6 +294,7 @@ class PrPitchService(
     ): PitchDecision {
         val contact = l.contacts.getValue(pitch.contactId!!)
         val outlet = contact.outletId?.let { l.outlets[it] }
+        val parent = pitch.parentPitchId?.let { l.parents[it] }
         return PrComplianceRules.check(
             PitchCheckInput(
                 market = contact.market ?: outlet?.market,
@@ -297,7 +306,8 @@ class PrPitchService(
                 subject = pitch.subject,
                 body = pitch.body,
                 clearedMarkets = props.clearedMarkets(),
-                parentSentAt = pitch.parentPitchId?.let { l.parentSentAt[it] },
+                parentSentAt = parent?.sentAt,
+                parentStatus = parent?.status,
                 now = clock.instant(),
             ),
         )
@@ -362,6 +372,7 @@ class PrPitchService(
         private const val ERROR = 500
         private val MANUAL_TARGETS =
             setOf(PrPitchStatus.REPLIED, PrPitchStatus.DECLINED, PrPitchStatus.PUBLISHED, PrPitchStatus.BOUNCED, PrPitchStatus.DRAFT)
+        private val OPT_OUT_TARGETS = setOf(PrPitchStatus.REPLIED, PrPitchStatus.DECLINED)
         private val MANUAL_SOURCES = setOf(PrPitchStatus.SENT, PrPitchStatus.REPLIED, PrPitchStatus.DECLINED, PrPitchStatus.PUBLISHED)
     }
 }

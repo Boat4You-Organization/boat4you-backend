@@ -168,14 +168,14 @@ class AdminPrController(
         @PathVariable id: Long,
     ): PrPitchDto = pitches.send(id)
 
-    /** REPLIED / DECLINED / PUBLISHED / BOUNCED after sending; DRAFT only from FAILED (retry). */
+    /** REPLIED / DECLINED / PUBLISHED / BOUNCED after sending; DRAFT only from FAILED (retry). optOut with DECLINED / REPLIED opts the address out. */
     @PatchMapping("/pitches/{id}/status")
     fun setPitchStatus(
         @PathVariable id: Long,
         @RequestBody body: PrPitchStatusRequest,
     ): PrPitchDto {
         val status = body.status ?: throw PrException.badRequest("STATUS_NOT_ALLOWED", "status is required")
-        return pitches.setStatus(id, status, body.replyNote)
+        return pitches.setStatus(id, status, body.replyNote, body.optOut)
     }
 
     // ---- Placements (articles that used a study) and their link checks ----

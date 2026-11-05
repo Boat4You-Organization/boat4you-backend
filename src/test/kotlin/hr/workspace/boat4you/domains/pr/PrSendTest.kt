@@ -427,6 +427,48 @@ class PrSendTest : PrJpaTest() {
     }
 
     @Test
+    fun followUpIsNotSentAfterTheMainPitchWasAnswered() {
+        val jane = contact()
+        val main = service.send(draft(jane.id!!).id)
+        clock.now = start + Duration.ofDays(6)
+        val followUp = pitchService.createFollowUpDraft(main.id, "Hi Jane,\n\njust checking you saw this.\n\nMario")
+        followUp.decision shouldBe "ALLOWED"
+
+        pitchService.setStatus(main.id, PrPitchStatus.REPLIED, "Wants the regional breakdown")
+
+        fails { service.send(followUp.id) }.shouldBe(HttpStatus.CONFLICT, "FOLLOWUP_PARENT_ANSWERED")
+        status(followUp.id) shouldBe "DRAFT"
+        verify(smtp, times(1)).send(any(MimeMessage::class.java))
+    }
+
+    @Test
+    fun doNotContactSavedDuringSendIsNotReverted() {
+        val jane = contact()
+        val za = contact(email = "thandi@news.example", market = "ZA")
+        // Mario sets DO_NOT_CONTACT while the send is being recorded: the pitch row turns SENT in the same transaction.
+        withTrigger(
+            """
+            CREATE FUNCTION pr_send_test() RETURNS trigger LANGUAGE plpgsql AS ${'$'}${'$'}
+            BEGIN
+              IF NEW.status = 'SENT' THEN UPDATE pr_contact SET status = 'DO_NOT_CONTACT' WHERE id = NEW.contact_id; END IF;
+              RETURN NEW;
+            END ${'$'}${'$'};
+            CREATE TRIGGER pr_send_test AFTER UPDATE ON pr_pitch FOR EACH ROW EXECUTE FUNCTION pr_send_test();
+            """.trimIndent(),
+        ) {
+            service.send(draft(jane.id!!).id).status shouldBe PrPitchStatus.SENT
+            service.send(draft(za.id!!, PrPitchTemplate.CONSENT_REQUEST, "May I send you our charter data?").id).status shouldBe PrPitchStatus.SENT
+        }
+
+        contacts.findById(jane.id!!).get().let {
+            it.status shouldBe PrContactStatus.DO_NOT_CONTACT
+            it.lastContactedAt shouldBe start
+        }
+        // A consent request moves only ACTIVE to CONSENT_REQUESTED, as the database holds it at that moment.
+        contacts.findById(za.id!!).get().status shouldBe PrContactStatus.DO_NOT_CONTACT
+    }
+
+    @Test
     fun consentRequestMovesContactToConsentRequested() {
         val za = contact(email = "thandi@news.example", market = "ZA")
         val consented = contact(email = "lee@paper.example", status = PrContactStatus.CONSENTED)

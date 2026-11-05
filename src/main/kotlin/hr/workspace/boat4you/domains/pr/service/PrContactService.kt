@@ -33,7 +33,9 @@ import kotlin.reflect.KMutableProperty0
  * Outlets and journalist contacts: admin CRUD, the CSV import of a contact wave, opt-out / bounce and the 24-month
  * retention. Every stored email is PrComplianceRules.normaliseEmail(raw), and an opt-out or bounce of one contact
  * blocks every contact with that address and puts it on the shared email_suppression list (never deleted here).
- * OPTED_OUT is final: the admin cannot set or leave it, and an import never touches a contact's status.
+ * DO_NOT_CONTACT set by hand also applies to every contact with that address (without a suppression row). OPTED_OUT is
+ * final: the admin cannot set or leave it. An import never touches a contact's status and never overwrites a field
+ * that already has a value (it only fills empty ones).
  */
 @Service
 @Suppress("TooManyFunctions") // one function per admin action, plus the import and the retention job
@@ -169,7 +171,14 @@ class PrContactService(
         req.notes?.let { contact.notes = it.clean() }
         req.status?.let { contact.status = it }
         if (newAddress && suppressions.existsByEmailIgnoreCase(email)) contact.status = PrContactStatus.OPTED_OUT
-        return contacts.save(contact).toDto(outletName(contact.outletId))
+        val saved = contacts.save(contact)
+        // Same address = same person: "do not contact" holds at every outlet. OPTED_OUT rows stay as they are (final).
+        if (req.status == PrContactStatus.DO_NOT_CONTACT && saved.status == PrContactStatus.DO_NOT_CONTACT) {
+            val others = contacts.findAllByEmailIgnoreCase(email).filter { it.id != saved.id && it.status != PrContactStatus.OPTED_OUT }
+            others.forEach { it.status = PrContactStatus.DO_NOT_CONTACT }
+            if (others.isNotEmpty()) log.info("PR contact {} DO_NOT_CONTACT: also {} other contact(s) with its address", id, others.size)
+        }
+        return saved.toDto(outletName(saved.outletId))
     }
 
     /** Opt-out: OPTED_OUT on every contact with this address (any outlet) and one email_suppression row. Idempotent. */
@@ -258,18 +267,22 @@ class PrContactService(
         val notes = listOfNotNull(title?.let { "Recent article: $it" }, col("notes").ifEmpty { null }).joinToString("\n").ifEmpty { null }
 
         val existing = contacts.findFirstByEmailIgnoreCaseAndOutletId(email, outlet.id)
-        val contact = existing ?: PrContact().apply { outletId = outlet.id }
-        // Only values the file has overwrite; the status of an existing contact is never touched.
+        val contact =
+            existing ?: PrContact().apply {
+                outletId = outlet.id
+                this.email = email
+            }
+        // The file only fills fields that are empty: a market, source or note Mario set by hand is a send-rule input or
+        // his own work and is never overwritten. The status of an existing contact is never touched.
         val changed =
             listOf(
-                merge(contact::email, email),
-                merge(contact::market, market),
-                merge(contact::name, col("person").clean(NAME)),
-                merge(contact::role, col("role").clean(NAME)),
-                merge(contact::emailSourceUrl, col("email_source_url").clean(URL)),
-                merge(contact::emailFoundOn, foundOn),
-                merge(contact::recentArticleUrl, col("recent_article_url").clean(URL)),
-                merge(contact::notes, notes),
+                fill(contact::market, market),
+                fill(contact::name, col("person").clean(NAME)),
+                fill(contact::role, col("role").clean(NAME)),
+                fill(contact::emailSourceUrl, col("email_source_url").clean(URL)),
+                fill(contact::emailFoundOn, foundOn),
+                fill(contact::recentArticleUrl, col("recent_article_url").clean(URL)),
+                fill(contact::notes, notes),
             ).any { it }
         if (existing != null) return if (changed) RowOutcome.Updated else RowOutcome.Unchanged
         if (suppressions.existsByEmailIgnoreCase(email)) contact.status = PrContactStatus.OPTED_OUT
@@ -299,6 +312,17 @@ class PrContactService(
         value: T?,
     ): Boolean {
         if (value == null || property.get() == value) return false
+        property.set(value)
+        return true
+    }
+
+    /** Sets [value] only when it is non-null and the field is null or blank; true when it filled something. */
+    private fun <T> fill(
+        property: KMutableProperty0<T>,
+        value: T?,
+    ): Boolean {
+        val current = property.get()
+        if (value == null || (current != null && !(current is String && current.isBlank()))) return false
         property.set(value)
         return true
     }

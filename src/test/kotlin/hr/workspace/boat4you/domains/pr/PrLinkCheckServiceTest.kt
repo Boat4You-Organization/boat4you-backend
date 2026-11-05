@@ -449,6 +449,22 @@ class PrLinkCheckServiceTest : PrJpaTest() {
     }
 
     @Test
+    fun placementOnOurOwnDomainIsRejected() {
+        listOf(
+            "https://www.boat4you.com/press/charter-prices-2026",
+            "HTTPS://Blog.Catamaran-Croatia-Charter.com/a",
+            "https://croatia-yachting.com/x",
+        ).forEach {
+            shouldThrow<PrException> { placementService.create(PrPlacementRequest(articleUrl = it)) }.shouldBeError(HttpStatus.BAD_REQUEST, "PLACEMENT_OUR_DOMAIN")
+        }
+        val ok = placementService.create(PrPlacementRequest(articleUrl = "https://notboat4you.com/a"))
+        shouldThrow<PrException> { placementService.update(ok.id, PrPlacementRequest(articleUrl = "https://www.boat4you.com/a")) }
+            .shouldBeError(HttpStatus.BAD_REQUEST, "PLACEMENT_OUR_DOMAIN")
+        placements.findAll().map { it.articleUrl } shouldContainExactly listOf("https://notboat4you.com/a")
+        verifyNoInteractions(fetcher)
+    }
+
+    @Test
     fun duplicateArticleIsRejected() {
         placementService.create(PrPlacementRequest(articleUrl = "https://www.example-news.co.uk/travel/a"))
 

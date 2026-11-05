@@ -212,6 +212,36 @@ class PrPitchDraftTest : PrJpaTest() {
     }
 
     @Test
+    fun secondMainPitchToSameAddressAtAnotherOutletIs409() {
+        // One journalist writing for two outlets: two contact rows, one address, one pitch per study.
+        val atGazette = contact(email = "ed@paper.example", outlet = outlet("Gazette"))
+        val atTribune = contact(email = "ed@paper.example", outlet = outlet("Tribune"))
+        val study = study()
+        service.createDraft(draft(atGazette.id, studyId = study.id))
+
+        fails { service.createDraft(draft(atTribune.id, studyId = study.id)) }.shouldBe(HttpStatus.CONFLICT, "PITCH_EXISTS")
+
+        // Another study, or no study: allowed.
+        service.createDraft(draft(atTribune.id, studyId = study(2).id))
+        service.createDraft(draft(atTribune.id))
+        pitches.count() shouldBe 3
+    }
+
+    @Test
+    fun consentRequestCannotCarryAStudy() {
+        val za = contact(email = "thandi@news.example", market = "ZA", outlet = outlet("Example Times", "ZA"))
+        val study = study()
+
+        fails { service.createDraft(draft(za.id, studyId = study.id, template = PrPitchTemplate.CONSENT_REQUEST)) }
+            .shouldBe(HttpStatus.BAD_REQUEST, "CONSENT_REQUEST_NO_STUDY")
+        pitches.count() shouldBe 0
+
+        // Without a study it is fine, and the later data pitch for the study is not blocked by it.
+        service.createDraft(draft(za.id, template = PrPitchTemplate.CONSENT_REQUEST)).decision shouldBe "ALLOWED"
+        service.createDraft(draft(za.id, studyId = study.id)).studyId shouldBe study.id
+    }
+
+    @Test
     fun followUpOnlyOnce() {
         val study = study()
         val jane = contact()
@@ -239,6 +269,24 @@ class PrPitchDraftTest : PrJpaTest() {
         fails { service.createFollowUpDraft(main.id, "Once more") }.shouldBe(HttpStatus.CONFLICT, "FOLLOWUP_EXISTS")
         markSent(followUp.id, start)
         fails { service.createFollowUpDraft(followUp.id, "A follow-up of a follow-up") }.shouldBe(HttpStatus.CONFLICT, "FOLLOWUP_NOT_ALLOWED")
+    }
+
+    @Test
+    fun followUpIsBlockedOnceTheMainPitchIsAnswered() {
+        listOf(PrPitchStatus.REPLIED, PrPitchStatus.DECLINED, PrPitchStatus.PUBLISHED).forEachIndexed { i, answer ->
+            clock.now = start
+            val jane = contact(email = "jane$i@example.co.uk")
+            val main = service.createDraft(draft(jane.id, studyId = study(i + 1).id))
+            markSent(main.id, start)
+            val followUp = service.createFollowUpDraft(main.id, "Just checking in")
+            clock.now = start + Duration.ofDays(6)
+            service.decision(followUp.id) shouldBe PitchDecision.Allowed
+
+            service.setStatus(main.id, answer, "Answered by email")
+
+            service.decision(followUp.id) shouldBe PitchDecision.Blocked("FOLLOWUP_PARENT_ANSWERED")
+            service.list(null, PrPitchStatus.DRAFT).single { it.id == followUp.id }.decision shouldBe "FOLLOWUP_PARENT_ANSWERED"
+        }
     }
 
     @Test
@@ -288,6 +336,36 @@ class PrPitchDraftTest : PrJpaTest() {
         published.status shouldBe PrPitchStatus.PUBLISHED
         published.replyNote shouldBe "Wants the regional breakdown"
         service.setStatus(pitch.id, PrPitchStatus.DECLINED, "Changed their mind").replyNote shouldBe "Changed their mind"
+    }
+
+    @Test
+    fun declinedOrRepliedWithOptOutSuppressesTheAddress() {
+        val jane = contact()
+        val sameAddressElsewhere = contact(outlet = outlet("Tribune"))
+        val tom = contact(email = "tom@example.co.uk")
+        val ann = contact(email = "ann@example.co.uk")
+        val toJane = service.createDraft(draft(jane.id))
+        val toTom = service.createDraft(draft(tom.id))
+        val toAnn = service.createDraft(draft(ann.id))
+        listOf(toJane, toTom, toAnn).forEach { markSent(it.id, start) }
+
+        // Without optOut (the default) a decline changes only the pitch.
+        service.setStatus(toTom.id, PrPitchStatus.DECLINED, "Not this story").status shouldBe PrPitchStatus.DECLINED
+        contacts.findById(tom.id!!).get().status shouldBe PrContactStatus.ACTIVE
+        // optOut is ignored for PUBLISHED.
+        service.setStatus(toAnn.id, PrPitchStatus.PUBLISHED, null, optOut = true)
+        contacts.findById(ann.id!!).get().status shouldBe PrContactStatus.ACTIVE
+        suppressions.count() shouldBe 0
+
+        service.setStatus(toJane.id, PrPitchStatus.DECLINED, "Please don't email me", optOut = true).status shouldBe PrPitchStatus.DECLINED
+
+        contacts.findById(jane.id!!).get().status shouldBe PrContactStatus.OPTED_OUT
+        contacts.findById(sameAddressElsewhere.id!!).get().status shouldBe PrContactStatus.OPTED_OUT
+        suppressions.findByEmailIgnoreCase("jane@example.co.uk")!!.reason shouldBe "MANUAL"
+
+        service.setStatus(toTom.id, PrPitchStatus.REPLIED, "Unsubscribe me", optOut = true)
+        contacts.findById(tom.id!!).get().status shouldBe PrContactStatus.OPTED_OUT
+        suppressions.existsByEmailIgnoreCase("tom@example.co.uk") shouldBe true
     }
 
     @Test

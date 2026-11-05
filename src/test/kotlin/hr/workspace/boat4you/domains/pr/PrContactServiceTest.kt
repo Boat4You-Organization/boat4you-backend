@@ -142,7 +142,7 @@ class PrContactServiceTest : PrJpaTest() {
         val result =
             service.importCsv(
                 csv(
-                    "UK,The Daily Example,1,Tom Sample,Travel editor,TOM.sample@example.co.uk,https://example.co.uk/authors/tom,,,,,2026-11-03",
+                    "UK,The Daily Example,1,Tom Sample,Travel editor,TOM.sample@example.co.uk,https://example.co.uk/authors/tom,,,,Covers sailing.,2026-11-03",
                     "UK,The Daily Example,1,New Person,Writer,new.person@example.co.uk,https://example.co.uk/authors/new,,,,,2026-11-04",
                 ),
             )
@@ -151,9 +151,54 @@ class PrContactServiceTest : PrJpaTest() {
         result.updated shouldBe 1
         contacts.findById(tom.id!!).get().let {
             it.status shouldBe PrContactStatus.OPTED_OUT
-            it.role shouldBe "Travel editor"
+            // R41: a field with a value is never overwritten, an empty one is filled.
+            it.role shouldBe "Deputy travel editor"
+            it.notes shouldBe "Covers sailing."
         }
         contacts.findAll().single { it.name == "New Person" }.status shouldBe PrContactStatus.OPTED_OUT
+    }
+
+    @Test
+    fun reimportNeverOverwritesFieldsSetByHand() {
+        service.importCsv(twoAtOneOutlet)
+        val jane = contacts.findAll().single { it.name == "Jane Testwriter" }
+        service.updateContact(jane.id!!, PrContactRequest(market = "DE", notes = "Mario: phoned her, prefers German data"))
+
+        val again =
+            service.importCsv(
+                csv(
+                    "UK,The Daily Example,1,Jane Other,Editor,jane.testwriter@example.co.uk,https://other.example/jane,,Other title," +
+                        "https://other.example/a,Other notes,2026-10-01",
+                ),
+            )
+
+        again.created shouldBe 0
+        again.updated shouldBe 0
+        contacts.findById(jane.id!!).get().let {
+            it.market shouldBe "DE"
+            it.notes shouldBe "Mario: phoned her, prefers German data"
+            it.name shouldBe "Jane Testwriter"
+            it.role shouldBe "Travel editor (news, features)"
+            it.emailSourceUrl shouldBe "https://example.co.uk/authors/jane"
+            it.emailFoundOn shouldBe LocalDate.of(2026, 11, 4)
+            it.recentArticleUrl shouldBe "https://example.co.uk/travel/sailing-costs"
+            it.status shouldBe PrContactStatus.ACTIVE
+        }
+    }
+
+    @Test
+    fun doNotContactAppliesToEveryContactWithSameEmail() {
+        val first = service.createContact(PrContactRequest(outletId = outlet("Example Gazette").id, email = "ed@x.com"))
+        val second = service.createContact(PrContactRequest(outletId = outlet("Example Courier").id, email = "ED@x.com"))
+        val other = service.createContact(PrContactRequest(outletId = outlet("Example Herald").id, email = "someone.else@x.com"))
+
+        service.updateContact(first.id, PrContactRequest(status = PrContactStatus.DO_NOT_CONTACT)).status shouldBe PrContactStatus.DO_NOT_CONTACT
+
+        contacts.findById(second.id).get().status shouldBe PrContactStatus.DO_NOT_CONTACT
+        contacts.findById(other.id).get().status shouldBe PrContactStatus.ACTIVE
+        // Not an opt-out: no suppression row, and the person can be set back to ACTIVE by hand.
+        suppressions.count() shouldBe 0
+        service.updateContact(second.id, PrContactRequest(status = PrContactStatus.ACTIVE)).status shouldBe PrContactStatus.ACTIVE
     }
 
     @Test

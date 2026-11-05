@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.pr.rules
 
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
+import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchTemplate
 import java.time.Duration
 import java.time.Instant
@@ -19,6 +20,8 @@ data class PitchCheckInput(
     val body: String,
     val clearedMarkets: Set<String>,
     val parentSentAt: Instant?,
+    /** Status of the main pitch a FOLLOW_UP answers to (null for a main pitch); a follow-up goes only while it is SENT. */
+    val parentStatus: PrPitchStatus?,
     val now: Instant,
 )
 
@@ -33,7 +36,7 @@ sealed interface PitchDecision {
 /**
  * The single source of truth for whether a pitch may be sent. Rules run in a fixed order and the first failing one wins:
  * TRIPADVISOR_FORBIDDEN, SUPPRESSED, OPTED_OUT, DO_NOT_CONTACT, NO_EMAIL_SOURCE, MARKET_UNKNOWN, MARKET_DE_NO_COLD_EMAIL,
- * ZA_CONSENT_REQUIRED, MARKET_NOT_CLEARED, FOLLOWUP_TOO_EARLY.
+ * ZA_CONSENT_REQUIRED, MARKET_NOT_CLEARED, FOLLOWUP_PARENT_ANSWERED, FOLLOWUP_TOO_EARLY.
  */
 object PrComplianceRules {
     /** A follow-up may go 5 days after its pitch was sent (PrOverviewService counts the ones due by the same rule). */
@@ -107,6 +110,8 @@ object PrComplianceRules {
             else -> if (input.clearedMarkets.none { normaliseMarket(it) == market }) return "MARKET_NOT_CLEARED"
         }
         if (input.template == PrPitchTemplate.FOLLOW_UP) {
+            // One follow-up only without an answer: once the main pitch is REPLIED, DECLINED, PUBLISHED or BOUNCED, none goes.
+            if (input.parentStatus != null && input.parentStatus != PrPitchStatus.SENT) return "FOLLOWUP_PARENT_ANSWERED"
             val parentSentAt = input.parentSentAt ?: return "FOLLOWUP_TOO_EARLY"
             if (Duration.between(parentSentAt, input.now) < FOLLOW_UP_DELAY) return "FOLLOWUP_TOO_EARLY"
         }

@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.pr.jpa.PrPitchRepository
 import hr.workspace.boat4you.domains.pr.jpa.PrPlacement
 import hr.workspace.boat4you.domains.pr.jpa.PrPlacementRepository
 import hr.workspace.boat4you.domains.pr.jpa.PrStudyRepository
+import hr.workspace.boat4you.domains.pr.links.PrLinkInspector
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.net.URI
@@ -16,7 +17,8 @@ import java.util.Locale
 /**
  * Placements: articles that used one of our studies (admin and PR API). The article URL is trimmed, its scheme and
  * host lowercased and its #fragment dropped, and it is unique (409 PLACEMENT_EXISTS; a race the check loses hits the
- * unique index, 409 CONFLICT). Creating one only asks Open PageRank for the domain rank (null when it cannot); the page
+ * unique index, 409 CONFLICT). An article on one of our own domains is not a placement (400 PLACEMENT_OUR_DOMAIN: its
+ * links to us would always read OK_FOLLOW). Creating one only asks Open PageRank for the domain rank (null when it cannot); the page
  * itself is fetched by the daily job or "Provjeri sad" (PrLinkCheckService), never here.
  */
 @Service
@@ -26,6 +28,7 @@ class PrPlacementService(
     private val outlets: PrOutletRepository,
     private val pitches: PrPitchRepository,
     private val opr: OpenPageRankClient,
+    private val props: PrProperties,
 ) {
     @Transactional(readOnly = true)
     fun list(studyId: Long?): List<PrPlacementDto> {
@@ -38,7 +41,7 @@ class PrPlacementService(
 
     /** Not one transaction: the Open PageRank call (up to 8 s) runs before the insert, outside any transaction. */
     fun create(req: PrPlacementRequest): PrPlacementDto {
-        val url = articleUrl(req.articleUrl)
+        val url = notOurs(articleUrl(req.articleUrl))
         if (placements.findFirstByArticleUrl(url) != null) throw exists(url)
         checkLinks(req)
         val rank = opr.rank(URI(url).host.removePrefix("www."))
@@ -63,7 +66,7 @@ class PrPlacementService(
         req: PrPlacementRequest,
     ): PrPlacementDto {
         val placement = placement(id)
-        val url = req.articleUrl?.let { articleUrl(it) }
+        val url = req.articleUrl?.let { notOurs(articleUrl(it)) }
         // Checked before any field changes: a query would flush a clashing change into a unique-index error.
         if (url != null && url != placement.articleUrl) {
             val clash = placements.findFirstByArticleUrl(url)
@@ -96,6 +99,13 @@ class PrPlacementService(
     }
 
     internal fun placement(id: Long): PrPlacement = placements.findById(id).orElseThrow { notFound(id) }
+
+    private fun notOurs(url: String): String {
+        if (PrLinkInspector.isOurUrl(url, props.ourDomains)) {
+            throw PrException.badRequest("PLACEMENT_OUR_DOMAIN", "$url is on one of our own sites; a placement is an article on someone else's")
+        }
+        return url
+    }
 
     private fun checkLinks(req: PrPlacementRequest) {
         req.studyId?.let { if (!studies.existsById(it)) throw PrException.notFound("STUDY_NOT_FOUND", "Study $it not found") }

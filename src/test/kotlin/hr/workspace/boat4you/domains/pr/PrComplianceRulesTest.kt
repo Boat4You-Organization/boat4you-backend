@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.pr
 
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
+import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
 import hr.workspace.boat4you.domains.pr.jpa.PrPitchTemplate
 import hr.workspace.boat4you.domains.pr.rules.PitchCheckInput
 import hr.workspace.boat4you.domains.pr.rules.PitchDecision
@@ -27,6 +28,7 @@ class PrComplianceRulesTest {
         body: String = "Hi Ed, our booking data shows...",
         cleared: Set<String> = defaultCleared,
         parentSentAt: Instant? = null,
+        parentStatus: PrPitchStatus? = parentSentAt?.let { PrPitchStatus.SENT },
     ) = PitchCheckInput(
         market = market,
         contactStatus = status,
@@ -38,6 +40,7 @@ class PrComplianceRulesTest {
         body = body,
         clearedMarkets = cleared,
         parentSentAt = parentSentAt,
+        parentStatus = parentStatus,
         now = now,
     )
 
@@ -145,6 +148,24 @@ class PrComplianceRulesTest {
         val followUp = PrPitchTemplate.FOLLOW_UP
         PrComplianceRules.check(input(template = followUp, parentSentAt = now.minus(Duration.ofDays(4)))) shouldBe blocked("FOLLOWUP_TOO_EARLY")
         PrComplianceRules.check(input(template = followUp, parentSentAt = now.minus(Duration.ofDays(5)))) shouldBe PitchDecision.Allowed
+    }
+
+    @Test
+    fun followUpAfterAnswerBlocked() {
+        val followUp = PrPitchTemplate.FOLLOW_UP
+        val sixDaysAgo = now.minus(Duration.ofDays(6))
+        PrComplianceRules.check(input(template = followUp, parentSentAt = sixDaysAgo, parentStatus = PrPitchStatus.SENT)) shouldBe PitchDecision.Allowed
+        listOf(PrPitchStatus.REPLIED, PrPitchStatus.DECLINED, PrPitchStatus.PUBLISHED, PrPitchStatus.BOUNCED).forEach {
+            PrComplianceRules.check(input(template = followUp, parentSentAt = sixDaysAgo, parentStatus = it)) shouldBe blocked("FOLLOWUP_PARENT_ANSWERED")
+        }
+        // Checked immediately before FOLLOWUP_TOO_EARLY: an answered pitch reports the answer, even within 5 days.
+        PrComplianceRules.check(input(template = followUp, parentSentAt = now.minus(Duration.ofDays(1)), parentStatus = PrPitchStatus.REPLIED)) shouldBe
+            blocked("FOLLOWUP_PARENT_ANSWERED")
+        // ...and after the market rules.
+        PrComplianceRules.check(input(market = "IE", template = followUp, parentSentAt = sixDaysAgo, parentStatus = PrPitchStatus.REPLIED)) shouldBe
+            blocked("MARKET_NOT_CLEARED")
+        // A main pitch ignores it.
+        PrComplianceRules.check(input(parentStatus = PrPitchStatus.REPLIED)) shouldBe PitchDecision.Allowed
     }
 
     @Test
