@@ -38,7 +38,10 @@ sealed interface PitchDecision {
 object PrComplianceRules {
     private val FOLLOW_UP_DELAY: Duration = Duration.ofDays(5)
     private val ISO_ALPHA2 = Regex("[A-Z]{2}")
-    private val TRIPADVISOR = Regex("trip[\\s\\-_.]*advisor", RegexOption.IGNORE_CASE)
+
+    // Between the words: whitespace, any Unicode space (Z: NBSP, narrow NBSP), dash (Pd: hyphen, en, em) or invisible
+    // format character (Cf: zero-width space, soft hyphen), underscore or dot.
+    private val TRIPADVISOR = Regex("trip[\\s\\p{Z}\\p{Pd}\\p{Cf}_.]*advisor", RegexOption.IGNORE_CASE)
     private val MARKET_ALIASES =
         mapOf(
             "UK" to "GB",
@@ -69,7 +72,8 @@ object PrComplianceRules {
 
     /**
      * TripAdvisor is never named in anything we send or publish (pitch subject and body, study title): any case, with or
-     * without a space, hyphen, underscore or dot between the words ("Trip Advisor", "trip-advisor", "TRIP.ADVISOR").
+     * without a space, hyphen, underscore or dot between the words ("Trip Advisor", "trip-advisor", "TRIP.ADVISOR"),
+     * Unicode ones included (non-breaking or zero-width space, en or em dash) as pasted from a web page or Word.
      */
     fun mentionsTripAdvisor(text: String): Boolean = TRIPADVISOR.containsMatchIn(text)
 

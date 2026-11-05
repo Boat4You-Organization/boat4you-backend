@@ -68,6 +68,15 @@ class PrComplianceRulesTest {
     }
 
     @Test
+    fun tripAdvisorWithUnicodeSeparatorsMatches() {
+        // NBSP, zero-width space, en dash, em dash, narrow NBSP, soft hyphen, and a line break (pasted from Word or a web page).
+        listOf(" ", "​", "–", "—", " – ", " ", "­", "\n").forEach {
+            PrComplianceRules.mentionsTripAdvisor("Unlike Trip${it}Advisor reviews") shouldBe true
+        }
+        PrComplianceRules.mentionsTripAdvisor("A trip with an advisor") shouldBe false
+    }
+
+    @Test
     fun suppressionMatchesCaseAndWhitespace() {
         PrComplianceRules.normaliseEmail(" Ed@Paper.COM ") shouldBe "ed@paper.com"
     }

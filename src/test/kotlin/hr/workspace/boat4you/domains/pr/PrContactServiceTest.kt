@@ -210,6 +210,7 @@ class PrContactServiceTest : PrJpaTest() {
         val carl = service.createContact(PrContactRequest(outletId = tribune.id, email = "carl@tribune.example", name = "Carl 100% Sails"))
         // Would match "anna_reed" if _ were a LIKE wildcard.
         val annax = service.createContact(PrContactRequest(outletId = tribune.id, email = "annaxreed@tribune.example"))
+
         fun ids(filter: PrContactFilter) = service.listContacts(filter).content.map { it.id }
 
         ids(PrContactFilter(market = "UK")) shouldContainExactlyInAnyOrder listOf(anna.id, bob.id)

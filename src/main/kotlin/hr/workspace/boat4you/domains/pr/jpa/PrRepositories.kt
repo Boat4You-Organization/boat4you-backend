@@ -38,7 +38,30 @@ interface PrStudyRepository : JpaRepository<PrStudy, Long> {
     fun findFirstByNumber(number: Int): PrStudy?
 }
 
-interface PrPitchRepository : JpaRepository<PrPitch, Long> {
+interface PrPitchRepository :
+    JpaRepository<PrPitch, Long>,
+    JpaSpecificationExecutor<PrPitch> {
+    /** The main pitch (not a follow-up) to this contact for this study, if any: there is at most one. */
+    fun existsByStudyIdAndContactIdAndParentPitchIdIsNull(
+        studyId: Long,
+        contactId: Long,
+    ): Boolean
+
+    fun existsByParentPitchId(parentPitchId: Long): Boolean
+
+    /**
+     * Edits a draft only while it is still a DRAFT, in one UPDATE: an entity save would write the loaded status back and
+     * could undo a DRAFT -> SENDING that markSending made meanwhile. 0 = no longer a draft.
+     */
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Transactional
+    @Query(value = "UPDATE pr_pitch SET subject = :subject, body = :body, updated_at = now() WHERE id = :id AND status = 'DRAFT'", nativeQuery = true)
+    fun updateDraft(
+        id: Long,
+        subject: String,
+        body: String,
+    ): Int
+
     /** Atomic DRAFT -> SENDING: 1 = this caller may send, 0 = someone else already took it (or it is not a draft). */
     @Modifying
     @Transactional

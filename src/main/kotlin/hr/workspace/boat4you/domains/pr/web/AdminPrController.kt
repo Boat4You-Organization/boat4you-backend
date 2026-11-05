@@ -4,12 +4,20 @@ import hr.workspace.boat4you.domains.pr.dto.ImportResult
 import hr.workspace.boat4you.domains.pr.dto.PrContactDto
 import hr.workspace.boat4you.domains.pr.dto.PrContactFilter
 import hr.workspace.boat4you.domains.pr.dto.PrContactRequest
+import hr.workspace.boat4you.domains.pr.dto.PrFollowUpRequest
 import hr.workspace.boat4you.domains.pr.dto.PrOutletDto
 import hr.workspace.boat4you.domains.pr.dto.PrOutletRequest
+import hr.workspace.boat4you.domains.pr.dto.PrPitchDraftRequest
+import hr.workspace.boat4you.domains.pr.dto.PrPitchDto
+import hr.workspace.boat4you.domains.pr.dto.PrPitchStatusRequest
+import hr.workspace.boat4you.domains.pr.dto.PrPitchUpdateRequest
 import hr.workspace.boat4you.domains.pr.dto.PrStudyDto
 import hr.workspace.boat4you.domains.pr.dto.PrStudyRequest
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
+import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
 import hr.workspace.boat4you.domains.pr.service.PrContactService
+import hr.workspace.boat4you.domains.pr.service.PrException
+import hr.workspace.boat4you.domains.pr.service.PrPitchService
 import hr.workspace.boat4you.domains.pr.service.PrStudyService
 import org.springframework.data.web.PagedModel
 import org.springframework.security.access.prepost.PreAuthorize
@@ -32,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController
 class AdminPrController(
     private val contacts: PrContactService,
     private val studies: PrStudyService,
+    private val pitches: PrPitchService,
 ) {
     // ---- Outlets ----
 
@@ -102,4 +111,39 @@ class AdminPrController(
         @PathVariable id: Long,
         @RequestBody body: PrStudyRequest,
     ): PrStudyDto = studies.update(id, body)
+
+    // ---- Pitches (drafts and hand-typed statuses; sending is a separate route) ----
+
+    @GetMapping("/pitches")
+    fun pitches(
+        @RequestParam(required = false) studyId: Long?,
+        @RequestParam(required = false) status: PrPitchStatus?,
+    ): List<PrPitchDto> = pitches.list(studyId, status)
+
+    @PostMapping("/pitches")
+    fun createPitch(
+        @RequestBody body: PrPitchDraftRequest,
+    ): PrPitchDto = pitches.createDraft(body)
+
+    /** Subject / body of a DRAFT only (409 PITCH_NOT_DRAFT otherwise). */
+    @PatchMapping("/pitches/{id}")
+    fun updatePitch(
+        @PathVariable id: Long,
+        @RequestBody body: PrPitchUpdateRequest,
+    ): PrPitchDto = pitches.updateDraft(id, body)
+
+    @PostMapping("/pitches/{id}/follow-up")
+    fun followUp(
+        @PathVariable id: Long,
+        @RequestBody body: PrFollowUpRequest,
+    ): PrPitchDto = pitches.createFollowUpDraft(id, body.body)
+
+    @PatchMapping("/pitches/{id}/status")
+    fun setPitchStatus(
+        @PathVariable id: Long,
+        @RequestBody body: PrPitchStatusRequest,
+    ): PrPitchDto {
+        val status = body.status ?: throw PrException.badRequest("STATUS_NOT_ALLOWED", "status is required")
+        return pitches.setStatus(id, status, body.replyNote)
+    }
 }

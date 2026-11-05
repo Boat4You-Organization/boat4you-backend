@@ -1,6 +1,8 @@
 package hr.workspace.boat4you.domains.pr.dto
 
 import hr.workspace.boat4you.domains.pr.jpa.PrContactStatus
+import hr.workspace.boat4you.domains.pr.jpa.PrPitchStatus
+import hr.workspace.boat4you.domains.pr.jpa.PrPitchTemplate
 import hr.workspace.boat4you.domains.pr.jpa.PrStudyStatus
 import java.time.Instant
 import java.time.LocalDate
@@ -100,4 +102,56 @@ data class PrStudyRequest(
     val status: PrStudyStatus? = null,
     val publishedOn: LocalDate? = null,
     val notes: String? = null,
+)
+
+/**
+ * One pitch with what the admin list shows next to it. decision is "ALLOWED" or the PrComplianceRules block code, worked
+ * out now (a draft may become sendable later, e.g. a follow-up after 5 days); footer is the text the backend appends
+ * to every sent body (PrFooter), shown read-only under the editor.
+ */
+data class PrPitchDto(
+    val id: Long,
+    val studyId: Long?,
+    val contactId: Long,
+    val contactEmail: String,
+    val contactName: String?,
+    val outletName: String?,
+    val parentPitchId: Long?,
+    val template: PrPitchTemplate,
+    val subject: String,
+    val body: String,
+    val status: PrPitchStatus,
+    val decision: String,
+    val footer: String,
+    val messageId: String?,
+    val sentAt: Instant?,
+    val error: String?,
+    val replyNote: String?,
+    val createdAt: Instant,
+    val updatedAt: Instant,
+)
+
+/** A new main pitch (FOLLOW_UP is not a template here: follow-ups come from POST .../pitches/{id}/follow-up). */
+data class PrPitchDraftRequest(
+    val studyId: Long? = null,
+    val contactId: Long? = null,
+    val template: PrPitchTemplate? = null,
+    val subject: String? = null,
+    val body: String? = null,
+)
+
+/** PATCH of a DRAFT: only the fields sent change. */
+data class PrPitchUpdateRequest(
+    val subject: String? = null,
+    val body: String? = null,
+)
+
+data class PrFollowUpRequest(
+    val body: String? = null,
+)
+
+/** status is REPLIED, DECLINED, PUBLISHED or BOUNCED; replyNote (typed in by hand) replaces the stored one when given. */
+data class PrPitchStatusRequest(
+    val status: PrPitchStatus? = null,
+    val replyNote: String? = null,
 )
