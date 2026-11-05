@@ -64,6 +64,18 @@ Rollback:
 - Backend: `webservice.jar.prev` + restart (cusma3 samo kroz gate) uz `FLYWAY_IGNORE_MIGRATION_PATTERNS='*:missing,*:future'` u env tog čvora za taj jedan restart, poslije ukloniti (9.121 je za stari jar „future“, što zadano `*:future` već tolerira; `*:missing` je osigurač kao kod V9_118). Tablice `pr_*` **ostaju** (kontakti, odjave, povijest slanja); stari jar ih ne dira. PR_* env može ostati.
 - Admin: cusma1 `html.prev` swap.
 
+## 2026-11-05 — 🎬 Contact Center snimke: replay-assets bez 503 „busy“ (8 utora + ograničeno čekanje 2 s) — ✅ cusma2 LIVE 5.11.2026 08:00:33 UTC (main `b561652`, md5 a81309ba8e52099f48569fac03ff8095, bez migracije — 204 migracije = cusma4, Flyway „Schema up to date“, start 13,6 s, lokalni health 200 nakon ~18 s, javni 200; `.prev` = 5a20132c); ⏳ cusma3 isti jar kroz gate u prozoru 13:00–14:10 UTC (JIVO CHAT: danas ništa svoje, jar ide sam)
+
+Mario 4.11.: „ne vidi se sve“ u playeru; 5.11. 07:40 UTC „da“. cusma1 nginx 4.11.: `/replay-assets/` 195 zahtjeva, 43 × 503 (17 css, 26 woff2) = 22 % → replay bez dijela stilova i fontova (preglednik traži ~4–11 CSS-a i 6–7 fontova odjednom, 503 se ne ponavlja).
+
+- `RecFiles.kt`: `MAX_ASSET_READERS` 2 → 8; svako čitanje (asseti i raw snimke, raw ostaje 4 utora) čeka utor najviše `SLOT_WAIT_MS` = 2 s (`tryAcquire(2000 ms)`, prekid → interrupt flag + busy) umjesto odmah `BusyException`; kad već čeka 2 × broj utora (asseti 16, raw 8) → odmah busy, pa zaglavljen NFS (cusma3) drži najviše fiksan broj Tomcat niti (8 + 16 asseti, 4 + 8 raw) na cusma2, jedinom API čvoru.
+- `PublicRecController.replayAsset` i `AdminRecController.raw`: busy = 503 `{"error":"busy"}` + `Retry-After: 2` + `Cache-Control: no-store`.
+- Testovi (TDD, prvo crveni 4/4): `RecFilesTest` 7 (4 raw čitanja zaglave → 5. čeka 1,9–5 s pa busy; 8 asset čitanja → 9. isto; 9. dobiva utor oslobođen dok čeka; s 16 čekatelja 17. odbijen < 200 ms — mutacijski provjereno: bez granice test pada), `PublicRecControllerTest` 10 (asset busy = 503 + Retry-After 2 + no-store); svi `contactcenter.rec.*` (78) + `SocialHibernateValidateTest` (DB gate, cijeli Flyway lanac + validate) zeleni; ktlintCheck 0 (`gradle detekt` pada već na mainu, nije gate).
+- Neovisni pregled (Opus 5.5 high, oba repoa): 0 FIX FIRST; napomene ugrađene u `b561652` (granica čekatelja, admin 503 no-store, širi vremenski raspon u testu).
+- Provjera LIVE 08:01–08:02 UTC: snimka 8532 (boat4you) u adminu → 17 asseta (11 css + 6 woff2 u istoj sekundi) svi 200; cusma1 nginx od 08:00:34: 17 zahtjeva, 0 × 503.
+- Jar s maina nosi samo ovu promjenu + docs `f3b41b6` (sadržajno = live 5a20132c `63812df`/`348a92c`).
+- Rollback: `webservice.jar.prev` (5a20132c) + restart (cusma3 samo kroz gate); nema migracije.
+
 ## 2026-11-04 — 🤖 Contact Center: kanal „AI asistenti“ (`VisitChannel.AI`) — posjeti iz ChatGPT-a, Perplexityja, Geminija, Copilota, Claudea i dr. više se ne skrivaju pod Referral — ✅ cusma2 LIVE 4.11.2026 19:55:46 UTC (`63812df` = `feat/cc-ai-channel` `4014c56` + main `66287db`, md5 5a20132ca3b02545ff8904f7c067bb2c, bez nove migracije — jar nosi 204 migracije uklj. V9_118 Objave i V9_120, Flyway „Schema up to date“, start 13,7 s, lokalni health 200 nakon ~18 s, javni 200; `.prev` = d2efcc9a Objave); ✅ cusma3 LIVE 20:16:39 UTC istim jarom kroz gate (prozor, bez sync cronova 15 min, bez ShedLocka, 0 sync linija; running prije d2efcc9a; start 13,6 s) — **LIVE OBA ČVORA**; admin filtar lijevka u istoj večeri (admin DEPLOY_NOTES)
 
 Mario 4.11.2026 („Da, kanal“, „Večeras nakon Objava“): analiza AI vidljivosti pokazala je da AI botovi puno čitaju (ClaudeBot, PerplexityBot), a posjete iz AI odgovora padaju u REFERRAL, pa se ne vide. PR boat4you-backend#20.

@@ -10,8 +10,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.mockito.Mockito.mock
 import org.springframework.mock.web.MockHttpServletRequest
-import java.io.IOException
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
@@ -157,6 +157,34 @@ class PublicRecControllerTest {
         }
         controller().config("evil").statusCode.value() shouldBe 400
         controller().config(null).statusCode.value() shouldBe 400
+    }
+
+    @Test
+    fun `an archived asset while every slot is stalled is 503 busy with Retry-After 2, never cached`() {
+        val sha = "a".repeat(64)
+        Files.createDirectories(root.resolve("assets/www.boat4you.com"))
+        Files.writeString(root.resolve("assets/www.boat4you.com/$sha.css"), ".a{}")
+        val release = CountDownLatch(1)
+        val waiting = CountDownLatch(RecFiles.MAX_ASSET_READERS)
+        files.readFile = { path ->
+            waiting.countDown()
+            release.await()
+            Files.readAllBytes(path)
+        }
+        val pool = Executors.newFixedThreadPool(RecFiles.MAX_ASSET_READERS)
+        try {
+            repeat(RecFiles.MAX_ASSET_READERS) { pool.submit<Any?> { controller().replayAsset("www.boat4you.com", "$sha.css") } }
+            waiting.await(5, TimeUnit.SECONDS) shouldBe true
+            controller().replayAsset("www.boat4you.com", "$sha.css").let {
+                it.statusCode.value() shouldBe 503
+                it.headers.getFirst("Retry-After") shouldBe "2"
+                it.headers.cacheControl shouldBe "no-store"
+                (it.body as Map<*, *>)["error"] shouldBe "busy"
+            }
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+        }
     }
 
     @Test

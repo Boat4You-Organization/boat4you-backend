@@ -88,7 +88,7 @@ class PublicRecController(
             try {
                 files.readAsset("assets/$host/$file", MAX_ASSET_BYTES)
             } catch (e: RecFiles.BusyException) {
-                return error(HTTP_UNAVAILABLE, "busy")
+                return busyRetry()
             } ?: return error(HTTP_NOT_FOUND, "not_found")
         return ResponseEntity
             .ok()
@@ -100,6 +100,14 @@ class PublicRecController(
     }
 
     private fun siteOf(origin: String?): String? = origin?.let { runCatching { URI(it).host }.getOrNull() }?.let(SiteIds::fromHost)
+
+    /** 503 busy that tells the browser when to ask again (the slots are held for at most a couple of seconds). */
+    private fun busyRetry(): ResponseEntity<Any> =
+        ResponseEntity
+            .status(HTTP_UNAVAILABLE)
+            .cacheControl(CacheControl.noStore())
+            .header("Retry-After", RecFiles.RETRY_AFTER_SECONDS.toString())
+            .body(mapOf("error" to "busy"))
 
     private fun error(
         status: Int,

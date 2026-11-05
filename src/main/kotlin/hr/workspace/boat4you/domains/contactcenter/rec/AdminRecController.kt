@@ -111,7 +111,11 @@ class AdminRecController(
             try {
                 files.read(path)
             } catch (e: RecFiles.BusyException) {
-                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(mapOf("error" to "busy"))
+                return ResponseEntity
+                    .status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .cacheControl(CacheControl.noStore())
+                    .header("Retry-After", RecFiles.RETRY_AFTER_SECONDS.toString())
+                    .body(mapOf("error" to "busy"))
             } ?: return notFound()
         query.audit(id, getAuthenticatedUserId())
         return ResponseEntity
