@@ -1,5 +1,14 @@
 # Backend deploy notes
 
+## 2026-11-05 — 📰 PR modul (digitalni PR: mediji, novinari, istraživanja, 1:1 pitchevi, objave i provjera linkova, RSS spominjanja) — **V9_121 rezervirana** — ⏳ NIJE DEPLOYANO (grana `feat/pr-module` iz origin/main `f3b41b6`, u izradi)
+
+Mario 4.11.2026 (program digitalnog PR-a, `DIGITAL-PR-PROGRAM-2026-11.md`; plan `infra/docs/superpowers/plans/2026-11-04-pr-module.md`).
+
+- **V9_121 `pr_module`** (samo nove tablice): `pr_outlet`, `pr_contact` (adresa jedinstvena po `lower(email)` + mediju), `pr_study`, `pr_pitch` (jedan glavni pitch po kontaktu i istraživanju, najviše jedan follow-up), `pr_placement`, `pr_alert_feed`, `pr_mention`; GRANT tablica i sekvenci za `boat4you_app` kao V9_118. **V9_121 je zauzeta** — prijedlog indeksa `seo_query_day` (unos 3.11. CC Tražilice) uzima sljedeću slobodnu (V9_122 ili višu).
+- Stari jar te tablice ne dira. Zadnja migracija u lancu (9.121 > 9.120), nema out-of-order primjene.
+- Testovi `domains.pr.*`: `PrSchemaTest` (tablice, GRANT-ovi, jedinstvenosti na PG 18) + `PrHibernateValidateTest` (cijeli Flyway lanac + Hibernate `validate` kao `boat4you_app`, upiti repozitorija).
+- Ostatak modula (servisi, API, slanje, admin) dolazi na istoj grani; ovaj unos se dopunjuje prije deploya.
+
 ## 2026-11-04 — 🤖 Contact Center: kanal „AI asistenti“ (`VisitChannel.AI`) — posjeti iz ChatGPT-a, Perplexityja, Geminija, Copilota, Claudea i dr. više se ne skrivaju pod Referral — ✅ cusma2 LIVE 4.11.2026 19:55:46 UTC (`63812df` = `feat/cc-ai-channel` `4014c56` + main `66287db`, md5 5a20132ca3b02545ff8904f7c067bb2c, bez nove migracije — jar nosi 204 migracije uklj. V9_118 Objave i V9_120, Flyway „Schema up to date“, start 13,7 s, lokalni health 200 nakon ~18 s, javni 200; `.prev` = d2efcc9a Objave); ✅ cusma3 LIVE 20:16:39 UTC istim jarom kroz gate (prozor, bez sync cronova 15 min, bez ShedLocka, 0 sync linija; running prije d2efcc9a; start 13,6 s) — **LIVE OBA ČVORA**; admin filtar lijevka u istoj večeri (admin DEPLOY_NOTES)
 
 Mario 4.11.2026 („Da, kanal“, „Večeras nakon Objava“): analiza AI vidljivosti pokazala je da AI botovi puno čitaju (ClaudeBot, PerplexityBot), a posjete iz AI odgovora padaju u REFERRAL, pa se ne vide. PR boat4you-backend#20.
