@@ -220,9 +220,12 @@ class RecWorkerDbTest {
         }
         pageView(400)
         val kept = pageView(300)
+        val failedAt = Timestamp.from(now.minus(Duration.ofDays(400)))
         jdbc.update(
             "INSERT INTO rec_page_view (site_id, project_id, user_id, session_id, page_num, started_at, last_payload_at, status) " +
-                "VALUES ('boat4you', 'boat4you', 'u', 'sf', 1, now() - interval '400 days', now() - interval '400 days', 'FAILED')",
+                "VALUES ('boat4you', 'boat4you', 'u', 'sf', 1, ?, ?, 'FAILED')",
+            failedAt,
+            failedAt,
         )
         worker().expireFacts() shouldBe 2
         jdbc.queryForList("SELECT id FROM rec_page_view", Long::class.java) shouldContainExactly listOf(kept)
