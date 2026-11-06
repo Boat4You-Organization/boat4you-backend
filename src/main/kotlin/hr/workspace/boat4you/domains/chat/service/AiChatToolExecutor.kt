@@ -76,6 +76,31 @@ class AiChatToolExecutor(
         /** A window search covers at most this many Saturday weeks (one API call each) and lists this many boats. */
         const val MAX_WINDOW_WEEKS = 6
         const val MAX_WINDOW_LIST = 12
+
+        /**
+         * Mario 6.11.2026 (Lefkada or Preveza): a place that is a marina, not a region, searches every marina of that name
+         * and the marinas within this many km of them - Lefkas and Preveza are 15 km apart, Lefkas and Athens 280.
+         */
+        const val NEARBY_KM = 20.0
+
+        /** At most this many places, models and search dids in one call (they are query parameters of our own API). */
+        const val MAX_PLACES = 4
+        const val MAX_MODELS = 4
+        const val MAX_DIDS = 40
+
+        /** Cabins a search may ask for: the search API binds them as a 16-bit number. */
+        const val MAX_CABINS = 30
+
+        /** "Or similar": the asked model's length plus and minus this many feet (the search API's length filter is in feet). */
+        const val SIMILAR_FT = 3.0
+        const val FEET_PER_METRE = 3.28084
+
+        /** How long a country's marina list (with coordinates) is kept for the nearby lookup. */
+        val MARINAS_TTL: java.time.Duration = java.time.Duration.ofHours(6)
+
+        val MODEL = Regex("""^[\p{L}\p{M}\d .'+-]{2,40}$""")
+        val SLUG = Regex("^[a-z0-9-]{3,160}$")
+        val WORD = Regex("""[\p{L}\d.]+""")
     }
 
     /** A gulet by the API's vesselType / modelName (GuletRules), for the search rows and the boat page alike. */
@@ -136,7 +161,7 @@ class AiChatToolExecutor(
         var first: JsonNode? = null
         var firstSearch: SearchCriteria? = null
         var totalAvailable = 0
-        val places = mutableMapOf<String, Resolution>() // one place lookup for all weeks of the window
+        val cache = WindowCache() // one place and model lookup for all weeks of the window
         for (saturday in saturdays.take(MAX_WINDOW_WEEKS)) {
             val week =
                 (input.deepCopy<JsonNode>() as ObjectNode).apply {
@@ -145,7 +170,7 @@ class AiChatToolExecutor(
                     put("endDate", saturday.plusDays(7).toString())
                     put("limit", 6)
                 }
-            val outcome = searchPeriod(week, site, locale, places)
+            val outcome = searchPeriod(week, site, locale, cache)
             val parsed = objectMapper.readTree(outcome.resultForModel)
             if (parsed.has("error")) return outcome
             if (first == null) {
@@ -176,7 +201,7 @@ class AiChatToolExecutor(
                 put("totalAvailable", totalAvailable)
                 put("sortedBy", if (desc) "price descending" else "price ascending")
                 put("window", "each boat at its cheapest Saturday-to-Saturday week in $from - $to")
-                listOf("searchedArea", "equipmentNote", "vesselNote").forEach { key -> first?.get(key)?.let { set<JsonNode>(key, it) } }
+                listOf("searchedArea", "equipmentNote", "vesselNote", "modelFilter", "modelNote").forEach { key -> first?.get(key)?.let { set<JsonNode>(key, it) } }
                 set<JsonNode>("weeks", weeks)
                 if (saturdays.size > MAX_WINDOW_WEEKS) {
                     put(
@@ -199,14 +224,29 @@ class AiChatToolExecutor(
         input: JsonNode,
         site: AiSiteProfile,
         locale: String,
-        places: MutableMap<String, Resolution>? = null,
+        cache: WindowCache? = null,
     ): ToolOutcome {
         val countryCode = input.path("countryCode").asText("").trim().uppercase().take(2).takeIf { COUNTRY_CODE.matches(it) } ?: ""
         val startDate = input.path("startDate").asText("")
         val endDate = input.path("endDate").asText("")
         val vesselType = input.path("vesselType").asText("").trim().uppercase().takeIf { it in VESSEL_TYPES } ?: ""
-        val location = input.path("location").asText("").trim().takeIf { LOCATION.matches(it) } ?: ""
-        val minCabins = input.path("minCabins").asInt(0)
+        // One place (`location`) or several (`locations`, Mario 6.11.2026: "Lefkada or maybe Preveza"); a polluted name is dropped.
+        val askedPlaces =
+            (listOf(input.path("location")) + input.path("locations").toList())
+                .mapNotNull { it.asText("").trim().takeIf { name -> LOCATION.matches(name) } }
+                .distinctBy { it.lowercase() }
+                .take(MAX_PLACES)
+        val location = askedPlaces.joinToString(", ")
+        val models =
+            (listOf(input.path("model")) + input.path("models").toList())
+                .mapNotNull { it.asText("").trim().takeIf { name -> MODEL.matches(name) } }
+                .distinctBy { it.lowercase() }
+                .take(MAX_MODELS)
+        val orSimilar = input.path("orSimilar").asBoolean(false)
+        val minLengthFt = input.path("minLengthFt").asInt(0).takeIf { it in 10..200 }
+        val maxLengthFt = input.path("maxLengthFt").asInt(0).takeIf { it in 10..200 }
+        val minCabins = input.path("minCabins").asInt(0).coerceIn(0, MAX_CABINS)
+        val maxCabins = input.path("maxCabins").asInt(0).takeIf { it in 1..MAX_CABINS && it >= minCabins }
         val minPersons = input.path("minPersons").asInt(0)
         val maxTotalPriceEur = input.path("maxTotalPriceEur").asInt(0)
         val minTotalPriceEur = input.path("minTotalPriceEur").asInt(0)
@@ -231,7 +271,7 @@ class AiChatToolExecutor(
             totalAvailable: Int?,
         ) = SearchCriteria(
             countryCode = countryCode.takeIf { it.isNotBlank() },
-            location = location.takeIf { it.isNotBlank() },
+            location = location.takeIf { it.isNotBlank() }?.take(SearchCriteria.LOCATION_MAX),
             did = resolved?.did?.toLongOrNull(),
             startDate = SearchCriteria.parseDate(startDate),
             endDate = SearchCriteria.parseDate(endDate),
@@ -276,57 +316,99 @@ class AiChatToolExecutor(
         // "Split" must search the Split REGION, not all of Croatia (Mario 20.7.2026:
         // bot answered a Split request with boats from Punat). Resolve the place via
         // the same autocomplete the website's "Where" field uses and pass its did.
-        val resolution =
-            when {
-                location.isBlank() -> null
-                places != null -> places.getOrPut("$countryCode|$location") { resolveDestination(location, countryCode, site) }
-                else -> resolveDestination(location, countryCode, site)
+        val resolutions =
+            askedPlaces.map { place ->
+                cache?.places?.getOrPut("$countryCode|$place") { resolveDestination(place, countryCode, site) }
+                    ?: resolveDestination(place, countryCode, site)
             }
-        resolution?.elsewhereCountry?.let { elsewhere ->
+        // Refused only when every place the visitor named lies outside the fleet; one inside is searched.
+        if (resolutions.isNotEmpty() && resolutions.all { it.elsewhereCountry != null }) {
             val refusal =
                 objectMapper.createObjectNode().apply {
-                    put("error", "'$location' is in $elsewhere, outside this site's fleet")
+                    put("error", "'$location' is in ${resolutions.first().elsewhereCountry}, outside this site's fleet")
                     put("hint", fleetHint(site))
                 }
             return ToolOutcome(objectMapper.writeValueAsString(refusal), search = criteria(null, emptyList(), 0, null))
         }
-        val resolved = resolution?.place
+        val found = resolutions.mapNotNull { it.place }
+        // The cc_search log keeps one area: the first place, named as it was searched.
+        val resolved = found.firstOrNull()?.let { if (found.size == 1) it else it.copy(name = found.joinToString(" + ") { p -> p.name }) }
+        val dids = found.flatMap { it.dids.take(MAX_DIDS / found.size) }.distinct()
         val equipmentIds = equipment.mapNotNull { amenityId(it) }
         val sentEquipment = equipment.filter { amenityId(it) != null }
 
-        val uri = UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts")
-            .queryParam("startDate", startDate)
-            .queryParam("endDate", endDate)
-            .queryParam("currency", "EUR")
-            .queryParam("size", 50)
-            .queryParam("page", 0)
-            .queryParam("sortBy", sortByPrice)
-            .apply {
-                if (resolved != null) queryParam("did", resolved.did) else queryParam("countryCodes", countryCode)
-                if (types.isNotEmpty()) queryParam("vesselType", *types.toTypedArray())
-                if (minCabins > 0) queryParam("minCabins", minCabins)
-                if (minPersons > 0) queryParam("minPersons", minPersons)
-                if (equipmentIds.isNotEmpty()) queryParam("amenities", equipmentIds)
+        // A model is a filter (its catalogue variants: "Lagoon 46" is also "Lagoon 46 Fly"); with orSimilar its length band.
+        val modelIds = models.associateWith { m -> cache?.models?.getOrPut(m.lowercase()) { resolveModel(m) } ?: resolveModel(m) }
+        val mids = modelIds.values.flatten().distinct()
+        val askedModelNames = modelIds.filterValues { it.isNotEmpty() }.keys
+        // "Or similar" (review 6.11.2026): the band spans every asked model - one reference boat each, Lagoon 46 to 52 -
+        // and the asked models are searched on their own first, so cheaper similar boats never push them off the page.
+        val references =
+            if (!orSimilar) {
+                emptyList()
+            } else {
+                modelIds.filterValues { it.isNotEmpty() }.mapNotNull { (name, ids) ->
+                    cache?.references?.getOrPut(name.lowercase()) { referenceBoat(ids, listOf(name)) } ?: referenceBoat(ids, listOf(name))
+                }
             }
-            .build().encode().toUri()
+        val lengths = references.map { it.path("length").asDouble(0.0) * FEET_PER_METRE }.filter { it > 0 }
+        val band = lengths.takeIf { it.isNotEmpty() }?.let { kotlin.math.floor(it.min() - SIMILAR_FT).toInt() to kotlin.math.ceil(it.max() + SIMILAR_FT).toInt() }
+        val similarType = references.firstOrNull()?.path("vesselType")?.asText("")?.takeIf { it in VESSEL_TYPES && types.isEmpty() }
 
-        val body = try {
-            client.get().uri(uri).retrieve().body(String::class.java)
-        } catch (e: Exception) {
-            log.warn("chat search_yachts failed: ${e.message}")
-            return ToolOutcome(
-                """{"error":"search temporarily unavailable, apologize and suggest trying again"}""",
-                search = criteria(resolved, sentEquipment, 0, null),
-            )
-        }
+        fun uri(byModel: Boolean) =
+            UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts")
+                .queryParam("startDate", startDate)
+                .queryParam("endDate", endDate)
+                .queryParam("currency", "EUR")
+                .queryParam("size", 50)
+                .queryParam("page", 0)
+                .queryParam("sortBy", sortByPrice)
+                .apply {
+                    if (dids.isNotEmpty()) queryParam("did", *dids.toTypedArray()) else queryParam("countryCodes", countryCode)
+                    if (types.isNotEmpty()) queryParam("vesselType", *types.toTypedArray())
+                    similarType?.let { queryParam("vesselType", it) }
+                    if (minCabins > 0) queryParam("minCabins", minCabins)
+                    maxCabins?.let { queryParam("maxCabins", it) }
+                    if (minPersons > 0) queryParam("minPersons", minPersons)
+                    if (equipmentIds.isNotEmpty()) queryParam("amenities", equipmentIds)
+                    when {
+                        byModel -> queryParam("mid", *mids.toTypedArray())
+                        band != null -> queryParam("minLength", band.first).queryParam("maxLength", band.second)
+                        else -> {
+                            minLengthFt?.let { queryParam("minLength", it) }
+                            maxLengthFt?.let { queryParam("maxLength", it) }
+                        }
+                    }
+                }
+                .build().encode().toUri()
 
-        val parsed = objectMapper.readTree(body)
-        val content = parsed.path("content")
-        val totalAvailable = parsed.path("page").path("totalElements").asInt(content.size())
+        val pages =
+            try {
+                listOfNotNull(
+                    if (mids.isNotEmpty()) objectMapper.readTree(client.get().uri(uri(byModel = true)).retrieve().body(String::class.java)) else null,
+                    if (mids.isEmpty() || band != null) objectMapper.readTree(client.get().uri(uri(byModel = false)).retrieve().body(String::class.java)) else null,
+                )
+            } catch (e: Exception) {
+                log.warn("chat search_yachts failed: ${e.message}")
+                return ToolOutcome(
+                    """{"error":"search temporarily unavailable, apologize and suggest trying again"}""",
+                    search = criteria(resolved, sentEquipment, 0, null),
+                )
+            }
+
+        val totalAvailable = pages.maxOf { it.path("page").path("totalElements").asInt(it.path("content").size()) }
         val forModel = objectMapper.createArrayNode()
         val cards = objectMapper.createArrayNode()
         var taken = 0
-        for (y in content) {
+        // "Or similar": the boats of the asked models first, then the similar ones, each group in the API's price order.
+        val ordered =
+            if (pages.size == 1) {
+                pages.single().path("content").toList()
+            } else {
+                pages.flatMap { it.path("content").toList() }.distinctBy { it.path("slug").asText() }
+                    .sortedBy { if (isAskedModel(it, askedModelNames)) 0 else 1 }
+            }
+        for (y in ordered) {
             if (taken >= limit) break
             if (!inFleet(site, y)) continue
             val offer = pricedOffer(y, days, startDate, endDate) ?: continue
@@ -345,6 +427,7 @@ class AiChatToolExecutor(
                     put("endDate", offer.to)
                     put("nights", offer.nights)
                     put("dates", offer.dates)
+                    if (band != null) put("match", if (isAskedModel(y, askedModelNames)) "asked model" else "similar size")
                     // Partner figures only when known (> 0) - an absent key, never a 0 the model would repeat.
                     putPositive("cabins", y.path("cabins"))
                     putPositive("berths", y.path("berths"))
@@ -397,9 +480,35 @@ class AiChatToolExecutor(
             put("totalAvailable", totalAvailable)
             put("sortedBy", if (sortByPrice == "desc") "price descending" else "price ascending")
             when {
-                resolved != null -> put("searchedArea", "${resolved.name} (${resolved.type.lowercase()})")
+                found.isNotEmpty() -> {
+                    val missing = askedPlaces.filterIndexed { i, _ -> resolutions[i].place == null }
+                    put(
+                        "searchedArea",
+                        found.joinToString("; ") { it.describe() } +
+                            if (missing.isEmpty()) "" else "; not found and not searched: ${missing.joinToString(", ")}",
+                    )
+                }
                 location.isNotBlank() ->
                     put("searchedArea", "place '$location' not found — searched the whole country; tell the visitor honestly")
+            }
+            if (askedModelNames.isNotEmpty()) {
+                put(
+                    "modelFilter",
+                    when {
+                        band != null ->
+                            "${askedModelNames.joinToString(", ")} or similar: ${band.first}-${band.second} ft" +
+                                " - each boat's match says whether it is the asked model or a similar size"
+                        else -> "only ${askedModelNames.joinToString(", ")} (with its catalogue variants)"
+                    },
+                )
+            }
+            (models - askedModelNames).takeIf { it.isNotEmpty() }?.let {
+                put(
+                    "modelNote",
+                    "could not match ${it.joinToString(", ")} to our catalogue, so it was NOT filtered and the boats listed may be other " +
+                        "models - never call them that model and never say we do not have it; search again with the manufacturer " +
+                        "first (\"Jeanneau Sun Odyssey 410\") or by size (minLengthFt/maxLengthFt)",
+                )
             }
             if (equipment.isNotEmpty() && equipmentIds.size < equipment.size) {
                 put("equipmentNote", "some requested equipment filters are unknown and were ignored: " +
@@ -447,7 +556,33 @@ class AiChatToolExecutor(
     private fun isoDate(node: JsonNode): String? =
         node.asText("").takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it).toString() }.getOrNull() }
 
-    private data class ResolvedPlace(val did: String, val name: String, val type: String)
+    /** The lookups of one window search, made once for all its weeks (review 6.11.2026: models were resolved per week). */
+    private class WindowCache {
+        val places = mutableMapOf<String, Resolution>()
+        val models = mutableMapOf<String, List<Long>>()
+        val references = mutableMapOf<String, JsonNode?>()
+    }
+
+    /**
+     * A searched place: [did] is the first search id (the cc_search log keeps it), [dids] every id searched for it. A
+     * REGION is its own id (the search expands it to its marinas); a marina name is every marina of that name ([marinas])
+     * and the marinas [nearby] them (Mario 6.11.2026).
+     */
+    private data class ResolvedPlace(
+        val did: String,
+        val name: String,
+        val type: String,
+        val dids: List<String> = listOf(did),
+        val marinas: List<String> = emptyList(),
+        val nearby: List<String> = emptyList(),
+    ) {
+        fun describe(): String =
+            if (marinas.size <= 1 && nearby.isEmpty()) {
+                "$name (${type.lowercase()})"
+            } else {
+                "$name (marinas: ${marinas.joinToString(", ")}" + (if (nearby.isEmpty()) "" else "; nearby: ${nearby.joinToString(", ")}") + ")"
+            }
+    }
 
     /**
      * The result of a place lookup: the best [place] inside the requested country, or, only on a scoped site that has no
@@ -498,15 +633,146 @@ class AiChatToolExecutor(
                 }
             },
         )
+        if (best.path("locationType").asText() != "MARINA") {
+            return Resolution(
+                ResolvedPlace(
+                    did = best.path("id").asText(),
+                    name = best.path("name").asText(),
+                    type = best.path("locationType").asText(),
+                ),
+                null,
+            )
+        }
+        // A marina name (Mario 6.11.2026: "Lefkas" was D-Marin only, never Lefkas main port or Preveza 15 km away): every
+        // marina of that name, then every marina of the country within NEARBY_KM of one of them.
+        val named = rows.filter { it.path("locationType").asText() == "MARINA" && idsOf(it).isNotEmpty() }
+        if (named.isEmpty()) return Resolution(null, null)
+        val namedIds = named.flatMap { idsOf(it) }.toSet()
+        val country = named.first().path("countryCode").asText("").uppercase()
+        val nearby =
+            marinasOf(country).filter { m ->
+                idsOf(m).none { it in namedIds } &&
+                    named.any { n -> distanceKm(n, m)?.let { it <= NEARBY_KM } == true }
+            }
         return Resolution(
             ResolvedPlace(
                 did = best.path("id").asText(),
-                name = best.path("name").asText(),
-                type = best.path("locationType").asText(),
+                name = if (named.size == 1 && nearby.isEmpty()) best.path("name").asText() else query,
+                type = "MARINA",
+                dids = (named + nearby).flatMap { idsOf(it) }.distinct(),
+                marinas = named.map { it.path("name").asText() },
+                nearby = nearby.map { it.path("name").asText() },
             ),
             null,
         )
     }
+
+    /**
+     * The single search ids of a location row: a merged dual-source marina is "l-1865,l-259", and the search splits a
+     * comma only when it is the one did value (review 6.11.2026), so every id goes as its own did.
+     */
+    private fun idsOf(row: JsonNode): List<String> = row.path("id").asText("").split(',').map { it.trim() }.filter { it.isNotBlank() }
+
+    private val marinas = java.util.concurrent.ConcurrentHashMap<String, Pair<java.time.Instant, List<JsonNode>>>()
+
+    /** The marinas of [country] with their coordinates (`/public/marinas`), kept [MARINAS_TTL]; empty when it fails. */
+    private fun marinasOf(country: String): List<JsonNode> {
+        if (!COUNTRY_CODE.matches(country)) return emptyList()
+        val now = java.time.Instant.now(clock)
+        marinas[country]?.takeIf { it.first.isAfter(now.minus(MARINAS_TTL)) }?.let { return it.second }
+        val list =
+            try {
+                client.get()
+                    .uri(UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/marinas").queryParam("countryCode", country).build().encode().toUri())
+                    .retrieve().body(String::class.java)
+                    .let { objectMapper.readTree(it) }
+                    .filter { it.path("lat").isNumber && it.path("lon").isNumber && idsOf(it).isNotEmpty() }
+            } catch (e: Exception) {
+                log.warn("chat marinas of {} failed: {}", country, e.message)
+                return emptyList()
+            }
+        marinas[country] = now to list
+        return list
+    }
+
+    /** Great-circle distance between two location rows in km, or null when one has no coordinates. */
+    private fun distanceKm(a: JsonNode, b: JsonNode): Double? {
+        if (!a.path("lat").isNumber || !a.path("lon").isNumber || !b.path("lat").isNumber || !b.path("lon").isNumber) return null
+        val la1 = Math.toRadians(a.path("lat").asDouble())
+        val la2 = Math.toRadians(b.path("lat").asDouble())
+        val dLa = la2 - la1
+        val dLo = Math.toRadians(b.path("lon").asDouble() - a.path("lon").asDouble())
+        val h = kotlin.math.sin(dLa / 2).let { it * it } + kotlin.math.cos(la1) * kotlin.math.cos(la2) * kotlin.math.sin(dLo / 2).let { it * it }
+        return 2 * 6371.0 * kotlin.math.asin(kotlin.math.sqrt(h))
+    }
+
+    /**
+     * The catalogue model ids of a model the visitor named ("Lagoon 46", "Bali 4.2"): the manufacturer by the name's first
+     * word, then its models whose name has every other word of the name as a whole word - "Lagoon 46" is also "Lagoon 46
+     * Fly", never "Lagoon 460". Empty when the manufacturer or the model is not in the catalogue, or the lookup fails.
+     */
+    private fun resolveModel(name: String): List<Long> {
+        val words = WORD.findAll(name).map { it.value }.toList()
+        if (words.size < 2) return emptyList()
+        return try {
+            val makers =
+                client.get()
+                    .uri(UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/catalogue/manufacturers").queryParam("name", words.first()).build().encode().toUri())
+                    .retrieve().body(String::class.java)
+                    .let { objectMapper.readTree(it).path("content").toList() }
+            if (makers.isEmpty()) return emptyList()
+            val makerWords = makers.flatMap { m -> WORD.findAll(m.path("name").asText("")).map { it.value.lowercase() }.toList() }.toSet()
+            val rest = words.drop(1).filter { it.lowercase() !in makerWords }
+            if (rest.isEmpty()) return emptyList()
+            client.get()
+                .uri(
+                    UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/catalogue/models")
+                        .queryParam("manufacturerIds", makers.map { it.path("id").asLong() }.joinToString(","))
+                        .queryParam("name", rest.joinToString(" "))
+                        .queryParam("size", 50)
+                        .build().encode().toUri(),
+                )
+                .retrieve().body(String::class.java)
+                .let { objectMapper.readTree(it).path("content") }
+                .filter { m -> hasWords(m.path("name").asText(""), rest) }
+                .map { it.path("id").asLong() }
+                .filter { it > 0 }
+        } catch (e: Exception) {
+            log.warn("chat model lookup failed for '{}': {}", name, e.message)
+            emptyList()
+        }
+    }
+
+    /** True when every one of [words] is a whole word of [text], ignoring case ("4.2" in "Bali 4.2", "46" not in "460"). */
+    private fun hasWords(text: String, words: List<String>): Boolean {
+        val have = WORD.findAll(text).map { it.value.lowercase() }.toSet()
+        return words.all { it.lowercase() in have }
+    }
+
+    /** A search row of one of the visitor's [askedModels] ("Lagoon 46" for a "Lagoon 46" row, never for a "Lagoon 460"). */
+    private fun isAskedModel(y: JsonNode, askedModels: Collection<String>): Boolean {
+        val label = "${y.path("manufacturerName").asText("")} ${y.path("modelName").asText("")}"
+        return askedModels.any { asked -> hasWords(label, WORD.findAll(asked).map { it.value }.toList()) }
+    }
+
+    /** One boat of the [asked] models, any dates, for its length and type (the "or similar" band); null when there is none. */
+    private fun referenceBoat(mids: List<Long>, asked: Collection<String>): JsonNode? =
+        try {
+            client.get()
+                .uri(
+                    UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts")
+                        .queryParam("mid", *mids.toTypedArray()).queryParam("currency", "EUR").queryParam("size", 5).queryParam("page", 0)
+                        .build().encode().toUri(),
+                )
+                .retrieve().body(String::class.java)
+                .let { body ->
+                    val rows = objectMapper.readTree(body).path("content").filter { row -> row.path("length").asDouble(0.0) > 0 }
+                    rows.firstOrNull { isAskedModel(it, asked) } ?: rows.firstOrNull()
+                }
+        } catch (e: Exception) {
+            log.warn("chat reference boat lookup failed: {}", e.message)
+            null
+        }
 
     /** What the model is told when a search or a place lies outside the fleet of a scoped [site]. */
     private fun fleetHint(site: AiSiteProfile): String =
@@ -535,6 +801,151 @@ class AiChatToolExecutor(
         val dates = if (from != null && to != null) "startDate=$from&endDate=$to&" else ""
         return "${b4y.baseUrl}${b4y.localePrefix(locale)}${b4y.boatPath}$slug?${dates}currency=EUR&cc_src=${site.siteId}"
     }
+
+    /**
+     * `check_boat` (Mario 6.11.2026: the visitor on the Lagoon 46 Alter Ego page said "yes, check" and got a new search
+     * instead): whether ONE boat - [input] `boat` (its slug), else the boat page the visitor is on ([page]) - is free for
+     * the dates, at what total, as a card. A boat outside a scoped [site]'s fleet, an unknown one or no boat at all is an
+     * error the model reads, never a guess.
+     */
+    fun checkBoat(
+        input: JsonNode,
+        page: String?,
+        site: AiSiteProfile = AiSiteProfile.BOAT4YOU,
+        locale: String = "en",
+    ): ToolOutcome {
+        val asked = input.path("boat").asText("").trim()
+        val slug =
+            when {
+                asked.isNotBlank() -> asked.takeIf { SLUG.matches(it) }
+                page.isNullOrBlank() -> null
+                else -> Regex(Regex.escape(site.boatPath) + "([A-Za-z0-9-]+)").find(page)?.groupValues?.get(1)?.lowercase()?.takeIf { SLUG.matches(it) }
+            } ?: return ToolOutcome("""{"error":"no boat to check - pass the boat's slug from a card or ask the visitor which boat"}""")
+        val startDate = input.path("startDate").asText("")
+        val endDate = input.path("endDate").asText("")
+        val start = runCatching { LocalDate.parse(startDate) }.getOrNull()
+        val end = runCatching { LocalDate.parse(endDate) }.getOrNull()
+        val nights = if (start != null && end != null) ChronoUnit.DAYS.between(start, end).toInt() else 0
+        if (start == null || end == null || nights !in MIN_NIGHTS..MAX_NIGHTS) {
+            return ToolOutcome("""{"error":"invalid date range — use YYYY-MM-DD, $MIN_NIGHTS to $MAX_NIGHTS nights"}""")
+        }
+        val today = LocalDate.now(clock)
+        if (start.isBefore(today)) return pastDates(start, end, today)
+        val boat =
+            try {
+                client.get().uri(UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts/{slug}").build(slug))
+                    .retrieve().body(String::class.java)?.let { objectMapper.readTree(it) }
+            } catch (e: Exception) {
+                log.warn("chat check_boat lookup failed for '{}': {}", slug, e.message)
+                null
+            }
+        val id = boat?.path("id")?.asLong(0) ?: 0
+        if (boat == null || id <= 0) return ToolOutcome("""{"error":"boat not found - ask the visitor which boat they mean or search instead"}""")
+        if (!inFleet(site, boat)) return ToolOutcome(objectMapper.writeValueAsString(mapOf("error" to "boat outside this site's fleet", "hint" to fleetHint(site))))
+        val label = listOf(boat.path("modelName").asText(""), boat.path("name").asText("")).filter { it.isNotBlank() }.joinToString(" ")
+        val body =
+            try {
+                client.get()
+                    .uri(
+                        UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts")
+                            .queryParam("yid", id).queryParam("startDate", startDate).queryParam("endDate", endDate)
+                            .queryParam("currency", "EUR").queryParam("size", 5).queryParam("page", 0)
+                            .build().encode().toUri(),
+                    )
+                    .retrieve().body(String::class.java)
+            } catch (e: Exception) {
+                log.warn("chat check_boat search failed for '{}': {}", slug, e.message)
+                return ToolOutcome("""{"error":"check temporarily unavailable, apologize and suggest trying again"}""")
+            }
+        val row =
+            objectMapper.readTree(body).path("content")
+                .firstOrNull { (it.path("id").asLong(0) == id || it.path("slug").asText() == slug) && inFleet(site, it) }
+        val offer = row?.let { pricedOffer(it, nights, startDate, endDate) }
+        if (row == null || offer == null) {
+            val result =
+                objectMapper.createObjectNode().apply {
+                    put("yacht", label)
+                    put("available", false)
+                    put("startDate", startDate)
+                    put("endDate", endDate)
+                    put("base", boat.path("location").path("name").asText(""))
+                    val free = freeWeeksNear(slug, start, end)
+                    if (free.isNotEmpty()) putArray("freeWeeksNearby").apply { free.forEach { add(it) } }
+                    put(
+                        "hint",
+                        "not bookable for these dates - say so plainly; offer the free weeks nearby if any, and offer to search " +
+                            "the same model or a similar size in the same area for these dates (search_yachts with models and orSimilar)",
+                    )
+                }
+            return ToolOutcome(objectMapper.writeValueAsString(result))
+        }
+        val result =
+            objectMapper.createObjectNode().apply {
+                put("yacht", label)
+                put("available", true)
+                put("totalPriceEur", offer.total)
+                put("startDate", offer.from)
+                put("endDate", offer.to)
+                put("nights", offer.nights)
+                put("dates", offer.dates)
+                putPositive("cabins", row.path("cabins"))
+                put("base", row.path("location").path("name").asText("").ifBlank { boat.path("location").path("name").asText("") })
+                if (site.scoped) {
+                    put("url", sisterUrl(site, locale, slug, offer.from, offer.to))
+                    put("bookUrl", bookUrl(site, locale, slug, offer.from, offer.to))
+                } else {
+                    put("url", "https://www.boat4you.com/boat/$slug?startDate=${offer.from}&endDate=${offer.to}&currency=EUR")
+                }
+            }
+        val card =
+            objectMapper.createObjectNode().apply {
+                put("name", label)
+                put("slug", slug)
+                put("imageId", row.path("mainImageId").asLong(0))
+                put("totalPriceEur", offer.total)
+                put("days", offer.nights)
+                putPositive("cabins", row.path("cabins"))
+                putPositive("berths", row.path("berths"))
+                putPositive("wc", row.path("wc"))
+                putPositive("maxPersons", row.path("maxPersons"))
+                put("year", row.path("buildYear").asInt(0))
+                put("location", result.path("base").asText())
+                put("startDate", offer.from)
+                put("endDate", offer.to)
+                put("dates", offer.dates)
+                if (site.scoped) {
+                    put("url", sisterUrl(site, locale, slug, offer.from, offer.to))
+                    put("bookUrl", bookUrl(site, locale, slug, offer.from, offer.to))
+                }
+            }
+        return ToolOutcome(objectMapper.writeValueAsString(result), objectMapper.createArrayNode().add(card))
+    }
+
+    /**
+     * The boat's FREE weeks within two weeks of the asked ones (`/standard-offers`, the boat page's calendar), as
+     * "from to" ISO dates; empty when there is none or the lookup fails. Dates only: a price comes from check_boat.
+     */
+    private fun freeWeeksNear(slug: String, start: LocalDate, end: LocalDate): List<String> =
+        try {
+            client.get()
+                .uri(
+                    UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts/{slug}/standard-offers")
+                        .queryParam("dateFrom", maxOf(start.minusDays(14), LocalDate.now(clock)))
+                        .queryParam("dateTo", end.plusDays(14))
+                        .queryParam("currency", "EUR")
+                        .build(slug),
+                )
+                .retrieve().body(String::class.java)
+                .let { objectMapper.readTree(it) }
+                .filter { it.path("status").asText() == "FREE" }
+                .mapNotNull { o -> isoDate(o.path("dateFrom"))?.let { from -> isoDate(o.path("dateTo"))?.let { to -> "$from to $to" } } }
+                .distinct()
+                .sorted()
+                .take(4)
+        } catch (e: Exception) {
+            log.warn("chat free weeks of '{}' failed: {}", slug, e.message)
+            emptyList()
+        }
 
     /**
      * Compact facts about the yacht page the visitor is on (widget sends its URL with
@@ -707,8 +1118,31 @@ class AiChatToolExecutor(
                     "description",
                     "City, marina, island or region the visitor named (e.g. Split, Dubrovnik, Athens, " +
                         "Trogir, Lefkas). ALWAYS pass it when they mention a place more specific than a " +
-                        "country — results are then limited to that area instead of the whole country.",
+                        "country — results are then limited to that area instead of the whole country. A marina name " +
+                        "also searches every marina of that name and the bases nearby.",
                 )
+            it.putObject("locations").put("type", "array")
+                .put(
+                    "description",
+                    "Instead of location when the visitor names several places or bases (\"out of Lefkada or Preveza\"): " +
+                        "ALL of them, up to $MAX_PLACES, in ONE call - never only the first one",
+                )
+                .putObject("items").put("type", "string")
+            it.putObject("models").put("type", "array")
+                .put(
+                    "description",
+                    "Boat models the visitor asked for, manufacturer first (\"Lagoon 46\", \"Bali 4.2\"), up to $MAX_MODELS: " +
+                        "only these models are searched (their variants included)",
+                )
+                .putObject("items").put("type", "string")
+            it.putObject("orSimilar").put("type", "boolean")
+                .put(
+                    "description",
+                    "With models, when the visitor says \"or similar\": the asked models AND boats of the same type and length " +
+                        "(within $SIMILAR_FT ft), the asked models listed first; each boat's match says which it is",
+                )
+            it.putObject("minLengthFt").put("type", "integer").put("description", "Optional minimum length in feet")
+            it.putObject("maxLengthFt").put("type", "integer").put("description", "Optional maximum length in feet")
             it.putObject("startDate").put("type", "string").put("description", "YYYY-MM-DD; the charter lasts $MIN_NIGHTS to $MAX_NIGHTS nights")
             it.putObject("endDate").put("type", "string").put("description", "YYYY-MM-DD")
             it
@@ -733,6 +1167,8 @@ class AiChatToolExecutor(
                 )
                 .putObject("items").put("type", "string")
             it.putObject("minCabins").put("type", "integer").put("description", "Optional minimum cabins")
+            it.putObject("maxCabins").put("type", "integer")
+                .put("description", "Optional maximum cabins - when the visitor gives an exact number (\"4 cabins\"), pass it as both minCabins and maxCabins")
             it
                 .putObject("minPersons")
                 .put("type", "integer")
@@ -751,6 +1187,16 @@ class AiChatToolExecutor(
                         "you how many boats match in total beyond the ones returned",
                 )
             it.putObject("limit").put("type", "integer").put("description", "Max results, default 5")
+        })
+        tools.add(tool(
+            "check_boat",
+            "Check ONE boat for the visitor's dates: whether it can be booked, its binding total in EUR and, when it is taken, " +
+                "its free weeks nearby. Use it whenever the visitor asks about a specific boat - the one on the CURRENT PAGE " +
+                "(leave boat out) or one from a card (its slug) - and above all when they say \"yes, check it\".",
+        ) {
+            it.putObject("boat").put("type", "string").put("description", "The boat's slug from a card or url; leave out for the CURRENT PAGE boat")
+            it.putObject("startDate").put("type", "string").put("description", "YYYY-MM-DD")
+            it.putObject("endDate").put("type", "string").put("description", "YYYY-MM-DD")
         })
         tools.add(tool(
             "request_human_agent",

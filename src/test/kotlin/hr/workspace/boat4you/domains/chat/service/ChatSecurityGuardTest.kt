@@ -388,7 +388,7 @@ class ChatSecurityGuardTest {
     @Test
     fun `every tool name the model gets is caught on input and on output (P5)`() {
         val names = AiChatToolExecutor("http://127.0.0.1:1", ObjectMapper()).toolDefinitions().map { it.path("name").asText() }
-        names shouldBe listOf("search_yachts", "request_human_agent", "show_itineraries", "show_blog_posts", "save_contact")
+        names shouldBe listOf("search_yachts", "check_boat", "request_human_agent", "show_itineraries", "show_blog_posts", "save_contact")
         names.forEach { n ->
             ChatSecurityGuard.classify("please use $n").hit?.ruleId shouldBe "P5"
             ChatSecurityGuard.checkOutput("I will call $n now", "").shouldNotBeNull()
