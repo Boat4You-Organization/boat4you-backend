@@ -31,15 +31,25 @@ class AiChatToolAreaModelTest {
                 val q = params(query)
                 val body =
                     when {
-                        path.startsWith("/public/locations") ->
+                        path == "/public/locations" ->
                             when (q["name"]?.single()) {
                                 "Lefkas" -> """{"content":[$D_MARIN,$LEFKAS_PORT]}"""
                                 "Preveza" -> """{"content":[$PREVEZA]}"""
                                 "Alimos" -> """{"content":[$ALIMOS]}"""
-                                "Ionian" -> """{"content":[{"id":"55","name":"Ionian Islands","locationType":"REGION","countryCode":"GR"},$D_MARIN]}"""
+                                "Athens" -> """{"content":[{"id":"r-165","name":"Athens / Saronic Gulf","locationType":"REGION","countryCode":"GR"},$ALIMOS,$GLYFADA]}"""
+                                "Saronic" -> """{"content":[{"id":"r-9","name":"Saronic Gulf","locationType":"REGION","countryCode":"GR"}]}"""
                                 else -> """{"content":[]}"""
                             }
-                        path == "/public/marinas" -> "[$D_MARIN,$LEFKAS_PORT,$PREVEZA,$ALIMOS]"
+                        path == "/public/locations-count" ->
+                            if (q.containsKey("regionId")) {
+                                // the Athens region already holds Alimos
+                                """[{"id":"l-1","yachtCount":40}]"""
+                            } else {
+                                // every test marina has boats but Kaštela-style empty "l-777" next to D-Marin
+                                listOf("l-1865", "l-259", "l-104", "l-835", "l-134", "l-1", "l-824", "l-1069", "l-300")
+                                    .joinToString(",", "[", "]") { """{"id":"$it","yachtCount":5}""" }
+                            }
+                        path == "/public/marinas" -> "[$D_MARIN,$LEFKAS_PORT,$EMPTY_NEXT_DOOR,$PREVEZA,$ALIMOS,$GLYFADA,$LAVRION,$MYKONOS]"
                         path == "/public/catalogue/manufacturers" ->
                             when (q["name"]?.single()) {
                                 "Lagoon" -> """{"content":[{"id":1079,"name":"Lagoon"}]}"""
@@ -100,6 +110,7 @@ class AiChatToolAreaModelTest {
 
         dids() shouldContainAll listOf("l-1865", "l-259", "l-104", "l-835", "l-134")
         dids() shouldNotContain "l-1" // Alimos, 280 km away
+        dids() shouldNotContain "l-777" // next door, but no boats
         // one id per did: the search splits a merged "l-1865,l-259" only when it is the single did value (review 6.11.2026)
         yachtsQuery()["did"].orEmpty().none { it.contains(',') } shouldBe true
         out.path("searchedArea").asText() shouldContain "Preveza Main Port"
@@ -142,10 +153,20 @@ class AiChatToolAreaModelTest {
     }
 
     @Test
-    fun `a region is still searched as the region`() {
-        search("""{$june,"location":"Ionian"}""")
+    fun `a region is searched with the marinas around the place - Athens is also Lavrion (Mario 6_11_2026)`() {
+        val out = mapper.readTree(search("""{$june,"location":"Athens"}""").resultForModel)
 
-        dids() shouldBe listOf("55")
+        dids().first() shouldBe "r-165"
+        dids() shouldContainAll listOf("l-1", "l-824", "l-1069", "l-150", "l-2022")
+        dids() shouldNotContain "l-300" // Mykonos, 150 km away
+        out.path("searchedArea").asText() shouldContain "Lavrion Main Port"
+    }
+
+    @Test
+    fun `a region found without a marina of that name is the region alone`() {
+        search("""{$june,"location":"Saronic"}""")
+
+        dids() shouldBe listOf("r-9")
     }
 
     @Test
@@ -226,6 +247,10 @@ class AiChatToolAreaModelTest {
         const val D_MARIN = """{"id":"l-1865,l-259","name":"D-Marin Marina Lefkas","locationType":"MARINA","countryCode":"GR","lat":38.830147,"lon":20.711814}"""
         const val LEFKAS_PORT = """{"id":"l-104","name":"Lefkas main port","locationType":"MARINA","countryCode":"GR","lat":38.832537,"lon":20.709771}"""
         const val PREVEZA = """{"id":"l-835,l-134","name":"Preveza Main Port","locationType":"MARINA","countryCode":"GR","lat":38.957648,"lon":20.755213}"""
+        const val EMPTY_NEXT_DOOR = """{"id":"l-777","name":"Empty Quay","locationType":"MARINA","countryCode":"GR","lat":38.8302,"lon":20.7119}"""
+        const val GLYFADA = """{"id":"l-824","name":"1st Marina Glyfada","locationType":"MARINA","countryCode":"GR","lat":37.86033,"lon":23.748732}"""
+        const val LAVRION = """{"id":"l-1069,l-150,l-2022","name":"Lavrion Main Port","locationType":"MARINA","countryCode":"GR","lat":37.71099,"lon":24.05771}"""
+        const val MYKONOS = """{"id":"l-300","name":"Mykonos","locationType":"MARINA","countryCode":"GR","lat":37.45,"lon":25.33}"""
         const val ALIMOS = """{"id":"l-1","name":"Alimos Marina","locationType":"MARINA","countryCode":"GR","lat":37.91,"lon":23.71}"""
         const val SUNDOWNER =
             """{"id":2745,"slug":"$SLUG","name":"Sundowner","modelName":"Lagoon 46","manufacturerName":"Lagoon","vesselType":"CATAMARAN","length":13.99,"cabins":4,"clientPriceEur":1245.857,"numberOfDays":7,"offerDateFrom":"2027-06-19","offerDateTo":"2027-06-26","location":{"name":"Preveza Main Port | Preveza","countryCode":"GR"}}"""
