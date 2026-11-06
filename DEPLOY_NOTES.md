@@ -1,5 +1,13 @@
 # Backend deploy notes
 
+## 2026-11-06 — IRIS: whole area, model and size, check one boat, verified prices — LIVE cusma2 21:32 UTC + cusma3 21:32:49 UTC (gate passed, both nodes on e60f9e32)
+
+- Jar md5 `e60f9e32c1bbb0e237029d1dd8c3f7a1` from `release/iris-area-model` (498ba66d) = live `release/bing-plus-pr` (3fa8ea8e: Bing query table + `feat/pr-module`) + `fix/iris-area-model-check` (3 commits). No migration (205/205, newest 9.121). `.prev` on both nodes = 3fa8ea8e.
+- Mario 6.11.2026 (Catamaran Greece, „Lagoon 46 or similar, 4 cabins, 19.-26.6.2027, Lefkada or Preveza“: IRIS searched one marina and said no Lagoon 46 was free). Every place is now its surroundings: the region found by name plus the marinas of that name plus every marina with boats within 40 km that the region does not hold (Trogir 103 -> 1033 boats, Lefkas 236 -> 635, Preveza 0 -> 635, Athens 842 -> 899 with Lavrion); several places in one call; models (catalogue ids) and orSimilar (length band in feet, asked models searched first); exact cabins; new tool `check_boat` (one boat for the dates, or its free weeks nearby); euro amounts no tool returned are sent back once and then dropped; BOATS ALREADY SHOWN in the prompt tail; 6 boats by default, 8 at most.
+- One independent Opus review: 0 critical, 7 important, all fixed with tests. Release build 2108 tests, 0 failed (JDK 21).
+- Live check 21:36 UTC (Catamaran Greece widget API, the incident question): 4 Lagoon 46 for the exact dates (Sundowner Preveza €8,721, PERGISOS Nydri €8,883, Selene €9,900, Aurora €10,260), all amounts = cards; „check the Alter Ego“ -> not free 19.-26.6., nearest free week 12.-19.6. Two test chat sessions were made; the first was locked by the security guard (its text claimed to be the team).
+- Until PR #8 (pr module) is merged, EVERY backend jar must carry `feat/pr-module` - and from now on also `fix/iris-area-model-check`.
+
 ## 2026-11-06 — Search engines: Bing query table per site and order (engine=BING) — LIVE cusma2 14:05 UTC + cusma3 17:56 UTC (gate passed, both nodes on 3fa8ea8e)
 
 - Jar `3fa8ea8e` from `release/bing-plus-pr` = `feat/cc-bing-query-table` (5de1176) + main 7f498d8 + `feat/pr-module` (98c46d0, live since 5.11. 13:08, V9_121, NOT on main).
