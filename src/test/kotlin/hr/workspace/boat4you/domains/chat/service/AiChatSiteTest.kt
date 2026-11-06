@@ -26,7 +26,7 @@ class AiChatSiteTest {
     fun `a sister-site session gets its own prompt and no blog tool`() {
         h.service.handleVisitorMessage(h.newSession(siteId = "catamaran-greece"), "catamaran in July")
         h.modelSystems.single().cached shouldStartWith "You are IRIS, the AI assistant of Catamaran Charter Greece"
-        h.modelTools.single()!!.map { it.path("name").asText() } shouldBe listOf("search_yachts", "request_human_agent", "show_itineraries", "save_contact")
+        h.modelTools.single()!!.map { it.path("name").asText() } shouldBe listOf("search_yachts", "check_boat", "request_human_agent", "show_itineraries", "save_contact")
     }
 
     @Test
