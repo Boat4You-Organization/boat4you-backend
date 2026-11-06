@@ -74,6 +74,8 @@ class AiChatToolAreaModelTest {
                         }
                         // the boat on its own, for the dates it is free (19.-26.6.2027) or without dates (its size)
                         q.containsKey("yid") && q["startDate"]?.single() !in listOf(null, "2027-06-19") -> """{"content":[],"page":{"totalElements":0}}"""
+                        // a 42 ft request: the 38-46 ft band, cheapest first
+                        q["minLength"]?.single() == "38" -> """{"content":[${SIZES.joinToString(",")}],"page":{"totalElements":${SIZES.size}}}"""
                         else -> """{"content":[$BALI_6,$SUNDOWNER],"page":{"totalElements":2}}"""
                     }.toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
@@ -136,9 +138,9 @@ class AiChatToolAreaModelTest {
 
         val queries = seen.filter { it.startsWith("/public/yachts?") && it.contains("startDate") }.map { params(it.substringAfter('?')) }
         queries.first()["mid"].orEmpty().toSet() shouldBe setOf("4028", "2107", "3001")
-        // Lagoon 46 13.99 m and (no Bali 4.2 boat, so the first one) 14.6 m: 45.9 and 47.9 ft, plus and minus 3
-        queries.last()["minLength"] shouldBe listOf("42")
-        queries.last()["maxLength"] shouldBe listOf("51")
+        // Lagoon 46 13.99 m and (no Bali 4.2 boat, so the first one) 14.6 m: 45.9 and 47.9 ft, plus and minus 4
+        queries.last()["minLength"] shouldBe listOf("41")
+        queries.last()["maxLength"] shouldBe listOf("52")
     }
 
     @Test
@@ -191,13 +193,26 @@ class AiChatToolAreaModelTest {
 
         val q = yachtsQuery()
         q.containsKey("mid") shouldBe false
-        // Lagoon 46 Sundowner is 13.99 m = 45.9 ft: 42 to 49 ft (the search API's length filter is in feet)
-        q["minLength"] shouldBe listOf("42")
-        q["maxLength"] shouldBe listOf("49")
+        // Lagoon 46 Sundowner is 13.99 m = 45.9 ft: 41 to 50 ft (the search API's length filter is in feet)
+        q["minLength"] shouldBe listOf("41")
+        q["maxLength"] shouldBe listOf("50")
         q["vesselType"].orEmpty() shouldContainAll listOf("CATAMARAN")
         out.path("yachts").map { it.path("yacht").asText() } shouldBe listOf("Lagoon 46 Sundowner", "Bali 4.8 Calypso")
         out.path("yachts")[0].path("match").asText() shouldBe "asked model"
         out.path("yachts")[1].path("match").asText() shouldBe "similar size"
+    }
+
+    @Test
+    fun `a 42 ft request shows 38 to 46 ft boats, spread over sizes and models, at most 8 (Mario 6_11_2026)`() {
+        val out = mapper.readTree(search("""{$june,"lengthFt":42,"limit":8}""").resultForModel)
+
+        yachtsQuery()["minLength"] shouldBe listOf("38")
+        yachtsQuery()["maxLength"] shouldBe listOf("46")
+        val boats = out.path("yachts").map { it.path("yacht").asText() }
+        // one at the asked size, one smaller, one bigger, each a model not shown yet; the second Lagoon 42 only at the end
+        boats shouldBe
+            listOf("Lagoon 42 A", "Bali 4.0 E", "Leopard 45 G", "Astrea 42 I", "Excess 12 F", "Lagoon 46 H", "Lagoon 40 D", "Lagoon 42 B")
+        out.path("yachts")[0].path("lengthFt").asInt() shouldBe 42
     }
 
     @Test
@@ -243,6 +258,16 @@ class AiChatToolAreaModelTest {
     }
 
     private companion object {
+        /** name, model, metres, EUR per day: the 38-46 ft band of a 42 ft request, in the API's price order. */
+        val SIZES =
+            listOf(
+                listOf("E", "Bali 4.0", 12.0, 571.43), listOf("F", "Excess 12", 11.8, 600.0), listOf("D", "Lagoon 40", 11.74, 642.86),
+                listOf("A", "Lagoon 42", 12.8, 714.29), listOf("B", "Lagoon 42", 12.8, 728.57), listOf("C", "Lagoon 42", 12.8, 742.86),
+                listOf("I", "Astrea 42", 12.8, 857.14), listOf("G", "Leopard 45", 13.7, 1142.86), listOf("H", "Lagoon 46", 13.99, 1285.71),
+            ).map { (n, m, len, day) ->
+                """{"slug":"s-$n","name":"$n","modelName":"$m","vesselType":"CATAMARAN","length":$len,"cabins":4,"clientPriceEur":$day,""" +
+                    """"numberOfDays":7,"offerDateFrom":"2027-06-19","offerDateTo":"2027-06-26","location":{"name":"Lefkas","countryCode":"GR"}}"""
+            }
         const val SLUG = "lagoon-46-sundowner-2745"
         const val D_MARIN = """{"id":"l-1865,l-259","name":"D-Marin Marina Lefkas","locationType":"MARINA","countryCode":"GR","lat":38.830147,"lon":20.711814}"""
         const val LEFKAS_PORT = """{"id":"l-104","name":"Lefkas main port","locationType":"MARINA","countryCode":"GR","lat":38.832537,"lon":20.709771}"""

@@ -20,6 +20,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
+import kotlin.math.roundToInt
 
 /**
  * Executes the assistant's tools against our OWN public search API on
@@ -97,7 +98,10 @@ class AiChatToolExecutor(
         const val MAX_CABINS = 30
 
         /** "Or similar": the asked model's length plus and minus this many feet (the search API's length filter is in feet). */
-        const val SIMILAR_FT = 3.0
+        const val SIMILAR_FT = 4.0
+
+        /** A boat within this many feet of the asked size counts as that size when the picks are spread (42 ft: 40.5-43.5). */
+        const val SAME_SIZE_FT = 1.5
         const val FEET_PER_METRE = 3.28084
 
         /** How long a country's marina list (with coordinates) is kept for the nearby lookup. */
@@ -248,6 +252,7 @@ class AiChatToolExecutor(
                 .distinctBy { it.lowercase() }
                 .take(MAX_MODELS)
         val orSimilar = input.path("orSimilar").asBoolean(false)
+        val lengthFt = input.path("lengthFt").asInt(0).takeIf { it in 10..200 }
         val minLengthFt = input.path("minLengthFt").asInt(0).takeIf { it in 10..200 }
         val maxLengthFt = input.path("maxLengthFt").asInt(0).takeIf { it in 10..200 }
         val minCabins = input.path("minCabins").asInt(0).coerceIn(0, MAX_CABINS)
@@ -357,7 +362,11 @@ class AiChatToolExecutor(
                 }
             }
         val lengths = references.map { it.path("length").asDouble(0.0) * FEET_PER_METRE }.filter { it > 0 }
-        val band = lengths.takeIf { it.isNotEmpty() }?.let { kotlin.math.floor(it.min() - SIMILAR_FT).toInt() to kotlin.math.ceil(it.max() + SIMILAR_FT).toInt() }
+        // Mario 6.11.2026: "a 42 ft catamaran" gets 40 and 46 ft boats too, "46 ft" 42 to 48 - a size is a band around it.
+        val band =
+            lengths.takeIf { it.isNotEmpty() }?.let { kotlin.math.floor(it.min() - SIMILAR_FT).toInt() to kotlin.math.ceil(it.max() + SIMILAR_FT).toInt() }
+                ?: lengthFt?.takeIf { mids.isEmpty() }?.let { (it - SIMILAR_FT).toInt() to (it + SIMILAR_FT).toInt() }
+        val targetFt = lengths.takeIf { it.isNotEmpty() }?.average() ?: lengthFt?.toDouble()?.takeIf { band != null }
         val similarType = references.firstOrNull()?.path("vesselType")?.asText("")?.takeIf { it in VESSEL_TYPES && types.isEmpty() }
 
         fun uri(byModel: Boolean) =
@@ -413,13 +422,18 @@ class AiChatToolExecutor(
                 pages.flatMap { it.path("content").toList() }.distinctBy { it.path("slug").asText() }
                     .sortedBy { if (isAskedModel(it, askedModelNames)) 0 else 1 }
             }
-        for (y in ordered) {
+        val eligible =
+            ordered.mapNotNull { y ->
+                if (!inFleet(site, y)) return@mapNotNull null
+                val offer = pricedOffer(y, days, startDate, endDate) ?: return@mapNotNull null
+                if (maxTotalPriceEur in 1 until offer.total) return@mapNotNull null
+                if (minTotalPriceEur > 0 && offer.total < minTotalPriceEur) return@mapNotNull null
+                y to offer
+            }
+        val picked = targetFt?.let { spread(eligible, it, askedModelNames, limit) } ?: eligible
+        for ((y, offer) in picked) {
             if (taken >= limit) break
-            if (!inFleet(site, y)) continue
-            val offer = pricedOffer(y, days, startDate, endDate) ?: continue
             val total = offer.total
-            if (maxTotalPriceEur in 1 until total) continue
-            if (minTotalPriceEur > 0 && total < minTotalPriceEur) continue
             val slug = y.path("slug").asText()
             val label = listOf(y.path("modelName").asText(""), y.path("name").asText(""))
                 .filter { it.isNotBlank() }.joinToString(" ")
@@ -432,7 +446,8 @@ class AiChatToolExecutor(
                     put("endDate", offer.to)
                     put("nights", offer.nights)
                     put("dates", offer.dates)
-                    if (band != null) put("match", if (isAskedModel(y, askedModelNames)) "asked model" else "similar size")
+                    if (band != null && askedModelNames.isNotEmpty()) put("match", if (isAskedModel(y, askedModelNames)) "asked model" else "similar size")
+                    y.path("length").asDouble(0.0).takeIf { it > 0 && band != null }?.let { put("lengthFt", (it * FEET_PER_METRE).roundToInt()) }
                     // Partner figures only when known (> 0) - an absent key, never a 0 the model would repeat.
                     putPositive("cabins", y.path("cabins"))
                     putPositive("berths", y.path("berths"))
@@ -530,6 +545,45 @@ class AiChatToolExecutor(
             if (taken > 0) cards else null,
             search = criteria(resolved, sentEquipment, taken, totalAvailable),
         )
+    }
+
+    /**
+     * Mario 6.11.2026: "always varied around what they ask, never more than 8". From the boats of a size band (price
+     * order): the asked models first, at most half of the [limit]; then in turn one at the asked size, one smaller, one
+     * bigger, each the cheapest of a model not shown yet (repeats only when the models run out). Boats without a known
+     * length come last.
+     */
+    private fun spread(
+        boats: List<Pair<JsonNode, PricedOffer>>,
+        targetFt: Double,
+        askedModels: Collection<String>,
+        limit: Int,
+    ): List<Pair<JsonNode, PricedOffer>> {
+        val chosen = mutableListOf<Pair<JsonNode, PricedOffer>>()
+        val asked = boats.filter { isAskedModel(it.first, askedModels) }
+        chosen += asked.take((limit + 1) / 2)
+        fun feet(b: Pair<JsonNode, PricedOffer>) = b.first.path("length").asDouble(0.0) * FEET_PER_METRE
+        fun model(b: Pair<JsonNode, PricedOffer>) = "${b.first.path("manufacturerName").asText("")} ${b.first.path("modelName").asText("")}".trim().lowercase()
+        val rest = boats.filter { it !in chosen && feet(it) > 0 }
+        val buckets =
+            listOf(
+                rest.filter { kotlin.math.abs(feet(it) - targetFt) <= SAME_SIZE_FT },
+                rest.filter { feet(it) - targetFt < -SAME_SIZE_FT },
+                rest.filter { feet(it) - targetFt > SAME_SIZE_FT },
+            ).map { it.toMutableList() }
+        val models = chosen.map { model(it) }.toMutableSet()
+        while (chosen.size < limit && buckets.any { it.isNotEmpty() }) {
+            for (bucket in buckets) {
+                if (chosen.size >= limit) break
+                val next = bucket.firstOrNull { model(it) !in models } ?: bucket.firstOrNull().takeIf { buckets.all { b -> b.none { model(it) !in models } } }
+                next ?: continue
+                bucket.remove(next)
+                chosen += next
+                models += model(next)
+            }
+        }
+        chosen += boats.filter { it !in chosen }
+        return chosen
     }
 
     /** The period total of one search row and the window it is for; [dates] = "exact" | "nearby". */
@@ -1180,6 +1234,12 @@ class AiChatToolExecutor(
                     "description",
                     "With models, when the visitor says \"or similar\": the asked models AND boats of the same type and length " +
                         "(within $SIMILAR_FT ft), the asked models listed first; each boat's match says which it is",
+                )
+            it.putObject("lengthFt").put("type", "integer")
+                .put(
+                    "description",
+                    "The size the visitor asks for in feet (\"a 42 ft catamaran\"; metres x 3.28): boats within $SIMILAR_FT ft of it, " +
+                        "spread over smaller, the same and bigger sizes and different models",
                 )
             it.putObject("minLengthFt").put("type", "integer").put("description", "Optional minimum length in feet")
             it.putObject("maxLengthFt").put("type", "integer").put("description", "Optional maximum length in feet")
