@@ -100,6 +100,8 @@ class AiChatToolAreaModelTest {
 
         dids() shouldContainAll listOf("l-1865", "l-259", "l-104", "l-835", "l-134")
         dids() shouldNotContain "l-1" // Alimos, 280 km away
+        // one id per did: the search splits a merged "l-1865,l-259" only when it is the single did value (review 6.11.2026)
+        yachtsQuery()["did"].orEmpty().none { it.contains(',') } shouldBe true
         out.path("searchedArea").asText() shouldContain "Preveza Main Port"
         out.path("searchedArea").asText() shouldContain "Lefkas main port"
     }
@@ -109,6 +111,34 @@ class AiChatToolAreaModelTest {
         search("""{$june,"locations":["Lefkas","Alimos"]}""")
 
         dids() shouldContainAll listOf("l-1865", "l-104", "l-835", "l-1")
+    }
+
+    @Test
+    fun `four long place names still fit the search log's location column`() {
+        val long = (1..4).map { "Placename number $it with a long name" }
+        search("""{$june,"locations":${mapper.writeValueAsString(long)}}""").search!!.location!!.length shouldBe 80
+    }
+
+    @Test
+    fun `or similar with two models spans both and searches the models on their own first`() {
+        search("""{$june,"models":["Lagoon 46","Bali 4.2"],"orSimilar":true}""")
+
+        val queries = seen.filter { it.startsWith("/public/yachts?") && it.contains("startDate") }.map { params(it.substringAfter('?')) }
+        queries.first()["mid"].orEmpty().toSet() shouldBe setOf("4028", "2107", "3001")
+        // Lagoon 46 13.99 m and (no Bali 4.2 boat, so the first one) 14.6 m: 45.9 and 47.9 ft, plus and minus 3
+        queries.last()["minLength"] shouldBe listOf("42")
+        queries.last()["maxLength"] shouldBe listOf("51")
+    }
+
+    @Test
+    fun `a window search names an unknown model and looks models up once for all its weeks`() {
+        val out = mapper.readTree(
+            tools.searchYachts(mapper.readTree("""{"countryCode":"GR","windowStart":"2027-06-19","windowEnd":"2027-07-03","models":["Lagoon 46","Nautitech 99"]}"""), greece)
+                .resultForModel,
+        )
+        out.path("modelNote").asText() shouldContain "Nautitech 99"
+        out.path("modelFilter").asText() shouldContain "Lagoon 46"
+        seen.count { it.startsWith("/public/catalogue/manufacturers") } shouldBe 2
     }
 
     @Test
@@ -169,6 +199,9 @@ class AiChatToolAreaModelTest {
         result.path("base").asText() shouldBe "Preveza Main Port | Preveza"
         params(seen.last { it.startsWith("/public/yachts?") }.substringAfter('?'))["yid"] shouldBe listOf("2745")
         free.cards!!.size() shouldBe 1
+        // a page address in another case is the same boat
+        mapper.readTree(tools.checkBoat(mapper.readTree("""{"startDate":"2027-06-19","endDate":"2027-06-26"}"""), page.uppercase().replace("HTTPS://WWW.CATAMARAN-CHARTER-GREECE.COM/CATAMARANS/", "https://www.catamaran-charter-greece.com/catamarans/"), greece).resultForModel)
+            .path("available").asBoolean() shouldBe true
 
         val taken = mapper.readTree(tools.checkBoat(mapper.readTree("""{"boat":"$SLUG","startDate":"2027-07-03","endDate":"2027-07-10"}"""), null, greece).resultForModel)
         taken.path("available").asBoolean() shouldBe false

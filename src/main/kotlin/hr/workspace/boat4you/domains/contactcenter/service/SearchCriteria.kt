@@ -27,6 +27,9 @@ data class SearchCriteria(
     val searchedArea: String?,
 ) {
     companion object {
+        /** `cc_search.location` is VARCHAR(80): several places of one chat search are cut to it (review 6.11.2026). */
+        const val LOCATION_MAX = 80
+
         /** The dates a stored search may carry: `LocalDate.parse` accepts years up to 999999999, PostgreSQL `DATE` does not. */
         private val EARLIEST = LocalDate.of(2000, 1, 1)
         private val LATEST = LocalDate.of(2100, 12, 31)

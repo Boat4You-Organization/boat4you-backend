@@ -637,7 +637,14 @@ class AiChatService(
         // Every total a tool returned in this chat, and what the visitor wrote: the amounts a reply may name (Mario 6.11.2026).
         val stored = messages.findAllBySessionIdOrderByIdAsc(session.id!!)
         val shownCards = stored.flatMap { m -> cardsOf(m.payload) }
-        val knownTotals = shownCards.mapNotNull { it.path("totalPriceEur").asInt(0).takeIf { t -> t > 0 } }.toMutableSet()
+        // Amounts already said in this chat count too (review 6.11.2026): a window search lists more boats than its cards,
+        // and a broker's line names prices no card carries.
+        val knownTotals =
+            (
+                shownCards.mapNotNull { it.path("totalPriceEur").asInt(0).takeIf { t -> t > 0 } } +
+                    stored.filter { it.role == AiChatMessage.ROLE_ASSISTANT || it.role == AiChatMessage.ROLE_ADMIN }
+                        .flatMap { ReplyPriceCheck.amounts(it.content ?: "") }
+            ).toMutableSet()
         val visitorText = stored.filter { it.role == AiChatMessage.ROLE_USER }.joinToString("\n") { it.content ?: "" }
         var pendingCards: ArrayNode? = null
         var pendingBlogs: ArrayNode? = null
@@ -803,6 +810,7 @@ class AiChatService(
      * (Mario 6.11.2026: "Lagoon 51 €18,000 approx") send it back to the model once, with tools off and the amounts named;
      * a second reply that still has them loses the sentences that carry them.
      */
+    @Suppress("TooGenericExceptionCaught")
     private fun checkedPrices(
         session: AiChatSession,
         system: AnthropicClient.SystemPrompt,
@@ -819,13 +827,20 @@ class AiChatService(
         history.add(
             objectMapper.createObjectNode().put("role", "user").put(
                 "content",
-                "PRICE CHECK (from the system, not the visitor): your reply names amounts that are in no search_yachts or check_boat " +
-                    "result of this chat: ${bad.joinToString(", ")} EUR. Write the reply to the visitor again, quoting only totals from " +
+                "PRICE CHECK (from the system, not the visitor): your reply names amounts that none of your searches or boat checks " +
+                    "in this chat returned: ${bad.joinToString(", ")} EUR. Write the reply to the visitor again, quoting only totals from " +
                     "those results or from BOATS ALREADY SHOWN, never an estimate or an approximate price. Where you have no price, " +
                     "offer to check it.",
             ),
         )
-        val again = textsOf(anthropic.createMessage(system, history, toolDefs, REPLY_TOKENS, toolsOff = true).path("content")).joinToString("\n")
+        // A failed second call never costs the visitor the first reply and its cards: it goes out without those sentences.
+        val again =
+            try {
+                textsOf(anthropic.createMessage(system, history, toolDefs, REPLY_TOKENS, toolsOff = true).path("content")).joinToString("\n")
+            } catch (e: Exception) {
+                log.warn("chat price re-ask of session {} failed: {}", session.id, e.toString())
+                return ReplyPriceCheck.withoutAmounts(text, bad)
+            }
         val still = ReplyPriceCheck.unverified(again, known, visitorText)
         if (still.isEmpty()) return again
         log.warn("chat reply of session {} named amounts no tool returned twice {}: those sentences removed", session.id, still)

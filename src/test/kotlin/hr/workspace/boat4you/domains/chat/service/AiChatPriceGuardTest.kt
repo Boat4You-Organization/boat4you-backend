@@ -67,6 +67,31 @@ class AiChatPriceGuardTest {
     }
 
     @Test
+    fun `when the second call fails the first reply goes out without the invented sentence`() {
+        val s = h.newSession()
+        val queue =
+            ArrayDeque(
+                listOf<() -> JsonNode>(
+                    { h.toolCall("search_yachts", search) },
+                    { h.textReply("The Bali 4.8 is €13,357. A Lagoon 51 would be about €18,000.") },
+                    { throw IllegalStateException("call limit reached") },
+                ),
+            )
+        h.modelReply = { queue.removeFirst()() }
+        h.service.handleVisitorMessage(s, "Lagoon 46 or similar, 19-26 June 2027")
+        lastAssistant(s) shouldBe "The Bali 4.8 is €13,357."
+    }
+
+    @Test
+    fun `an amount the chat already said is known`() {
+        val s = h.newSession()
+        h.addMessage(s, AiChatMessage.ROLE_ADMIN, "The skipper is €1,400 for the week.", 4)
+        replies(h.textReply("The skipper costs €1,400 for the week, as my colleague wrote."))
+        h.service.handleVisitorMessage(s, "and the skipper?")
+        lastAssistant(s) shouldBe "The skipper costs €1,400 for the week, as my colleague wrote."
+    }
+
+    @Test
     fun `the boats shown earlier in the chat are known amounts and are listed for the model`() {
         val s = h.newSession()
         h.addMessage(s, AiChatMessage.ROLE_USER, "Catamaran in Lefkas 19-26 June 2027", 5)

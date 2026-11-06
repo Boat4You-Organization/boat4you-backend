@@ -17,20 +17,30 @@ object ReplyPriceCheck {
     /** A per-person share of a total: for groups of 2 to this many. */
     private const val MAX_SHARE = 16
 
-    private const val NUMBER = """\d{1,3}(?:[.,   ]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?"""
-    private val CURRENCY_FIRST = Regex("""(?:€|\bEUR\b|\beur\b)\s?($NUMBER)\s?([kK]\b)?""")
-    private val CURRENCY_AFTER = Regex("""(?<![\d.,])($NUMBER)\s?([kK])?\s?(?:€|\bEUR\b|\beur\b|\beuros?\b)""", RegexOption.IGNORE_CASE)
-    private val ANY_NUMBER = Regex("""(?<![\d.,])($NUMBER)\s?([kK]\b)?""")
-    private val SENTENCE_END = Regex("""(?<=[.!?])\s+""")
+    /** A number with thousands groups ("13,357", "14.582", "9 950") or without; a group never runs into the next digits. */
+    private const val NUMBER = """\d{1,3}(?:[.,\u00A0\u202F ]\d{3}(?!\d))+(?:[.,]\d{1,2}(?!\d))?|\d+(?:[.,]\d{1,2}(?!\d))?"""
+    private const val CURRENCY = """(?:€|\beur(?:os?|a)?\b)"""
+    private val CURRENCY_FIRST = Regex("""(?:€|\beur(?:os?|a)?)\s?($NUMBER)(?:\s?(k)(?!\p{L}))?""", RegexOption.IGNORE_CASE)
+    private val CURRENCY_AFTER = Regex("""(?<![\d.,])($NUMBER)\s?(k)?\s?$CURRENCY""", RegexOption.IGNORE_CASE)
+    private val ANY_NUMBER = Regex("""(?<![\d.,])($NUMBER)(?:\s?(k)(?!\p{L}))?""", RegexOption.IGNORE_CASE)
+    private val YEAR = Regex("""^(?:19|20)\d\d$""")
 
-    /** The euro amounts of [text] of at least [MIN_AMOUNT], in the order they appear ("€13,357", "14.582 €", "€18k"). */
-    fun amounts(text: String): List<Int> =
-        (CURRENCY_FIRST.findAll(text) + CURRENCY_AFTER.findAll(text))
+    /** A sentence ends before a capital letter (so "approx. €18,000" stays one sentence). */
+    private val SENTENCE_END = Regex("""(?<=[.!?])\s+(?=\p{Lu})""")
+
+    /**
+     * The euro amounts of [text] of at least [MIN_AMOUNT], in the order they appear ("€13,357", "14.582 €", "€18k",
+     * "EUR18000"). A currency sign between two numbers belongs to the one before it ("13,357 € 2027"); a bare year never
+     * takes the sign ("2027 €13,357").
+     */
+    fun amounts(text: String): List<Int> {
+        val after = CURRENCY_AFTER.findAll(text).filterNot { YEAR.matches(it.groupValues[1]) }.toList()
+        val first = CURRENCY_FIRST.findAll(text).filter { m -> after.none { m.range.first in it.range } }.toList()
+        return (after + first)
             .sortedBy { it.range.first }
-            .distinctBy { it.range.first }
             .mapNotNull { m -> value(m.groupValues[1], m.groupValues[2].isNotEmpty()) }
             .filter { it >= MIN_AMOUNT }
-            .toList()
+    }
 
     /** The amounts of [reply] that no tool total in [known] and nothing in [visitorText] accounts for. */
     fun unverified(reply: String, known: Collection<Int>, visitorText: String): List<Int> {

@@ -88,6 +88,9 @@ class AiChatToolExecutor(
         const val MAX_MODELS = 4
         const val MAX_DIDS = 40
 
+        /** Cabins a search may ask for: the search API binds them as a 16-bit number. */
+        const val MAX_CABINS = 30
+
         /** "Or similar": the asked model's length plus and minus this many feet (the search API's length filter is in feet). */
         const val SIMILAR_FT = 3.0
         const val FEET_PER_METRE = 3.28084
@@ -158,7 +161,7 @@ class AiChatToolExecutor(
         var first: JsonNode? = null
         var firstSearch: SearchCriteria? = null
         var totalAvailable = 0
-        val places = mutableMapOf<String, Resolution>() // one place lookup for all weeks of the window
+        val cache = WindowCache() // one place and model lookup for all weeks of the window
         for (saturday in saturdays.take(MAX_WINDOW_WEEKS)) {
             val week =
                 (input.deepCopy<JsonNode>() as ObjectNode).apply {
@@ -167,7 +170,7 @@ class AiChatToolExecutor(
                     put("endDate", saturday.plusDays(7).toString())
                     put("limit", 6)
                 }
-            val outcome = searchPeriod(week, site, locale, places)
+            val outcome = searchPeriod(week, site, locale, cache)
             val parsed = objectMapper.readTree(outcome.resultForModel)
             if (parsed.has("error")) return outcome
             if (first == null) {
@@ -198,7 +201,7 @@ class AiChatToolExecutor(
                 put("totalAvailable", totalAvailable)
                 put("sortedBy", if (desc) "price descending" else "price ascending")
                 put("window", "each boat at its cheapest Saturday-to-Saturday week in $from - $to")
-                listOf("searchedArea", "equipmentNote", "vesselNote").forEach { key -> first?.get(key)?.let { set<JsonNode>(key, it) } }
+                listOf("searchedArea", "equipmentNote", "vesselNote", "modelFilter", "modelNote").forEach { key -> first?.get(key)?.let { set<JsonNode>(key, it) } }
                 set<JsonNode>("weeks", weeks)
                 if (saturdays.size > MAX_WINDOW_WEEKS) {
                     put(
@@ -221,7 +224,7 @@ class AiChatToolExecutor(
         input: JsonNode,
         site: AiSiteProfile,
         locale: String,
-        places: MutableMap<String, Resolution>? = null,
+        cache: WindowCache? = null,
     ): ToolOutcome {
         val countryCode = input.path("countryCode").asText("").trim().uppercase().take(2).takeIf { COUNTRY_CODE.matches(it) } ?: ""
         val startDate = input.path("startDate").asText("")
@@ -242,8 +245,8 @@ class AiChatToolExecutor(
         val orSimilar = input.path("orSimilar").asBoolean(false)
         val minLengthFt = input.path("minLengthFt").asInt(0).takeIf { it in 10..200 }
         val maxLengthFt = input.path("maxLengthFt").asInt(0).takeIf { it in 10..200 }
-        val minCabins = input.path("minCabins").asInt(0)
-        val maxCabins = input.path("maxCabins").asInt(0).takeIf { it > 0 && it >= minCabins }
+        val minCabins = input.path("minCabins").asInt(0).coerceIn(0, MAX_CABINS)
+        val maxCabins = input.path("maxCabins").asInt(0).takeIf { it in 1..MAX_CABINS && it >= minCabins }
         val minPersons = input.path("minPersons").asInt(0)
         val maxTotalPriceEur = input.path("maxTotalPriceEur").asInt(0)
         val minTotalPriceEur = input.path("minTotalPriceEur").asInt(0)
@@ -268,7 +271,7 @@ class AiChatToolExecutor(
             totalAvailable: Int?,
         ) = SearchCriteria(
             countryCode = countryCode.takeIf { it.isNotBlank() },
-            location = location.takeIf { it.isNotBlank() },
+            location = location.takeIf { it.isNotBlank() }?.take(SearchCriteria.LOCATION_MAX),
             did = resolved?.did?.toLongOrNull(),
             startDate = SearchCriteria.parseDate(startDate),
             endDate = SearchCriteria.parseDate(endDate),
@@ -315,7 +318,7 @@ class AiChatToolExecutor(
         // the same autocomplete the website's "Where" field uses and pass its did.
         val resolutions =
             askedPlaces.map { place ->
-                places?.getOrPut("$countryCode|$place") { resolveDestination(place, countryCode, site) }
+                cache?.places?.getOrPut("$countryCode|$place") { resolveDestination(place, countryCode, site) }
                     ?: resolveDestination(place, countryCode, site)
             }
         // Refused only when every place the visitor named lies outside the fleet; one inside is searched.
@@ -330,66 +333,81 @@ class AiChatToolExecutor(
         val found = resolutions.mapNotNull { it.place }
         // The cc_search log keeps one area: the first place, named as it was searched.
         val resolved = found.firstOrNull()?.let { if (found.size == 1) it else it.copy(name = found.joinToString(" + ") { p -> p.name }) }
-        val dids = found.flatMap { it.dids }.distinct().take(MAX_DIDS)
+        val dids = found.flatMap { it.dids.take(MAX_DIDS / found.size) }.distinct()
         val equipmentIds = equipment.mapNotNull { amenityId(it) }
         val sentEquipment = equipment.filter { amenityId(it) != null }
 
         // A model is a filter (its catalogue variants: "Lagoon 46" is also "Lagoon 46 Fly"); with orSimilar its length band.
-        val modelIds = models.associateWith { resolveModel(it) }
+        val modelIds = models.associateWith { m -> cache?.models?.getOrPut(m.lowercase()) { resolveModel(m) } ?: resolveModel(m) }
         val mids = modelIds.values.flatten().distinct()
         val askedModelNames = modelIds.filterValues { it.isNotEmpty() }.keys
-        val reference = if (orSimilar && mids.isNotEmpty()) referenceBoat(mids, askedModelNames) else null
-        val band =
-            reference?.path("length")?.asDouble(0.0)?.takeIf { it > 0 }?.let { metres ->
-                val feet = metres * FEET_PER_METRE
-                kotlin.math.floor(feet - SIMILAR_FT).toInt() to kotlin.math.ceil(feet + SIMILAR_FT).toInt()
-            }
-        val similarType = reference?.path("vesselType")?.asText("")?.takeIf { it in VESSEL_TYPES && types.isEmpty() }
-
-        val uri = UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts")
-            .queryParam("startDate", startDate)
-            .queryParam("endDate", endDate)
-            .queryParam("currency", "EUR")
-            .queryParam("size", 50)
-            .queryParam("page", 0)
-            .queryParam("sortBy", sortByPrice)
-            .apply {
-                if (dids.isNotEmpty()) queryParam("did", *dids.toTypedArray()) else queryParam("countryCodes", countryCode)
-                if (types.isNotEmpty()) queryParam("vesselType", *types.toTypedArray())
-                similarType?.let { queryParam("vesselType", it) }
-                if (minCabins > 0) queryParam("minCabins", minCabins)
-                maxCabins?.let { queryParam("maxCabins", it) }
-                if (minPersons > 0) queryParam("minPersons", minPersons)
-                if (equipmentIds.isNotEmpty()) queryParam("amenities", equipmentIds)
-                when {
-                    band != null -> queryParam("minLength", band.first).queryParam("maxLength", band.second)
-                    mids.isNotEmpty() -> queryParam("mid", *mids.toTypedArray())
-                    else -> {
-                        minLengthFt?.let { queryParam("minLength", it) }
-                        maxLengthFt?.let { queryParam("maxLength", it) }
-                    }
+        // "Or similar" (review 6.11.2026): the band spans every asked model - one reference boat each, Lagoon 46 to 52 -
+        // and the asked models are searched on their own first, so cheaper similar boats never push them off the page.
+        val references =
+            if (!orSimilar) {
+                emptyList()
+            } else {
+                modelIds.filterValues { it.isNotEmpty() }.mapNotNull { (name, ids) ->
+                    cache?.references?.getOrPut(name.lowercase()) { referenceBoat(ids, listOf(name)) } ?: referenceBoat(ids, listOf(name))
                 }
             }
-            .build().encode().toUri()
+        val lengths = references.map { it.path("length").asDouble(0.0) * FEET_PER_METRE }.filter { it > 0 }
+        val band = lengths.takeIf { it.isNotEmpty() }?.let { kotlin.math.floor(it.min() - SIMILAR_FT).toInt() to kotlin.math.ceil(it.max() + SIMILAR_FT).toInt() }
+        val similarType = references.firstOrNull()?.path("vesselType")?.asText("")?.takeIf { it in VESSEL_TYPES && types.isEmpty() }
 
-        val body = try {
-            client.get().uri(uri).retrieve().body(String::class.java)
-        } catch (e: Exception) {
-            log.warn("chat search_yachts failed: ${e.message}")
-            return ToolOutcome(
-                """{"error":"search temporarily unavailable, apologize and suggest trying again"}""",
-                search = criteria(resolved, sentEquipment, 0, null),
-            )
-        }
+        fun uri(byModel: Boolean) =
+            UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts")
+                .queryParam("startDate", startDate)
+                .queryParam("endDate", endDate)
+                .queryParam("currency", "EUR")
+                .queryParam("size", 50)
+                .queryParam("page", 0)
+                .queryParam("sortBy", sortByPrice)
+                .apply {
+                    if (dids.isNotEmpty()) queryParam("did", *dids.toTypedArray()) else queryParam("countryCodes", countryCode)
+                    if (types.isNotEmpty()) queryParam("vesselType", *types.toTypedArray())
+                    similarType?.let { queryParam("vesselType", it) }
+                    if (minCabins > 0) queryParam("minCabins", minCabins)
+                    maxCabins?.let { queryParam("maxCabins", it) }
+                    if (minPersons > 0) queryParam("minPersons", minPersons)
+                    if (equipmentIds.isNotEmpty()) queryParam("amenities", equipmentIds)
+                    when {
+                        byModel -> queryParam("mid", *mids.toTypedArray())
+                        band != null -> queryParam("minLength", band.first).queryParam("maxLength", band.second)
+                        else -> {
+                            minLengthFt?.let { queryParam("minLength", it) }
+                            maxLengthFt?.let { queryParam("maxLength", it) }
+                        }
+                    }
+                }
+                .build().encode().toUri()
 
-        val parsed = objectMapper.readTree(body)
-        val content = parsed.path("content")
-        val totalAvailable = parsed.path("page").path("totalElements").asInt(content.size())
+        val pages =
+            try {
+                listOfNotNull(
+                    if (mids.isNotEmpty()) objectMapper.readTree(client.get().uri(uri(byModel = true)).retrieve().body(String::class.java)) else null,
+                    if (mids.isEmpty() || band != null) objectMapper.readTree(client.get().uri(uri(byModel = false)).retrieve().body(String::class.java)) else null,
+                )
+            } catch (e: Exception) {
+                log.warn("chat search_yachts failed: ${e.message}")
+                return ToolOutcome(
+                    """{"error":"search temporarily unavailable, apologize and suggest trying again"}""",
+                    search = criteria(resolved, sentEquipment, 0, null),
+                )
+            }
+
+        val totalAvailable = pages.maxOf { it.path("page").path("totalElements").asInt(it.path("content").size()) }
         val forModel = objectMapper.createArrayNode()
         val cards = objectMapper.createArrayNode()
         var taken = 0
-        // "Or similar": the boats of the asked model first, then the similar ones, each group in the API's price order.
-        val ordered = if (band != null) content.sortedBy { if (isAskedModel(it, askedModelNames)) 0 else 1 } else content.toList()
+        // "Or similar": the boats of the asked models first, then the similar ones, each group in the API's price order.
+        val ordered =
+            if (pages.size == 1) {
+                pages.single().path("content").toList()
+            } else {
+                pages.flatMap { it.path("content").toList() }.distinctBy { it.path("slug").asText() }
+                    .sortedBy { if (isAskedModel(it, askedModelNames)) 0 else 1 }
+            }
         for (y in ordered) {
             if (taken >= limit) break
             if (!inFleet(site, y)) continue
@@ -485,7 +503,12 @@ class AiChatToolExecutor(
                 )
             }
             (models - askedModelNames).takeIf { it.isNotEmpty() }?.let {
-                put("modelNote", "not in our catalogue, not filtered: ${it.joinToString(", ")} - ask the visitor or search by size")
+                put(
+                    "modelNote",
+                    "could not match ${it.joinToString(", ")} to our catalogue, so it was NOT filtered and the boats listed may be other " +
+                        "models - never call them that model and never say we do not have it; search again with the manufacturer " +
+                        "first (\"Jeanneau Sun Odyssey 410\") or by size (minLengthFt/maxLengthFt)",
+                )
             }
             if (equipment.isNotEmpty() && equipmentIds.size < equipment.size) {
                 put("equipmentNote", "some requested equipment filters are unknown and were ignored: " +
@@ -532,6 +555,13 @@ class AiChatToolExecutor(
     /** A search row's ISO date (yyyy-MM-dd), or null when it is missing or not a date. */
     private fun isoDate(node: JsonNode): String? =
         node.asText("").takeIf { it.isNotBlank() }?.let { runCatching { LocalDate.parse(it).toString() }.getOrNull() }
+
+    /** The lookups of one window search, made once for all its weeks (review 6.11.2026: models were resolved per week). */
+    private class WindowCache {
+        val places = mutableMapOf<String, Resolution>()
+        val models = mutableMapOf<String, List<Long>>()
+        val references = mutableMapOf<String, JsonNode?>()
+    }
 
     /**
      * A searched place: [did] is the first search id (the cc_search log keeps it), [dids] every id searched for it. A
@@ -615,12 +645,13 @@ class AiChatToolExecutor(
         }
         // A marina name (Mario 6.11.2026: "Lefkas" was D-Marin only, never Lefkas main port or Preveza 15 km away): every
         // marina of that name, then every marina of the country within NEARBY_KM of one of them.
-        val named = rows.filter { it.path("locationType").asText() == "MARINA" && it.path("id").asText().isNotBlank() }
-        val namedIds = named.map { it.path("id").asText() }.toSet()
+        val named = rows.filter { it.path("locationType").asText() == "MARINA" && idsOf(it).isNotEmpty() }
+        if (named.isEmpty()) return Resolution(null, null)
+        val namedIds = named.flatMap { idsOf(it) }.toSet()
         val country = named.first().path("countryCode").asText("").uppercase()
         val nearby =
             marinasOf(country).filter { m ->
-                m.path("id").asText() !in namedIds &&
+                idsOf(m).none { it in namedIds } &&
                     named.any { n -> distanceKm(n, m)?.let { it <= NEARBY_KM } == true }
             }
         return Resolution(
@@ -628,13 +659,19 @@ class AiChatToolExecutor(
                 did = best.path("id").asText(),
                 name = if (named.size == 1 && nearby.isEmpty()) best.path("name").asText() else query,
                 type = "MARINA",
-                dids = (named + nearby).map { it.path("id").asText() },
+                dids = (named + nearby).flatMap { idsOf(it) }.distinct(),
                 marinas = named.map { it.path("name").asText() },
                 nearby = nearby.map { it.path("name").asText() },
             ),
             null,
         )
     }
+
+    /**
+     * The single search ids of a location row: a merged dual-source marina is "l-1865,l-259", and the search splits a
+     * comma only when it is the one did value (review 6.11.2026), so every id goes as its own did.
+     */
+    private fun idsOf(row: JsonNode): List<String> = row.path("id").asText("").split(',').map { it.trim() }.filter { it.isNotBlank() }
 
     private val marinas = java.util.concurrent.ConcurrentHashMap<String, Pair<java.time.Instant, List<JsonNode>>>()
 
@@ -649,7 +686,7 @@ class AiChatToolExecutor(
                     .uri(UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/marinas").queryParam("countryCode", country).build().encode().toUri())
                     .retrieve().body(String::class.java)
                     .let { objectMapper.readTree(it) }
-                    .filter { it.path("lat").isNumber && it.path("lon").isNumber && it.path("id").asText().isNotBlank() }
+                    .filter { it.path("lat").isNumber && it.path("lon").isNumber && idsOf(it).isNotEmpty() }
             } catch (e: Exception) {
                 log.warn("chat marinas of {} failed: {}", country, e.message)
                 return emptyList()
@@ -782,7 +819,7 @@ class AiChatToolExecutor(
             when {
                 asked.isNotBlank() -> asked.takeIf { SLUG.matches(it) }
                 page.isNullOrBlank() -> null
-                else -> Regex(Regex.escape(site.boatPath) + "([a-z0-9-]+)").find(page)?.groupValues?.get(1)
+                else -> Regex(Regex.escape(site.boatPath) + "([A-Za-z0-9-]+)").find(page)?.groupValues?.get(1)?.lowercase()?.takeIf { SLUG.matches(it) }
             } ?: return ToolOutcome("""{"error":"no boat to check - pass the boat's slug from a card or ask the visitor which boat"}""")
         val startDate = input.path("startDate").asText("")
         val endDate = input.path("endDate").asText("")
@@ -820,7 +857,9 @@ class AiChatToolExecutor(
                 log.warn("chat check_boat search failed for '{}': {}", slug, e.message)
                 return ToolOutcome("""{"error":"check temporarily unavailable, apologize and suggest trying again"}""")
             }
-        val row = objectMapper.readTree(body).path("content").firstOrNull { it.path("id").asLong(0) == id || it.path("slug").asText() == slug }
+        val row =
+            objectMapper.readTree(body).path("content")
+                .firstOrNull { (it.path("id").asLong(0) == id || it.path("slug").asText() == slug) && inFleet(site, it) }
         val offer = row?.let { pricedOffer(it, nights, startDate, endDate) }
         if (row == null || offer == null) {
             val result =

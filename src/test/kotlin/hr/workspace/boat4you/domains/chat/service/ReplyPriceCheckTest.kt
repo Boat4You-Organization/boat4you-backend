@@ -21,6 +21,20 @@ class ReplyPriceCheckTest {
     }
 
     @Test
+    fun `years, dates and model numbers next to a price are not amounts (review 6_11_2026)`() {
+        ReplyPriceCheck.amounts("19–26 June 2027 €13,357") shouldBe listOf(13357)
+        ReplyPriceCheck.amounts("Bali 4.8: 13,357 € 2027") shouldBe listOf(13357)
+        ReplyPriceCheck.amounts("€ 9 950 2027 season") shouldBe listOf(9950)
+        ReplyPriceCheck.amounts("EUR18000, 1.500 eura") shouldBe listOf(18000, 1500)
+    }
+
+    @Test
+    fun `a sentence with an invented amount goes, an abbreviation does not split a sentence`() {
+        ReplyPriceCheck.withoutAmounts("The Bali is €13,357. A Lagoon 51 is approx. €18,000. Shall I check?", listOf(18000)) shouldBe
+            "The Bali is €13,357. Shall I check?"
+    }
+
+    @Test
     fun `small amounts and numbers without a currency are not prices of a charter`() {
         ReplyPriceCheck.amounts("cleaning €150, 4 cabins, 46 feet, 19.-26.6.2027, 12 people").shouldBeEmpty()
     }
