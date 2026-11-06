@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Made-up Google Alerts feed in the real format (Atom, every link a google.com/url redirect, HTML in titles). -->
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:idx="urn:atom-extension:indexing">
+  <id>tag:google.com,2005:reader/user/04170551338912345678/state/com.google/alerts/1385722190812345678</id>
+  <title>Google Alert - boat4you</title>
+  <link href="https://www.google.com/alerts/feeds/04170551338912345678/1385722190812345678" rel="self"></link>
+  <updated>2026-11-04T08:12:31Z</updated>
+  <entry>
+    <id>tag:google.com,2013:googlealerts/feed:10293847561029384756</id>
+    <title type="html">Croatia &lt;b&gt;yacht charter&lt;/b&gt; prices up 8%, says &lt;b&gt;Boat4you&lt;/b&gt; study</title>
+    <link href="https://www.google.com/url?rct=j&amp;sa=t&amp;url=https://www.Example-News.co.uk/travel/Croatia-Charter-Prices%3Fid%3D7%26utm_source%3Dgoogle%26utm_medium%3Dalert%23comments&amp;ct=ga&amp;cd=CAIyGjE4ZjQ2YzQ5&amp;usg=AOvVaw0Xk1"></link>
+    <published>2026-11-04T07:45:00Z</published>
+    <updated>2026-11-04T07:45:00Z</updated>
+    <content type="html">Charter prices on the Adriatic rose 8% this summer, according to a &lt;b&gt;Boat4you&lt;/b&gt; study of 4,000 bookings ...</content>
+    <author><name></name></author>
+  </entry>
+  <entry>
+    <id>tag:google.com,2013:googlealerts/feed:10293847561029384757</id>
+    <title type="html">Catamaran charter in Croatia: the 2027 guide | &lt;b&gt;Boat4you&lt;/b&gt;</title>
+    <link href="https://www.google.com/url?rct=j&amp;sa=t&amp;url=https://blog.catamaran-croatia-charter.com/2027-guide&amp;ct=ga&amp;cd=CAIyGjE4ZjQ2YzQ6&amp;usg=AOvVaw0Xk2"></link>
+    <published>2026-11-04T06:30:00Z</published>
+    <updated>2026-11-04T06:30:00Z</updated>
+    <content type="html">Our own blog, which an alert finds too.</content>
+    <author><name></name></author>
+  </entry>
+  <entry>
+    <id>tag:google.com,2013:googlealerts/feed:10293847561029384758</id>
+    <title type="html">A skipper&amp;#39;s view: what a sailing week costs &amp;amp; why (&lt;b&gt;Boat4you&lt;/b&gt;)</title>
+    <link href="https://www.google.com/url?rct=j&amp;sa=t&amp;url=https://travelwire.example/2026/11/sailing-holiday-costs%3Futm_campaign%3Dnewsletter%26fbclid%3DIwAR0abc&amp;ct=ga&amp;cd=CAIyGjE4ZjQ2YzQ7&amp;usg=AOvVaw0Xk3"></link>
+    <updated>2026-11-03T21:05:00Z</updated>
+    <content type="html">Prices from the &lt;b&gt;Boat4you&lt;/b&gt; booking data ...</content>
+    <author><name></name></author>
+  </entry>
+</feed>
