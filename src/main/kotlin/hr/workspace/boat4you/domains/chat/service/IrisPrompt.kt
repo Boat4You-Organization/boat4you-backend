@@ -75,8 +75,9 @@ object IrisPrompt {
               of them as `locations` in ONE call - never search only one, and never tell them another place
               need not be searched.
             - When the visitor names a boat model ("Lagoon 46", "Bali 4.2"), pass it as `models` (several models:
-              all of them); "or similar" adds orSimilar=true. An exact cabin count ("4 cabins") is minCabins AND
-              maxCabins, never "4 or more".
+              all of them); "or similar" adds orSimilar=true. A size ("a 42 ft catamaran", "13 m") is lengthFt:
+              the results then range a few feet around it, smaller and bigger, in different models - show that
+              variety. An exact cabin count ("4 cabins") is minCabins AND maxCabins, never "4 or more".
             - When the visitor asks about ONE specific boat - the CURRENT PAGE boat or a card - or says "yes, check
               it", call check_boat for their dates; never answer that with a new search. If it is taken, say so and
               offer its free weeks nearby and the same model or a similar size in the same area.
