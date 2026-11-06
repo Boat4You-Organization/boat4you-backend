@@ -128,7 +128,7 @@ class SearchEngineQueryDbTest {
         path: String? = null,
         sort: QuerySort = QuerySort.CLICKS,
         ascending: Boolean = false,
-    ) = query.googleQueries(from, to, siteId, null, null, path, sort, ascending).map { it.query }
+    ) = query.engineQueries("GOOGLE", from, to, siteId, null, null, path, sort, ascending).map { it.query }
 
     @Test
     fun `query tables sort by any column, ctr and position only from ten impressions`() {
@@ -154,9 +154,28 @@ class SearchEngineQueryDbTest {
         row("seo_query_day", site = "europe-yachts", query = "other site", path = "/en/a", clicks = 30, impressions = 90)
 
         googleQueries(siteId = "boat4you", path = "/en/a") shouldBe listOf("lagoon 42")
-        query.googleQueries(from, to, "boat4you", null, null, "/en/a", QuerySort.CLICKS, false).single() shouldBe
+        query.engineQueries("GOOGLE", from, to, "boat4you", null, null, "/en/a", QuerySort.CLICKS, false).single() shouldBe
             QueryStat("lagoon 42", listOf("boat4you"), 10, 100, (270.0 + 70.0) / 100)
         googleQueries(siteId = "boat4you") shouldBe listOf("whole site")
+    }
+
+    @Test
+    fun `the bing query table sorts and narrows to one site like google's`() {
+        row("seo_query_day", engine = "BING", query = "yacht", clicks = 2, impressions = 40, position = 4.0)
+        row("seo_query_day", engine = "BING", query = "gulet", clicks = 5, impressions = 20, position = 9.0)
+        row("seo_query_day", engine = "BING", site = "europe-yachts", query = "catamaran", clicks = 9, impressions = 90)
+        row("seo_query_day", query = "google only", clicks = 50, impressions = 500)
+
+        fun bing(
+            siteId: String? = null,
+            sort: QuerySort = QuerySort.CLICKS,
+            ascending: Boolean = false,
+        ) = query.engineQueries("BING", from, to, siteId, null, null, null, sort, ascending).map { it.query }
+
+        bing() shouldBe listOf("catamaran", "gulet", "yacht")
+        bing(siteId = "boat4you") shouldBe listOf("gulet", "yacht")
+        bing(siteId = "boat4you", sort = QuerySort.IMPRESSIONS) shouldBe listOf("yacht", "gulet")
+        bing(siteId = "boat4you", sort = QuerySort.POSITION, ascending = true) shouldBe listOf("yacht", "gulet")
     }
 
     @Test

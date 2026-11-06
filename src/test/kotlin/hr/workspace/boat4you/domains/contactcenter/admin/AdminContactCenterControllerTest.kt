@@ -139,15 +139,23 @@ class AdminContactCenterControllerTest {
         }
         mvc.get("/admin/cc/search-engines/queries?dir=up").andExpect { status { isBadRequest() } }
         mvc.get("/admin/cc/search-engines/queries?country=usa").andExpect { status { isBadRequest() } }
+        mvc.get("/admin/cc/search-engines/queries?engine=YAHOO").andExpect {
+            status { isBadRequest() }
+            jsonPath("$.error") { value("unknown engine") }
+        }
+        mvc.get("/admin/cc/search-engines/queries?engine=BING&siteId=boat4you&path=/en/a").andExpect { status { isBadRequest() } }
+        mvc.get("/admin/cc/search-engines/queries?engine=BING&device=MOBILE").andExpect { status { isBadRequest() } }
         verifyNoInteractions(searchEngines)
         val from = Instant.parse("2026-10-01T00:00:00Z")
         val to = Instant.parse("2026-11-01T00:00:00Z")
         mvc
             .get("/admin/cc/search-engines/queries?from=$from&to=$to&siteId=boat4you&device=MOBILE&path=/en/a&sort=POSITION&dir=asc")
             .andExpect { status { isOk() } }
-        verify(searchEngines).googleQueries(from, to, "boat4you", null, "MOBILE", "/en/a", QuerySort.POSITION, true)
+        verify(searchEngines).engineQueries("GOOGLE", from, to, "boat4you", null, "MOBILE", "/en/a", QuerySort.POSITION, true)
         mvc.get("/admin/cc/search-engines/queries?from=$from&to=$to").andExpect { status { isOk() } }
-        verify(searchEngines).googleQueries(from, to, null, null, null, null, QuerySort.CLICKS, false)
+        verify(searchEngines).engineQueries("GOOGLE", from, to, null, null, null, null, QuerySort.CLICKS, false)
+        mvc.get("/admin/cc/search-engines/queries?engine=BING&from=$from&to=$to&siteId=boat4you&sort=IMPRESSIONS").andExpect { status { isOk() } }
+        verify(searchEngines).engineQueries("BING", from, to, "boat4you", null, null, null, QuerySort.IMPRESSIONS, false)
     }
 
     @Test

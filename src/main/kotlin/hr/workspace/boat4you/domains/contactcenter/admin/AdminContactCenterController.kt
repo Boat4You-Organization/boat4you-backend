@@ -285,11 +285,15 @@ class AdminContactCenterController(
         return ResponseEntity.ok(searchEngines.searchEngines(start, end, siteId, country, device))
     }
 
-    /** The Google query table in its own order, optionally for one landing page ([path] of [siteId]); filters as [searchEngines]. */
+    /**
+     * A query table in its own order: Google ([engine] GOOGLE, the default), optionally for one landing page ([path] of [siteId]),
+     * or Bing, which has no page, country or device; filters as [searchEngines].
+     */
     @GetMapping("/search-engines/queries")
     @ResponseBody
-    @Suppress("LongParameterList") // the filters of the section plus the table's page and order
+    @Suppress("LongParameterList") // the filters of the section plus the table's engine, page and order
     fun searchEngineQueries(
+        @RequestParam(required = false) engine: String?,
         @RequestParam(required = false) from: Instant?,
         @RequestParam(required = false) to: Instant?,
         @RequestParam(required = false) siteId: String?,
@@ -302,9 +306,14 @@ class AdminContactCenterController(
         val end = to ?: Instant.now()
         val start = from ?: end.minus(DEFAULT_RANGE)
         val order = QuerySort.entries.firstOrNull { it.name == (sort ?: QuerySort.CLICKS.name) }
-        val error = searchFilterError(siteId, country, device) ?: queryTableError(siteId, path, dir) ?: rangeError(start, end)
+        val source = engine ?: GOOGLE
+        val error =
+            searchFilterError(siteId, country, device)
+                ?: queryTableError(siteId, path, dir)
+                ?: engineError(source, country, device, path)
+                ?: rangeError(start, end)
         if (error != null || order == null) return bad(error ?: "unknown sort")
-        return ResponseEntity.ok(searchEngines.googleQueries(start, end, siteId, country, device, path, order, dir == "asc"))
+        return ResponseEntity.ok(searchEngines.engineQueries(source, start, end, siteId, country, device, path, order, dir == "asc"))
     }
 
     /** A landing page is a path of one site; the direction is asc or desc. */
@@ -316,6 +325,19 @@ class AdminContactCenterController(
         when {
             path != null && (siteId == null || !path.startsWith("/") || path.length > SearchText.PATH_MAX) -> "unknown page"
             dir != null && dir != "asc" && dir != "desc" -> "unknown dir"
+            else -> null
+        }
+
+    /** Google or Bing; Bing reports whole-site queries only, with no country or device. */
+    private fun engineError(
+        engine: String,
+        country: String?,
+        device: String?,
+        path: String?,
+    ): String? =
+        when {
+            engine != GOOGLE && engine != BING -> "unknown engine"
+            engine == BING && (country != null || device != null || path != null) -> "bing has no country, device or page"
             else -> null
         }
 
@@ -352,6 +374,8 @@ class AdminContactCenterController(
     private fun notAllowed(): ResponseEntity<Any> = ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("error" to "not_allowed"))
 
     companion object {
+        private const val GOOGLE = "GOOGLE"
+        private const val BING = "BING"
         private val STATUSES =
             setOf(
                 AiChatSession.STATUS_AI,

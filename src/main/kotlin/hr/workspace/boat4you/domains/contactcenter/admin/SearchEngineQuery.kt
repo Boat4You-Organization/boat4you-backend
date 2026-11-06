@@ -178,11 +178,12 @@ class SearchEngineQuery(
     }
 
     /**
-     * Google's top queries of the range for the query table's own order and, with [path], for one landing page of [siteId]
-     * (Google's query-by-page rows); without [path] the whole-site rows, as in [searchEngines].
+     * The top queries of [engine] in the range for a query table's own order and, with [path], for one landing page of [siteId]
+     * (Google's query-by-page rows; Bing has none); without [path] the whole-site rows, as in [searchEngines].
      */
-    @Suppress("LongParameterList") // the section's filters plus the table's page and order
-    fun googleQueries(
+    @Suppress("LongParameterList") // the section's filters plus the table's engine, page and order
+    fun engineQueries(
+        engine: String,
         from: Instant,
         to: Instant,
         siteId: String?,
@@ -194,7 +195,7 @@ class SearchEngineQuery(
     ): List<QueryStat> {
         val fromDay = from.atZone(ZONE).toLocalDate()
         val toDay = to.minusMillis(1).atZone(ZONE).toLocalDate()
-        return queries(Seo("GOOGLE", fromDay, toDay, siteId, country, device), path.orEmpty(), sort, ascending)
+        return queries(Seo(engine, fromDay, toDay, siteId, country, device), path.orEmpty(), sort, ascending)
     }
 
     private fun lastDays(): Map<String, LocalDate> =
