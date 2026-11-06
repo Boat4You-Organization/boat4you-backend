@@ -1,5 +1,12 @@
 # Backend deploy notes
 
+## 2026-11-06 — Search engines: Bing query table per site and order (engine=BING) — LIVE cusma2 14:05 UTC, cusma3 pending (gate window from 17:50 UTC)
+
+- Jar `3fa8ea8e` from `release/bing-plus-pr` = `feat/cc-bing-query-table` (5de1176) + main 7f498d8 + `feat/pr-module` (98c46d0, live since 5.11. 13:08, V9_121, NOT on main).
+- ⚠️ 14:04–14:05:37 UTC cusma2 ran a jar WITHOUT the PR module (built from main only); replaced by 3fa8ea8e. cusma3 still runs d53d63a8 (= old cusma2); its class and migration list is a subset of 3fa8ea8e.
+- `cusma2:webservice.jar.prev` is now the main-only jar, NOT the pre-deploy one: roll back with cusma3's `webservice.jar` (d53d63a8) instead.
+- Until PR #8 (pr module) is merged, EVERY backend jar must carry `feat/pr-module`.
+
 ## 2026-11-05 — 📰 PR modul (digitalni PR: mediji, novinari, istraživanja, 1:1 pitchevi s press@, objave i provjera linkova, RSS spominjanja) — **V9_121** — ✅ cusma2 LIVE 5.11.2026 13:08:12 UTC (`8707cc5` = `feat/pr-module` + main `eda7e9b`, jar md5 d53d63a854d114c61c66dd8658bb6e33, Flyway „9.121 - pr module“ 0,031 s, start 14,4 s, health 200; `.prev` = a81309ba main); ✅ cusma3 LIVE 13:09:15 UTC istim jarom kroz gate (prozor 13:08, bez sync crona 15 min, bez ShedLocka, 0 sync linija; Schema up to date) — **LIVE OBA ČVORA**; admin `index-D1xktjrT.js` LIVE 13:08 UTC; **slanje ISKLJUČENO** (`PR_MAIL_ENABLED=false`, lozinka press@ još nije upisana → i s uključenim prekidačem 409 `MAIL_NOT_CONFIGURED`). PR-ovi: backend #21, admin #8, infra #1 (otvoreni, nisu mergeani)
 
 Mario 4.11.2026 (program digitalnog PR-a, `DIGITAL-PR-PROGRAM-2026-11.md`; plan `infra/docs/superpowers/plans/2026-11-04-pr-module.md`). Bez plaćenih alata; jedini vanjski servis je Open PageRank (besplatni ključ, opcionalno). Modul ne čita inbox.
