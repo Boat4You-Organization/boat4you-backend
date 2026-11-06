@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-11-06 — Search engines: Bing query table per site and order (engine=BING) — LIVE cusma2 14:05 UTC, cusma3 pending (gate window from 17:50 UTC)
+## 2026-11-06 — Search engines: Bing query table per site and order (engine=BING) — LIVE cusma2 14:05 UTC + cusma3 17:56 UTC (gate passed, both nodes on 3fa8ea8e)
 
 - Jar `3fa8ea8e` from `release/bing-plus-pr` = `feat/cc-bing-query-table` (5de1176) + main 7f498d8 + `feat/pr-module` (98c46d0, live since 5.11. 13:08, V9_121, NOT on main).
 - ⚠️ 14:04–14:05:37 UTC cusma2 ran a jar WITHOUT the PR module (built from main only); replaced by 3fa8ea8e. cusma3 still runs d53d63a8 (= old cusma2); its class and migration list is a subset of 3fa8ea8e.
