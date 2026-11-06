@@ -77,11 +77,16 @@ class AiChatToolExecutor(
         const val MAX_WINDOW_WEEKS = 6
         const val MAX_WINDOW_LIST = 12
 
+        /** Boats one search shows (Mario 6.11.2026: give the visitor more options): by default, and at most. */
+        const val DEFAULT_RESULTS = 6
+        const val MAX_RESULTS = 8
+
         /**
-         * Mario 6.11.2026 (Lefkada or Preveza): a place that is a marina, not a region, searches every marina of that name
-         * and the marinas within this many km of them - Lefkas and Preveza are 15 km apart, Lefkas and Athens 280.
+         * Mario 6.11.2026: a place searches its surroundings too - every marina within this many km of a marina of that
+         * name: Lefkas-Preveza 15 km, Split-Trogir 15, Split-Hvar 37, Split-Rogoznica 37, Glyfada-Lavrion 32, Alimos-Lavrion
+         * 38; Split-Makarska (53) and Lefkas-Athens (280) stay out.
          */
-        const val NEARBY_KM = 20.0
+        const val NEARBY_KM = 40.0
 
         /** At most this many places, models and search dids in one call (they are query parameters of our own API). */
         const val MAX_PLACES = 4
@@ -154,7 +159,7 @@ class AiChatToolExecutor(
         if (saturdays.isEmpty()) {
             return ToolOutcome("""{"error":"no Saturday-to-Saturday week fits in this window - use YYYY-MM-DD and a window of at least one week"}""")
         }
-        val limit = input.path("limit").asInt(6).coerceIn(1, 6)
+        val limit = input.path("limit").asInt(MAX_RESULTS).coerceIn(1, MAX_RESULTS)
         val desc = input.path("sortByPrice").asText("asc") == "desc"
         val best = LinkedHashMap<String, Pair<JsonNode, JsonNode>>() // slug -> (boat for the model, card)
         val weeks = objectMapper.createArrayNode()
@@ -168,7 +173,7 @@ class AiChatToolExecutor(
                     remove(listOf("windowStart", "windowEnd"))
                     put("startDate", saturday.toString())
                     put("endDate", saturday.plusDays(7).toString())
-                    put("limit", 6)
+                    put("limit", MAX_RESULTS)
                 }
             val outcome = searchPeriod(week, site, locale, cache)
             val parsed = objectMapper.readTree(outcome.resultForModel)
@@ -251,7 +256,7 @@ class AiChatToolExecutor(
         val maxTotalPriceEur = input.path("maxTotalPriceEur").asInt(0)
         val minTotalPriceEur = input.path("minTotalPriceEur").asInt(0)
         val sortByPrice = input.path("sortByPrice").asText("asc").let { if (it == "desc") "desc" else "asc" }
-        val limit = input.path("limit").asInt(5).coerceIn(1, 6)
+        val limit = input.path("limit").asInt(DEFAULT_RESULTS).coerceIn(1, MAX_RESULTS)
         val equipment = input.path("equipment").mapNotNull { it.asText(null) }.filter { it.isNotBlank() }
 
         // The vessel types this call asks our API for: on a site that sells every type what the model asked for; on a site
@@ -577,10 +582,10 @@ class AiChatToolExecutor(
         val nearby: List<String> = emptyList(),
     ) {
         fun describe(): String =
-            if (marinas.size <= 1 && nearby.isEmpty()) {
-                "$name (${type.lowercase()})"
-            } else {
-                "$name (marinas: ${marinas.joinToString(", ")}" + (if (nearby.isEmpty()) "" else "; nearby: ${nearby.joinToString(", ")}") + ")"
+            when {
+                marinas.size <= 1 && nearby.isEmpty() -> "$name (${type.lowercase()})"
+                marinas.isEmpty() -> "$name (${type.lowercase()}; nearby: ${nearby.joinToString(", ")})"
+                else -> "$name (marinas: ${marinas.joinToString(", ")}" + (if (nearby.isEmpty()) "" else "; nearby: ${nearby.joinToString(", ")}") + ")"
             }
     }
 
@@ -633,34 +638,39 @@ class AiChatToolExecutor(
                 }
             },
         )
-        if (best.path("locationType").asText() != "MARINA") {
-            return Resolution(
-                ResolvedPlace(
-                    did = best.path("id").asText(),
-                    name = best.path("name").asText(),
-                    type = best.path("locationType").asText(),
-                ),
-                null,
-            )
-        }
-        // A marina name (Mario 6.11.2026: "Lefkas" was D-Marin only, never Lefkas main port or Preveza 15 km away): every
-        // marina of that name, then every marina of the country within NEARBY_KM of one of them.
+        // Mario 6.11.2026: every place is its surroundings - "Split" is also Trogir, Kaštela, Šolta and Brač, "Athens" also
+        // Lavrion, "Lefkas" also Preveza. The lookup that finds a REGION finds the marinas of that name too (with their
+        // coordinates): the region (the search expands it), every marina of that name, and every marina of the country
+        // within NEARBY_KM of one of those, nearest first.
         val named = rows.filter { it.path("locationType").asText() == "MARINA" && idsOf(it).isNotEmpty() }
-        if (named.isEmpty()) return Resolution(null, null)
+        val region = best.takeIf { it.path("locationType").asText() == "REGION" }
+        if (region == null && named.isEmpty()) {
+            return Resolution(ResolvedPlace(did = best.path("id").asText(), name = best.path("name").asText(), type = best.path("locationType").asText()), null)
+        }
         val namedIds = named.flatMap { idsOf(it) }.toSet()
-        val country = named.first().path("countryCode").asText("").uppercase()
+        val country = (named.firstOrNull() ?: region)!!.path("countryCode").asText("").uppercase()
         val nearby =
-            marinasOf(country).filter { m ->
-                idsOf(m).none { it in namedIds } &&
-                    named.any { n -> distanceKm(n, m)?.let { it <= NEARBY_KM } == true }
+            if (named.isEmpty()) {
+                emptyList()
+            } else {
+                // Only marinas with boats, and none the region already covers (Split 6.11.2026: forty empty or duplicate
+                // Kaštela and Stobreč rows filled the dids before Trogir, Šolta or Brač came).
+                val withBoats = locationsWithBoats(null)
+                val inRegion = region?.path("id")?.asText()?.removePrefix("r-")?.toLongOrNull()?.let { locationsWithBoats(it) }.orEmpty()
+                marinasOf(country)
+                    .filter { m -> idsOf(m).none { it in namedIds || it in inRegion } && (withBoats.isEmpty() || idsOf(m).any { it in withBoats }) }
+                    .mapNotNull { m -> named.mapNotNull { n -> distanceKm(n, m) }.minOrNull()?.takeIf { it <= NEARBY_KM }?.let { m to it } }
+                    .sortedBy { it.second }
+                    .map { it.first }
             }
+        val dids = (listOfNotNull(region?.path("id")?.asText()) + (named + nearby).flatMap { idsOf(it) }).filter { it.isNotBlank() }.distinct()
         return Resolution(
             ResolvedPlace(
-                did = best.path("id").asText(),
-                name = if (named.size == 1 && nearby.isEmpty()) best.path("name").asText() else query,
-                type = "MARINA",
-                dids = (named + nearby).flatMap { idsOf(it) }.distinct(),
-                marinas = named.map { it.path("name").asText() },
+                did = dids.first(),
+                name = region?.path("name")?.asText() ?: if (named.size == 1 && nearby.isEmpty()) named.first().path("name").asText() else query,
+                type = if (region != null) "REGION" else "MARINA",
+                dids = dids,
+                marinas = if (region != null) emptyList() else named.map { it.path("name").asText() },
                 nearby = nearby.map { it.path("name").asText() },
             ),
             null,
@@ -693,6 +703,36 @@ class AiChatToolExecutor(
             }
         marinas[country] = now to list
         return list
+    }
+
+    private val boatLocations = java.util.concurrent.ConcurrentHashMap<Long, Pair<java.time.Instant, Set<String>>>()
+
+    /**
+     * The ids of the locations that have boats (`/public/locations-count`), all of them or one region's ([regionId]), kept
+     * [MARINAS_TTL]; empty when the lookup fails (the nearby marinas are then not narrowed).
+     */
+    private fun locationsWithBoats(regionId: Long?): Set<String> {
+        val key = regionId ?: 0L
+        val now = java.time.Instant.now(clock)
+        boatLocations[key]?.takeIf { it.first.isAfter(now.minus(MARINAS_TTL)) }?.let { return it.second }
+        val ids =
+            try {
+                client.get()
+                    .uri(
+                        UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/locations-count")
+                            .apply { regionId?.let { queryParam("regionId", it) } }.build().encode().toUri(),
+                    )
+                    .retrieve().body(String::class.java)
+                    .let { objectMapper.readTree(it) }
+                    .filter { it.path("yachtCount").asInt(0) > 0 }
+                    .flatMap { idsOf(it) }
+                    .toSet()
+            } catch (e: Exception) {
+                log.warn("chat locations with boats ({}) failed: {}", regionId, e.message)
+                return emptySet()
+            }
+        boatLocations[key] = now to ids
+        return ids
     }
 
     /** Great-circle distance between two location rows in km, or null when one has no coordinates. */
@@ -1186,7 +1226,7 @@ class AiChatToolExecutor(
                         "luxury, premium or more expensive boats; the result's totalAvailable tells " +
                         "you how many boats match in total beyond the ones returned",
                 )
-            it.putObject("limit").put("type", "integer").put("description", "Max results, default 5")
+            it.putObject("limit").put("type", "integer").put("description", "Max results, default $DEFAULT_RESULTS, at most $MAX_RESULTS")
         })
         tools.add(tool(
             "check_boat",
