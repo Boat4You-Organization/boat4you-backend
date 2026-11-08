@@ -1,5 +1,13 @@
 # Backend deploy notes
 
+## 2026-11-08 — IRIS size rule (lengthFt ±4 ft, picks spread over sizes and models, max 8) — LIVE cusma2 14:35 UTC + cusma3 18:06:43 UTC (gate passed, both nodes on c5284b50)
+
+- Jar md5 `c5284b50565d7a67d356f9f31eff1f2e` from `release/iris-area-model` 8f549e12 (= 6.11. release + `fix/iris-area-model-check` d7dedda4). No migration (205/205, newest 9.121). `.prev` on both nodes = e60f9e32 (6.11. IRIS release).
+- Mario 6.11.2026: „42 ft -> also 40 and 46, 46 ft -> 42 to 48, always varied, max 8“. New `lengthFt`: boats within 4 ft of it (also the orSimilar band, was 3); picks = asked models first (at most half), then in turn the asked size / smaller / bigger, each a model not shown yet; each boat carries its lengthFt. Default 6 boats, at most 8.
+- cusma2: two attempts 6.11. 23:28 / 23:40 UTC refused at the cusma2 login, 8.11. 14:23 aborted on the 3rd cusma4 login within 2 min (rate limit, R01 query failed); 14:35 passed. cusma3 18:06 via gate (window, no sync cron in 15 min, no ShedLock, 0 sync lines).
+- Live check 8.11. 14:40 UTC (boat4you widget API, „42 ft catamaran out of Split, 3.-10.7.2027, 8 people“): 6 offers for the exact dates — Lagoon 40 (Rogoznica €3,883), Nautitech 40 (ACI Split €3,686), Lagoon 440 (Trogir €3,705), Lagoon 42 OW (Rogoznica €3,919), Lagoon 400 (ACI Split €3,795), Bali 4.1 (Kaštela €5,153); amounts = cards.
+- Every later backend jar must carry `feat/pr-module` and `fix/iris-area-model-check` until both are merged.
+
 ## 2026-11-06 — IRIS: whole area, model and size, check one boat, verified prices — LIVE cusma2 21:32 UTC + cusma3 21:32:49 UTC (gate passed, both nodes on e60f9e32)
 
 - Jar md5 `e60f9e32c1bbb0e237029d1dd8c3f7a1` from `release/iris-area-model` (498ba66d) = live `release/bing-plus-pr` (3fa8ea8e: Bing query table + `feat/pr-module`) + `fix/iris-area-model-check` (3 commits). No migration (205/205, newest 9.121). `.prev` on both nodes = 3fa8ea8e.
