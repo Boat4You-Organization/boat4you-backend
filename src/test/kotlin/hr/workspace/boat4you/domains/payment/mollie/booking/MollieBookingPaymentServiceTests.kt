@@ -9,13 +9,19 @@ import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardO
 import hr.workspace.boat4you.domains.payment.mollie.mollieProperties
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
 import hr.workspace.boat4you.domains.reservation.service.StripeSessionExpirer
+import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentNotFoundException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProviderException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentsUnavailableException
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers
+import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
+import org.springframework.web.client.ResourceAccessException
 import java.util.Optional
 import java.util.UUID
 
@@ -125,5 +131,40 @@ class MollieBookingPaymentServiceTests {
         status() shouldBe CheckoutSessionStatusEnum.PAYMENT_PENDING
         verify(client, never()).getPaymentOnce(ArgumentMatchers.anyString())
     }
-}
 
+    @Test
+    fun `admin refresh - applies what Mollie says like the webhook, an expired payment closes the row`() {
+        val row = row(ReservationCardOrderStatus.PENDING)
+        givenRow(row)
+        `when`(client.getPayment("tr_7UhSN1zuXS")).thenReturn(payment("paid"))
+        `when`(orderTx.applyCompleted(ArgumentMatchers.eq(5L), any(), ArgumentMatchers.isNull())).thenAnswer {
+            row.status = ReservationCardOrderStatus.COMPLETED
+            CompletionResult(completedNow = true, promote = false, reservationId = 42)
+        }
+        service().refresh(5).status shouldBe ReservationCardOrderStatus.COMPLETED
+        verify(followUp).afterCompletion(ArgumentMatchers.eq(5L), any(), ArgumentMatchers.isNull())
+        verify(orderTx).applyMoneyBack(ArgumentMatchers.eq(5L), any())
+
+        `when`(client.getPayment("tr_7UhSN1zuXS")).thenReturn(payment("expired"))
+        service().refresh(5)
+        verify(orderTx).closeIfPending(5, ReservationCardOrderStatus.FAILED)
+    }
+
+    @Test
+    fun `admin refresh - unknown row 404, Mollie off 503, Mollie failing or not knowing the payment 502 - nothing is applied`() {
+        `when`(orders.findById(6L)).thenReturn(Optional.empty())
+        shouldThrow<CardPaymentNotFoundException> { service().refresh(6) }
+
+        givenRow(row(ReservationCardOrderStatus.PENDING))
+        shouldThrow<CardPaymentsUnavailableException> { service(enabledKey = "").refresh(5) }
+
+        `when`(client.getPayment("tr_7UhSN1zuXS")).thenThrow(ResourceAccessException("timeout"))
+        shouldThrow<CardPaymentProviderException> { service().refresh(5) }
+        // doReturn: a plain `when(...)` would call the stub that throws.
+        doReturn(null).`when`(client).getPayment("tr_7UhSN1zuXS")
+        shouldThrow<CardPaymentProviderException> { service().refresh(5) }
+
+        verify(orderTx, never()).applyCompleted(ArgumentMatchers.anyLong(), any(), ArgumentMatchers.any())
+        verify(orderTx, never()).closeIfPending(ArgumentMatchers.anyLong(), any())
+    }
+}

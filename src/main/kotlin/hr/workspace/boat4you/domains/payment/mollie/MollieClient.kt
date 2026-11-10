@@ -78,13 +78,22 @@ class MollieClient internal constructor(
             .body(MolliePayment::class.java)
     }
 
-    private fun readPayment(paymentId: String): MolliePayment? {
+    /**
+     * `GET /v2/payments/{id}?embed=refunds,chargebacks` with ONE attempt: the admin "Details" view (an admin waits).
+     * `null` when Mollie does not know the payment.
+     */
+    fun getPaymentWithMoneyBack(paymentId: String): MolliePayment? = readPayment(paymentId, embedMoneyBack = true)
+
+    private fun readPayment(
+        paymentId: String,
+        embedMoneyBack: Boolean = false,
+    ): MolliePayment? {
         requireEnabled()
         requirePaymentId(paymentId)
         return try {
             restClient
                 .get()
-                .uri("/v2/payments/{id}", paymentId)
+                .uri(if (embedMoneyBack) "/v2/payments/{id}?embed=refunds,chargebacks" else "/v2/payments/{id}", paymentId)
                 .retrieve()
                 .body(MolliePayment::class.java)
         } catch (notFound: HttpClientErrorException.NotFound) {

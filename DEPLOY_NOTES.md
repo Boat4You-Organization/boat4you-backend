@@ -1,5 +1,23 @@
 # Backend deploy notes
 
+## 2026-11-10 — 💳 Admin: praćenje Mollie uplata (popis kartičnih uplata rezervacija, Refresh, detalji s Molliea) — ⏳ NIJE DEPLOYANO (grana `feat/mollie-payments`, čeka pregled + Mariovo „da“)
+
+Mario 10.11.2026: „da imamo u adminu isto praćenje svega“. Do sada je admin za kartičnu uplatu rezervacije pokazivao samo `paidOn` rate; ledger `reservation_card_order` nije imao nijedan admin endpoint.
+
+**Što jar donosi (bez migracije, bez novih env varijabli, samo čitanje prema Mollieu):**
+- `GET /admin/card-payments?status=&q=&reservationId=&page=&size=` — uplate rezervacija (jedan red = jedno Mollie plaćanje), najnovije prve; uz red klijent (ime, e-mail, telefon iz `reservation_flow`) i broj rezervacije; `status` = popis odvojen zarezom; `q` = broj rezervacije / ime / e-mail / Mollie id; `totalReceivedMinor` = COMPLETED: naplaćeno − povrat − chargeback.
+- `POST /admin/card-payments/{id}/refresh` — ponovno čita plaćanje s Molliea i primjenjuje ga isto kao webhook (`applyState`).
+- `GET /admin/mollie-payments/{tr_…}` — živo stanje jednog NAŠEG Mollie plaćanja (rezervacija ili `/pay`): Mollie status, kartica (brand, zadnje 4, zemlja, funding, audience, fee region), razlog neuspjeha, povrati i chargebackovi (`?embed=refunds,chargebacks`). Id koji nije u `reservation_card_order` ni u `custom_payment` = 404 (endpoint nije prozor u cijeli Mollie račun).
+- Sve `SYSTEM_ADMIN`. Ništa ne stvara, ne otkazuje i ne vraća novac.
+
+**Naknada i neto isplata NISU dostupni:** standardni API ključ dobiva 403 na `/v2/balances` i `/v2/settlements` (provjereno live ključem 10.11.); `settlementAmount` plaćanja = bruto. Za naknade treba organizacijski access token (Mariova odluka je bila standardni ključ) — do tada se gledaju u Mollie dashboardu.
+
+**Ovisnost:** admin (`boat4you-admin` grana `feat/mollie-payments`, stranica „Payments“) smije uživo tek NAKON ovog jara na cusma2.
+
+**Jar:** kao i do sada = live release linija + `feat/mollie-payments` + `release/ai-call-center-p2` (grana `release/mollie-payments`); prije builda `git fetch` + provjera da jar sadrži zadnji LIVE jar.
+
+**Testirano lokalno:** `ReservationCardOrderIntegrationTest` (PG 18, cijeli Flyway lanac, `ddl-auto=validate`) — novi test admin upita (join klijenta i broja rezervacije, filteri, straničenje, zbroj, red bez rezervacije); `AdminCardPaymentControllerTests`, `AdminCardPaymentServiceTests`, `MollieBookingPaymentServiceTests` (refresh). Oblik `?embed=refunds,chargebacks` provjeren stvarnim pozivom na live plaćanje `tr_2Wwxv…` (povrat `pending` je u `_embedded.refunds`, a `amountRefunded` ostaje 0 dok ga Mollie ne obradi).
+
 ## 2026-11-10 — 💳 Mollie umjesto Stripea/Revoluta: tajni `/pay/<ključ>` na boat4you.com (za ugovore svih 7 sajtova) + kartično plaćanje online rezervacija (V9_122, V9_123) — ⏳ NIJE DEPLOYANO (grana `feat/mollie-payments`, čeka Mariovo „da“)
 
 Mario 10.11.2026: Revolut odbio merchant račun; Mollie račun aktivan (org_19333861, profil „Boat4You - part of Europe Yachts Charter group“, rezerva 0). Odluke: SVE kartice preko Mollieja, Stripe se klijentima nigdje ne spominje (račun i ključevi ostaju tihi rezervni plan iza prekidača); kartica najviše 10.000 € po uplati (Mollie limit), iznad toga virman ili više uplata; +5 % na kartice u bookingu ostaje, `/pay` bez dodatka.

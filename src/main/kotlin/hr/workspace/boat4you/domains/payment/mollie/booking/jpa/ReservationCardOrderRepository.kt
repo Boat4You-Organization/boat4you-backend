@@ -1,6 +1,8 @@
 package hr.workspace.boat4you.domains.payment.mollie.booking.jpa
 
 import jakarta.persistence.LockModeType
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Modifying
@@ -167,5 +169,86 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
     fun countOtherCompleted(
         @Param("reservationFlowId") reservationFlowId: Long,
         @Param("exceptId") exceptId: Long,
+    ): Long
+
+    /**
+     * Admin "Payments" list: `[order, flow.name, flow.surname, flow.email, flow.phoneNumber, reservation.reservationNumber]`,
+     * newest first. [statuses] is never empty (all statuses = no filter); [reservationId] -1 = any reservation.
+     * `CAST(:q AS string)` as in CustomPaymentRepository (an untyped null would be inferred as bytea by PostgreSQL).
+     */
+    @Query(
+        value = """
+        SELECT o, f.name, f.surname, f.email, f.phoneNumber, r.reservationNumber
+        FROM ReservationCardOrder o
+        LEFT JOIN ReservationFlow f ON f.id = o.reservationFlowId
+        LEFT JOIN Reservation r ON r.id = o.reservationId
+        WHERE o.status IN :statuses
+          AND (:reservationId = -1L OR o.reservationId = :reservationId)
+          AND (:q IS NULL
+            OR LOWER(o.reference) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(o.providerOrderId) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(r.reservationNumber) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(f.email) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(CONCAT(COALESCE(f.name, ''), ' ', COALESCE(f.surname, ''))) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))
+        ORDER BY o.createdAt DESC, o.id DESC
+        """,
+        countQuery = """
+        SELECT COUNT(o)
+        FROM ReservationCardOrder o
+        LEFT JOIN ReservationFlow f ON f.id = o.reservationFlowId
+        LEFT JOIN Reservation r ON r.id = o.reservationId
+        WHERE o.status IN :statuses
+          AND (:reservationId = -1L OR o.reservationId = :reservationId)
+          AND (:q IS NULL
+            OR LOWER(o.reference) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(o.providerOrderId) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(r.reservationNumber) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(f.email) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(CONCAT(COALESCE(f.name, ''), ' ', COALESCE(f.surname, ''))) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))
+        """,
+    )
+    fun searchForAdmin(
+        @Param("statuses") statuses: Collection<ReservationCardOrderStatus>,
+        @Param("reservationId") reservationId: Long,
+        @Param("q") q: String?,
+        pageable: Pageable,
+    ): Page<Array<Any?>>
+
+    /** One row of [searchForAdmin] (a list, because Spring Data unwraps a single `Object[]` result differently). */
+    @Query(
+        """
+        SELECT o, f.name, f.surname, f.email, f.phoneNumber, r.reservationNumber
+        FROM ReservationCardOrder o
+        LEFT JOIN ReservationFlow f ON f.id = o.reservationFlowId
+        LEFT JOIN Reservation r ON r.id = o.reservationId
+        WHERE o.id = :id
+        """,
+    )
+    fun findAdminRowById(
+        @Param("id") id: Long,
+    ): List<Array<Any?>>
+
+    /** Money kept (COMPLETED: charged minus refunded minus charged back, cents) among the rows the same filters select. */
+    @Query(
+        """
+        SELECT COALESCE(SUM(o.amountMinor - o.refundedAmountMinor - o.chargedBackAmountMinor), 0)
+        FROM ReservationCardOrder o
+        LEFT JOIN ReservationFlow f ON f.id = o.reservationFlowId
+        LEFT JOIN Reservation r ON r.id = o.reservationId
+        WHERE o.status = :completed AND o.status IN :statuses
+          AND (:reservationId = -1L OR o.reservationId = :reservationId)
+          AND (:q IS NULL
+            OR LOWER(o.reference) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(o.providerOrderId) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(r.reservationNumber) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(f.email) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%'))
+            OR LOWER(CONCAT(COALESCE(f.name, ''), ' ', COALESCE(f.surname, ''))) LIKE LOWER(CONCAT('%', CAST(:q AS string), '%')))
+        """,
+    )
+    fun sumReceivedForAdmin(
+        @Param("statuses") statuses: Collection<ReservationCardOrderStatus>,
+        @Param("reservationId") reservationId: Long,
+        @Param("q") q: String?,
+        @Param("completed") completed: ReservationCardOrderStatus,
     ): Long
 }
