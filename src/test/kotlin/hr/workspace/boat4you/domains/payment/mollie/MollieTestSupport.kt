@@ -16,6 +16,7 @@ internal fun mollieProperties(
     checkoutOrigins: String = "https://www.mollie.com",
     cardMaxAmount: Long = 10_000,
     linkKeys: String = "",
+    returnBaseUrl: String = "",
 ): MollieProperties =
     MollieProperties(
         baseUrl = baseUrl,
@@ -28,5 +29,6 @@ internal fun mollieProperties(
         customPaymentOrderTtl = Duration.ofMinutes(15),
         customPaymentTermsVersion = "2026-11-10",
         customPaymentLinkKeys = linkKeys,
+        customPaymentReturnBaseUrl = returnBaseUrl,
         environment = MockEnvironment().apply { setActiveProfiles(*profiles.toTypedArray()) },
     )
