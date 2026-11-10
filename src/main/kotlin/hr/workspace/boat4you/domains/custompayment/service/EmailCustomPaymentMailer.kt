@@ -122,11 +122,12 @@ class EmailCustomPaymentMailer(
         val amount = amountLabel(payment.amountMinor, payment.currency)
         return CustomPaymentMail(
             recipients = recipients,
-            subject = "Card payment received: $amount · ${payment.reference} · ${site.brandName}".singleLine(),
+            subject = "${methodLabel(payment)} payment received: $amount · ${payment.reference} · ${site.brandName}".singleLine(),
             templateName = ADMIN_TEMPLATE,
             variables =
                 mapOf(
-                    "title" to "Card payment received",
+                    "title" to "${methodLabel(payment)} payment received",
+                    "paidHow" to if (payment.method == CustomPayment.METHOD_KLARNA) "with Klarna" else "by card",
                     "brandName" to site.brandName,
                     "siteKey" to site.key,
                     "locale" to payment.locale,
@@ -219,8 +220,11 @@ class EmailCustomPaymentMailer(
             .onFailure { log.warn("Custom payment receipt: application.email.from-address not parseable, default From used") }
             .getOrNull()
 
+    private fun methodLabel(payment: CustomPayment): String = if (payment.method == CustomPayment.METHOD_KLARNA) "Klarna" else "Card"
+
     /** The card of the successful payment: the one Mollie reported as paid, else the last successful one; null when unknown. */
     private fun cardLabel(payment: CustomPayment): String? {
+        if (payment.method == CustomPayment.METHOD_KLARNA) return "Klarna"
         val payments = OrderSnapshot.parseOrNull(payment.orderSnapshot)?.payments ?: return null
         val card =
             payment.providerPaymentId?.let { id -> payments.firstOrNull { it.id == id } }

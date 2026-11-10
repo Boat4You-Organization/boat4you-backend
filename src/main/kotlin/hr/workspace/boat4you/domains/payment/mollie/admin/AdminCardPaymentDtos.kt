@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.payment.mollie.admin
 
+import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.BookingCheckoutMethod
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.CardOrderPromoteState
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
 import org.springframework.data.web.PagedModel
@@ -12,6 +13,8 @@ data class AdminCardPaymentDto(
     val completedAt: Instant?,
     val expiresAt: Instant,
     val status: ReservationCardOrderStatus,
+    /** `CARD` (cards, Apple Pay) or `KLARNA`. */
+    val method: BookingCheckoutMethod,
     val reservationId: Long?,
     val reservationNumber: String?,
     /** Booking number as sent to Mollie; the label when the reservation itself is gone. */

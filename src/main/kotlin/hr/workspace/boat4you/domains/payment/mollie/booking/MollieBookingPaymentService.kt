@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.payment.mollie.booking
 
+import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
 import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
 import hr.workspace.boat4you.domains.payment.mollie.MollieClient
@@ -8,15 +9,17 @@ import hr.workspace.boat4you.domains.payment.mollie.MollieMethods
 import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler.HandlerResult
+import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentLine
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentStatuses
 import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.CardOrderPromoteState
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrder
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
-import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
+import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
+import hr.workspace.boat4you.domains.reservation.service.CardChargeCalculator
 import hr.workspace.boat4you.domains.reservation.service.StripeSessionExpirer
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAlreadyPaidException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAmountAboveLimitException
@@ -83,12 +86,13 @@ class MollieBookingPaymentService(
         paymentPhaseId: Long?,
         idempotencyKey: String?,
         locale: String?,
+        klarna: KlarnaBillingRequest?,
     ): CheckoutSessionDto {
         if (!properties.enabled) throw CardPaymentsUnavailableException()
-        var outcome = prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey)
+        var outcome = prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, klarna)
         if (outcome is CreateOutcome.StalePending) {
             resolveStale(reservationId, outcome.orders)
-            outcome = prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey)
+            outcome = prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, klarna)
         }
         return when (outcome) {
             is CreateOutcome.Reuse -> {
@@ -245,7 +249,8 @@ class MollieBookingPaymentService(
         payFullAmount: Boolean?,
         paymentPhaseId: Long?,
         idempotencyKey: String?,
-    ): CreateOutcome = lockTimeoutIsInProgress(reservationId) { createTx.prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey) }
+        klarna: KlarnaBillingRequest?,
+    ): CreateOutcome = lockTimeoutIsInProgress(reservationId) { createTx.prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, klarna) }
 
     /** Step 2 of the class doc. Throws the 409 / 502 the checkout must answer; returns when a new payment may be created. */
     private fun resolveStale(
@@ -388,8 +393,19 @@ class MollieBookingPaymentService(
             cancelUrl = "$hostPublic$prefix/payment-cancelled?reservationId=${plan.reservationId}",
             webhookUrl = properties.webhookUrl,
             locale = mollieLocale(locale),
-            // Card surcharge applies: cards and Apple Pay only (no Pay by Bank / Klarna on the +5 % path).
-            method = listOf(MollieMethods.CREDIT_CARD, MollieMethods.APPLE_PAY),
+            // One method group per checkout: cards + Apple Pay, or Klarna alone (it needs the billing address and lines).
+            method = if (plan.klarna != null) listOf(MollieMethods.KLARNA) else listOf(MollieMethods.CREDIT_CARD, MollieMethods.APPLE_PAY),
+            billingAddress = plan.klarna?.toMollie(),
+            captureMode = plan.klarna?.let { MollieMethods.CAPTURE_AUTOMATIC },
+            lines =
+                plan.klarna?.let {
+                    MolliePaymentLine.of(
+                        description = "Yacht charter - Boat4you reservation #${plan.reference}",
+                        baseMinor = plan.amountMinor - CardChargeCalculator.toCentsLong(plan.surchargeAmount),
+                        surchargeMinor = CardChargeCalculator.toCentsLong(plan.surchargeAmount),
+                        feeDescription = "Payment fee",
+                    )
+                },
             metadata =
                 buildMap {
                     put("reservationId", plan.reservationId.toString())
@@ -427,19 +443,33 @@ class MollieBookingPaymentService(
             }
             MolliePaymentStatuses.CANCELED -> orderTx.closeIfPending(ledgerId, ReservationCardOrderStatus.CANCELLED)
             MolliePaymentStatuses.FAILED, MolliePaymentStatuses.EXPIRED -> orderTx.closeIfPending(ledgerId, ReservationCardOrderStatus.FAILED)
+            MolliePaymentStatuses.AUTHORIZED -> {
+                // Never expected (cards and Klarna are captured at once): approved but NOT captured means no money yet
+                // and an instalment that stays unpaid. Only a webhook alerts (a status change), never the 10 s polling.
+                if (event != null) {
+                    orderTx.stampWebhook(ledgerId, event)
+                    orders.findById(ledgerId).orElse(null)?.let {
+                        alertMailer.alert(
+                            it,
+                            "Payment AUTHORIZED but not captured",
+                            "Mollie holds the payment as authorized; capture it in the Mollie dashboard, then Refresh the payment in the admin",
+                        )
+                    }
+                }
+            }
             else -> if (event != null) orderTx.stampWebhook(ledgerId, event)
         }
     }
 
     /** "Visa •••• 9996" from Mollie's card details (label + last four digits); null when Mollie sent neither. */
     private fun cardLabel(payment: MolliePayment): String? {
+        if (payment.method == MollieMethods.KLARNA) return KLARNA_LABEL
         val brand = payment.details?.cardLabel?.takeIf { CARD_BRAND.matches(it) }
         val lastFour = payment.details?.cardNumber?.takeIf { LAST_FOUR.matches(it) }?.let { "•••• $it" }
         return listOfNotNull(brand, lastFour).joinToString(" ").ifBlank { null }
     }
 
-    private fun isOpenOnOurSide(status: ReservationCardOrderStatus): Boolean =
-        status == ReservationCardOrderStatus.PENDING || status == ReservationCardOrderStatus.SUPERSEDED
+    private fun isOpenOnOurSide(status: ReservationCardOrderStatus): Boolean = status == ReservationCardOrderStatus.PENDING || status == ReservationCardOrderStatus.SUPERSEDED
 
     private fun cancelQuietly(payment: MolliePayment) {
         if (payment.isCancelable != true) return
@@ -476,6 +506,8 @@ class MollieBookingPaymentService(
          * next-intl `as-needed`: English has no prefix, every other web language `/<code>`; anything else (junk, a
          * region tag, missing) -> no prefix = English.
          */
+        private const val KLARNA_LABEL = "Klarna"
+
         fun localePrefix(locale: String?): String {
             val language = locale?.trim()?.let { LanguageEnum.fromLocale(it) } ?: return ""
             return if (language == LanguageEnum.EN) "" else "/${language.locale}"

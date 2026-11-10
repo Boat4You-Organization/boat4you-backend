@@ -32,3 +32,10 @@ internal fun mollieProperties(
         customPaymentReturnBaseUrl = returnBaseUrl,
         environment = MockEnvironment().apply { setActiveProfiles(*profiles.toTypedArray()) },
     )
+
+/** Klarna settings over [mollie] (enabled by default in tests; the account maximum is 10 000 EUR as in production). */
+internal fun klarnaProperties(
+    enabled: Boolean = true,
+    surchargePercent: String = "",
+    mollie: MollieProperties = mollieProperties(),
+): MollieKlarnaProperties = MollieKlarnaProperties(enabled, 10_000, surchargePercent, mollie)

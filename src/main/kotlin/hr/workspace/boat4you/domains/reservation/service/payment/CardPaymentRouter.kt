@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.service.payment
 
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
+import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
 import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
 import hr.workspace.boat4you.domains.payment.mollie.booking.MollieBookingProperties
 import org.slf4j.LoggerFactory
@@ -59,10 +60,11 @@ class CardPaymentRouter(
         paymentPhaseId: Long?,
         idempotencyKey: String?,
         locale: String?,
+        klarna: KlarnaBillingRequest? = null,
     ): CheckoutSessionDto {
         if (mollieSelectedButDisabled()) throw CardPaymentsUnavailableException()
         val provider = providers[activeProvider] ?: throw CardPaymentsUnavailableException()
-        return provider.createCheckout(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, locale)
+        return provider.createCheckout(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, locale, klarna)
     }
 
     fun checkStatus(ref: String): CheckoutSessionDto {

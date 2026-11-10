@@ -107,4 +107,8 @@ enum class ApiErrorCodes(
         8106,
         "Card payments are limited to 10,000 EUR per payment. Please pay this amount by bank transfer.",
     ),
+    KLARNA_NOT_AVAILABLE(
+        8107,
+        "Klarna is not available for this payment (billing country or amount). Please choose another payment method.",
+    ),
 }

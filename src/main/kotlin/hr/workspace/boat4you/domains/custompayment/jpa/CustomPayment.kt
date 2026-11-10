@@ -29,6 +29,10 @@ open class CustomPayment {
     @Column(name = "public_token", nullable = false, updatable = false)
     open var publicToken: UUID = UUID.randomUUID()
 
+    /** `CARD` (cards, Apple Pay, Pay by Bank) or `KLARNA` (V9_125); NULL = a row from before Klarna = CARD. */
+    @Column(name = "method", length = 16, updatable = false)
+    open var method: String? = null
+
     @Column(name = "site", length = 32, nullable = false)
     open var site: String = ""
 
@@ -109,6 +113,8 @@ open class CustomPayment {
 
     companion object {
         const val CURRENCY_EUR = "EUR"
+        const val METHOD_CARD = "CARD"
+        const val METHOD_KLARNA = "KLARNA"
         const val PROVIDER_MOLLIE = "MOLLIE"
     }
 }

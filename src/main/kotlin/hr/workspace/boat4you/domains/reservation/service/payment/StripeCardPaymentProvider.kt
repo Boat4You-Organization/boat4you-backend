@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.service.payment
 
+import hr.workspace.boat4you.domains.payment.mollie.KlarnaNotAvailableException
+import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
@@ -24,7 +26,10 @@ class StripeCardPaymentProvider(
         paymentPhaseId: Long?,
         idempotencyKey: String?,
         locale: String?,
+        klarna: KlarnaBillingRequest?,
     ): CheckoutSessionDto {
+        // Klarna exists on the Mollie path only; never fall back to a card checkout the payer did not ask for.
+        if (klarna != null) throw KlarnaNotAvailableException("provider")
         val session = stripePaymentService.initiatePayment(reservationId, payFullAmount, paymentPhaseId, idempotencyKey)
         return CheckoutSessionDto(
             sessionIdOrOrderCode = session.id,

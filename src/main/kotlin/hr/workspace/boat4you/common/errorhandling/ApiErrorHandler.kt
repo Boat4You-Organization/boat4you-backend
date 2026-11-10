@@ -13,6 +13,7 @@ import hr.workspace.boat4you.domains.catalouge.exceptions.ImageResizeBusyExcepti
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtDoesNotExistException
 import hr.workspace.boat4you.domains.catalouge.exceptions.YachtNotActiveException
 import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentNotFoundException
+import hr.workspace.boat4you.domains.payment.mollie.KlarnaNotAvailableException
 import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentProviderException
 import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentTooManyException
 import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentsUnavailableException
@@ -764,6 +765,18 @@ internal class ApiErrorHandler {
             ErrorSchema(
                 ApiErrorCodes.CARD_AMOUNT_ABOVE_LIMIT.code,
                 ApiErrorCodes.CARD_AMOUNT_ABOVE_LIMIT.message,
+            ),
+            HttpStatus.UNPROCESSABLE_ENTITY,
+        )
+    }
+
+    @ExceptionHandler(KlarnaNotAvailableException::class)
+    fun handleKlarnaNotAvailableException(e: KlarnaNotAvailableException): ResponseEntity<ErrorSchema> {
+        logger.info("KlarnaNotAvailableException: {}", e.reason)
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.KLARNA_NOT_AVAILABLE.code,
+                ApiErrorCodes.KLARNA_NOT_AVAILABLE.message,
             ),
             HttpStatus.UNPROCESSABLE_ENTITY,
         )

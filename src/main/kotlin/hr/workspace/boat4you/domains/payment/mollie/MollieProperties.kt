@@ -21,7 +21,7 @@ class MollieProperties(
     @Value("\${application.mollie.api-key:}") apiKey: String,
     @Value("\${application.mollie.webhook-url:}") webhookUrl: String,
     @Value("\${application.mollie.reconcile-enabled:false}") val reconcileEnabled: Boolean,
-    @Value("\${application.mollie.checkout-origins:https://www.mollie.com}") checkoutOrigins: String,
+    @Value("\${application.mollie.checkout-origins:https://www.mollie.com,https://pay.klarna.com}") checkoutOrigins: String,
     @Value("\${application.mollie.card-max-amount:10000}") cardMaxAmount: Long,
     @Value("\${application.mollie.custom-payment.min-amount-minor:5000}") customPaymentMinAmountMinor: Long,
     @Value("\${application.mollie.custom-payment.order-ttl:PT15M}") customPaymentOrderTtl: Duration,

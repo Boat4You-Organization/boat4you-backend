@@ -40,6 +40,7 @@ class AdminCustomPaymentControllerTests {
             refundedAmountMinor = 0,
             currency = "EUR",
             status = CustomPaymentStatus.COMPLETED,
+            method = "KLARNA",
             payerEmail = "payer@example.com",
             providerOrderId = "tr_7UhSN1zuXS",
             adminNote = "Paid by the charterer",
@@ -58,6 +59,7 @@ class AdminCustomPaymentControllerTests {
             jsonPath("$.content[0].reference") { value("1441012/2026") }
             jsonPath("$.content[0].amountMinor") { value(110_900) }
             jsonPath("$.content[0].status") { value("COMPLETED") }
+            jsonPath("$.content[0].method") { value("KLARNA") }
             jsonPath("$.content[0].reservationNumber") { value("1441012/2026") }
             jsonPath("$.page.totalElements") { value(11) }
             jsonPath("$.page.number") { value(1) }

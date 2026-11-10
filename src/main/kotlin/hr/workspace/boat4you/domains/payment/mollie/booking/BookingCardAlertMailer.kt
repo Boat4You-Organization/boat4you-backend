@@ -41,7 +41,7 @@ class BookingCardAlertMailer(
                     appendLine("Reason:       ${reason.replace(LINE_BREAKS, " ")}")
                     appendLine()
                     appendLine("Reservation:  ${order.reference} (id ${order.reservationId ?: "-"})")
-                    appendLine("Charged:      $amount (base ${order.baseAmount}, card surcharge ${order.surchargeAmount})")
+                    appendLine("Charged:      $amount (base ${order.baseAmount}, surcharge ${order.surchargeAmount}, method ${order.methodOrCard})")
                     appendLine("Phases:       ${order.phaseIds.ifEmpty { "-" }}")
                     appendLine("Mollie:       payment ${order.providerOrderId} (Mollie dashboard -> Payments)")
                     appendLine("Ledger:       id ${order.id}, status ${order.status}")

@@ -297,10 +297,19 @@ application:
     webhook-url: ${MOLLIE_WEBHOOK_URL:}
     # Reconcile jobs (missed webhooks) — cusma2 only.
     reconcile-enabled: ${MOLLIE_RECONCILE_ENABLED:false}
-    # Comma-separated origins a checkout URL returned by Mollie may have.
-    checkout-origins: ${MOLLIE_CHECKOUT_ORIGINS:https://www.mollie.com}
+    # Comma-separated origins a checkout URL returned by Mollie may have. pay.klarna.com: a LIVE Klarna payment's
+    # checkout is Klarna's own hosted page (10.11.2026: with mollie.com alone every live Klarna checkout answered 502;
+    # Mollie's test mode stays on mollie.com and hides this).
+    checkout-origins: ${MOLLIE_CHECKOUT_ORIGINS:https://www.mollie.com,https://pay.klarna.com}
     # Mollie card limit per transaction for this account, whole EUR (Mollie e-mail 17.10.2025). Above it: no card.
     card-max-amount: ${MOLLIE_CARD_MAX_AMOUNT:10000}
+    klarna:
+      # Klarna next to cards (booking + /pay), EUR billing countries only. Off until set on cusma2.
+      enabled: ${MOLLIE_KLARNA_ENABLED:false}
+      # The account's own Klarna maximum, whole EUR (Mollie Methods API, 10.11.2026).
+      max-amount: ${MOLLIE_KLARNA_MAX_AMOUNT:10000}
+      # Booking surcharge for Klarna in percent; blank = the card surcharge of the admin settings.
+      surcharge-percent: ${MOLLIE_KLARNA_SURCHARGE_PERCENT:}
     custom-payment:
       # 50 EUR in cents.
       min-amount-minor: 5000

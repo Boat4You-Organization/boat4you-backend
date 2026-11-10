@@ -1,8 +1,12 @@
 package hr.workspace.boat4you.domains.payment.mollie.booking
 
+import hr.workspace.boat4you.domains.payment.mollie.KlarnaBilling
+import hr.workspace.boat4you.domains.payment.mollie.MollieKlarnaProperties
 import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
+import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.BookingCheckoutMethod
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrder
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
+import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
@@ -70,6 +74,7 @@ class MollieBookingCreateTx(
     private val settingsService: AdminSettingsService,
     private val mollieProperties: MollieProperties,
     private val bookingProperties: MollieBookingProperties,
+    private val klarnaProperties: MollieKlarnaProperties,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -79,6 +84,7 @@ class MollieBookingCreateTx(
         payFullAmount: Boolean?,
         paymentPhaseId: Long?,
         idempotencyKey: String?,
+        klarnaRequest: KlarnaBillingRequest? = null,
     ): CreateOutcome {
         orders.setLocalLockTimeout()
         val reservation = reservationRepository.findById(reservationId).getOrElse { throw ReservationNotExistException() }
@@ -88,15 +94,22 @@ class MollieBookingCreateTx(
         // One checkout per reservation flow at a time — also when the charge has no phase rows to lock (legacy pay-full).
         orders.lockKey(ReservationCardOrderTx.flowLockKey(reservationFlowId))
 
+        // Klarna: the billing data of the form, with the booking's own e-mail when the form sent none.
+        val klarna = klarnaRequest?.toBilling(reservationFlow.email)
+        val method = if (klarna != null) BookingCheckoutMethod.KLARNA else BookingCheckoutMethod.CARD
+        val cardSurcharge = CardChargeCalculator.surchargePercentage(settingsService.getSetting(SettingsKeyEnum.CARD_PAYMENT_SURCHARGE).value)
         val charge =
             CardChargeCalculator.calculate(
                 reservationFlow,
                 payFullAmount,
                 paymentPhaseId,
-                CardChargeCalculator.surchargePercentage(settingsService.getSetting(SettingsKeyEnum.CARD_PAYMENT_SURCHARGE).value),
+                if (klarna != null) klarnaProperties.surchargePercentOverride ?: cardSurcharge else cardSurcharge,
             )
         val amountMinor = charge.totalMinor
-        if (amountMinor > mollieProperties.cardMaxAmountMinor) {
+        if (klarna != null) {
+            // 422 (8107): Klarna off, billing country not served, or above that country's limit — nothing is recorded.
+            klarnaProperties.requireAvailable(klarna, amountMinor)
+        } else if (amountMinor > mollieProperties.cardMaxAmountMinor) {
             log.info("Mollie booking checkout for reservation {}: {} cents is above the card limit -> bank transfer only", reservationId, amountMinor)
             return CreateOutcome.AboveCardLimit
         }
@@ -118,17 +131,21 @@ class MollieBookingCreateTx(
         val stripeSessionIds = charge.phases.mapNotNull { it.stripeSessionId }.distinct()
 
         val phaseIds = ReservationCardOrder.phaseIdsOf(targetIds)
+        // A double click sends the same web key twice before any row exists (attempt 0 both times -> the same Mollie
+        // request, replayed by its Idempotency-Key); once a row with the key exists, the next create is a NEW attempt.
+        val webKey = idempotencyKey?.trim()?.take(MAX_IDEMPOTENCY_KEY_LENGTH)?.ifEmpty { null }
+        val attempt = webKey?.let { orders.countByReservationFlowIdAndIdempotencyKey(reservationFlowId, it) } ?: 0L
+        val billingKey = klarna?.let { billingFingerprint(it) }
         orders
-            .findReusable(reservationFlowId, phaseIds, amountMinor, ReservationCardOrderTx.paymentPhaseKey(paymentPhaseId), ReservationCardOrderTx.reusableUntil())
+            .findReusable(reservationFlowId, phaseIds, amountMinor, ReservationCardOrderTx.paymentPhaseKey(paymentPhaseId), ReservationCardOrderTx.reusableUntil(), method.name)
+            // A Klarna checkout carries the billing address (not stored here): it is handed out again only to the very
+            // same request (same web key, same address = the token of the previous attempt); anything else is stale.
+            ?.takeIf { klarna == null || (attempt > 0 && it.checkoutToken == checkoutToken(reservationFlowId, phaseIds, amountMinor, webKey, attempt - 1, billingKey)) }
             ?.let { return CreateOutcome.Reuse(it.providerOrderId, it.checkoutUrl, stripeSessionIds) }
 
         val pending = orders.findPendingByReservationFlow(reservationFlowId)
         if (pending.isNotEmpty()) return CreateOutcome.StalePending(pending.map { StaleOrder(it.id!!, it.providerOrderId) })
 
-        // A double click sends the same web key twice before any row exists (attempt 0 both times -> the same Mollie
-        // request, replayed by its Idempotency-Key); once a row with the key exists, the next create is a NEW attempt.
-        val webKey = idempotencyKey?.trim()?.take(MAX_IDEMPOTENCY_KEY_LENGTH)?.ifEmpty { null }
-        val attempt = webKey?.let { orders.countByReservationFlowIdAndIdempotencyKey(reservationFlowId, it) } ?: 0L
         val ttl = bookingProperties.checkoutTtl
         return CreateOutcome.Create(
             BookingOrderPlan(
@@ -142,10 +159,12 @@ class MollieBookingCreateTx(
                 surchargeAmount = charge.surchargeAmount,
                 amountMinor = amountMinor,
                 idempotencyKey = webKey,
-                checkoutToken = checkoutToken(reservationFlowId, phaseIds, amountMinor, webKey, attempt),
+                checkoutToken = checkoutToken(reservationFlowId, phaseIds, amountMinor, webKey, attempt, billingKey),
                 attempt = attempt,
                 expiresAfter = ttl,
                 expiresAt = Instant.now().plus(ttl),
+                method = method,
+                klarna = klarna,
             ),
             stripeSessionIds,
         )
@@ -163,10 +182,23 @@ class MollieBookingCreateTx(
             amountMinor: Long,
             webKey: String?,
             attempt: Long,
+            /** [billingFingerprint] of a Klarna checkout; null for a card checkout (the token is then as before Klarna). */
+            billingKey: String? = null,
         ): java.util.UUID {
             if (webKey == null) return java.util.UUID.randomUUID()
-            return java.util.UUID.nameUUIDFromBytes("booking|$reservationFlowId|$phaseIds|$amountMinor|$webKey|$attempt".toByteArray(Charsets.UTF_8))
+            val klarnaPart = billingKey?.let { "|klarna|$it" }.orEmpty()
+            return java.util.UUID.nameUUIDFromBytes("booking|$reservationFlowId|$phaseIds|$amountMinor|$webKey|$attempt$klarnaPart".toByteArray(Charsets.UTF_8))
         }
+
+        /** SHA-256 of the billing data: a changed address is a different Mollie request, hence a different token. */
+        fun billingFingerprint(billing: KlarnaBilling): String =
+            java.security.MessageDigest
+                .getInstance("SHA-256")
+                .digest(
+                    listOf(billing.givenName, billing.familyName, billing.email, billing.streetAndNumber, billing.postalCode, billing.city, billing.country)
+                        .joinToString("\u0001")
+                        .toByteArray(Charsets.UTF_8),
+                ).joinToString("") { "%02x".format(it) }
 
         private const val MAX_IDEMPOTENCY_KEY_LENGTH = 128
         private const val MAX_REFERENCE_LENGTH = 64

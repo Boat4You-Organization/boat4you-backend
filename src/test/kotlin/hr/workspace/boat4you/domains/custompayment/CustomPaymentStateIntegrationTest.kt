@@ -20,6 +20,7 @@ import hr.workspace.boat4you.domains.payment.mollie.MollieLink
 import hr.workspace.boat4you.domains.payment.mollie.MollieLinks
 import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler.HandlerResult
+import hr.workspace.boat4you.domains.payment.mollie.klarnaProperties
 import hr.workspace.boat4you.domains.payment.mollie.mollieProperties
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import io.kotest.assertions.throwables.shouldThrow
@@ -101,6 +102,8 @@ class CustomPaymentStateIntegrationTest {
                     "/docker-entrypoint-initdb.d/01_reservation.sql",
                 )
                 withCopyFileToContainer(MountableFile.forClasspathResource(MIGRATION), "/docker-entrypoint-initdb.d/02_custom_payment.sql")
+                // V9_125: custom_payment.method (Klarna); the entity is validated against both migrations.
+                withCopyFileToContainer(MountableFile.forClasspathResource("db/migration/V9_125__custom_payment_method.sql"), "/docker-entrypoint-initdb.d/03_custom_payment_method.sql")
             }
     }
 
@@ -156,7 +159,7 @@ class CustomPaymentStateIntegrationTest {
     @Suppress("UNCHECKED_CAST")
     private fun <T> any(): T = ArgumentMatchers.any<T>() ?: null as T
 
-    private fun service() = CustomPaymentService(mollieProperties(linkKeys = "boat4you=$LINK_KEY"), tx, repository, reservations, client)
+    private fun service() = CustomPaymentService(mollieProperties(linkKeys = "boat4you=$LINK_KEY"), tx, repository, reservations, client, klarnaProperties())
 
     @BeforeEach
     fun resetMailer() {
