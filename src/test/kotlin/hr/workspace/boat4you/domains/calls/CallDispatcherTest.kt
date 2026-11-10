@@ -38,6 +38,7 @@ class CallDispatcherTest : CallsJpaTest() {
 
     private class FakeElevenLabs : ElevenLabsApi {
         val dialled = CopyOnWriteArrayList<Pair<String, Map<String, String>>>()
+        val languages = CopyOnWriteArrayList<String>()
         var failure: RuntimeException? = null
         val attempts = AtomicInteger()
         private val n = AtomicInteger()
@@ -50,6 +51,7 @@ class CallDispatcherTest : CallsJpaTest() {
             attempts.incrementAndGet()
             failure?.let { throw it }
             dialled += toNumber to variables
+            languages += language
             val i = n.incrementAndGet()
             return OutboundCallResult("conv-$i", "CA$i")
         }
@@ -76,6 +78,7 @@ class CallDispatcherTest : CallsJpaTest() {
     @BeforeEach
     fun reset() {
         api.dialled.clear()
+        api.languages.clear()
         api.failure = null
         api.attempts.set(0)
         clearInvocations(notifier)
@@ -184,6 +187,22 @@ class CallDispatcherTest : CallsJpaTest() {
         val c = call(inquiry(), scheduledAt = now)
         dispatcher.runOnce(now)
         api.dialled.single().second["call_id"] shouldBe c.id.toString()
+    }
+
+    @Test
+    fun `a call in a language Nika does not speak is placed in English, not refused by ElevenLabs`() {
+        call(inquiry(), scheduledAt = now) { language = "sl" }
+        dispatcher.runOnce(now) shouldBe 1
+        api.languages.single() shouldBe "en"
+        api.dialled.single().second["language"] shouldBe "en"
+    }
+
+    @Test
+    fun `a regional language code reaches ElevenLabs as the plain language`() {
+        call(inquiry(), scheduledAt = now) { language = "de-AT" }
+        dispatcher.runOnce(now) shouldBe 1
+        api.languages.single() shouldBe "de"
+        api.dialled.single().second["language"] shouldBe "de"
     }
 
     @Test
