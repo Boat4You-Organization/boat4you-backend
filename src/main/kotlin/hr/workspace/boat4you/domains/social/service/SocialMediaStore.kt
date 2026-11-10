@@ -449,14 +449,11 @@ object SocialImages {
     ): Rect? {
         val ratio = w.toDouble() / h
         return when {
-            ratio > IG_MAX_RATIO -> (h * IG_MAX_RATIO).toInt().let { cw -> Rect((w - cw) / 2, 0, cw, h) }
-            ratio < IG_MIN_RATIO -> (w / IG_MIN_RATIO).toInt().let { ch -> Rect(0, (h - ch) / 2, w, ch) }
+            ratio > SocialRules.IG_MAX_RATIO -> (h * SocialRules.IG_MAX_RATIO).toInt().let { cw -> Rect((w - cw) / 2, 0, cw, h) }
+            ratio < SocialRules.IG_MIN_RATIO -> (w / SocialRules.IG_MIN_RATIO).toInt().let { ch -> Rect(0, (h - ch) / 2, w, ch) }
             else -> null
         }
     }
-
-    private const val IG_MIN_RATIO = 0.8
-    private const val IG_MAX_RATIO = 1.91
 
     /** JPEG at most [maxBytes]: lower quality first, then 80 % of the size, until it fits (or gives up). */
     fun shrink(

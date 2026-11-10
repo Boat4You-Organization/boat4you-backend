@@ -170,7 +170,7 @@ object SocialRules {
     }
 
     private const val X_URL_WEIGHT = 23
-    private const val IG_MIN_RATIO = 0.8
-    private const val IG_MAX_RATIO = 1.91
+    const val IG_MIN_RATIO = 0.8
+    const val IG_MAX_RATIO = 1.91
     private const val RATIO_SLACK = 0.005
 }

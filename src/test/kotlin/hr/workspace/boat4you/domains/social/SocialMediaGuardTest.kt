@@ -3,8 +3,8 @@ package hr.workspace.boat4you.domains.social
 import hr.workspace.boat4you.domains.social.jpa.SocialMediaRepository
 import hr.workspace.boat4you.domains.social.service.SocialConfigException
 import hr.workspace.boat4you.domains.social.service.SocialImages
-import hr.workspace.boat4you.domains.social.service.SocialRules
 import hr.workspace.boat4you.domains.social.service.SocialMediaStore
+import hr.workspace.boat4you.domains.social.service.SocialRules
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -80,5 +80,9 @@ class SocialMediaGuardTest {
         SocialImages.normalize(jpeg(1600, 1000), fitInstagram = true)!!.let { (it.width to it.height) shouldBe (1600 to 1000) }
         SocialImages.normalize(jpeg(2160, 1102))!!.let { (it.width to it.height) shouldBe (2160 to 1102) }
         SocialImages.instagramCrop(4000, 1000)!!.let { (it.x to it.width) shouldBe (1045 to 1910) }
+        // Cropped, then still wider than 2160: crop and downscale together stay inside the range.
+        val panorama = SocialImages.normalize(jpeg(6000, 1500), fitInstagram = true)!!
+        SocialRules.instagramRatioOk(panorama.width, panorama.height) shouldBe true
+        panorama.width shouldBe 2160
     }
 }
