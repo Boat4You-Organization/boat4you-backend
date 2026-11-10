@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org" lang="en">
 <!--/*
-  Office notification for a completed custom payment (secret /pay/<linkKey> link). Plain English, no cid: images
+  Office notification for a completed custom payment (secret /pay/<linkKey> link) and, with bookingIntro set, for a
+  card payment of an online-booking instalment (BookingCardPaymentMailer). Plain English, no cid: images
   (listed in EmailService.templatesWithoutSharedFooter). Reply-To = the payer.
 */-->
 <head>
@@ -13,7 +14,10 @@
     <h2 th:text="${title}" style="font-family:Arial,sans-serif; font-size:17px; color:#15803d; margin:0 0 6px;">
       Card payment received
     </h2>
-    <p style="font-size:13px; line-height:1.55; color:#334155; margin:0 0 16px;">
+    <p th:if="${bookingIntro}" th:text="${bookingIntro}" style="font-size:13px; line-height:1.55; color:#334155; margin:0 0 16px;">
+      A client paid an instalment of an online booking by card.
+    </p>
+    <p th:unless="${bookingIntro}" style="font-size:13px; line-height:1.55; color:#334155; margin:0 0 16px;">
       A client paid by card through the secret /pay link on <b th:text="${brandName}">Catamaran Charter Croatia</b>.
       Nothing in bookings changes automatically: match the payment to the contract. A payment
       confirmation e-mail is sent to the client. Reply goes to the client.
@@ -23,6 +27,10 @@
       <tr>
         <td style="padding:6px 12px 6px 0; color:#64748b; width:190px; vertical-align:top;">Amount</td>
         <td th:text="${amountLabel}" style="padding:6px 0; font-weight:bold; font-size:15px;">2500.00€</td>
+      </tr>
+      <tr th:if="${amountNote}">
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Of which</td>
+        <td th:text="${amountNote}" style="padding:6px 0;">instalment 2500.00€ + card surcharge 125.00€</td>
       </tr>
       <tr>
         <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Contract / booking no.</td>
@@ -46,7 +54,7 @@
       </tr>
       <tr th:if="${reservationUrl}">
         <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Web reservation</td>
-        <td style="padding:6px 0;"><a th:href="${reservationUrl}" href="#" style="color:#2856ff; text-decoration:none;">The reference matches a web reservation &#8594;</a></td>
+        <td style="padding:6px 0;"><a th:href="${reservationUrl}" href="#" style="color:#2856ff; text-decoration:none;" th:text="${reservationLinkText} ?: 'The reference matches a web reservation →'">The reference matches a web reservation &#8594;</a></td>
       </tr>
       <tr>
         <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Mollie payment</td>
@@ -60,7 +68,7 @@
 
     <p style="margin:18px 0 0;">
       <a th:href="${adminUrl}" href="#"
-        style="display:inline-block; padding:10px 18px; border-radius:8px; background-color:#2856ff; color:#ffffff; font-size:14px; font-weight:bold; text-decoration:none;">Open in admin &#8594; Custom payments</a>
+        style="display:inline-block; padding:10px 18px; border-radius:8px; background-color:#2856ff; color:#ffffff; font-size:14px; font-weight:bold; text-decoration:none;" th:text="${adminLabel} ?: 'Open in admin → Custom payments'">Open in admin &#8594; Custom payments</a>
     </p>
   </div>
 </body>

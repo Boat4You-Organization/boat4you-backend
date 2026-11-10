@@ -85,7 +85,7 @@ class MollieBookingPaymentServiceTests {
         }
         status() shouldBe CheckoutSessionStatusEnum.PAYMENT_SUCCESS
         verify(orderTx).applyCompleted(ArgumentMatchers.eq(5L), any(), ArgumentMatchers.isNull())
-        verify(followUp).afterCompletion(ArgumentMatchers.eq(5L), any())
+        verify(followUp).afterCompletion(ArgumentMatchers.eq(5L), any(), ArgumentMatchers.isNull())
         verify(orderTx).applyMoneyBack(ArgumentMatchers.eq(5L), any())
         // Same answer when the web asks by the Mollie id.
         status("tr_7UhSN1zuXS") shouldBe CheckoutSessionStatusEnum.PAYMENT_SUCCESS

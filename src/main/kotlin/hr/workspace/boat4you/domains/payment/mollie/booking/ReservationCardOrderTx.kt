@@ -253,6 +253,31 @@ class ReservationCardOrderTx(
         return true
     }
 
+    /**
+     * What the office notification and the client receipt of a COMPLETED row need (read-only; the reservation's lazy
+     * flow / user are read here, inside the transaction). Null when the row is not COMPLETED or its reservation is gone.
+     */
+    @Transactional(readOnly = true)
+    fun paymentNotice(id: Long): BookingPaymentNotice? {
+        val row = orders.findById(id).orElse(null) ?: return null
+        if (row.status != ReservationCardOrderStatus.COMPLETED) return null
+        val reservationId = row.reservationId ?: return null
+        val flow = reservationRepository.findById(reservationId).orElse(null)?.reservationFlow
+        return BookingPaymentNotice(
+            ledgerId = id,
+            reservationId = reservationId,
+            reference = row.reference,
+            amountMinor = row.amountMinor,
+            baseAmount = row.baseAmount,
+            surchargeAmount = row.surchargeAmount,
+            providerOrderId = row.providerOrderId,
+            checkoutToken = row.checkoutToken,
+            completedAt = row.completedAt ?: Instant.now(),
+            payerEmail = flow?.email,
+            language = flow?.user?.language,
+        )
+    }
+
     /** M4 bookkeeping: the post-commit booking confirmation of a completed row ended ([state] DONE or FAILED). */
     fun markPromote(
         id: Long,
