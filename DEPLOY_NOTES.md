@@ -14,7 +14,7 @@ Mario 10.11.2026: Revolut odbio merchant račun; Mollie račun aktivan (org_1933
 
 **Migracije (samo dodavanje, idempotentne, `lock_timeout 5s`):** `V9_122__custom_payment.sql` (nova tablica), `V9_123__reservation_card_order.sql` (nova tablica + 3 nullable stupca na `reservation_payment_phase`). ⚠️ Kratki ACCESS EXCLUSIVE na `reservation_payment_phase` i FK na `reservation` → start jara IZVAN sync prozora.
 
-**⛔ Jar se NE gradi s ove grane same:** fali joj `V9_121__pr_module.sql` (live). Jar = live release linija (`feat/pr-module` + `fix/iris-area-model-check`, zadnji live `release/iris-area-model` 8f549e12) + `feat/mollie-payments`. `git merge-tree` s obje grane čist (10.11.). Prije builda: `ls src/main/resources/db/migration | grep V9_12` mora pokazati 120, 121, 122, 123.
+**⛔ Jar se NE gradi s ove grane same:** fali joj `V9_121__pr_module.sql` (live). Jar = live release linija (`feat/pr-module` + `fix/iris-area-model-check`, zadnji live `origin/release/iris-area-model` `8f2d2d57`, tag `live/2026-11-08-iris-size`) + `feat/mollie-payments`. `git merge-tree` 10.11.: kod se spaja čisto, jedini konflikt je `DEPLOY_NOTES.md` (zadržati oba unosa). Prije builda: `ls src/main/resources/db/migration | grep V9_12` mora pokazati 120, 121, 122, 123.
 
 **Env cusma2 (`boat4you_vars.env`, backup prije):**
 - `MOLLIE_API_KEY=live_…` (iz `~/.b4y-mollie.env`, nikad u chat/git), `MOLLIE_WEBHOOK_URL=https://api.boat4you.com/webhooks/mollie`, `MOLLIE_RECONCILE_ENABLED=true`
