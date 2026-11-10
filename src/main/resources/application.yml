@@ -309,6 +309,11 @@ application:
       terms-version: ${CUSTOM_PAYMENT_TERMS_VERSION:2026-11-10}
       # Secret link keys per site: site=key[,key];site2=key (two keys per site during a rotation).
       link-keys: ${CUSTOM_PAYMENT_LINK_KEYS:}
+      # LOCAL TESTS ONLY: origin of the /pay success / failed pages (ignored under the prod profile).
+      return-base-url: ${CUSTOM_PAYMENT_RETURN_BASE_URL:}
+    booking:
+      # How long a booking checkout is handed out again for the same charge (ledger expires_at).
+      checkout-ttl: ${MOLLIE_BOOKING_CHECKOUT_TTL:PT15M}
   trip-push:
     # Web-push VAPID keypair for the Boat4You Trip hub reminders (base64url,
     # P-256). Deliberately optional: blank keys = push disabled, the hub hides

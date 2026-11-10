@@ -310,7 +310,8 @@ class CustomPaymentService(
         id: Long,
         token: String,
     ): MollieCreatePaymentRequest {
-        val payPage = "${site.baseUrl}${site.localePrefix(input.locale)}/pay/$linkKey"
+        val origin = properties.customPayment.returnBaseUrl ?: site.baseUrl
+        val payPage = "$origin${site.localePrefix(input.locale)}/pay/$linkKey"
         return MollieCreatePaymentRequest(
             amount = MollieAmount.eur(input.amountMinor),
             description = "${site.brandName} - contract ${input.reference}",

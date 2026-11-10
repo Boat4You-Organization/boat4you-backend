@@ -27,6 +27,7 @@ class MollieProperties(
     @Value("\${application.mollie.custom-payment.order-ttl:PT15M}") customPaymentOrderTtl: Duration,
     @Value("\${application.mollie.custom-payment.terms-version:2026-11-10}") customPaymentTermsVersion: String,
     @Value("\${application.mollie.custom-payment.link-keys:}") customPaymentLinkKeys: String,
+    @Value("\${application.mollie.custom-payment.return-base-url:}") customPaymentReturnBaseUrl: String,
     environment: Environment,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -59,6 +60,12 @@ class MollieProperties(
             orderTtl = customPaymentOrderTtl,
             termsVersion = customPaymentTermsVersion.trim(),
             linkKeys = customPaymentLinkKeys.trim(),
+            returnBaseUrl =
+                customPaymentReturnBaseUrl.trim().trimEnd('/').ifEmpty { null }?.takeUnless {
+                    environment.acceptsProfiles(Profiles.of("prod")).also { prod ->
+                        if (prod) log.error("application.mollie.custom-payment.return-base-url is ignored under the prod profile")
+                    }
+                },
         )
 
     private val testKeyInProd: Boolean = testMode && environment.acceptsProfiles(Profiles.of("prod"))
@@ -90,6 +97,8 @@ class MollieProperties(
         val termsVersion: String,
         /** Raw `site=key[,key];site2=key` list; parsed by the custom payment feature. */
         val linkKeys: String,
+        /** LOCAL TESTS ONLY: origin of the success / failed pages instead of the site's canonical one (never in prod). */
+        val returnBaseUrl: String? = null,
     )
 
     private companion object {
