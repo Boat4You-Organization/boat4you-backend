@@ -7,7 +7,9 @@ import hr.workspace.boat4you.domains.social.ai.PickedBoat
 import hr.workspace.boat4you.domains.social.ai.SocialAiService
 import hr.workspace.boat4you.domains.social.ai.SocialAiWriter
 import hr.workspace.boat4you.domains.social.ai.SocialBoatPicker
+import hr.workspace.boat4you.domains.social.dto.SocialMediaDto
 import hr.workspace.boat4you.domains.social.dto.SocialPostDto
+import hr.workspace.boat4you.domains.social.dto.SocialPostRequest
 import hr.workspace.boat4you.domains.social.dto.SocialPostTargetDto
 import hr.workspace.boat4you.domains.social.jpa.SocialAccount
 import hr.workspace.boat4you.domains.social.jpa.SocialAccountRepository
@@ -19,17 +21,21 @@ import hr.workspace.boat4you.domains.social.jpa.SocialAiSettingRepository
 import hr.workspace.boat4you.domains.social.jpa.SocialGeneration
 import hr.workspace.boat4you.domains.social.jpa.SocialGenerationRepository
 import hr.workspace.boat4you.domains.social.jpa.SocialMedia
+import hr.workspace.boat4you.domains.social.jpa.SocialMediaKind
 import hr.workspace.boat4you.domains.social.jpa.SocialMediaRepository
 import hr.workspace.boat4you.domains.social.jpa.SocialPlatform
+import hr.workspace.boat4you.domains.social.jpa.SocialPostAction
 import hr.workspace.boat4you.domains.social.jpa.SocialPostSource
 import hr.workspace.boat4you.domains.social.jpa.SocialPostStatus
 import hr.workspace.boat4you.domains.social.jpa.SocialTargetStatus
+import hr.workspace.boat4you.domains.social.service.SocialConflictException
 import hr.workspace.boat4you.domains.social.service.SocialMediaStore
 import hr.workspace.boat4you.domains.social.service.SocialPostService
 import hr.workspace.boat4you.domains.social.service.SocialValidationException
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito.mock
@@ -114,26 +120,34 @@ class SocialAiRunRecoveryTest {
         this.useVideo = useVideo
     }
 
-    private fun draftPost(id: Long) =
-        SocialPostDto(
-            id = id,
-            text = "main",
-            link = "https://www.boat4you.com/yacht/x",
-            media = emptyList(),
-            status = SocialPostStatus.DRAFT,
-            site = site,
-            scheduledAt = null,
-            publishedAt = null,
-            createdAt = Instant.now(),
-            updatedAt = Instant.now(),
-            createdBy = "AI",
-            source = SocialPostSource.AI,
-            note = null,
-            targets =
-                listOf(instagram, facebook).map {
-                    SocialPostTargetDto(it.id!!, it.id!!, it.platform!!, it.name, site, null, null, SocialTargetStatus.PENDING, null, null, null, 0)
-                },
-        )
+    private fun photo(
+        width: Int,
+        height: Int,
+    ) = SocialMediaDto(900, SocialMediaKind.IMAGE, "https://api.boat4you.com/m/900.jpg", null, "900.jpg", "image/jpeg", 1, width, height, null)
+
+    private fun draftPost(
+        id: Long,
+        media: List<SocialMediaDto> = listOf(photo(1080, 1350)),
+        channels: List<SocialAccount> = listOf(instagram, facebook),
+    ) = SocialPostDto(
+        id = id,
+        text = "main",
+        link = "https://www.boat4you.com/yacht/x",
+        media = media,
+        status = SocialPostStatus.DRAFT,
+        site = site,
+        scheduledAt = null,
+        publishedAt = null,
+        createdAt = Instant.now(),
+        updatedAt = Instant.now(),
+        createdBy = "AI",
+        source = SocialPostSource.AI,
+        note = null,
+        targets =
+            channels.map {
+                SocialPostTargetDto(it.id!!, it.id!!, it.platform!!, it.name, site, null, null, SocialTargetStatus.PENDING, null, null, null, 0)
+            },
+    )
 
     /** The run row as the repository keeps it: one row, every save writes it back. */
     private fun storedRun(run: SocialAiRun) {
@@ -168,14 +182,14 @@ class SocialAiRunRecoveryTest {
         `when`(postService.create(any(), any(), any())).thenReturn(draftPost(7))
         `when`(postService.get(7)).thenReturn(draftPost(7))
         `when`(postService.update(anyLong(), any(), any()))
-            .thenThrow(SocialValidationException("INSTAGRAM ig: Instagram photos must be between 4:5 and 1.91:1"))
+            .thenThrow(SocialConflictException("The video for this post is still being made"))
 
         val dto = service.run(site, date, force = false)
 
         dto.postId shouldBe 7
         dto.status shouldBe SocialAiRunStatus.WAITING_VIDEO
         dto.error!! shouldContain "Post #7 stays a draft"
-        dto.error!! shouldContain "Instagram photos must be between 4:5 and 1.91:1"
+        dto.error!! shouldContain "The video for this post is still being made"
         run.topic!! shouldContain "yacht:77"
         verify(postService, times(1)).create(any(), any(), any())
         verify(generations, times(1)).save(any<SocialGeneration>())
@@ -252,5 +266,51 @@ class SocialAiRunRecoveryTest {
         dto.error shouldBe null
         verify(postService, never()).update(anyLong(), any(), any())
         verify(postService, never()).create(any(), any(), any())
+    }
+
+    @Test
+    fun `a channel its network would refuse is left out, the others are scheduled and the run says so`() {
+        val run =
+            SocialAiRun().apply {
+                id = 13
+                this.site = this@SocialAiRunRecoveryTest.site
+                runDate = date
+                status = SocialAiRunStatus.FAILED
+                postId = 14
+            }
+        storedRun(run)
+        `when`(settings.findById(site)).thenReturn(Optional.of(setting(requireApproval = false, useVideo = false)))
+        val wide = draftPost(14, media = listOf(photo(2000, 800)))
+        `when`(postService.get(14)).thenReturn(wide)
+        `when`(postService.update(anyLong(), any(), any())).thenReturn(wide.copy(status = SocialPostStatus.SCHEDULED))
+
+        val dto = service.run(site, date, force = true)
+
+        val sent = ArgumentCaptor.forClass(SocialPostRequest::class.java)
+        verify(postService).update(anyLong(), sent.capture() ?: SocialPostRequest(), any())
+        sent.value.targets.map { it.accountId } shouldBe listOf(22L)
+        sent.value.action shouldBe SocialPostAction.SCHEDULE
+        dto.status shouldBe SocialAiRunStatus.DONE
+        dto.error!! shouldContain "Post #14 scheduled without INSTAGRAM instagram: Instagram photos must be between 4:5 and 1.91:1"
+    }
+
+    @Test
+    fun `with every channel refused the draft stays and nothing is scheduled`() {
+        val run =
+            SocialAiRun().apply {
+                id = 15
+                this.site = this@SocialAiRunRecoveryTest.site
+                runDate = date
+                status = SocialAiRunStatus.FAILED
+                postId = 16
+            }
+        storedRun(run)
+        `when`(settings.findById(site)).thenReturn(Optional.of(setting(requireApproval = false, useVideo = false)))
+        `when`(postService.get(16)).thenReturn(draftPost(16, media = listOf(photo(2000, 800)), channels = listOf(instagram)))
+
+        val dto = service.run(site, date, force = true)
+
+        verify(postService, never()).update(anyLong(), any(), any())
+        dto.error!! shouldContain "Post #16 stays a draft, not scheduled: INSTAGRAM instagram: Instagram photos must be between 4:5 and 1.91:1"
     }
 }

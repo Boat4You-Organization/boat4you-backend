@@ -250,12 +250,11 @@ class SocialAiService(
             it.postId = photoPost?.id
         }
         // Scheduled before the video is queued: a post with an open video generation cannot be scheduled.
-        val draftKept =
-            photoPost?.takeUnless { setting.requireApproval }?.let { p -> scheduleOrReason(p.id, setting, date)?.let { draftKept(p.id, it) } }
+        val scheduleNote = photoPost?.takeUnless { setting.requireApproval }?.let { scheduleNote(it.id, setting, date) }
         val videoQueued = withVideo && queueVideo(day, run, channels.filter { it.platform in VIDEO_PLATFORMS }, photoPost?.id)
         return updateRun(run.id!!) {
             it.status = if (videoQueued) SocialAiRunStatus.WAITING_VIDEO else SocialAiRunStatus.DONE
-            it.error = draftKept
+            it.error = scheduleNote
         }
     }
 
@@ -271,31 +270,36 @@ class SocialAiService(
         postId: Long,
     ): SocialAiRun {
         val post = runCatching { postService.get(postId) }.getOrNull()
-        val notScheduled =
+        val note =
             when {
-                post == null -> "the post is gone"
+                post == null -> draftKept(postId, "the post is gone")
                 setting.requireApproval || post.status != SocialPostStatus.DRAFT -> null
-                else -> scheduleOrReason(postId, setting, date)
+                else -> scheduleNote(postId, setting, date)
             }
         return updateRun(run.id!!) {
             it.status = SocialAiRunStatus.DONE
-            it.error = notScheduled?.let { reason -> draftKept(postId, reason) }
+            it.error = note
         }
     }
 
-    /** Schedules the AI draft; the reason when a channel's rules (or anything else) refuse it — the draft then stays. */
+    /**
+     * Schedules the AI draft and says what the admin should know, null when it went through whole: the channels left out
+     * because their network would refuse the post, or why the whole draft stays a draft (no channel left, or anything
+     * else that refused it).
+     */
     @Suppress("TooGenericExceptionCaught") // the draft is kept whatever refused it; the reason goes to the run
-    private fun scheduleOrReason(
+    private fun scheduleNote(
         postId: Long,
         setting: SocialAiSetting,
         date: LocalDate,
     ): String? =
         try {
-            schedule(postId, setting, date)
-            null
+            schedule(postId, setting, date).takeIf { it.isNotEmpty() }?.let { dropped ->
+                "Post #$postId scheduled without ${dropped.joinToString("; ")}".take(ERROR_MAX)
+            }
         } catch (e: Exception) {
             log.warn("AI post {} stays a draft: {}", postId, e.message)
-            e.message ?: e.javaClass.simpleName
+            draftKept(postId, e.message ?: e.javaClass.simpleName)
         }
 
     private fun draftKept(
@@ -464,17 +468,15 @@ class SocialAiService(
             )
         g.payload["videoPostId"] = post.id
         val setting = site?.let { settings.findById(it).orElse(null) }
-        if (setting != null && !setting.requireApproval) {
-            runCatching { schedule(post.id, setting, LocalDate.parse(g.payload["date"] as String)) }
-                .onFailure { log.warn("AI video post {} not scheduled: {}", post.id, it.message) }
-        }
-        finishGeneration(g, failed = false, error = null)
+        val note = setting?.takeUnless { it.requireApproval }?.let { scheduleNote(post.id, it, LocalDate.parse(g.payload["date"] as String)) }
+        finishGeneration(g, failed = false, error = null, note = note)
     }
 
     private fun finishGeneration(
         g: SocialGeneration,
         failed: Boolean,
         error: String?,
+        note: String? = null,
     ) {
         g.status = if (failed) SocialGenerationStatus.FAILED else SocialGenerationStatus.DONE
         g.error = error?.take(ERROR_MAX)
@@ -483,18 +485,31 @@ class SocialAiService(
             updateRun(runId) {
                 it.status = SocialAiRunStatus.DONE
                 // Kept next to a draft warning the run may already carry.
-                if (failed) it.error = listOfNotNull(it.error, "Video: ${error ?: "failed"}").joinToString("; ").take(ERROR_MAX)
+                val video = if (failed) "Video: ${error ?: "failed"}" else note?.let { n -> "Video: $n" }
+                if (video != null) it.error = listOfNotNull(it.error, video).joinToString("; ").take(ERROR_MAX)
             }
         }
     }
 
-    /** Schedules an AI draft at the site's time today (or 5 minutes from now when that time has passed). */
+    /**
+     * Schedules an AI draft at the site's time today (or 5 minutes from now when that time has passed). A channel whose
+     * network would refuse the post (SocialRules) is left out so the others still go; the answer names each one left
+     * out and why. With no channel left the draft stays as it is (SocialValidationException).
+     */
     private fun schedule(
         postId: Long,
         setting: SocialAiSetting,
         date: LocalDate,
-    ) {
+    ): List<String> {
         val post = postService.get(postId)
+        val media = post.media.map { SocialRules.MediaInfo(it.kind, it.width, it.height) }
+        val refused =
+            post.targets
+                .associateWith { t -> SocialRules.errors(t.platform, t.text?.trim()?.ifBlank { null } ?: post.text, t.title, media) }
+                .filterValues { it.isNotEmpty() }
+        val kept = post.targets.filter { it !in refused }
+        val dropped = refused.map { (t, errs) -> "${t.platform} ${t.accountName}: ${errs.joinToString(", ")}" }
+        if (kept.isEmpty()) throw SocialValidationException(dropped.joinToString("; "))
         val at =
             ZonedDateTime.of(date, LocalTime.parse(setting.publishTime), ZONE).toInstant().let {
                 if (it.isBefore(Instant.now().plusSeconds(MIN_LEAD_S))) Instant.now().plusSeconds(LATE_LEAD_S) else it
@@ -505,13 +520,15 @@ class SocialAiService(
                 text = post.text,
                 link = post.link,
                 mediaIds = post.media.map { it.id },
-                targets = post.targets.map { SocialTargetRequest(it.accountId, it.text, it.title) },
+                targets = kept.map { SocialTargetRequest(it.accountId, it.text, it.title) },
                 action = SocialPostAction.SCHEDULE,
                 scheduledAt = at,
                 note = post.note,
             ),
             AI_ACTOR,
         )
+        if (dropped.isNotEmpty()) log.info("AI post {} scheduled without {}", postId, dropped)
+        return dropped
     }
 
     private fun textFor(
