@@ -23,6 +23,7 @@ import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArrayList
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
@@ -45,6 +46,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.core.io.ClassPathResource
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.PessimisticLockingFailureException
+import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
@@ -868,5 +870,73 @@ class ReservationCardOrderIntegrationTest {
         }
         row(order.id!!).refundedAmountMinor shouldBe 150_000L
         tx.applyMoneyBack(999_999, withTotals(1, 1)).shouldBeNull()
+    }
+
+    @Test
+    @Order(20)
+    fun `admin list - client and booking number joined, filters by status, reservation and q, total of what was kept`() {
+        stub("reservation", 77, mapOf("status" to "'RESERVED'", "sys_status" to "'RESERVATION'"))
+        stub("reservation_flow", 977)
+        jdbc.update("UPDATE reservation SET reservation_number = '9977001/2026' WHERE id = 77")
+        jdbc.update("UPDATE reservation_flow SET name = 'Ana', surname = 'Adminlist', email = 'ana.adminlist@example.com', phone = '+385911234567' WHERE id = 977")
+        val all = ReservationCardOrderStatus.entries
+
+        fun order(
+            orderId: String,
+            phase: Long,
+            amountMinor: Long,
+        ) = insert(orderId, plan(flowId = 977, phaseIds = phase.toString(), amountMinor = amountMinor, paymentPhaseId = phase).copy(reservationId = 77, reference = "9977001/2026"))
+        val paid = order("tr_adminPaid", 71, 100_000)
+        val open = order("tr_adminOpen", 72, 200_000)
+        val failed = order("tr_adminFailed", 73, 300_000)
+        // A payment whose reservation was purged (ON DELETE SET NULL): it stays in the list, without a booking number.
+        val orphan = order("tr_adminOrphan", 74, 400_000)
+        jdbc.update("UPDATE reservation_card_order SET status = 'COMPLETED', completed_at = now(), refunded_amount_minor = 5000, charged_back_amount_minor = 1000 WHERE id = ?", paid.id)
+        jdbc.update("UPDATE reservation_card_order SET status = 'FAILED' WHERE id = ?", failed.id)
+        jdbc.update("UPDATE reservation_card_order SET status = 'COMPLETED', reservation_id = NULL WHERE id = ?", orphan.id)
+        val firstPage = PageRequest.of(0, 10)
+
+        val ofBooking = orders.searchForAdmin(all, 77, null, firstPage)
+        ofBooking.totalElements shouldBe 3L
+        ofBooking.content.map { (it[0] as ReservationCardOrder).providerOrderId } shouldBe listOf("tr_adminFailed", "tr_adminOpen", "tr_adminPaid")
+        with(ofBooking.content.first()) {
+            this[1] shouldBe "Ana"
+            this[2] shouldBe "Adminlist"
+            this[3] shouldBe "ana.adminlist@example.com"
+            this[4] shouldBe "+385911234567"
+            this[5] shouldBe "9977001/2026"
+        }
+
+        // q: client name (both words), e-mail, booking number, Mollie payment id - case-insensitive; no reservation filter.
+        orders.searchForAdmin(all, -1, "ana ADMINLIST", firstPage).totalElements shouldBe 4L
+        orders.searchForAdmin(all, -1, "adminlist@example", firstPage).totalElements shouldBe 4L
+        orders.searchForAdmin(all, -1, "9977001", firstPage).totalElements shouldBe 4L
+        orders.searchForAdmin(all, -1, "TR_ADMINOPEN", firstPage).content.map { (it[0] as ReservationCardOrder).id } shouldBe listOf(open.id)
+        orders.searchForAdmin(all, -1, "no-such-client", firstPage).totalElements shouldBe 0L
+
+        // Status groups of the admin tabs + paging.
+        val notPaid = listOf(ReservationCardOrderStatus.FAILED, ReservationCardOrderStatus.CANCELLED)
+        orders.searchForAdmin(notPaid, -1, "adminlist", firstPage).content.map { (it[0] as ReservationCardOrder).id } shouldBe listOf(failed.id)
+        with(orders.searchForAdmin(all, -1, "adminlist", PageRequest.of(1, 3))) {
+            totalElements shouldBe 4L
+            totalPages shouldBe 2
+            content.map { (it[0] as ReservationCardOrder).id } shouldBe listOf(paid.id)
+        }
+        with(orders.searchForAdmin(all, -1, "tr_adminOrphan", firstPage).content.single()) {
+            (this[0] as ReservationCardOrder).reservationId.shouldBeNull()
+            this[5].shouldBeNull()
+            this[1] shouldBe "Ana"
+        }
+
+        // Kept = COMPLETED only, charged - refunded - charged back; the filters apply to the total too.
+        orders.sumReceivedForAdmin(all, 77, null, ReservationCardOrderStatus.COMPLETED) shouldBe 94_000L
+        orders.sumReceivedForAdmin(all, -1, "adminlist", ReservationCardOrderStatus.COMPLETED) shouldBe 494_000L
+        orders.sumReceivedForAdmin(notPaid, -1, "adminlist", ReservationCardOrderStatus.COMPLETED) shouldBe 0L
+
+        with(orders.findAdminRowById(paid.id!!).single()) {
+            (this[0] as ReservationCardOrder).refundedAmountMinor shouldBe 5_000L
+            this[5] shouldBe "9977001/2026"
+        }
+        orders.findAdminRowById(999_999).shouldBeEmpty()
     }
 }

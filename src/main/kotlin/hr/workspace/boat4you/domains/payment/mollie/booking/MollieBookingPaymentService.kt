@@ -11,6 +11,7 @@ import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler.Handler
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentStatuses
 import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.CardOrderPromoteState
+import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrder
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
@@ -20,6 +21,7 @@ import hr.workspace.boat4you.domains.reservation.service.StripeSessionExpirer
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAlreadyPaidException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAmountAboveLimitException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentInProgressException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentNotFoundException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProvider
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProviderException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentsUnavailableException
@@ -175,6 +177,30 @@ class MollieBookingPaymentService(
         }
         applyState(row.id!!, payment, WEBHOOK_EVENT + ":" + payment.status)
         return HandlerResult.HANDLED
+    }
+
+    /**
+     * Admin "Refresh from Mollie": re-reads the payment of ledger row [id] and applies it exactly as the webhook would
+     * (completion, refund / chargeback totals, closing). 404 unknown id, 503 Mollie not configured, 502 Mollie error or
+     * a payment Mollie does not know. Returns the row as stored afterwards.
+     */
+    fun refresh(id: Long): ReservationCardOrder {
+        val row = orders.findById(id).orElseThrow { CardPaymentNotFoundException() }
+        if (!properties.enabled) throw CardPaymentsUnavailableException()
+        val payment =
+            try {
+                // One attempt: an admin is waiting (the retried read can take 45 s before it gives up).
+                client.getPaymentOnce(row.providerOrderId)
+            } catch (e: Exception) {
+                log.warn("Mollie booking ledger {}: admin refresh could not read the payment ({})", id, e.javaClass.simpleName)
+                throw CardPaymentProviderException()
+            }
+        if (payment == null) {
+            log.warn("Mollie booking payment {} (ledger {}): Mollie does not know it", row.providerOrderId, id)
+            throw CardPaymentProviderException()
+        }
+        applyState(id, payment, event = null)
+        return orders.findById(id).orElse(row)
     }
 
     /** One run of the reconcile job: every PENDING row old enough is re-read; one failure never stops the run. */

@@ -67,6 +67,9 @@ data class MolliePayment(
     val isCancelable: Boolean? = null,
     @JsonProperty("_links")
     val links: MollieLinks? = null,
+    /** Present only when the payment was read with `?embed=refunds,chargebacks` (admin details). */
+    @JsonProperty("_embedded")
+    val embedded: MollieEmbedded? = null,
 ) {
     val checkoutUrl: String? get() = links?.checkout?.href
 
@@ -79,6 +82,46 @@ data class MolliePaymentDetails(
     val cardLabel: String? = null,
     val cardNumber: String? = null,
     val cardCountryCode: String? = null,
+    /** `credit` | `debit` | `prepaid` | `deferred-debit`. */
+    val cardFunding: String? = null,
+    /** `consumer` | `business`. */
+    val cardAudience: String? = null,
+    /** Mollie's pricing bucket of the card (e.g. `intra-eu`, `intra-eu-corporate`, `other`). */
+    val feeRegion: String? = null,
+    /** Why a card payment failed (e.g. `insufficient_funds`), with Mollie's customer-facing sentence. */
+    val failureReason: String? = null,
+    val failureMessage: String? = null,
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class MollieEmbedded(
+    val refunds: List<MollieRefund>? = null,
+    val chargebacks: List<MollieChargeback>? = null,
+)
+
+/** A refund of a payment (created in the Mollie dashboard; we never create one). */
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class MollieRefund(
+    val id: String,
+    val amount: MollieAmount,
+    /** `queued` | `pending` | `processing` | `refunded` | `failed` | `canceled`. */
+    val status: String? = null,
+    val description: String? = null,
+    val createdAt: Instant? = null,
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class MollieChargeback(
+    val id: String,
+    val amount: MollieAmount,
+    val createdAt: Instant? = null,
+    val reason: MollieChargebackReason? = null,
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class MollieChargebackReason(
+    val code: String? = null,
+    val description: String? = null,
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
