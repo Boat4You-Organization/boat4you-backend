@@ -1,5 +1,22 @@
 # Backend deploy notes
 
+## 2026-11-10 — ✅ LIVE oba čvora: Mollie (/pay + kartice bookinga) + admin praćenje uplata + Instagram omjer Objava — jar `dcbee0846fd0b28fccd6680acbf894a7`, grana `release/mollie-payments` `c06b8a19`, tag `live/2026-11-10-mollie`
+
+**Jar** = live linija (`release/iris-area-model` 8f2d2d57 + `release/ai-call-center-p2` 3a51b2e5, sadrži pr-module V9_121 i iris) + `feat/mollie-payments` 3a235936 (Mollie + admin praćenje) + `fix/social-ai-instagram-ratio` 0bfbc2a8 (sesija ADMIN, Mariovo „da“). Migracije V9_122, V9_123 primijenjene 14:03 UTC; kasniji jarovi bez migracija.
+
+**Tijek 10.11.2026 (UTC)**
+- 14:03 cusma2: prvi Mollie jar, `PAYMENT_CARD_PROVIDER=stripe`; 14:22 Mariova live uplata 50 € preko `/pay` (tr_2WwxvHCEvQbMTkLgKXNZJ, zapis 1 COMPLETED), 14:26 povrat iz Mollie dashboarda (re_wcMg62…, pending).
+- 14:44 env `PAYMENT_CARD_PROVIDER=mollie` (infra `mollie_env_set.sh mollie`).
+- ⚠️ ~14:45 druga sesija deployala `release/ai-call-center-p2` jar (ebaacf00) preko Mollie jara → `/public/payments/card|custom/*` i `/webhooks/mollie` nestali do 15:10. 15:10 cusma2: spojeni jar 78021c49 (Mollie + AI call centar); log „Card payments: provider=mollie“.
+- 16:21 cusma2: jar bbfa0e13 (+ admin praćenje: `/admin/card-payments`, `/{id}/refresh`, `/admin/mollie-payments/{tr_}`).
+- 17:05 cusma2: jar dcbee084 (+ Instagram omjer); 18:06 cusma3: isti jar (gate OK, bez migracija, health OK).
+
+**Provjereno uživo:** health oba čvora; `/public/payments/custom/config` 200; `POST /public/payments/card/checkPaymentStatus/<nepoznato>` 404 kod 8105; `/webhooks/mollie` 200; nove admin rute bez prijave 403; web `create-checkout-session` za nepostojeću rezervaciju „Reservation does not exist“. **Nije provjereno:** prava rata bookinga kroz Mollie (nema testne rezervacije); admin rute s prijavom (Mario).
+
+**Rollback:** kartice natrag na Stripe = `PAYMENT_CARD_PROVIDER=stripe` + restart; jar = `webservice.jar.prev` (bbfa0e13 na cusma2).
+
+**Sljedeće (NIJE deployano):** Klarna — grana `feat/mollie-klarna` (V9_124, V9_125, `MOLLIE_KLARNA_ENABLED`); jar se gradi iz `release/mollie-payments` + te grane.
+
 ## 2026-11-10 — 💳 Admin: praćenje Mollie uplata (popis kartičnih uplata rezervacija, Refresh, detalji s Molliea) — ⏳ NIJE DEPLOYANO (grana `feat/mollie-payments`, čeka pregled + Mariovo „da“)
 
 Mario 10.11.2026: „da imamo u adminu isto praćenje svega“. Do sada je admin za kartičnu uplatu rezervacije pokazivao samo `paidOn` rate; ledger `reservation_card_order` nije imao nijedan admin endpoint.
