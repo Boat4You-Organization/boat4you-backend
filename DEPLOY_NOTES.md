@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-11-10 — 💳 Mollie umjesto Stripea/Revoluta: tajni `/pay/<ključ>` ×7 sajtova + kartično plaćanje online rezervacija (V9_122, V9_123) — ⏳ NIJE DEPLOYANO (grana `feat/mollie-payments`, čeka Mariovo „da“)
+## 2026-11-10 — 💳 Mollie umjesto Stripea/Revoluta: tajni `/pay/<ključ>` na boat4you.com (za ugovore svih 7 sajtova) + kartično plaćanje online rezervacija (V9_122, V9_123) — ⏳ NIJE DEPLOYANO (grana `feat/mollie-payments`, čeka Mariovo „da“)
 
 Mario 10.11.2026: Revolut odbio merchant račun; Mollie račun aktivan (org_19333861, profil „Boat4You - part of Europe Yachts Charter group“, rezerva 0). Odluke: SVE kartice preko Mollieja, Stripe se klijentima nigdje ne spominje (račun i ključevi ostaju tihi rezervni plan iza prekidača); kartica najviše 10.000 € po uplati (Mollie limit), iznad toga virman ili više uplata; +5 % na kartice u bookingu ostaje, `/pay` bez dodatka.
 
@@ -18,12 +18,12 @@ Mario 10.11.2026: Revolut odbio merchant račun; Mollie račun aktivan (org_1933
 
 **Env cusma2 (`boat4you_vars.env`, backup prije):**
 - `MOLLIE_API_KEY=live_…` (iz `~/.b4y-mollie.env`, nikad u chat/git), `MOLLIE_WEBHOOK_URL=https://api.boat4you.com/webhooks/mollie`, `MOLLIE_RECONCILE_ENABLED=true`
-- `CUSTOM_PAYMENT_LINK_KEYS=boat4you=<k>;catamaran-charter-greece=<k>;catamaran-croatia-charter=<k>;catamarancharteritaly=<k>;catamaran-charter-caribbean=<k>;europe-yachts=<k>;croatia-yachting=<k>` (≥ 32 znaka A–Z a–z 0–9 _ -, po sajtu svoj; isti ključ ide u `PAY_LINK_KEYS` tog sajta)
+- `CUSTOM_PAYMENT_LINK_KEYS=boat4you=<k>` (≥ 32 znaka A–Z a–z 0–9 _ -; isti ključ ide u `PAY_LINK_KEYS` weba boat4you na cusma1). **Mario 10.11.: jedna stranica za sve ugovore** — `www.boat4you.com/pay/<k>`; sisteri nemaju `/pay` (Mollie profil je prijavljen samo za boat4you.com), pa se njihovi ključevi NE postavljaju (kod ih podržava, ali bez ključa = 404)
 - `PAYMENT_CARD_PROVIDER` ostaje `stripe` pri prvom deployu; `mollie` tek nakon live testa `/pay`.
 - cusma3: ništa (bez ključa Mollie = disabled, job se ne pali). Stripe ključevi ostaju.
 - nginx: `/webhooks/mollie` prolazi kroz postojeći `location /`; opcionalno `infra/docs/nginx/mollie-webhook-2026-11-10.conf`.
 
-**Redoslijed:** (1) jar cusma2 (provider=stripe) → health, log „Mollie: enabled=true, mode=live, webhook=set, reconcile=true“ i „Card payments: provider=stripe“; (2) b4y web + admin; (3) live test `/pay` 10 € + povrat (Mario, po mogućnosti Amex); (4) sisteri ×6; (5) `PAYMENT_CARD_PROVIDER=mollie` + restart cusma2 → test rate na testnoj rezervaciji + povrat; (6) cusma3 isti jar kroz gate. Napomena: novi b4y web zove `/payments/card/*` → backend PRVI.
+**Redoslijed:** (1) jar cusma2 (provider=stripe) → health, log „Mollie: enabled=true, mode=live, webhook=set, reconcile=true“ i „Card payments: provider=stripe“; (2) b4y web + admin; (3) live test `/pay` 10 € + povrat (Mario, po mogućnosti Amex); (4) sisteri ×6 (samo tekstovi: Mollie umjesto Stripea/Revoluta, bez `/pay`, ne ovise o backendu); (5) `PAYMENT_CARD_PROVIDER=mollie` + restart cusma2 → test rate na testnoj rezervaciji + povrat; (6) cusma3 isti jar kroz gate. Napomena: novi b4y web zove `/payments/card/*` → backend PRVI.
 
 **Rollback:** `PAYMENT_CARD_PROVIDER=stripe` + restart (Mollie plaćanja u tijeku i dalje se bilježe: webhook, status i reconcile ne ovise o prekidaču); cijeli jar: `webservice.jar.prev` (migracije su samo dodavanje, stari jar ih ignorira — Hibernate validate ne gleda nepoznate tablice/stupce).
 
