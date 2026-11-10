@@ -86,6 +86,15 @@ class CallContextBuilderTest {
     }
 
     @Test
+    fun `Nika is told the language she will actually speak`() {
+        val slovenian = call().apply { language = "sl" }
+        CallContextBuilder.variables(inquiry(), slovenian, friday, s)["language"] shouldBe "en"
+        val noLanguage = call().apply { language = null }
+        CallContextBuilder.variables(inquiry().apply { locale = "fr-CH" }, noLanguage, friday, s)["language"] shouldBe "fr"
+        CallContextBuilder.variables(inquiry().apply { locale = null }, noLanguage, friday, s)["language"] shouldBe "en"
+    }
+
+    @Test
     fun `transfer is allowed on a weekday morning and not on Saturday`() {
         CallContextBuilder.variables(inquiry(), call(), friday, s)["transfer_allowed"] shouldBe "true"
         CallContextBuilder.variables(inquiry(), call(), saturday, s)["transfer_allowed"] shouldBe "false"
