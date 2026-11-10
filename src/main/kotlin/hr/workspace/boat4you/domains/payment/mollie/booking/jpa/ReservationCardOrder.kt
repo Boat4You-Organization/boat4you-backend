@@ -31,6 +31,10 @@ open class ReservationCardOrder {
     @Column(name = "provider_order_id", length = 64, nullable = false, updatable = false)
     open var providerOrderId: String = ""
 
+    /** `CARD` (cards + Apple Pay) or `KLARNA` (V9_124); NULL = a row from before Klarna = CARD. Read through [methodOrCard]. */
+    @Column(name = "method", length = 16, updatable = false)
+    open var method: String? = null
+
     /** Our token in the Mollie redirectUrl (`?paymentRef=`) and metadata; the success page asks the status with it. */
     @Column(name = "checkout_token", nullable = false, updatable = false)
     open var checkoutToken: UUID = UUID.randomUUID()
@@ -115,6 +119,8 @@ open class ReservationCardOrder {
 
     @Column(name = "last_webhook_event", length = 64)
     open var lastWebhookEvent: String? = null
+
+    val methodOrCard: BookingCheckoutMethod get() = BookingCheckoutMethod.fromStored(method)
 
     /** [phaseIds] as numbers (empty for the legacy pay-full fallback). */
     fun phaseIdList(): List<Long> = phaseIds.split(",").filter { it.isNotEmpty() }.map { it.toLong() }

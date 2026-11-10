@@ -1,5 +1,8 @@
 package hr.workspace.boat4you.domains.custompayment.dto
 
+import hr.workspace.boat4you.domains.payment.mollie.KlarnaCountry
+import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
+import jakarta.validation.Valid
 import hr.workspace.boat4you.domains.custompayment.jpa.CustomPaymentStatus
 import jakarta.validation.constraints.AssertTrue
 import jakarta.validation.constraints.Digits
@@ -20,6 +23,17 @@ data class CustomPaymentConfigDto(
     val maxAmountMinor: Long,
     val currency: String,
     val termsVersion: String,
+    /** Klarna offer for this page; null = not offered. */
+    val klarna: KlarnaOfferDto? = null,
+)
+
+/** Where and up to which amount Klarna can be chosen (EUR billing countries; `/pay` and the booking payment step). */
+data class KlarnaOfferDto(
+    val countries: List<KlarnaCountry>,
+    /** Largest limit among [countries], cents: above it Klarna is not shown at all. */
+    val maxAmountMinor: Long,
+    /** Booking only: surcharge for a Klarna payment in percent (the `/pay` link never adds one). */
+    val surchargePercent: BigDecimal? = null,
 )
 
 /**
@@ -50,6 +64,9 @@ data class CreateCustomPaymentRequest(
     @field:NotBlank
     @field:Size(max = 128)
     val linkKey: String? = null,
+    /** Present = pay with Klarna (billing address required by Mollie); its `email` is ignored, [email] is used. */
+    @field:Valid
+    val klarna: KlarnaBillingRequest? = null,
 )
 
 /** Where to send the payer (Mollie hosted checkout) + our public token for the success page `?ref=`. */

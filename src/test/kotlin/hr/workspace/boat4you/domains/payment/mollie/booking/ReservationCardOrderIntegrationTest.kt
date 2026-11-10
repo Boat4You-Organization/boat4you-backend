@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.payment.mollie.booking
 
+import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.BookingCheckoutMethod
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.CardOrderPromoteState
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrder
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
@@ -30,6 +31,7 @@ import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.longs.shouldBeLessThan
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.MethodOrderer
@@ -938,5 +940,36 @@ class ReservationCardOrderIntegrationTest {
             this[5] shouldBe "9977001/2026"
         }
         orders.findAdminRowById(999_999).shouldBeEmpty()
+    }
+
+    @Test
+    @Order(21)
+    fun `method (V9_124) - a card checkout is never reused for Klarna and vice versa, rows from before Klarna count as card`() {
+        fun reusableFor(
+            plan: BookingOrderPlan,
+            method: BookingCheckoutMethod,
+        ) = orders.findReusable(plan.reservationFlowId, plan.phaseIds, plan.amountMinor, ReservationCardOrderTx.paymentPhaseKey(plan.paymentPhaseId), ReservationCardOrderTx.reusableUntil(), method.name)
+
+        val cardPlan = plan(flowId = 901, phaseIds = "81", amountMinor = 111_100, paymentPhaseId = 81)
+        val card = insert("tr_methodCard", cardPlan)
+        card.method shouldBe "CARD"
+        row(card.id!!).methodOrCard shouldBe BookingCheckoutMethod.CARD
+        reusableFor(cardPlan, BookingCheckoutMethod.CARD)?.id shouldBe card.id
+        reusableFor(cardPlan, BookingCheckoutMethod.KLARNA).shouldBeNull()
+
+        // Same flow, phase and cents, now with Klarna: a NEW row, although the card row is still open.
+        val klarnaPlan = cardPlan.copy(method = BookingCheckoutMethod.KLARNA)
+        val klarna = insert("tr_methodKlarna", klarnaPlan)
+        klarna.id shouldNotBe card.id
+        row(klarna.id!!).methodOrCard shouldBe BookingCheckoutMethod.KLARNA
+        reusableFor(cardPlan, BookingCheckoutMethod.KLARNA)?.id shouldBe klarna.id
+        reusableFor(cardPlan, BookingCheckoutMethod.CARD)?.id shouldBe card.id
+
+        // A row written before V9_124 has no method: it is a card checkout.
+        jdbc.update("UPDATE reservation_card_order SET method = NULL WHERE id = ?", card.id)
+        row(card.id!!).methodOrCard shouldBe BookingCheckoutMethod.CARD
+        reusableFor(cardPlan, BookingCheckoutMethod.CARD)?.id shouldBe card.id
+        shouldThrow<Exception> { jdbc.update("UPDATE reservation_card_order SET method = 'PAYPAL' WHERE id = ?", card.id) }
+        jdbc.queryForObject("SELECT count(*) FROM pg_constraint WHERE conname IN ('chk_reservation_card_order_method', 'chk_custom_payment_method')", Long::class.java) shouldBe 2L
     }
 }

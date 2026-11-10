@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.payment.mollie.MollieMethods
 import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler.HandlerResult
+import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentLine
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentStatuses
 import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.CardOrderPromoteState
@@ -17,6 +18,8 @@ import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardO
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
+import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
+import hr.workspace.boat4you.domains.reservation.service.CardChargeCalculator
 import hr.workspace.boat4you.domains.reservation.service.StripeSessionExpirer
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAlreadyPaidException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAmountAboveLimitException
@@ -83,12 +86,13 @@ class MollieBookingPaymentService(
         paymentPhaseId: Long?,
         idempotencyKey: String?,
         locale: String?,
+        klarna: KlarnaBillingRequest?,
     ): CheckoutSessionDto {
         if (!properties.enabled) throw CardPaymentsUnavailableException()
-        var outcome = prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey)
+        var outcome = prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, klarna)
         if (outcome is CreateOutcome.StalePending) {
             resolveStale(reservationId, outcome.orders)
-            outcome = prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey)
+            outcome = prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, klarna)
         }
         return when (outcome) {
             is CreateOutcome.Reuse -> {
@@ -245,7 +249,8 @@ class MollieBookingPaymentService(
         payFullAmount: Boolean?,
         paymentPhaseId: Long?,
         idempotencyKey: String?,
-    ): CreateOutcome = lockTimeoutIsInProgress(reservationId) { createTx.prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey) }
+        klarna: KlarnaBillingRequest?,
+    ): CreateOutcome = lockTimeoutIsInProgress(reservationId) { createTx.prepare(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, klarna) }
 
     /** Step 2 of the class doc. Throws the 409 / 502 the checkout must answer; returns when a new payment may be created. */
     private fun resolveStale(
@@ -388,8 +393,18 @@ class MollieBookingPaymentService(
             cancelUrl = "$hostPublic$prefix/payment-cancelled?reservationId=${plan.reservationId}",
             webhookUrl = properties.webhookUrl,
             locale = mollieLocale(locale),
-            // Card surcharge applies: cards and Apple Pay only (no Pay by Bank / Klarna on the +5 % path).
-            method = listOf(MollieMethods.CREDIT_CARD, MollieMethods.APPLE_PAY),
+            // One method group per checkout: cards + Apple Pay, or Klarna alone (it needs the billing address and lines).
+            method = if (plan.klarna != null) listOf(MollieMethods.KLARNA) else listOf(MollieMethods.CREDIT_CARD, MollieMethods.APPLE_PAY),
+            billingAddress = plan.klarna?.toMollie(),
+            lines =
+                plan.klarna?.let {
+                    MolliePaymentLine.of(
+                        description = "Yacht charter - Boat4you reservation #${plan.reference}",
+                        baseMinor = plan.amountMinor - CardChargeCalculator.toCentsLong(plan.surchargeAmount),
+                        surchargeMinor = CardChargeCalculator.toCentsLong(plan.surchargeAmount),
+                        feeDescription = "Payment fee",
+                    )
+                },
             metadata =
                 buildMap {
                     put("reservationId", plan.reservationId.toString())

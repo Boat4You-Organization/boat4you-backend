@@ -50,6 +50,7 @@ interface CustomPaymentRepository : JpaRepository<CustomPayment, Long> {
           AND LOWER(p.payerEmail) = LOWER(:email)
           AND p.createdAt > :since
           AND p.checkoutUrl IS NOT NULL
+          AND COALESCE(p.method, 'CARD') = :method
         ORDER BY p.createdAt DESC
         """,
     )
@@ -60,6 +61,7 @@ interface CustomPaymentRepository : JpaRepository<CustomPayment, Long> {
         @Param("email") email: String,
         @Param("since") since: Instant,
         @Param("status") status: CustomPaymentStatus,
+        @Param("method") method: String = "CARD",
     ): List<CustomPayment>
 
     /** Attempts from this e-mail since [since] (any status) — the per-e-mail cap. */

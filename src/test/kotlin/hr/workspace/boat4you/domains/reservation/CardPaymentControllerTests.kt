@@ -22,6 +22,7 @@ import hr.workspace.boat4you.domains.payment.mollie.mollieProperties
 import hr.workspace.boat4you.domains.reservation.controllers.CardPaymentController
 import hr.workspace.boat4you.domains.reservation.controllers.PublicCardPaymentController
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
+import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhase
@@ -54,6 +55,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.convert.ApplicationConversionService
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
 import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.post
@@ -79,6 +81,7 @@ class CardPaymentControllerTests {
         override val provider = CardProvider.MOLLIE
         var failWith: RuntimeException? = null
         val calls = mutableListOf<List<Any?>>()
+        val klarnaSeen = mutableListOf<KlarnaBillingRequest?>()
         val known = mutableMapOf<String, CheckoutSessionDto>()
 
         override fun createCheckout(
@@ -87,7 +90,9 @@ class CardPaymentControllerTests {
             paymentPhaseId: Long?,
             idempotencyKey: String?,
             locale: String?,
+            klarna: KlarnaBillingRequest?,
         ): CheckoutSessionDto {
+            klarnaSeen += klarna
             calls += listOf(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, locale)
             failWith?.let { throw it }
             return CheckoutSessionDto("tr_7UhSN1zuXS", CheckoutSessionStatusEnum.PAYMENT_PENDING, "https://www.mollie.com/checkout/select-method/7UhSN1zuXS")
@@ -177,6 +182,36 @@ class CardPaymentControllerTests {
             }
         }
         mollie.calls shouldBe List(2) { listOf(42L, null, 7L, "key-1", "de") }
+        verifyNoInteractions(stripeService)
+    }
+
+    @Test
+    fun `klarna - the billing address travels in the body to Mollie, a broken one is a 400, Stripe answers 422 (8107)`() {
+        val address = """{"klarna":{"givenName":"Hans","familyName":"Mueller","streetAndNumber":"Hellersbergstrasse 14","postalCode":"41460","city":"Neuss","country":"DE"}}"""
+        listOf("/public/payments/card", "/secured/payments/card").forEach { base ->
+            mvc(router("mollie"))
+                .post("$base/create-checkout-session/42?paymentPhaseId=7&idempotencyKey=key-1&locale=de") {
+                    contentType = MediaType.APPLICATION_JSON
+                    content = address
+                }.andExpect { status { isOk() } }
+        }
+        mollie.klarnaSeen.map { it?.country to it?.city } shouldBe List(2) { "DE" to "Neuss" }
+        // No body, or a body without klarna = the card checkout as before.
+        mvc(router("mollie")).create("/public/payments/card").andExpect { status { isOk() } }
+        mollie.klarnaSeen.last() shouldBe null
+
+        mvc(router("mollie"))
+            .post("/public/payments/card/create-checkout-session/42?paymentPhaseId=7") {
+                contentType = MediaType.APPLICATION_JSON
+                content = """{"klarna":{"givenName":"Hans","country":"Germany"}}"""
+            }.andExpect { status { isBadRequest() } }
+        mollie.klarnaSeen.size shouldBe 3
+
+        mvc(router("stripe"))
+            .post("/public/payments/card/create-checkout-session/42?paymentPhaseId=7") {
+                contentType = MediaType.APPLICATION_JSON
+                content = address
+            }.expectError(422, ApiErrorCodes.KLARNA_NOT_AVAILABLE)
         verifyNoInteractions(stripeService)
     }
 

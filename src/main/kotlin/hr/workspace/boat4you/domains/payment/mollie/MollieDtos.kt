@@ -43,7 +43,48 @@ data class MollieCreatePaymentRequest(
     val locale: String? = null,
     val method: List<String>? = null,
     val metadata: Map<String, String>? = null,
+    /** Required by Mollie for Klarna (with [lines]); never sent for cards. */
+    val billingAddress: MollieBillingAddress? = null,
+    /** Order lines; their `totalAmount`s must add up to [amount]. Required for Klarna. */
+    val lines: List<MolliePaymentLine>? = null,
 )
+
+data class MollieBillingAddress(
+    val givenName: String,
+    val familyName: String,
+    val email: String,
+    val streetAndNumber: String,
+    val postalCode: String,
+    val city: String,
+    val country: String,
+)
+
+/** One order line (`quantity` 1: we sell a service, not items). [type] `surcharge` marks the payment fee. */
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class MolliePaymentLine(
+    val description: String,
+    val unitPrice: MollieAmount,
+    val totalAmount: MollieAmount,
+    val quantity: Int = 1,
+    val type: String? = null,
+) {
+    companion object {
+        /**
+         * Lines for a payment of [baseMinor] + [surchargeMinor] cents: the service and, when charged, the payment fee as
+         * its own `surcharge` line, so the lines always add up to the payment amount.
+         */
+        fun of(
+            description: String,
+            baseMinor: Long,
+            surchargeMinor: Long,
+            feeDescription: String,
+        ): List<MolliePaymentLine> =
+            buildList {
+                add(MolliePaymentLine(description, MollieAmount.eur(baseMinor), MollieAmount.eur(baseMinor)))
+                if (surchargeMinor > 0) add(MolliePaymentLine(feeDescription, MollieAmount.eur(surchargeMinor), MollieAmount.eur(surchargeMinor), type = "surcharge"))
+            }
+    }
+}
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class MolliePayment(
@@ -148,6 +189,7 @@ object MolliePaymentStatuses {
 }
 
 object MollieMethods {
+    const val KLARNA = "klarna"
     const val CREDIT_CARD = "creditcard"
     const val APPLE_PAY = "applepay"
     const val PAY_BY_BANK = "paybybank"

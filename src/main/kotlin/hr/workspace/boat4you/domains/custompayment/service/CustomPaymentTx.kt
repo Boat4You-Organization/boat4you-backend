@@ -19,6 +19,8 @@ data class CustomPaymentDraft(
     val termsVersion: String,
     val acceptedAt: Instant,
     val reservationId: Long?,
+    /** `CARD` or `KLARNA` (reservation_card_order uses the same two values). */
+    val method: String = "CARD",
 )
 
 /** [payment] is the new row, or the still usable [existing] attempt with the same data (dedupe). */
@@ -58,10 +60,12 @@ class CustomPaymentTx(
                 draft.payerEmail,
                 dedupeSince,
                 CustomPaymentStatus.PENDING,
+                draft.method,
             ).firstOrNull()
             ?.let { return PendingInsert(it, existing = true) }
         val row =
             CustomPayment().apply {
+                method = draft.method
                 site = draft.site
                 reference = draft.reference
                 amountMinor = draft.amountMinor

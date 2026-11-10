@@ -1,7 +1,9 @@
 package hr.workspace.boat4you.domains.payment.mollie.booking
 
+import hr.workspace.boat4you.domains.payment.mollie.KlarnaBilling
 import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentStatuses
+import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.BookingCheckoutMethod
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.CardOrderPromoteState
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrder
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
@@ -40,6 +42,10 @@ data class BookingOrderPlan(
     val expiresAfter: Duration,
     /** Planning time + [expiresAfter]. */
     val expiresAt: Instant,
+    /** Which Mollie methods the checkout offers; KLARNA carries [klarna]. */
+    val method: BookingCheckoutMethod = BookingCheckoutMethod.CARD,
+    /** Billing data Mollie needs for Klarna; never stored on our side (it only travels to Mollie). */
+    val klarna: KlarnaBilling? = null,
 )
 
 /**
@@ -94,12 +100,13 @@ class ReservationCardOrderTx(
         orders.lockKey(flowLockKey(plan.reservationFlowId))
         orders.findByProviderOrderId(providerOrderId)?.let { return PendingInsert(it, existing = true) }
         orders
-            .findReusable(plan.reservationFlowId, plan.phaseIds, plan.amountMinor, paymentPhaseKey(plan.paymentPhaseId), reusableUntil())
+            .findReusable(plan.reservationFlowId, plan.phaseIds, plan.amountMinor, paymentPhaseKey(plan.paymentPhaseId), reusableUntil(), plan.method.name)
             ?.let { return PendingInsert(it, existing = true) }
         val row =
             ReservationCardOrder().apply {
                 this.providerOrderId = providerOrderId
                 provider = ReservationCardOrder.PROVIDER_MOLLIE
+                method = plan.method.name
                 checkoutToken = plan.checkoutToken
                 reservationId = plan.reservationId
                 reservationFlowId = plan.reservationFlowId

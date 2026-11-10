@@ -85,6 +85,7 @@ class AdminCardPaymentService(
             completedAt = order.completedAt,
             expiresAt = order.expiresAt,
             status = order.status,
+            method = order.methodOrCard,
             reservationId = order.reservationId,
             reservationNumber = this[RESERVATION_NUMBER] as String?,
             reference = order.reference,

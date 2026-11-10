@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.payment.mollie.admin
 
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
+import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.BookingCheckoutMethod
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentNotFoundException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProviderException
@@ -29,6 +30,7 @@ class AdminCardPaymentControllerTests {
             completedAt = null,
             expiresAt = Instant.parse("2026-11-10T10:15:00Z"),
             status = ReservationCardOrderStatus.FAILED,
+            method = BookingCheckoutMethod.KLARNA,
             reservationId = 1441,
             reservationNumber = "1441012/2026",
             reference = "1441012/2026",
@@ -59,6 +61,7 @@ class AdminCardPaymentControllerTests {
             status { isOk() }
             jsonPath("$.content[0].id") { value(9) }
             jsonPath("$.content[0].status") { value("FAILED") }
+            jsonPath("$.content[0].method") { value("KLARNA") }
             jsonPath("$.content[0].clientPhone") { value("+385911234567") }
             jsonPath("$.content[0].amountMinor") { value(281_160) }
             jsonPath("$.content[0].surchargeAmountMinor") { value(13_400) }

@@ -29,6 +29,10 @@ open class CustomPayment {
     @Column(name = "public_token", nullable = false, updatable = false)
     open var publicToken: UUID = UUID.randomUUID()
 
+    /** `CARD` (cards, Apple Pay, Pay by Bank) or `KLARNA` (V9_125); NULL = a row from before Klarna = CARD. */
+    @Column(name = "method", length = 16, updatable = false)
+    open var method: String? = null
+
     @Column(name = "site", length = 32, nullable = false)
     open var site: String = ""
 

@@ -15,7 +15,11 @@ import hr.workspace.boat4you.domains.custompayment.jpa.CustomPayment
 import hr.workspace.boat4you.domains.custompayment.jpa.CustomPaymentRepository
 import hr.workspace.boat4you.domains.custompayment.jpa.CustomPaymentStatus
 import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
+import hr.workspace.boat4you.domains.custompayment.dto.KlarnaOfferDto
+import hr.workspace.boat4you.domains.payment.mollie.KlarnaBilling
 import hr.workspace.boat4you.domains.payment.mollie.MollieClient
+import hr.workspace.boat4you.domains.payment.mollie.MollieKlarnaProperties
+import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentLine
 import hr.workspace.boat4you.domains.payment.mollie.MollieCreatePaymentRequest
 import hr.workspace.boat4you.domains.payment.mollie.MollieMethods
 import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
@@ -46,6 +50,7 @@ class CustomPaymentService(
     private val repository: CustomPaymentRepository,
     private val reservationRepository: ReservationRepository,
     private val client: MollieClient,
+    private val klarnaProperties: MollieKlarnaProperties,
 ) : MolliePaymentHandler {
     private val log = LoggerFactory.getLogger(javaClass)
     private val linkKeys = CustomPaymentLinkKeys(properties.customPayment.linkKeys)
@@ -67,6 +72,7 @@ class CustomPaymentService(
             maxAmountMinor = settings.maxAmountMinor,
             currency = CustomPayment.CURRENCY_EUR,
             termsVersion = settings.termsVersion,
+            klarna = if (klarnaProperties.enabled) KlarnaOfferDto(klarnaProperties.countries, klarnaProperties.maxAmountMinor) else null,
         )
     }
 
@@ -102,8 +108,11 @@ class CustomPaymentService(
                 termsVersion = properties.customPayment.termsVersion,
                 acceptedAt = now,
                 reservationId = reservationIdFor(input.reference),
+                method = if (input.klarna != null) METHOD_KLARNA else METHOD_CARD,
             )
-        val inserted = tx.insertPending(draft, now.minus(dedupeWindow()))
+        // A Klarna checkout carries the billing address (not stored here), so it is never handed out again: every
+        // Klarna submit is its own payment. Card attempts dedupe as before, among card attempts only.
+        val inserted = tx.insertPending(draft, if (input.klarna != null) now else now.minus(dedupeWindow()))
         val payment = inserted.payment
         val id = payment.id!!
         val token = payment.publicToken.toString()
@@ -270,6 +279,7 @@ class CustomPaymentService(
         val amountMinor: Long,
         val email: String,
         val locale: String,
+        val klarna: KlarnaBilling? = null,
     )
 
     private fun validate(
@@ -295,7 +305,9 @@ class CustomPaymentService(
         if (!site.supportsLocale(locale)) errors["locale"] = "must be one of ${site.locales}"
 
         if (errors.isNotEmpty()) throw ParameterValidationException(errors)
-        return ValidInput(reference, amountMinor!!, email, locale)
+        // Klarna: the e-mail of the form is the billing e-mail; 422 (8107) when the country or amount does not qualify.
+        val klarna = request.klarna?.copy(email = email)?.toBilling(email)?.also { klarnaProperties.requireAvailable(it, amountMinor!!) }
+        return ValidInput(reference, amountMinor!!, email, locale, klarna)
     }
 
     private fun toMinor(amount: BigDecimal?): Long? = amount?.let { runCatching { it.stripTrailingZeros().longValueExact() }.getOrNull() }
@@ -321,7 +333,9 @@ class CustomPaymentService(
             cancelUrl = "$payPage/failed?ref=$token",
             webhookUrl = properties.webhookUrl,
             locale = MOLLIE_LOCALES[input.locale] ?: DEFAULT_MOLLIE_LOCALE,
-            method = CUSTOM_PAYMENT_METHODS,
+            method = if (input.klarna != null) listOf(MollieMethods.KLARNA) else CUSTOM_PAYMENT_METHODS,
+            billingAddress = input.klarna?.toMollie(),
+            lines = input.klarna?.let { MolliePaymentLine.of("${site.brandName} - contract ${input.reference}", input.amountMinor, 0, "Payment fee") },
             metadata =
                 mapOf(
                     CustomPaymentVerdict.TOKEN_METADATA_KEY to token,
@@ -353,6 +367,8 @@ class CustomPaymentService(
 
         /** Cards (incl. Google Pay inside the card page), Apple Pay and Pay by Bank — no Klarna, no slow bank transfer. */
         val CUSTOM_PAYMENT_METHODS = listOf(MollieMethods.CREDIT_CARD, MollieMethods.APPLE_PAY, MollieMethods.PAY_BY_BANK)
+        const val METHOD_CARD = "CARD"
+        const val METHOD_KLARNA = "KLARNA"
 
         /** Our site locales -> Mollie checkout locales (Mollie has no Croatian: hr -> English). */
         val MOLLIE_LOCALES =
