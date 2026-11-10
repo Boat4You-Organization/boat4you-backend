@@ -10,10 +10,13 @@ import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler.HandlerResult
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentStatuses
 import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
+import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.CardOrderPromoteState
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
+import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
+import hr.workspace.boat4you.domains.reservation.service.StripeSessionExpirer
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAlreadyPaidException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAmountAboveLimitException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentInProgressException
@@ -38,14 +41,17 @@ import java.util.UUID
  * No transaction here on purpose: every Mollie HTTP call happens OUTSIDE a database transaction. The database work is
  * [MollieBookingCreateTx.prepare] (one transaction that returns an outcome — M2) and the short transactions of
  * [ReservationCardOrderTx]. A checkout:
- * 1. `prepare`: reservation (404), selection (400), card limit (422 -> bank transfer only), phase locks, M1 (expire an
- *    open Stripe session), then REUSE a still open PENDING payment for the same charge (no Mollie call), or STALE
- *    PENDING payments of the flow to clean up, or the plan of a new payment (CREATE);
- * 2. stale payments: read each from Mollie (one attempt): `open` -> cancel when Mollie allows it, the ledger row is
- *    closed either way (a payment still completed later is recorded by the webhook — double payments become
- *    NEEDS_REVIEW); `pending|authorized` -> 409 in progress; `paid` -> completion, then 409 already paid;
+ * 1. `prepare`: reservation (404; cancelled -> 400), selection (400), card limit (422 -> bank transfer only), phase
+ *    locks, then REUSE a still open PENDING payment for the same charge (no Mollie call), or STALE PENDING payments of
+ *    the flow to clean up, or the plan of a new payment (CREATE);
+ * 2. stale payments: read each from Mollie (one attempt): `open` -> cancel when Mollie allows it; the ledger row
+ *    becomes SUPERSEDED, which is NOT final — Mollie may still take the money (cards cannot be cancelled), so the row
+ *    is still read by the status endpoint, the webhook and the reconcile job until Mollie closes it, and a late
+ *    payment is recorded (a second one for the same phase becomes NEEDS_REVIEW + office alert);
+ *    `pending|authorized` -> 409 in progress; `paid` -> completion, then 409 already paid;
  *    `failed|expired|canceled` -> ledger closed;
- * 3. create the payment (Idempotency-Key; error -> 502, no ledger row), check the checkout origin, insert the PENDING
+ * 3. M1: open Stripe Checkout sessions of the target phases are expired (best effort, outside any transaction);
+ * 4. create the payment (Idempotency-Key; error -> 502, no ledger row), check the checkout origin, insert the PENDING
  *    ledger row (a concurrent identical checkout that won the race is returned instead).
  *
  * Marking paid: ONLY from a payment read from the Mollie API (webhook, status endpoint, reconcile, stale check) —
@@ -59,6 +65,8 @@ class MollieBookingPaymentService(
     private val orderTx: ReservationCardOrderTx,
     private val orders: ReservationCardOrderRepository,
     private val followUp: BookingCardCompletionFollowUp,
+    private val stripeSessionExpirer: StripeSessionExpirer,
+    private val alertMailer: BookingCardAlertMailer,
     @Value("\${server.host-public}") serverHostPublic: String,
 ) : CardPaymentProvider,
     MolliePaymentHandler {
@@ -82,12 +90,17 @@ class MollieBookingPaymentService(
         }
         return when (outcome) {
             is CreateOutcome.Reuse -> {
+                outcome.stripeSessionIds.forEach(stripeSessionExpirer::expireQuickly)
                 log.info("Mollie booking checkout for reservation {}: reusing payment {}", reservationId, outcome.orderId)
                 CheckoutSessionDto(outcome.orderId, CheckoutSessionStatusEnum.PAYMENT_PENDING, outcome.checkoutUrl)
             }
-            is CreateOutcome.Create -> create(outcome.plan, locale)
+            is CreateOutcome.Create -> {
+                outcome.stripeSessionIds.forEach(stripeSessionExpirer::expireQuickly)
+                create(outcome.plan, locale)
+            }
             CreateOutcome.PaidMeanwhile -> throw CardAlreadyPaidException()
             CreateOutcome.AboveCardLimit -> throw CardAmountAboveLimitException()
+            CreateOutcome.ReservationClosed -> throw ParameterValidationException(mapOf("reservationId" to "Reservation is cancelled"))
             is CreateOutcome.StalePending -> {
                 // Cleaned up once already; another payment appeared meanwhile (a second tab) — do not loop.
                 log.warn("Mollie booking checkout for reservation {}: pending payments again after the cleanup -> 409", reservationId)
@@ -98,9 +111,11 @@ class MollieBookingPaymentService(
 
     /**
      * Status of a checkout this provider created, by our checkout token (`?paymentRef=` of the success page) or the
-     * Mollie payment id. Unknown -> null (the router asks Stripe, then answers 404). A PENDING row asks Mollie at most
-     * once per 10 s (claimCheck); a Mollie hiccup is swallowed and the stored status is returned.
-     * COMPLETED -> PAYMENT_SUCCESS; still `open` at Mollie -> PAYMENT_NOT_COMPLETED; anything else -> PAYMENT_PENDING.
+     * Mollie payment id. Unknown -> null (the router asks Stripe, then answers 404). A row still open on our side
+     * (PENDING or SUPERSEDED) asks Mollie at most once per 10 s (claimCheck); a Mollie hiccup is swallowed.
+     * COMPLETED -> PAYMENT_SUCCESS; Mollie closed it without money, or it is still `open` at Mollie right now ->
+     * PAYMENT_NOT_COMPLETED; anything else (not read just now, in review, processing) -> PAYMENT_PENDING, which the
+     * web shows as "we are confirming your payment", never as paid.
      */
     override fun checkStatus(ref: String): CheckoutSessionDto? {
         val token = runCatching { UUID.fromString(ref.trim()) }.getOrNull()
@@ -112,7 +127,7 @@ class MollieBookingPaymentService(
             } ?: return null
         val id = row.id!!
         var liveStatus: String? = null
-        if (row.status == ReservationCardOrderStatus.PENDING && properties.enabled && orders.claimCheck(id) == 1) {
+        if (isOpenOnOurSide(row.status) && properties.enabled && orders.claimCheck(id) == 1) {
             val payment =
                 try {
                     client.getPaymentOnce(row.providerOrderId)
@@ -176,6 +191,27 @@ class MollieBookingPaymentService(
                 }
             }.onFailure { log.warn("Mollie booking ledger {}: reconcile failed ({})", id, it.javaClass.simpleName) }
         }
+        // Still open on our side after 48 h (Mollie expires a card checkout long before): one last read, then the office.
+        orders.findStaleOpenIds().forEach { id ->
+            runCatching {
+                val row = orders.findById(id).orElse(null) ?: return@runCatching
+                runCatching { client.getPayment(row.providerOrderId)?.let { applyState(id, it, event = null) } }
+                if (orderTx.markStaleOpen(id)) {
+                    orders.findById(id).orElse(null)?.let {
+                        alertMailer.alert(it, "Card payment still open after 48 h", it.reviewReason ?: "still open")
+                    }
+                }
+            }.onFailure { log.error("Mollie booking ledger {}: stale check failed", id, it) }
+        }
+        // Paid first payments whose booking confirmation never finished (the node died after the commit).
+        orders.findStuckPromoteIds().forEach { id ->
+            runCatching {
+                orderTx.markPromote(id, CardOrderPromoteState.FAILED)
+                orders.findById(id).orElse(null)?.let {
+                    alertMailer.alert(it, "Card payment received, booking NOT confirmed", "The booking confirmation did not finish — confirm the booking by hand")
+                }
+            }.onFailure { log.error("Mollie booking ledger {}: stuck confirmation check failed", id, it) }
+        }
     }
 
     private fun prepare(
@@ -200,8 +236,7 @@ class MollieBookingPaymentService(
                         runCatching { client.cancelPayment(row.orderId) }
                             .onFailure { log.info("Mollie booking payment {}: cancel refused ({})", row.orderId, it.javaClass.simpleName) }
                     }
-                    log.info("Mollie booking checkout for reservation {}: open payment {} superseded", reservationId, row.orderId)
-                    close(reservationId, row, ReservationCardOrderStatus.CANCELLED)
+                    lockTimeoutIsInProgress(reservationId) { orderTx.markSuperseded(row.ledgerId) }
                 }
                 MolliePaymentStatuses.PENDING, MolliePaymentStatuses.AUTHORIZED -> {
                     log.info("Mollie booking checkout for reservation {}: payment {} is {} -> 409", reservationId, row.orderId, payment.status)
@@ -282,6 +317,17 @@ class MollieBookingPaymentService(
                 cancelQuietly(payment)
                 throw e
             }
+        if (inserted.existing && inserted.order.status == ReservationCardOrderStatus.COMPLETED) throw CardAlreadyPaidException()
+        if (inserted.existing && inserted.order.status != ReservationCardOrderStatus.PENDING) {
+            // Mollie replayed a payment that is no longer open on our side: the next click is a new attempt (new key).
+            log.warn(
+                "Mollie booking checkout for reservation {}: replayed payment {} is {} -> 502, try again",
+                plan.reservationId,
+                payment.id,
+                inserted.order.status,
+            )
+            throw CardPaymentProviderException()
+        }
         if (inserted.existing) {
             if (inserted.order.providerOrderId != payment.id) {
                 log.info(
@@ -331,16 +377,15 @@ class MollieBookingPaymentService(
     }
 
     /**
-     * Mollie Idempotency-Key: the web's key (one per "Pay now" click) scoped to the charge, so a double click returns
-     * the same Mollie payment; without one, a fresh key per call.
+     * Mollie Idempotency-Key = our checkout token: derived from (flow, phases, cents, web key, attempt) when the web
+     * sent its key — a double click repeats the same request and Mollie returns the same payment — else random.
      */
-    private fun idempotencyKey(plan: BookingOrderPlan): String =
-        plan.idempotencyKey
-            ?.let { "booking-${plan.reservationFlowId}-${plan.phaseIds}-${plan.amountMinor}-$it" }
-            ?.take(MAX_IDEMPOTENCY_HEADER)
-            ?: "booking-${plan.checkoutToken}"
+    private fun idempotencyKey(plan: BookingOrderPlan): String = "booking-${plan.checkoutToken}"
 
-    /** Applies what Mollie says about a payment (webhook, status endpoint, reconcile, stale check). */
+    /**
+     * Applies what Mollie says about a payment (webhook, status endpoint, reconcile, stale check). `paid` -> completion
+     * (idempotent) and then the refund / chargeback totals, each alerting the office once when it grows.
+     */
     private fun applyState(
         ledgerId: Long,
         payment: MolliePayment,
@@ -350,12 +395,18 @@ class MollieBookingPaymentService(
             MolliePaymentStatuses.PAID -> {
                 val result = orderTx.applyCompleted(ledgerId, payment, event)
                 followUp.afterCompletion(ledgerId, result)
+                orderTx.applyMoneyBack(ledgerId, payment)?.let { reason ->
+                    orders.findById(ledgerId).orElse(null)?.let { alertMailer.alert(it, "Card payment refunded or charged back", reason) }
+                }
             }
             MolliePaymentStatuses.CANCELED -> orderTx.closeIfPending(ledgerId, ReservationCardOrderStatus.CANCELLED)
             MolliePaymentStatuses.FAILED, MolliePaymentStatuses.EXPIRED -> orderTx.closeIfPending(ledgerId, ReservationCardOrderStatus.FAILED)
             else -> if (event != null) orderTx.stampWebhook(ledgerId, event)
         }
     }
+
+    private fun isOpenOnOurSide(status: ReservationCardOrderStatus): Boolean =
+        status == ReservationCardOrderStatus.PENDING || status == ReservationCardOrderStatus.SUPERSEDED
 
     private fun cancelQuietly(payment: MolliePayment) {
         if (payment.isCancelable != true) return
@@ -385,7 +436,6 @@ class MollieBookingPaymentService(
 
     private companion object {
         const val WEBHOOK_EVENT = "mollie-webhook"
-        const val MAX_IDEMPOTENCY_HEADER = 255
 
         /**
          * next-intl `as-needed`: English has no prefix, every other web language `/<code>`; anything else (junk, a

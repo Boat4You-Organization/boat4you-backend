@@ -74,6 +74,10 @@ class MollieProperties(
 
     init {
         if (testKeyInProd) log.error("Mollie DISABLED: the prod profile holds a Mollie TEST key")
+        if (enabled && environment.acceptsProfiles(Profiles.of("prod"))) {
+            if (this.webhookUrl == null) log.error("Mollie is enabled WITHOUT a webhook URL (MOLLIE_WEBHOOK_URL): payments are recorded only by the return page and the reconcile job")
+            if (!reconcileEnabled) log.error("Mollie is enabled WITHOUT the reconcile job (MOLLIE_RECONCILE_ENABLED=true on the API node): a missed webhook is never caught up")
+        }
         log.info(
             "Mollie: enabled={}, mode={}, webhook={}, reconcile={}, card-max={} EUR",
             enabled,

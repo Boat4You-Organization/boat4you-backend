@@ -32,6 +32,9 @@ enum class CustomPaymentAlertKind {
     /** Money was refunded from the Mollie dashboard. */
     REFUND,
 
+    /** The card holder disputed the payment (chargeback): the money is taken back. */
+    CHARGEBACK,
+
     /** Still pending 48 h after it was created. */
     STALE,
 }

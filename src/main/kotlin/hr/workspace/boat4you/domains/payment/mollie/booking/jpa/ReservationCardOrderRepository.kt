@@ -16,6 +16,12 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
 
     fun findByCheckoutToken(checkoutToken: java.util.UUID): ReservationCardOrder?
 
+    /** How many checkouts of [reservationFlowId] already used the web's [idempotencyKey] (the next one is a new attempt). */
+    fun countByReservationFlowIdAndIdempotencyKey(
+        reservationFlowId: Long,
+        idempotencyKey: String,
+    ): Long
+
     /**
      * Row lock (`SELECT ... FOR UPDATE`) that serialises the webhook, the status endpoint, the reconcile job and the
      * checkout on one order. Call it FIRST in the transaction (an entity already in the persistence context is not re-read).
@@ -90,15 +96,16 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
     ): List<ReservationCardOrder>
 
     /**
-     * Claims one Mollie check for the status endpoint: stamps `last_checked_at` only when the order is PENDING and was
-     * not checked in the last 10 s (database clock). 1 = go ask Mollie, 0 = someone just did / nothing to ask.
+     * Claims one Mollie check for the status endpoint: stamps `last_checked_at` only when the order is still open on our
+     * side (PENDING or SUPERSEDED) and was not checked in the last 10 s (database clock). 1 = go ask Mollie, 0 = someone
+     * just did / nothing to ask.
      */
     @Transactional
     @Modifying
     @Query(
         value = """
         UPDATE reservation_card_order SET last_checked_at = now()
-        WHERE id = :id AND status = 'PENDING'
+        WHERE id = :id AND status IN ('PENDING', 'SUPERSEDED')
           AND (last_checked_at IS NULL OR last_checked_at < now() - interval '10 seconds')
         """,
         nativeQuery = true,
@@ -108,13 +115,13 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
     ): Int
 
     /**
-     * Reconcile job: PENDING orders created 5 min - 48 h ago, not checked in the last 5 min, oldest first, 50 per run
-     * (the backstop for missed webhooks and redirect-before-webhook).
+     * Reconcile job: PENDING / SUPERSEDED orders created 5 min - 48 h ago, not checked in the last 5 min, oldest first,
+     * 50 per run (the backstop for missed webhooks and redirect-before-webhook).
      */
     @Query(
         value = """
         SELECT id FROM reservation_card_order
-        WHERE status = 'PENDING'
+        WHERE status IN ('PENDING', 'SUPERSEDED')
           AND created_at < now() - interval '5 minutes'
           AND created_at > now() - interval '48 hours'
           AND (last_checked_at IS NULL OR last_checked_at < now() - interval '5 minutes')
@@ -124,4 +131,41 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
         nativeQuery = true,
     )
     fun findReconcileCandidateIds(): List<Long>
+
+    /** Still open on our side 48 h after creation (Mollie expires card checkouts long before): the office must look. */
+    @Query(
+        value = """
+        SELECT id FROM reservation_card_order
+        WHERE status IN ('PENDING', 'SUPERSEDED') AND created_at < now() - interval '48 hours'
+        ORDER BY created_at
+        LIMIT 50
+        """,
+        nativeQuery = true,
+    )
+    fun findStaleOpenIds(): List<Long>
+
+    /** COMPLETED first payments whose booking confirmation never finished (node died after the commit) — alert only. */
+    @Query(
+        value = """
+        SELECT id FROM reservation_card_order
+        WHERE status = 'COMPLETED' AND promote_state = 'PENDING' AND completed_at < now() - interval '10 minutes'
+        ORDER BY completed_at
+        LIMIT 20
+        """,
+        nativeQuery = true,
+    )
+    fun findStuckPromoteIds(): List<Long>
+
+    /** Another COMPLETED order of [reservationFlowId] than [exceptId] (double payment check for the legacy pay-full path). */
+    @Query(
+        value = """
+        SELECT count(*) FROM reservation_card_order
+        WHERE reservation_flow_id = :reservationFlowId AND status = 'COMPLETED' AND id <> :exceptId
+        """,
+        nativeQuery = true,
+    )
+    fun countOtherCompleted(
+        @Param("reservationFlowId") reservationFlowId: Long,
+        @Param("exceptId") exceptId: Long,
+    ): Long
 }

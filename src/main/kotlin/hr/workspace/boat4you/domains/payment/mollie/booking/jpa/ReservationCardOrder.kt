@@ -85,6 +85,14 @@ open class ReservationCardOrder {
     @Column(name = "provider_payment_id", length = 64)
     open var providerPaymentId: String? = null
 
+    /** Mollie's running refund total (cents); alerts the office when it grows. */
+    @Column(name = "refunded_amount_minor", nullable = false)
+    open var refundedAmountMinor: Long = 0
+
+    /** Mollie's running chargeback total (cents); alerts the office when it grows. */
+    @Column(name = "charged_back_amount_minor", nullable = false)
+    open var chargedBackAmountMinor: Long = 0
+
     @Enumerated(EnumType.STRING)
     @Column(name = "promote_state", length = 16)
     open var promoteState: CardOrderPromoteState? = null

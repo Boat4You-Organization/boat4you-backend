@@ -6,7 +6,9 @@ import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.CardOrderPromote
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrder
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
+import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.events.ReservationPaymentRecordedEvent
+import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
 import org.springframework.context.ApplicationEventPublisher
 import org.slf4j.LoggerFactory
@@ -32,6 +34,8 @@ data class BookingOrderPlan(
     val idempotencyKey: String?,
     /** Our token in the redirectUrl / metadata (`checkout_token`). */
     val checkoutToken: java.util.UUID,
+    /** How many earlier checkouts of the flow used the same web idempotency key (0 = the first). */
+    val attempt: Long = 0,
     /** Our checkout lifetime ([MollieBookingProperties.checkoutTtl]). */
     val expiresAfter: Duration,
     /** Planning time + [expiresAfter]. */
@@ -70,6 +74,7 @@ class ReservationCardOrderTx(
     private val orders: ReservationCardOrderRepository,
     private val phaseRepository: ReservationPaymentPhaseRepository,
     private val eventPublisher: ApplicationEventPublisher,
+    private val reservationRepository: ReservationRepository,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -77,6 +82,8 @@ class ReservationCardOrderTx(
      * The ledger row of a just created Mollie payment. Under the reservation flow's advisory lock (the same one the
      * create transaction holds): when a concurrent checkout for the same charge inserted its row first, that row is
      * returned instead (`existing=true`) and the caller cancels its own order — one checkout per charge.
+     * The same Mollie payment again (Idempotency-Key replay of a double click): its row is the answer, whatever its
+     * status — the caller hands out only a PENDING one.
      */
     fun insertPending(
         plan: BookingOrderPlan,
@@ -85,7 +92,6 @@ class ReservationCardOrderTx(
     ): PendingInsert {
         orders.setLocalLockTimeout()
         orders.lockKey(flowLockKey(plan.reservationFlowId))
-        // Same Mollie payment again (Idempotency-Key replay after a double click): the first row is the answer.
         orders.findByProviderOrderId(providerOrderId)?.let { return PendingInsert(it, existing = true) }
         orders
             .findReusable(plan.reservationFlowId, plan.phaseIds, plan.amountMinor, paymentPhaseKey(plan.paymentPhaseId), reusableUntil())
@@ -112,8 +118,23 @@ class ReservationCardOrderTx(
     }
 
     /**
-     * Mollie says the order ended without a payment ([target] = CANCELLED or FAILED): only a PENDING row changes.
-     * Returns the status after the call (null for an unknown id).
+     * A newer checkout of the same flow replaces this PENDING payment on our side; Mollie may still take it (cards cannot
+     * be cancelled), so the row stays readable (status endpoint, reconcile) until Mollie closes or pays it.
+     */
+    fun markSuperseded(id: Long): ReservationCardOrderStatus? {
+        orders.setLocalLockTimeout()
+        val row = orders.lockById(id) ?: return null
+        row.lastCheckedAt = Instant.now()
+        if (row.status == ReservationCardOrderStatus.PENDING) {
+            row.status = ReservationCardOrderStatus.SUPERSEDED
+            log.info("Mollie booking payment {} (ledger {}) superseded by a newer checkout", row.providerOrderId, row.id)
+        }
+        return row.status
+    }
+
+    /**
+     * Mollie says the payment ended without money ([target] = CANCELLED or FAILED): only an open row (PENDING or
+     * SUPERSEDED) changes. Returns the status after the call (null for an unknown id).
      */
     fun closeIfPending(
         id: Long,
@@ -123,7 +144,7 @@ class ReservationCardOrderTx(
         orders.setLocalLockTimeout()
         val row = orders.lockById(id) ?: return null
         row.lastCheckedAt = Instant.now()
-        if (row.status == ReservationCardOrderStatus.PENDING) {
+        if (row.status == ReservationCardOrderStatus.PENDING || row.status == ReservationCardOrderStatus.SUPERSEDED) {
             row.status = target
             log.info("Mollie booking order {} (ledger {}) {}", row.providerOrderId, row.id, target)
         }
@@ -163,7 +184,15 @@ class ReservationCardOrderTx(
             )
         if (mismatches.isNotEmpty()) return review(row, "Mollie payment paid but " + mismatches.joinToString(", "))
 
+        val reservation = row.reservationId?.let { reservationRepository.findById(it).orElse(null) }
+        if (reservation == null || reservation.sysStatus == ReservationStatus.CANCELLED) {
+            return review(row, "paid, but reservation ${row.reservationId ?: "-"} is cancelled or deleted — refund or rebook")
+        }
+
         val phaseIds = row.phaseIdList()
+        if (phaseIds.isEmpty() && orders.countOtherCompleted(row.reservationFlowId, row.id!!) > 0) {
+            return review(row, "paid, but another payment of this booking is already COMPLETED — DOUBLE PAYMENT, refund in Mollie")
+        }
         if (phaseIds.isNotEmpty()) {
             val phases = phaseRepository.findAllByIdIn(phaseIds)
             if (phases.size != phaseIds.size) return review(row, "paid, but phase(s) ${row.phaseIds} no longer exist")
@@ -187,6 +216,41 @@ class ReservationCardOrderTx(
         log.info("Mollie booking order {} (ledger {}) COMPLETED (was {}), phases [{}], promote={}", row.providerOrderId, row.id, previous, row.phaseIds, promote)
         row.reservationId?.let { eventPublisher.publishEvent(ReservationPaymentRecordedEvent(it)) }
         return CompletionResult(completedNow = true, promote = promote, reservationId = row.reservationId)
+    }
+
+    /**
+     * Refunds and chargebacks of a paid payment: Mollie's running totals only ever raise the stored ones. Returns the
+     * alert reason when a total grew (the phases stay as they are — a person decides what the refund means).
+     */
+    fun applyMoneyBack(
+        id: Long,
+        payment: MolliePayment,
+    ): String? {
+        val row = orders.lockById(id) ?: return null
+        val refunded = (payment.amountRefunded?.toMinorOrNull() ?: 0L).coerceIn(0L, row.amountMinor)
+        val chargedBack = (payment.amountChargedBack?.toMinorOrNull() ?: 0L).coerceIn(0L, row.amountMinor)
+        val reasons = mutableListOf<String>()
+        if (refunded > row.refundedAmountMinor) {
+            row.refundedAmountMinor = refunded
+            reasons += "refunded $refunded of ${row.amountMinor} cents (the phases are still marked paid — adjust the booking)"
+        }
+        if (chargedBack > row.chargedBackAmountMinor) {
+            row.chargedBackAmountMinor = chargedBack
+            reasons += "CHARGEBACK $chargedBack of ${row.amountMinor} cents — answer the dispute in the Mollie dashboard"
+        }
+        if (reasons.isEmpty()) return null
+        log.warn("Mollie booking payment {} (ledger {}): {}", row.providerOrderId, row.id, reasons.joinToString("; "))
+        return reasons.joinToString("; ")
+    }
+
+    /** Reconcile: still open on our side 48 h after creation -> NEEDS_REVIEW (true = changed now, alert once). */
+    fun markStaleOpen(id: Long): Boolean {
+        val row = orders.lockById(id) ?: return false
+        if (row.status != ReservationCardOrderStatus.PENDING && row.status != ReservationCardOrderStatus.SUPERSEDED) return false
+        row.status = ReservationCardOrderStatus.NEEDS_REVIEW
+        row.reviewReason = "still open 48 hours after the checkout was created — check the payment in the Mollie dashboard"
+        log.warn("Mollie booking payment {} (ledger {}) still open after 48 h -> NEEDS_REVIEW", row.providerOrderId, row.id)
+        return true
     }
 
     /** M4 bookkeeping: the post-commit booking confirmation of a completed row ended ([state] DONE or FAILED). */

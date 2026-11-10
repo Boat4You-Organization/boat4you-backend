@@ -2,12 +2,15 @@ package hr.workspace.boat4you.domains.payment.mollie.booking.jpa
 
 /**
  * `reservation_card_order.status` (CHECK in V9_123). PENDING = Mollie payment created, not paid yet; COMPLETED = paid and
- * the phases are marked; FAILED / CANCELLED = the order ended without a payment; NEEDS_REVIEW = Mollie reports a
+ * the phases are marked; SUPERSEDED = a newer checkout of the same flow replaced it on OUR side while Mollie still keeps
+ * it payable (card payments cannot be cancelled) — NOT final: it is read from Mollie until Mollie itself closes it, and
+ * recorded if it is paid after all; FAILED / CANCELLED = Mollie ended it without a payment; NEEDS_REVIEW = Mollie reports a
  * payment that cannot be applied as is (amount / currency / reference mismatch, phase already paid, cancelled
  * reservation) — an admin decides.
  */
 enum class ReservationCardOrderStatus {
     PENDING,
+    SUPERSEDED,
     COMPLETED,
     FAILED,
     CANCELLED,

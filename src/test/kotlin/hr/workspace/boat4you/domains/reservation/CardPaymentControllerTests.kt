@@ -11,6 +11,7 @@ import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.payment.mollie.MollieClient
 import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
 import hr.workspace.boat4you.domains.payment.mollie.TEST_API_KEY
+import hr.workspace.boat4you.domains.payment.mollie.booking.BookingCardAlertMailer
 import hr.workspace.boat4you.domains.payment.mollie.booking.BookingCardCompletionFollowUp
 import hr.workspace.boat4you.domains.payment.mollie.booking.MollieBookingCreateTx
 import hr.workspace.boat4you.domains.payment.mollie.booking.MollieBookingPaymentService
@@ -26,6 +27,7 @@ import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistE
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhase
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
 import hr.workspace.boat4you.domains.reservation.service.StripePaymentService
+import hr.workspace.boat4you.domains.reservation.service.StripeSessionExpirer
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAlreadyPaidException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAmountAboveLimitException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentInProgressException
@@ -204,6 +206,8 @@ class CardPaymentControllerTests {
                 mock(ReservationCardOrderTx::class.java),
                 orders,
                 mock(BookingCardCompletionFollowUp::class.java),
+                mock(StripeSessionExpirer::class.java),
+                mock(BookingCardAlertMailer::class.java),
                 "https://www.boat4you.com",
             )
         val enabled = provider(mollieProperties())
@@ -295,6 +299,8 @@ class CardPaymentControllerTests {
             .withBean(ReservationCardOrderTx::class.java, { mock(ReservationCardOrderTx::class.java) })
             .withBean(ReservationCardOrderRepository::class.java, { mock(ReservationCardOrderRepository::class.java) })
             .withBean(BookingCardCompletionFollowUp::class.java, { mock(BookingCardCompletionFollowUp::class.java) })
+            .withBean(StripeSessionExpirer::class.java, { mock(StripeSessionExpirer::class.java) })
+            .withBean(BookingCardAlertMailer::class.java, { mock(BookingCardAlertMailer::class.java) })
             .withPropertyValues("server.host-public=https://www.boat4you.com")
             .withUserConfiguration(
                 MollieProperties::class.java,

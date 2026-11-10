@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS custom_payment (
     last_webhook_event     VARCHAR(64),
     last_webhook_at        TIMESTAMPTZ,
     refunded_amount_minor  BIGINT        NOT NULL DEFAULT 0,
+    -- Mollie's running chargeback total (a disputed card payment): alerts the office, never decreases.
+    charged_back_amount_minor BIGINT     NOT NULL DEFAULT 0,
     -- Whitelisted copy of the Mollie payment (id, status, method, amounts, timestamps, card label + last 4) — no payer data.
     order_snapshot         JSONB,
     reservation_id         BIGINT        REFERENCES reservation (id) ON DELETE SET NULL,

@@ -39,6 +39,7 @@ class StripePaymentService(
     private val voucherService: VoucherService,
     private val eventPublisher: ApplicationEventPublisher,
     private val stripeSessionExpirer: StripeSessionExpirer,
+    private val doublePaymentAlert: CardDoublePaymentAlert,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${application.stripe.enabled}") private val stripeEnabled: Boolean,
     // 3-letter ISO 4217. Stripe wants lowercase. EUR is the product default;
@@ -205,6 +206,26 @@ class StripePaymentService(
         val paymentPhaseId = metadata["paymentPhaseId"]?.toLongOrNull()
 
         val dbPaymentPhases = paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc(session.id)
+
+        // A phase of this session was paid meanwhile by something else (a Mollie card payment, the office marking a
+        // bank transfer): this Stripe payment is a SECOND payment. Never overwrite the phase or confirm the booking
+        // again — the office gets an alert and refunds one of the two.
+        val stripeTargets =
+            when {
+                payFullAmount == true -> dbPaymentPhases
+                payFullAmount == false -> listOfNotNull(dbPaymentPhases.firstOrNull())
+                paymentPhaseId != null -> dbPaymentPhases.filter { it.id == paymentPhaseId }
+                else -> emptyList()
+            }
+        val alreadyPaid = stripeTargets.filter { it.paidOn != null }
+        if (alreadyPaid.isNotEmpty()) {
+            logger.error(
+                "Stripe event ${event.id}: session ${session.id} paid, but phase(s) ${alreadyPaid.map { it.id }} of reservation " +
+                    "$reservationId were already paid — DOUBLE PAYMENT, nothing changed",
+            )
+            doublePaymentAlert.stripeAfterAnotherPayment(reservationId, session.id, paymentIntentId, alreadyPaid.mapNotNull { it.id })
+            return
+        }
 
         when {
             // payFullAmount=true tolerates an empty list — the legacy

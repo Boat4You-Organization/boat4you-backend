@@ -92,6 +92,10 @@ open class CustomPayment {
     @Column(name = "refunded_amount_minor", nullable = false)
     open var refundedAmountMinor: Long = 0
 
+    /** Mollie's running chargeback total in cents; only grows (CustomPaymentTx.applyChargeback). */
+    @Column(name = "charged_back_amount_minor", nullable = false)
+    open var chargedBackAmountMinor: Long = 0
+
     /** JSON of `OrderSnapshot` (whitelisted Mollie payment fields). */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "order_snapshot")

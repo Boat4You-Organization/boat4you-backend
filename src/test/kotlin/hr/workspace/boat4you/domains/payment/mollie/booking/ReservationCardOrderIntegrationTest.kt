@@ -8,8 +8,10 @@ import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
 import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.reservation.events.ReservationPaymentRecordedEvent
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
+import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.flywaydb.core.Flyway
 import org.flywaydb.core.api.callback.Callback
 import org.flywaydb.core.api.callback.Context
@@ -146,11 +148,11 @@ class ReservationCardOrderIntegrationTest {
     @SpringBootConfiguration
     @EntityScan("hr.workspace.boat4you")
     @EnableJpaRepositories(
-        basePackageClasses = [ReservationCardOrderRepository::class, ReservationPaymentPhaseRepository::class],
+        basePackageClasses = [ReservationCardOrderRepository::class, ReservationPaymentPhaseRepository::class, ReservationRepository::class],
         includeFilters = [
             ComponentScan.Filter(
                 type = org.springframework.context.annotation.FilterType.ASSIGNABLE_TYPE,
-                classes = [ReservationCardOrderRepository::class, ReservationPaymentPhaseRepository::class],
+                classes = [ReservationCardOrderRepository::class, ReservationPaymentPhaseRepository::class, ReservationRepository::class],
             ),
         ],
     )
@@ -189,6 +191,7 @@ class ReservationCardOrderIntegrationTest {
     private fun stub(
         table: String,
         id: Long,
+        overrides: Map<String, String> = emptyMap(),
     ) {
         jdbc.execute(
             ConnectionCallback { con ->
@@ -206,7 +209,7 @@ class ReservationCardOrderIntegrationTest {
                                 while (rs.next()) {
                                     columns += "\"" + rs.getString(1) + "\""
                                     values +=
-                                        when (rs.getString(2)) {
+                                        overrides[rs.getString(1)] ?: when (rs.getString(2)) {
                                             "bigint", "integer", "smallint", "numeric", "double precision", "real" -> "0"
                                             "boolean" -> "false"
                                             "date" -> "current_date"
@@ -229,7 +232,8 @@ class ReservationCardOrderIntegrationTest {
 
     @BeforeEach
     fun seedForeignKeyTargets() {
-        listOf(42L, 43L).forEach { stub("reservation", it) }
+        listOf(42L, 43L).forEach { stub("reservation", it, mapOf("status" to "'RESERVED'", "sys_status" to "'RESERVATION'")) }
+        jdbc.update("UPDATE reservation SET sys_status = 'RESERVATION' WHERE id IN (42, 43)")
         listOf(900L, 901L).forEach { stub("reservation_flow", it) }
         events.recorded.clear()
     }
@@ -286,7 +290,7 @@ class ReservationCardOrderIntegrationTest {
         jdbc.queryForObject(
             "SELECT pg_get_indexdef('idx_reservation_card_order_pending_created'::regclass)",
             String::class.java,
-        ) shouldBe "CREATE INDEX idx_reservation_card_order_pending_created ON public.reservation_card_order USING btree (created_at) WHERE ((status)::text = 'PENDING'::text)"
+        ) shouldBe "CREATE INDEX idx_reservation_card_order_pending_created ON public.reservation_card_order USING btree (created_at) WHERE ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SUPERSEDED'::character varying])::text[]))"
 
         // The phase columns: nullable VARCHARs, a partial NON-unique index, V1_56's unique index untouched.
         jdbc.queryForList(
@@ -730,5 +734,139 @@ class ReservationCardOrderIntegrationTest {
         phaseRow(phase).paymentProvider shouldBe "MOLLIE"
         events.recorded shouldContainExactly listOf(42L)
         tx.applyCompleted(999_999, paidPayment(order), null) shouldBe CompletionResult.NOTHING
+    }
+
+    @Test
+    @Order(16)
+    fun `SUPERSEDED - still claimable and reconciled, closed by Mollie, and a payment that arrives later is recorded`() {
+        jdbc.update("UPDATE reservation_card_order SET status = 'CANCELLED' WHERE status IN ('PENDING', 'SUPERSEDED')")
+        val phase = newPhase(901)
+        val order = insert("tr_superseded-paid", plan(flowId = 901, phaseIds = phase.toString(), paymentPhaseId = phase, amountMinor = 123_400))
+        tx.markSuperseded(order.id!!) shouldBe ReservationCardOrderStatus.SUPERSEDED
+        tx.markSuperseded(999_999).shouldBeNull()
+        row(order.id!!).status shouldBe ReservationCardOrderStatus.SUPERSEDED
+
+        // Readable until Mollie decides: claimCheck works, the reconcile job picks it up, a newer pending list ignores it.
+        // (markSuperseded stamps last_checked_at, so the 10 s window is open first)
+        orders.claimCheck(order.id!!) shouldBe 0
+        jdbc.update("UPDATE reservation_card_order SET last_checked_at = NULL WHERE id = ?", order.id)
+        orders.claimCheck(order.id!!) shouldBe 1
+        orders.claimCheck(order.id!!) shouldBe 0
+        jdbc.update("UPDATE reservation_card_order SET created_at = now() - interval '1 hour', last_checked_at = NULL WHERE id = ?", order.id)
+        orders.findReconcileCandidateIds() shouldContainExactly listOf(order.id!!)
+        orders.findPendingByReservationFlow(901).map { it.id } shouldBe emptyList()
+        jdbc.update("UPDATE reservation_card_order SET created_at = now() - interval '49 hours' WHERE id = ?", order.id)
+        orders.findStaleOpenIds() shouldContainExactly listOf(order.id!!)
+
+        // Mollie reports it paid after all: recorded like a PENDING one.
+        val result = tx.applyCompleted(order.id!!, paidPayment(order), null)
+        result.completedNow shouldBe true
+        row(order.id!!).status shouldBe ReservationCardOrderStatus.COMPLETED
+        phaseRow(phase).paidOn.shouldNotBeNull()
+        phaseRow(phase).paymentProvider shouldBe "MOLLIE"
+        orders.claimCheck(order.id!!) shouldBe 0
+
+        // Mollie closing a SUPERSEDED payment ends it; markStaleOpen only touches open rows.
+        val other = insert("tr_superseded-failed", plan(flowId = 901, phaseIds = "81", paymentPhaseId = 81, amountMinor = 55_500))
+        tx.markSuperseded(other.id!!)
+        tx.closeIfPending(other.id!!, ReservationCardOrderStatus.FAILED) shouldBe ReservationCardOrderStatus.FAILED
+        tx.markStaleOpen(other.id!!) shouldBe false
+        val stale = insert("tr_stale-open", plan(flowId = 901, phaseIds = "82", paymentPhaseId = 82, amountMinor = 66_600))
+        tx.markSuperseded(stale.id!!)
+        tx.markStaleOpen(stale.id!!) shouldBe true
+        with(row(stale.id!!)) {
+            status shouldBe ReservationCardOrderStatus.NEEDS_REVIEW
+            reviewReason.shouldNotBeNull() shouldContain "48 hours"
+        }
+        tx.markStaleOpen(stale.id!!) shouldBe false
+    }
+
+    @Test
+    @Order(17)
+    fun `applyCompleted - a cancelled or deleted reservation is NEEDS_REVIEW and the phases stay unpaid`() {
+        val cancelledPhase = newPhase(901)
+        val cancelled = insert("tr_res-cancelled", plan(flowId = 901, phaseIds = cancelledPhase.toString(), paymentPhaseId = cancelledPhase, amountMinor = 71_100))
+        jdbc.update("UPDATE reservation SET sys_status = 'CANCELLED' WHERE id = 43")
+        try {
+            val result = tx.applyCompleted(cancelled.id!!, paidPayment(cancelled), "mollie-webhook")
+            result.completedNow shouldBe false
+            result.alert.shouldNotBeNull() shouldContain "cancelled or deleted"
+            row(cancelled.id!!).status shouldBe ReservationCardOrderStatus.NEEDS_REVIEW
+            phaseRow(cancelledPhase).paidOn.shouldBeNull()
+        } finally {
+            jdbc.update("UPDATE reservation SET sys_status = 'RESERVATION' WHERE id = 43")
+        }
+
+        val deletedPhase = newPhase(901)
+        val deleted = insert("tr_res-deleted", plan(flowId = 901, phaseIds = deletedPhase.toString(), paymentPhaseId = deletedPhase, amountMinor = 72_200))
+        jdbc.update("UPDATE reservation_card_order SET reservation_id = NULL WHERE id = ?", deleted.id)
+        tx.applyCompleted(deleted.id!!, paidPayment(deleted), null).alert.shouldNotBeNull() shouldContain "cancelled or deleted"
+        row(deleted.id!!).status shouldBe ReservationCardOrderStatus.NEEDS_REVIEW
+        phaseRow(deletedPhase).paidOn.shouldBeNull()
+        events.recorded.size shouldBe 0
+    }
+
+    @Test
+    @Order(18)
+    fun `applyCompleted - legacy pay-full without phase rows - the second payment of the same flow is a DOUBLE PAYMENT`() {
+        jdbc.update("UPDATE reservation_card_order SET status = 'CANCELLED' WHERE reservation_flow_id = 901 AND status IN ('PENDING', 'SUPERSEDED')")
+        jdbc.update("UPDATE reservation_card_order SET status = 'CANCELLED' WHERE reservation_flow_id = 901 AND status = 'COMPLETED'")
+        val first = insert("tr_legacy-1", plan(flowId = 901, phaseIds = "", amountMinor = 81_100, paymentPhaseId = null))
+        tx.applyCompleted(first.id!!, paidPayment(first), "mollie-webhook").let {
+            it.completedNow shouldBe true
+            it.promote shouldBe true
+        }
+        val second = insert("tr_legacy-2", plan(flowId = 901, phaseIds = "", amountMinor = 82_200, paymentPhaseId = null))
+        val result = tx.applyCompleted(second.id!!, paidPayment(second), "mollie-webhook")
+        result.completedNow shouldBe false
+        result.alert.shouldNotBeNull() shouldContain "DOUBLE PAYMENT"
+        row(second.id!!).status shouldBe ReservationCardOrderStatus.NEEDS_REVIEW
+        row(first.id!!).status shouldBe ReservationCardOrderStatus.COMPLETED
+        orders.countOtherCompleted(901, second.id!!) shouldBe 1L
+        orders.findStuckPromoteIds().contains(first.id!!) shouldBe false
+        jdbc.update("UPDATE reservation_card_order SET completed_at = now() - interval '11 minutes' WHERE id = ?", first.id)
+        orders.findStuckPromoteIds().contains(first.id!!) shouldBe true
+        tx.markPromote(first.id!!, CardOrderPromoteState.DONE)
+        orders.findStuckPromoteIds().contains(first.id!!) shouldBe false
+    }
+
+    @Test
+    @Order(19)
+    fun `applyMoneyBack - refund and chargeback totals only grow, each increase is reported once`() {
+        val phase = newPhase(900)
+        val order = pendingOver("tr_moneyback", listOf(phase), paymentPhaseId = phase, amountMinor = 150_000)
+        tx.applyCompleted(order.id!!, paidPayment(order), null).completedNow shouldBe true
+        fun withTotals(
+            refunded: Long?,
+            chargedBack: Long?,
+        ) = paidPayment(order).copy(
+            amountRefunded = refunded?.let { MollieAmount.eur(it) },
+            amountChargedBack = chargedBack?.let { MollieAmount.eur(it) },
+        )
+
+        tx.applyMoneyBack(order.id!!, withTotals(null, null)).shouldBeNull()
+        tx.applyMoneyBack(order.id!!, withTotals(5_000, null)).shouldNotBeNull() shouldContain "refunded 5000"
+        row(order.id!!).refundedAmountMinor shouldBe 5_000L
+        tx.applyMoneyBack(order.id!!, withTotals(5_000, null)).shouldBeNull()
+        // A lower total never shrinks the stored one.
+        tx.applyMoneyBack(order.id!!, withTotals(2_000, null)).shouldBeNull()
+        row(order.id!!).refundedAmountMinor shouldBe 5_000L
+
+        val chargeback = tx.applyMoneyBack(order.id!!, withTotals(5_000, 30_000))
+        chargeback.shouldNotBeNull() shouldContain "CHARGEBACK 30000"
+        chargeback shouldNotContain "refunded"
+        with(row(order.id!!)) {
+            refundedAmountMinor shouldBe 5_000L
+            chargedBackAmountMinor shouldBe 30_000L
+            status shouldBe ReservationCardOrderStatus.COMPLETED
+        }
+        tx.applyMoneyBack(order.id!!, withTotals(5_000, 30_000)).shouldBeNull()
+        // Both grow at once: one reason, clamped to the charge.
+        tx.applyMoneyBack(order.id!!, withTotals(900_000, 40_000)).shouldNotBeNull().let {
+            it shouldContain "refunded 150000"
+            it shouldContain "CHARGEBACK 40000"
+        }
+        row(order.id!!).refundedAmountMinor shouldBe 150_000L
+        tx.applyMoneyBack(999_999, withTotals(1, 1)).shouldBeNull()
     }
 }

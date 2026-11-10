@@ -155,6 +155,22 @@ class CustomPaymentTx(
         return clamped
     }
 
+    /** Chargebacks are monotonic like refunds: a higher Mollie total is stored and alerted once. */
+    fun applyChargeback(
+        id: Long,
+        totalChargedBackMinor: Long,
+    ): Long? {
+        val row = repository.lockById(id) ?: return null
+        val clamped = totalChargedBackMinor.coerceIn(0L, row.amountMinor)
+        if (clamped <= row.chargedBackAmountMinor) return row.chargedBackAmountMinor
+        row.chargedBackAmountMinor = clamped
+        log.warn("Custom payment {} CHARGEBACK {} of {} cents", row.id, clamped, row.amountMinor)
+        mail("chargeback alert", row) {
+            mailer.alert(row, CustomPaymentAlertKind.CHARGEBACK, "Charged back $clamped of ${row.amountMinor} cents")
+        }
+        return clamped
+    }
+
     /** Reconcile job: still PENDING 48 h after creation -> NEEDS_REVIEW + alert. */
     fun markStale(id: Long): Boolean {
         val row = repository.lockById(id) ?: return false

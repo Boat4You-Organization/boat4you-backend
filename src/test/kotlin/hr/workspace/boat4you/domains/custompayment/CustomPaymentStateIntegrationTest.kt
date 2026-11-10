@@ -696,4 +696,35 @@ class CustomPaymentStateIntegrationTest {
         row(id).status shouldBe CustomPaymentStatus.COMPLETED
         service.status(token).status shouldBe CustomPaymentStatus.COMPLETED
     }
+
+    @Test
+    @Order(16)
+    fun `chargeback - the total only grows, clamped to the amount, one CHARGEBACK alert per increase, applied from the payment read`() {
+        val id = attached("CHARGEBACK-1", "tr_chargeback-1", amountMinor = 10_000)
+        val token = row(id).publicToken.toString()
+        fun withChargeback(chargedBack: Long?) = payment("tr_chargeback-1", "paid", token, amount = 10_000).copy(amountChargedBack = chargedBack?.let { MollieAmount.eur(it) })
+        `when`(client.getPayment("tr_chargeback-1")).thenReturn(
+            withChargeback(null),
+            withChargeback(4_000),
+            withChargeback(4_000),
+            withChargeback(1_000),
+            withChargeback(25_000),
+        )
+        val service = service()
+        mailer.clear()
+
+        service.onPaymentChanged("tr_chargeback-1") shouldBe HandlerResult.HANDLED
+        row(id).status shouldBe CustomPaymentStatus.COMPLETED
+        row(id).chargedBackAmountMinor shouldBe 0L
+        service.onPaymentChanged("tr_chargeback-1") shouldBe HandlerResult.HANDLED
+        row(id).chargedBackAmountMinor shouldBe 4_000L
+        service.onPaymentChanged("tr_chargeback-1") shouldBe HandlerResult.HANDLED
+        service.onPaymentChanged("tr_chargeback-1") shouldBe HandlerResult.HANDLED
+        row(id).chargedBackAmountMinor shouldBe 4_000L
+        mailer.alerts.filter { it.first == id } shouldContainExactly listOf(id to CustomPaymentAlertKind.CHARGEBACK)
+        service.onPaymentChanged("tr_chargeback-1") shouldBe HandlerResult.HANDLED
+        row(id).chargedBackAmountMinor shouldBe 10_000L
+        mailer.alerts.filter { it.first == id } shouldHaveSize 2
+        tx.applyChargeback(999_999, 1).shouldBeNull()
+    }
 }

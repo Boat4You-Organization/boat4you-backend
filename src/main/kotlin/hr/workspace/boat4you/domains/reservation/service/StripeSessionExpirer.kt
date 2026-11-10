@@ -1,6 +1,9 @@
 package hr.workspace.boat4you.domains.reservation.service
 
+import com.stripe.Stripe
 import com.stripe.model.checkout.Session
+import com.stripe.net.RequestOptions
+import com.stripe.param.checkout.SessionExpireParams
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -25,6 +28,37 @@ class StripeSessionExpirer {
      * blocking that on a Stripe API hiccup would be worse than the rare
      * orphan-open-session it leaves behind.
      */
+    /**
+     * The same best-effort expire for the Mollie checkout (M1), called OUTSIDE a database transaction with short
+     * timeouts and no retries, and skipped when this node has no Stripe key. A session that could not be expired stays
+     * payable for at most 24 h; a Stripe payment for a phase that is already paid is then refused by the Stripe
+     * webhook handler (office alert) instead of silently overwriting the phase.
+     */
+    fun expireQuickly(sessionId: String) {
+        if (Stripe.apiKey.isNullOrBlank()) return
+        try {
+            val options =
+                RequestOptions
+                    .builder()
+                    .setConnectTimeout(QUICK_CONNECT_TIMEOUT_MS)
+                    .setReadTimeout(QUICK_READ_TIMEOUT_MS)
+                    .setMaxNetworkRetries(0)
+                    .build()
+            val session = Session.retrieve(sessionId, options)
+            if (session.status == "open") {
+                session.expire(SessionExpireParams.builder().build(), options)
+                logger.info("Expired open Stripe session $sessionId before a Mollie checkout")
+            }
+        } catch (e: Exception) {
+            logger.warn("Could not expire Stripe session $sessionId before a Mollie checkout: ${e.javaClass.simpleName}")
+        }
+    }
+
+    private companion object {
+        const val QUICK_CONNECT_TIMEOUT_MS = 3000
+        const val QUICK_READ_TIMEOUT_MS = 5000
+    }
+
     fun expireStripeSessionSafely(oldSessionId: String) {
         try {
             val oldSession = Session.retrieve(oldSessionId)

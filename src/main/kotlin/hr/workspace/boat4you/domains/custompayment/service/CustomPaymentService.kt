@@ -256,6 +256,8 @@ class CustomPaymentService(
         tx.applyVerdict(payment.id!!, verdict, OrderSnapshot.of(molliePayment).toJson(), event)
         val refunded = molliePayment.amountRefunded?.toMinorOrNull() ?: 0L
         if (refunded > 0L) tx.applyRefund(payment.id!!, refunded)
+        val chargedBack = molliePayment.amountChargedBack?.toMinorOrNull() ?: 0L
+        if (chargedBack > 0L) tx.applyChargeback(payment.id!!, chargedBack)
     }
 
     private fun requireSite(

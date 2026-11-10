@@ -262,6 +262,7 @@ class EmailCustomPaymentMailer(
                 CustomPaymentAlertKind.NEEDS_REVIEW to "Custom payment needs review",
                 CustomPaymentAlertKind.LATE_COMPLETION to "Custom payment completed late",
                 CustomPaymentAlertKind.REFUND to "Custom payment refunded",
+                CustomPaymentAlertKind.CHARGEBACK to "Custom payment CHARGEBACK",
                 CustomPaymentAlertKind.STALE to "Custom payment still pending after 48 h",
             )
 
@@ -276,6 +277,9 @@ class EmailCustomPaymentMailer(
                     "payment for the same contract.",
                 CustomPaymentAlertKind.REFUND to
                     "Money was refunded for this payment (Mollie dashboard). The client is not e-mailed by us.",
+                CustomPaymentAlertKind.CHARGEBACK to
+                    "The card holder disputed this payment and Mollie took the money back (chargeback). Answer the " +
+                    "dispute in the Mollie dashboard with the signed contract before its deadline.",
                 CustomPaymentAlertKind.STALE to
                     "This attempt is still pending 48 hours after it was created; Mollie neither completed nor failed " +
                     "it. It is now NEEDS_REVIEW - check the order in the Mollie dashboard.",
