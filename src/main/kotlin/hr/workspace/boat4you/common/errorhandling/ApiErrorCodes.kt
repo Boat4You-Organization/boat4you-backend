@@ -86,14 +86,14 @@ enum class ApiErrorCodes(
     REVIEW_EDIT_WINDOW_CLOSED(7002, "This review can no longer be changed — reviews can be edited for 24 hours after sending."),
     REVIEW_NOT_FOUND(7003, "Review does not exist"),
 
-    // 8xxx: secret /pay/<key> card payments (Revolut hosted checkout). Customer-facing wording; the web maps the codes
+    // 8xxx: secret /pay/<key> card payments (Mollie hosted checkout). Customer-facing wording; the web maps the codes
     // to its own translated copy and never shows these strings raw.
     CUSTOM_PAYMENTS_UNAVAILABLE(8001, "Card payments are temporarily unavailable. Please try again later."),
     CUSTOM_PAYMENT_NOT_FOUND(8002, "Payment not found."),
     CUSTOM_PAYMENT_TOO_MANY(8003, "Too many payment attempts. Please try again later."),
     CUSTOM_PAYMENT_PROVIDER_ERROR(8004, "We couldn't start the card payment. Please try again in a moment."),
 
-    // 81xx: online-booking card payments (provider-neutral /payments/card, Stripe or Revolut). Static customer-facing
+    // 81xx: online-booking card payments (provider-neutral /payments/card, Stripe or Mollie). Static customer-facing
     // wording — the web shows the message in a toast, so never a provider or exception text.
     CARD_PAYMENTS_UNAVAILABLE(8101, "Card payments are temporarily unavailable. Please try again later."),
     CARD_PAYMENT_IN_PROGRESS(
@@ -103,4 +103,8 @@ enum class ApiErrorCodes(
     CARD_ALREADY_PAID(8103, "This payment has already been received. Please refresh the page to see your booking."),
     CARD_PAYMENT_PROVIDER_ERROR(8104, "We couldn't start the card payment. Please try again in a moment."),
     CARD_PAYMENT_NOT_FOUND(8105, "Payment not found."),
+    CARD_AMOUNT_ABOVE_LIMIT(
+        8106,
+        "Card payments are limited to 10,000 EUR per payment. Please pay this amount by bank transfer.",
+    ),
 }

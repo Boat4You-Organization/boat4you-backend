@@ -28,7 +28,7 @@ data class PendingInsert(
 )
 
 /**
- * Every write of `custom_payment`, each in its own short transaction (DB only — Revolut is called by
+ * Every write of `custom_payment`, each in its own short transaction (DB only — Mollie is called by
  * CustomPaymentService between these calls, never inside one). [applyVerdict] / [applyRefund] take the row lock
  * first, so the webhook, the status endpoint, the reconcile job and admin Refresh can race freely: the second one
  * sees the first one's result and the receipt goes out once.
@@ -75,7 +75,7 @@ class CustomPaymentTx(
         return PendingInsert(repository.saveAndFlush(row), existing = false)
     }
 
-    /** The Revolut order exists: remember its id and hosted checkout URL. */
+    /** The Mollie order exists: remember its id and hosted checkout URL. */
     fun attachOrder(
         id: Long,
         providerOrderId: String,
@@ -86,7 +86,7 @@ class CustomPaymentTx(
         row.checkoutUrl = checkoutUrl
     }
 
-    /** Revolut did not give us a usable order: the attempt ends as FAILED (the client sees an error and may retry). */
+    /** Mollie did not give us a usable order: the attempt ends as FAILED (the client sees an error and may retry). */
     fun markCreateFailed(
         id: Long,
         providerOrderId: String? = null,
@@ -97,7 +97,7 @@ class CustomPaymentTx(
     }
 
     /**
-     * Applies what Revolut says about the order. Rules:
+     * Applies what Mollie says about the order. Rules:
      * - COMPLETE and not COMPLETED yet -> COMPLETED + completedAt + payment id + snapshot, receipt + office e-mail;
      *   when the row was not PENDING any more (FAILED / CANCELLED / NEEDS_REVIEW) also a "late completion" alert.
      * - NEEDS_REVIEW -> status + alert, never a receipt; a COMPLETED row is not downgraded (logged only) and a row
@@ -121,7 +121,7 @@ class CustomPaymentTx(
             is CustomPaymentVerdict.NeedsReview -> flagForReview(row, verdict, snapshotJson)
             CustomPaymentVerdict.Failed -> closeIfPending(row, CustomPaymentStatus.FAILED, snapshotJson)
             CustomPaymentVerdict.Cancelled -> closeIfPending(row, CustomPaymentStatus.CANCELLED, snapshotJson)
-            CustomPaymentVerdict.StillPending -> Unit
+            CustomPaymentVerdict.StillPending -> if (row.status == CustomPaymentStatus.PENDING) row.orderSnapshot = snapshotJson ?: row.orderSnapshot
         }
         return row.status
     }
@@ -136,7 +136,7 @@ class CustomPaymentTx(
     }
 
     /**
-     * Refunds are monotonic: [totalRefundedMinor] (Revolut's running total, clamped to the amount) only ever raises
+     * Refunds are monotonic: [totalRefundedMinor] (Mollie's `amountRefunded`, clamped to the amount) only ever raises
      * `refunded_amount_minor`; a repeated or older figure changes nothing and alerts nobody.
      */
     fun applyRefund(
@@ -147,7 +147,7 @@ class CustomPaymentTx(
         val clamped = totalRefundedMinor.coerceIn(0L, row.amountMinor)
         if (clamped <= row.refundedAmountMinor) return row.refundedAmountMinor
         row.refundedAmountMinor = clamped
-        val note = if (totalRefundedMinor > row.amountMinor) " (Revolut reported $totalRefundedMinor)" else ""
+        val note = if (totalRefundedMinor > row.amountMinor) " (Mollie reported $totalRefundedMinor)" else ""
         log.info("Custom payment {} refunded {} of {} cents", row.id, clamped, row.amountMinor)
         mail("refund alert", row) {
             mailer.alert(row, CustomPaymentAlertKind.REFUND, "Refunded $clamped of ${row.amountMinor} cents$note")
@@ -207,7 +207,7 @@ class CustomPaymentTx(
     ) {
         when (val previous = row.status) {
             CustomPaymentStatus.NEEDS_REVIEW -> Unit
-            CustomPaymentStatus.COMPLETED -> log.warn("Custom payment {} is COMPLETED but Revolut now says: {}", row.id, verdict.reason)
+            CustomPaymentStatus.COMPLETED -> log.warn("Custom payment {} is COMPLETED but Mollie now says: {}", row.id, verdict.reason)
             else -> {
                 row.status = CustomPaymentStatus.NEEDS_REVIEW
                 row.orderSnapshot = snapshotJson ?: row.orderSnapshot

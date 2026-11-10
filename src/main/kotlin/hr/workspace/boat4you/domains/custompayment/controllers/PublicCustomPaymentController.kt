@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController
  * The secret `/pay/<linkKey>` page of the 7 sites (no login; the link key is the credential, so responses are never
  * cached). `/public/` is permitAll in SecurityConfiguration; create and status are rate-limited per IP in
  * PublicEndpointRateLimiter. Errors: 400 invalid fields, 404 (8002) wrong site / link key or unknown payment,
- * 429 (8003) too many attempts per e-mail, 502 (8004) Revolut error, 503 (8001) Revolut not configured.
+ * 429 (8003) too many attempts per e-mail, 502 (8004) Mollie error, 503 (8001) Mollie not configured.
  */
 @RestController
 @RequestMapping("/public/payments/custom")
@@ -38,7 +38,7 @@ class PublicCustomPaymentController(
     ): ResponseEntity<CustomPaymentConfigDto> = ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(service.config(site, linkKey))
 
     @Operation(
-        summary = "Start a card payment: creates the Revolut order and returns the hosted checkout URL",
+        summary = "Start a card payment: creates the Mollie payment and returns the hosted checkout URL",
         description = "The same data again while the first checkout is still open returns that checkout (no second order).",
     )
     @PostMapping("/orders")

@@ -6,7 +6,7 @@ import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 
 /**
- * The secret `/pay/<linkKey>` keys per site, from `application.revolut.custom-payment.link-keys` in the form
+ * The secret `/pay/<linkKey>` keys per site, from `application.mollie.custom-payment.link-keys` in the form
  * `site=key[,key];site2=key` (two keys per site may be valid at once during a rotation). A key must be at least
  * [MIN_KEY_LENGTH] URL-safe characters (`A-Z a-z 0-9 _ -`, it is a path segment); unknown sites, short or malformed
  * keys are dropped with a WARN that never prints a key. Comparison is constant-time ([MessageDigest.isEqual]).

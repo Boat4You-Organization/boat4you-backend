@@ -9,7 +9,7 @@ import java.math.RoundingMode
 /**
  * What an online-booking card payment charges: which payment phases, the base amount, the card surcharge and the
  * amount in cents. Pure (no I/O, no Spring) and provider-neutral — moved VERBATIM out of `StripePaymentService`
- * (phase selection + surcharge + `toCentsLong`) so Stripe and Revolut charge byte-identical amounts.
+ * (phase selection + surcharge + `toCentsLong`) so Stripe and Mollie charge byte-identical amounts.
  * `CardChargeCalculatorTests` pins the golden values; do not change the arithmetic without changing those.
  */
 object CardChargeCalculator {

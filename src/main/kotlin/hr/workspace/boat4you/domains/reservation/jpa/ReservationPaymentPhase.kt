@@ -31,7 +31,7 @@ class ReservationPaymentPhase : AbstractEntity<Long>() {
     @Column(name = "stripe_payment_intent_id", columnDefinition = "VARCHAR(511)", nullable = true)
     var stripePaymentIntentId: String? = null
 
-    /** Card provider that recorded the payment of this phase (`REVOLUT`, V9_81); null for Stripe-era and manual payments. */
+    /** Card provider that recorded the payment of this phase (`MOLLIE`, V9_123); null for Stripe-era and manual payments. */
     @Column(name = "payment_provider", columnDefinition = "VARCHAR(16)", nullable = true)
     var paymentProvider: String? = null
 

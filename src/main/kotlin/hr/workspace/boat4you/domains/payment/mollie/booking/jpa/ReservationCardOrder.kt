@@ -1,4 +1,4 @@
-package hr.workspace.boat4you.domains.payment.revolut.booking.jpa
+package hr.workspace.boat4you.domains.payment.mollie.booking.jpa
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -10,9 +10,10 @@ import jakarta.persistence.Id
 import jakarta.persistence.Table
 import java.math.BigDecimal
 import java.time.Instant
+import java.util.UUID
 
 /**
- * One Revolut order of an online-booking card payment (table `reservation_card_order`, V9_81; Revolut plan 2A.5). The
+ * One Mollie payment of an online-booking card payment (table `reservation_card_order`, V9_123; plan 2A.5). The
  * expected charge is frozen here at creation; the row is the dedupe source (reuse before create), the reconcile source
  * and the idempotent claim of the completion. Written only through `ReservationCardOrderTx`. Plain columns, no
  * relations: the phases are referenced by id in [phaseIds].
@@ -25,10 +26,14 @@ open class ReservationCardOrder {
     open var id: Long? = null
 
     @Column(name = "provider", length = 16, nullable = false)
-    open var provider: String = PROVIDER_REVOLUT
+    open var provider: String = PROVIDER_MOLLIE
 
     @Column(name = "provider_order_id", length = 64, nullable = false, updatable = false)
     open var providerOrderId: String = ""
+
+    /** Our token in the Mollie redirectUrl (`?paymentRef=`) and metadata; the success page asks the status with it. */
+    @Column(name = "checkout_token", nullable = false, updatable = false)
+    open var checkoutToken: UUID = UUID.randomUUID()
 
     @Column(name = "reservation_id")
     open var reservationId: Long? = null
@@ -53,14 +58,14 @@ open class ReservationCardOrder {
     @Column(name = "surcharge_amount", precision = 12, scale = 2, nullable = false)
     open var surchargeAmount: BigDecimal = BigDecimal.ZERO
 
-    /** Cents sent to Revolut = `CardChargeCalculator.toCentsLong(base + surcharge)`. */
+    /** Cents sent to Mollie = `CardChargeCalculator.toCentsLong(base + surcharge)`. */
     @Column(name = "amount_minor", nullable = false)
     open var amountMinor: Long = 0
 
     @Column(name = "currency", length = 3, nullable = false)
     open var currency: String = CURRENCY_EUR
 
-    /** `merchant_order_data.reference` of the order (reservation number, sanitised). */
+    /** Reservation number (sanitised); in the Mollie description and metadata. */
     @Column(name = "reference", length = 64, nullable = false)
     open var reference: String = ""
 
@@ -108,7 +113,7 @@ open class ReservationCardOrder {
 
     companion object {
         const val CURRENCY_EUR = "EUR"
-        const val PROVIDER_REVOLUT = "REVOLUT"
+        const val PROVIDER_MOLLIE = "MOLLIE"
 
         /** The canonical `phase_ids` value: distinct ids, ascending, comma-separated. */
         fun phaseIdsOf(ids: Collection<Long>): String = ids.distinct().sorted().joinToString(",")

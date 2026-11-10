@@ -7,8 +7,8 @@ import org.springframework.stereotype.Component
 
 /**
  * The retrieve-and-expire-if-open logic for a previously issued Stripe Checkout Session, moved verbatim out of
- * `StripePaymentService` (F3-023) so the Revolut booking checkout can use it too (Revolut plan 2A.10 M1: an open Stripe
- * session on a phase must die when a Revolut order is created for that phase). Callers never null the phase's
+ * `StripePaymentService` (F3-023) so the Mollie booking checkout can use it too (plan 2A.10 M1: an open Stripe
+ * session on a phase must die when a Mollie payment is created for that phase). Callers never null the phase's
  * `stripeSessionId` because of it (history).
  */
 @Component

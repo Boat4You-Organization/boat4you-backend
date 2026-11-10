@@ -23,13 +23,13 @@ interface CustomPaymentMailer {
 }
 
 enum class CustomPaymentAlertKind {
-    /** Revolut reports a completed payment that does not match the row. */
+    /** Mollie reports a completed payment that does not match the row. */
     NEEDS_REVIEW,
 
     /** Paid after the row had already been closed as FAILED / CANCELLED / NEEDS_REVIEW. */
     LATE_COMPLETION,
 
-    /** Money was refunded from the Revolut dashboard. */
+    /** Money was refunded from the Mollie dashboard. */
     REFUND,
 
     /** Still pending 48 h after it was created. */

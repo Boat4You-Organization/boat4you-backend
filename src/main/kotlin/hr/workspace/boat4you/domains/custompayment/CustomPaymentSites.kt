@@ -2,7 +2,7 @@ package hr.workspace.boat4you.domains.custompayment
 
 /**
  * One of the 7 sites that serve the secret `/pay/<linkKey>` page. [baseUrl] is the canonical origin (with `www`,
- * no trailing slash); [locales] are the site's next-intl locales; [brandName] is what the payer sees (Revolut order
+ * no trailing slash); [locales] are the site's next-intl locales; [brandName] is what the payer sees (Mollie payment
  * description, e-mails) — the site's own brand, never another site's or a charter agency's.
  */
 data class CustomPaymentSite(

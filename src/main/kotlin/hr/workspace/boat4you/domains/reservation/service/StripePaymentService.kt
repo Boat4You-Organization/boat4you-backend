@@ -69,7 +69,7 @@ class StripePaymentService(
             ?: throw ReservationNotExistException()
 
         // Phase selection (400s), card surcharge and cents: CardChargeCalculator — moved verbatim from here and
-        // shared with the provider-neutral /payments/card checkout, so Stripe and Revolut charge byte-identical
+        // shared with the provider-neutral /payments/card checkout, so Stripe and Mollie charge byte-identical
         // amounts (golden values pinned in CardChargeCalculatorTests). Same order as before: the selection's 400s
         // fire before the surcharge setting is read and before any Stripe call.
         val dbPrice: BigDecimal = CardChargeCalculator.select(reservationFlow, payFullAmount, paymentPhaseId).baseAmount

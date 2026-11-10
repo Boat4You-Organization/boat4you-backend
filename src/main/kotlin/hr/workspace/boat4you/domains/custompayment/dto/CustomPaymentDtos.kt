@@ -14,7 +14,7 @@ import java.time.Instant
 
 /** GET /public/payments/custom/config: what the `/pay/<linkKey>` form needs. */
 data class CustomPaymentConfigDto(
-    /** false = Revolut is not configured; the page shows "temporarily unavailable". */
+    /** false = Mollie is not configured; the page shows "temporarily unavailable". */
     val enabled: Boolean,
     val minAmountMinor: Long,
     val maxAmountMinor: Long,
@@ -52,7 +52,7 @@ data class CreateCustomPaymentRequest(
     val linkKey: String? = null,
 )
 
-/** Where to send the payer (Revolut hosted checkout) + our public token for the success page `?ref=`. */
+/** Where to send the payer (Mollie hosted checkout) + our public token for the success page `?ref=`. */
 data class CreateCustomPaymentResponse(
     val redirectUrl: String,
     val ref: String,

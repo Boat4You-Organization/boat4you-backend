@@ -49,12 +49,8 @@
         <td style="padding:6px 0;"><a th:href="${reservationUrl}" href="#" style="color:#2856ff; text-decoration:none;">The reference matches a web reservation &#8594;</a></td>
       </tr>
       <tr>
-        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Revolut order</td>
-        <td th:text="${providerOrderId}" style="padding:6px 0; font-family:Menlo,Consolas,monospace; font-size:12px;">6516e3c4-…</td>
-      </tr>
-      <tr th:if="${providerPaymentId}">
-        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Revolut payment</td>
-        <td th:text="${providerPaymentId}" style="padding:6px 0; font-family:Menlo,Consolas,monospace; font-size:12px;">6516e3d1-…</td>
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Mollie payment</td>
+        <td th:text="${providerOrderId}" style="padding:6px 0; font-family:Menlo,Consolas,monospace; font-size:12px;">tr_7UhSN1zuXS</td>
       </tr>
       <tr>
         <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Payment reference (ours)</td>

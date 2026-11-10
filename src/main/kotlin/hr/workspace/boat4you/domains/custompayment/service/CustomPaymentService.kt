@@ -14,15 +14,15 @@ import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentsUnav
 import hr.workspace.boat4you.domains.custompayment.jpa.CustomPayment
 import hr.workspace.boat4you.domains.custompayment.jpa.CustomPaymentRepository
 import hr.workspace.boat4you.domains.custompayment.jpa.CustomPaymentStatus
-import hr.workspace.boat4you.domains.payment.revolut.RevolutCaptureMode
-import hr.workspace.boat4you.domains.payment.revolut.RevolutCreateOrderRequest
-import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantClient
-import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantOrderData
-import hr.workspace.boat4you.domains.payment.revolut.RevolutOrder
-import hr.workspace.boat4you.domains.payment.revolut.RevolutOrderEventHandler
-import hr.workspace.boat4you.domains.payment.revolut.RevolutOrderEventHandler.HandlerResult
-import hr.workspace.boat4you.domains.payment.revolut.RevolutProperties
-import hr.workspace.boat4you.domains.payment.revolut.RevolutWebhookEvents
+import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
+import hr.workspace.boat4you.domains.payment.mollie.MollieClient
+import hr.workspace.boat4you.domains.payment.mollie.MollieCreatePaymentRequest
+import hr.workspace.boat4you.domains.payment.mollie.MollieMethods
+import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
+import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler
+import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler.HandlerResult
+import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentStatuses
+import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -35,18 +35,18 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * The secret `/pay/<linkKey>` card payments: config, create (-> Revolut hosted checkout), status, webhook events and
- * reconcile. No class-level transaction on purpose: every Revolut HTTP call happens OUTSIDE a database transaction;
+ * The secret `/pay/<linkKey>` card payments: config, create (-> Mollie hosted checkout), status, webhook and
+ * reconcile. No class-level transaction on purpose: every Mollie HTTP call happens OUTSIDE a database transaction;
  * the database writes are the short transactions of [CustomPaymentTx].
  */
 @Service
 class CustomPaymentService(
-    private val properties: RevolutProperties,
+    private val properties: MollieProperties,
     private val tx: CustomPaymentTx,
     private val repository: CustomPaymentRepository,
     private val reservationRepository: ReservationRepository,
-    private val client: RevolutMerchantClient,
-) : RevolutOrderEventHandler {
+    private val client: MollieClient,
+) : MolliePaymentHandler {
     private val log = LoggerFactory.getLogger(javaClass)
     private val linkKeys = CustomPaymentLinkKeys(properties.customPayment.linkKeys)
 
@@ -54,7 +54,7 @@ class CustomPaymentService(
         log.info("Custom payments: link keys per site {}", linkKeys.summary().ifEmpty { "none" })
     }
 
-    /** 404 for an unknown (site, linkKey) pair; `enabled=false` while Revolut is not configured. */
+    /** 404 for an unknown (site, linkKey) pair; `enabled=false` while Mollie is not configured. */
     fun config(
         site: String?,
         linkKey: String?,
@@ -71,9 +71,10 @@ class CustomPaymentService(
     }
 
     /**
-     * Creates the attempt and its Revolut order and returns the hosted checkout URL. 503 disabled, 404 wrong
-     * (site, linkKey), 400 invalid fields, 429 more than [MAX_ATTEMPTS_PER_EMAIL] attempts per e-mail per hour,
-     * 502 Revolut error. The same data again while the first checkout is still usable returns that checkout.
+     * Creates the attempt and its Mollie payment and returns the hosted checkout URL. 503 disabled, 404 wrong
+     * (site, linkKey), 400 invalid fields (amount above the Mollie card limit included), 429 more than
+     * [MAX_ATTEMPTS_PER_EMAIL] attempts per e-mail per hour, 502 Mollie error. The same data again while the first
+     * checkout is still usable returns that checkout.
      */
     fun create(
         request: CreateCustomPaymentRequest,
@@ -111,28 +112,33 @@ class CustomPaymentService(
             return CreateCustomPaymentResponse(payment.checkoutUrl!!, token)
         }
 
-        val order =
+        val molliePayment =
             try {
-                client.createOrder(orderRequest(site, linkKey, input, id, token))
+                client.createPayment(paymentRequest(site, linkKey, input, id, token), idempotencyKey = "custom-payment-$token")
             } catch (e: Exception) {
-                log.warn("Custom payment {}: Revolut order not created ({}: {})", id, e.javaClass.simpleName, e.message)
+                log.warn("Custom payment {}: Mollie payment not created ({}: {})", id, e.javaClass.simpleName, e.message)
                 tx.markCreateFailed(id)
                 throw CustomPaymentProviderException()
             }
-        val checkoutUrl = order.checkoutUrl
+        val checkoutUrl = molliePayment.checkoutUrl
         if (checkoutUrl == null || !isAllowedCheckout(checkoutUrl)) {
-            log.error("Custom payment {}: Revolut order {} has no checkout URL on an allowed origin", id, order.id)
-            tx.markCreateFailed(id, order.id.takeIf { RevolutMerchantClient.isValidOrderId(it) })
+            log.error("Custom payment {}: Mollie payment {} has no checkout URL on an allowed origin", id, molliePayment.id)
+            tx.markCreateFailed(id, molliePayment.id.takeIf { MollieClient.isValidPaymentId(it) })
             throw CustomPaymentProviderException()
         }
-        tx.attachOrder(id, order.id, checkoutUrl)
-        log.info("Custom payment {} created for site {} (Revolut order {})", id, site.key, order.id)
+        tx.attachOrder(id, molliePayment.id, checkoutUrl)
+        log.info("Custom payment {} created for site {} (Mollie payment {})", id, site.key, molliePayment.id)
         return CreateCustomPaymentResponse(checkoutUrl, token)
     }
 
     /**
-     * Status for the success page. Unknown, malformed or older than 30 days -> 404. A PENDING row asks Revolut at most
-     * once per 10 s (claimCheck); a Revolut hiccup is swallowed and the stored status is returned.
+     * Status for the success page. Unknown, malformed or older than 30 days -> 404. A PENDING row asks Mollie at most
+     * once per 10 s (claimCheck); a Mollie hiccup is swallowed and the stored status is returned.
+     *
+     * A row that is still PENDING while Mollie's payment is `open` means the payer came back WITHOUT finishing (Mollie
+     * keeps a payment open after a declined card so the payer can try again, and its "back" link returns here). The
+     * page then gets CANCELLED (-> "not completed, try again") although the row itself stays PENDING: a late payment
+     * on the old checkout is still picked up by the webhook.
      */
     fun status(token: String): CustomPaymentStatusDto {
         val uuid = runCatching { UUID.fromString(token.trim()) }.getOrNull() ?: throw CustomPaymentNotFoundException()
@@ -141,21 +147,27 @@ class CustomPaymentService(
 
         val orderId = payment.providerOrderId
         val id = payment.id!!
-        if (orderId != null && mayAskRevolut(payment) && repository.claimCheck(id) == 1) {
-            val order =
+        if (orderId != null && mayAskMollie(payment) && repository.claimCheck(id) == 1) {
+            val molliePayment =
                 try {
-                    client.getOrder(orderId)
+                    client.getPaymentOnce(orderId)
                 } catch (e: Exception) {
-                    log.warn("Custom payment {}: status check could not read the Revolut order ({})", id, e.javaClass.simpleName)
+                    log.warn("Custom payment {}: status check could not read the Mollie payment ({})", id, e.javaClass.simpleName)
                     null
                 }
-            if (order != null) {
-                apply(payment, order, event = null)
+            if (molliePayment != null) {
+                apply(payment, molliePayment, event = null)
                 payment = repository.findById(id).orElse(payment)
             }
         }
+        val shown =
+            if (payment.status == CustomPaymentStatus.PENDING && lastKnownMollieStatus(payment) == MolliePaymentStatuses.OPEN) {
+                CustomPaymentStatus.CANCELLED
+            } else {
+                payment.status
+            }
         return CustomPaymentStatusDto(
-            status = payment.status,
+            status = shown,
             amountMinor = payment.amountMinor,
             currency = payment.currency,
             reference = payment.reference,
@@ -163,77 +175,58 @@ class CustomPaymentService(
         )
     }
 
-    private fun mayAskRevolut(payment: CustomPayment): Boolean = properties.enabled && payment.status == CustomPaymentStatus.PENDING
+    private fun mayAskMollie(payment: CustomPayment): Boolean = properties.enabled && payment.status == CustomPaymentStatus.PENDING
 
-    override fun ownsOrder(orderId: String): Boolean = repository.existsByProviderOrderId(orderId)
+    /** The Mollie status stored with the last check (snapshot), null when never read. */
+    private fun lastKnownMollieStatus(payment: CustomPayment): String? = OrderSnapshot.parseOrNull(payment.orderSnapshot)?.state
+
+    override fun ownsPayment(paymentId: String): Boolean = repository.existsByProviderOrderId(paymentId)
 
     /**
-     * Webhook. A declined / failed card attempt only stamps the row (the payer retries on the same hosted page);
-     * anything else re-reads the order from Revolut (the payload carries no state) and applies the verdict.
+     * Webhook: Mollie sends only the id, so the payment is ALWAYS re-read from the Mollie API before anything is
+     * marked; the verdict and the refunded total (a refund also triggers this call) are applied from that read.
      */
-    override fun onEvent(
-        event: String,
-        orderId: String,
-    ): HandlerResult {
-        val payment = repository.findByProviderOrderId(orderId) ?: return HandlerResult.HANDLED
+    override fun onPaymentChanged(paymentId: String): HandlerResult {
+        val payment = repository.findByProviderOrderId(paymentId) ?: return HandlerResult.HANDLED
         val id = payment.id!!
-        if (event == RevolutWebhookEvents.ORDER_PAYMENT_DECLINED || event == RevolutWebhookEvents.ORDER_PAYMENT_FAILED) {
-            tx.stampWebhook(id, event)
-            log.info("Custom payment {}: {} (the payer can retry on the same checkout)", id, event)
-            return HandlerResult.HANDLED
-        }
-        val order =
+        val molliePayment =
             try {
-                client.getOrder(orderId)
+                client.getPayment(paymentId)
             } catch (e: ResourceAccessException) {
-                log.warn("Custom payment {}: webhook {} - Revolut not reachable, retry later", id, event)
+                log.warn("Custom payment {}: webhook - Mollie not reachable, retry later", id)
                 return HandlerResult.TRANSIENT
             } catch (e: HttpServerErrorException) {
-                log.warn("Custom payment {}: webhook {} - Revolut {}, retry later", id, event, e.statusCode.value())
+                log.warn("Custom payment {}: webhook - Mollie {}, retry later", id, e.statusCode.value())
                 return HandlerResult.TRANSIENT
             }
-        if (order == null) {
-            log.warn("Custom payment {}: webhook {} but Revolut does not know order {}", id, event, orderId)
-            tx.stampWebhook(id, event)
+        if (molliePayment == null) {
+            log.warn("Custom payment {}: webhook but Mollie does not know payment {}", id, paymentId)
+            tx.stampWebhook(id, WEBHOOK_EVENT)
             return HandlerResult.HANDLED
         }
-        apply(payment, order, event)
+        apply(payment, molliePayment, WEBHOOK_EVENT + ":" + molliePayment.status)
         return HandlerResult.HANDLED
     }
 
-    /** A refund order completed for one of our orders: take Revolut's running total from the original order. */
-    override fun onRefund(
-        originalOrderId: String,
-        refundOrder: RevolutOrder,
-    ) {
-        val payment = repository.findByProviderOrderId(originalOrderId) ?: return
-        val total =
-            runCatching { client.getOrder(originalOrderId)?.refundedAmount }
-                .onFailure { log.warn("Custom payment {}: refund total not readable ({})", payment.id, it.javaClass.simpleName) }
-                .getOrNull()
-                ?: refundOrder.amount
-        tx.applyRefund(payment.id!!, total)
-    }
-
     /**
-     * Re-reads the order from Revolut and applies the verdict (+ the refunded total) — reconcile job and admin
-     * Refresh. 404 unknown id, 503 disabled, 502 Revolut error. Returns the row as stored afterwards.
+     * Re-reads the payment from Mollie and applies the verdict (+ the refunded total) — reconcile job and admin
+     * Refresh. 404 unknown id, 503 disabled, 502 Mollie error. Returns the row as stored afterwards.
      */
     fun reconcile(id: Long): CustomPayment {
         val payment = repository.findById(id).orElseThrow { CustomPaymentNotFoundException() }
         val orderId = payment.providerOrderId ?: return payment
         if (!properties.enabled) throw CustomPaymentsUnavailableException()
-        val order =
+        val molliePayment =
             try {
-                client.getOrder(orderId)
+                client.getPayment(orderId)
             } catch (e: Exception) {
-                log.warn("Custom payment {}: reconcile could not read the Revolut order ({})", id, e.javaClass.simpleName)
+                log.warn("Custom payment {}: reconcile could not read the Mollie payment ({})", id, e.javaClass.simpleName)
                 throw CustomPaymentProviderException()
             }
-        if (order == null) {
-            log.warn("Custom payment {}: Revolut does not know order {}", id, orderId)
+        if (molliePayment == null) {
+            log.warn("Custom payment {}: Mollie does not know payment {}", id, orderId)
         } else {
-            apply(payment, order, event = null)
+            apply(payment, molliePayment, event = null)
         }
         return repository.findById(id).orElse(payment)
     }
@@ -242,13 +235,13 @@ class CustomPaymentService(
     fun reconcileSweep() {
         if (!properties.enabled) return
         val failed = tx.failUnattached()
-        if (failed > 0) log.warn("Custom payments: {} attempt(s) without a Revolut order after 15 min -> FAILED", failed)
+        if (failed > 0) log.warn("Custom payments: {} attempt(s) without a Mollie payment after 15 min -> FAILED", failed)
 
         repository.findReconcileCandidateIds().forEach { id ->
             runCatching { reconcile(id) }.onFailure { log.warn("Custom payment {}: reconcile failed ({})", id, it.javaClass.simpleName) }
         }
         repository.findStalePendingIds().forEach { id ->
-            // One last look first: an expired order turns into FAILED instead of a needless review.
+            // One last look first: an expired payment turns into FAILED instead of a needless review.
             runCatching { reconcile(id) }
             runCatching { tx.markStale(id) }.onFailure { log.error("Custom payment {}: stale check failed", id, it) }
         }
@@ -256,12 +249,12 @@ class CustomPaymentService(
 
     private fun apply(
         payment: CustomPayment,
-        order: RevolutOrder,
+        molliePayment: MolliePayment,
         event: String?,
     ) {
-        val verdict = CustomPaymentVerdict.of(order, payment)
-        tx.applyVerdict(payment.id!!, verdict, OrderSnapshot.of(order).toJson(), event)
-        val refunded = order.refundedAmount ?: 0L
+        val verdict = CustomPaymentVerdict.of(molliePayment, payment)
+        tx.applyVerdict(payment.id!!, verdict, OrderSnapshot.of(molliePayment).toJson(), event)
+        val refunded = molliePayment.amountRefunded?.toMinorOrNull() ?: 0L
         if (refunded > 0L) tx.applyRefund(payment.id!!, refunded)
     }
 
@@ -310,23 +303,30 @@ class CustomPaymentService(
             .onFailure { log.warn("Custom payment: reservation lookup failed ({})", it.javaClass.simpleName) }
             .getOrNull()
 
-    private fun orderRequest(
+    private fun paymentRequest(
         site: CustomPaymentSite,
         linkKey: String,
         input: ValidInput,
         id: Long,
         token: String,
-    ) = RevolutCreateOrderRequest(
-        amount = input.amountMinor,
-        currency = CustomPayment.CURRENCY_EUR,
-        captureMode = RevolutCaptureMode.AUTOMATIC,
-        description = "${site.brandName} payment — ${input.reference}",
-        redirectUrl = "${site.baseUrl}${site.localePrefix(input.locale)}/pay/$linkKey/success?ref=$token",
-        merchantOrderData = RevolutMerchantOrderData(reference = token),
-        metadata = mapOf("customPaymentId" to id.toString()),
-        expirePendingAfter = properties.customPayment.orderTtl.toString(),
-        enforceChallenge = ENFORCE_CHALLENGE_FORCED,
-    )
+    ): MollieCreatePaymentRequest {
+        val payPage = "${site.baseUrl}${site.localePrefix(input.locale)}/pay/$linkKey"
+        return MollieCreatePaymentRequest(
+            amount = MollieAmount.eur(input.amountMinor),
+            description = "${site.brandName} - contract ${input.reference}",
+            redirectUrl = "$payPage/success?ref=$token",
+            cancelUrl = "$payPage/failed?ref=$token",
+            webhookUrl = properties.webhookUrl,
+            locale = MOLLIE_LOCALES[input.locale] ?: DEFAULT_MOLLIE_LOCALE,
+            method = CUSTOM_PAYMENT_METHODS,
+            metadata =
+                mapOf(
+                    CustomPaymentVerdict.TOKEN_METADATA_KEY to token,
+                    "customPaymentId" to id.toString(),
+                    "site" to site.key,
+                ),
+        )
+    }
 
     private fun isAllowedCheckout(checkoutUrl: String): Boolean {
         val uri = runCatching { URI(checkoutUrl) }.getOrNull() ?: return false
@@ -336,8 +336,8 @@ class CustomPaymentService(
     }
 
     /**
-     * The dedupe window: 50 min with the default 1 h order lifetime, shorter with a shorter `order-ttl` (sandbox
-     * PT3M), so a returned checkout is never one Revolut has already expired.
+     * The dedupe window: 5/6 of `order-ttl` (default 15 min -> 12.5 min), at most 50 min, so a returned checkout is
+     * never one Mollie has already expired.
      */
     private fun dedupeWindow(): Duration = minOf(DEDUPE_WINDOW, properties.customPayment.orderTtl.multipliedBy(5).dividedBy(6))
 
@@ -345,7 +345,24 @@ class CustomPaymentService(
         const val MAX_ATTEMPTS_PER_EMAIL = 5L
         const val MAX_EMAIL_LENGTH = 254
         const val MAX_CLIENT_IP_LENGTH = 64
-        const val ENFORCE_CHALLENGE_FORCED = "forced"
+        const val WEBHOOK_EVENT = "mollie-webhook"
+        const val DEFAULT_MOLLIE_LOCALE = "en_US"
+
+        /** Cards (incl. Google Pay inside the card page), Apple Pay and Pay by Bank — no Klarna, no slow bank transfer. */
+        val CUSTOM_PAYMENT_METHODS = listOf(MollieMethods.CREDIT_CARD, MollieMethods.APPLE_PAY, MollieMethods.PAY_BY_BANK)
+
+        /** Our site locales -> Mollie checkout locales (Mollie has no Croatian: hr -> English). */
+        val MOLLIE_LOCALES =
+            mapOf(
+                "en" to "en_US",
+                "de" to "de_DE",
+                "fr" to "fr_FR",
+                "it" to "it_IT",
+                "es" to "es_ES",
+                "pt" to "pt_PT",
+                "nl" to "nl_NL",
+                "pl" to "pl_PL",
+            )
         val EMAIL_WINDOW: Duration = Duration.ofHours(1)
         val DEDUPE_WINDOW: Duration = Duration.ofMinutes(50)
         val STATUS_LIFETIME: Duration = Duration.ofDays(30)

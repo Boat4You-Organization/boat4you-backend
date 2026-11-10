@@ -1,13 +1,15 @@
--- Custom card payments through the secret /pay/<linkKey> page of the 7 sites (13.10.2026, Mario; plan Part 1).
+-- Custom card payments through the secret /pay/<linkKey> page of the 7 sites (planned 13.10.2026 for Revolut as
+-- V9_80; provider switched to Mollie 10.11.2026, Mario).
 --
 -- A client of a contract made outside boat4you (e.g. 100116/2027) opens the link printed in the contract, enters the
 -- contract / booking confirmation number as FREE TEXT, the amount from the contract's credit-card box and an e-mail,
--- and pays on Revolut's hosted card page. Record + notify only: one row per attempt here, nothing in reservations or
+-- and pays on Mollie's hosted checkout. Record + notify only: one row per attempt here, nothing in reservations or
 -- payment phases changes. reservation_id is an optional, informational link when the reference happens to equal a
 -- web reservation number.
 --
--- public_token = merchant_order_data.reference of the Revolut order and the ?ref= of the success page (no PII in the
--- URL). Status: PENDING -> COMPLETED | FAILED | CANCELLED; NEEDS_REVIEW = Revolut says completed but something does not
+-- public_token = metadata.customPaymentToken of the Mollie payment and the ?ref= of the success page (no PII in the
+-- URL). provider_order_id = the Mollie payment id (tr_…). Status: PENDING -> COMPLETED | FAILED | CANCELLED;
+-- NEEDS_REVIEW = Mollie says paid but something does not
 -- match (amount, currency, reference), or the attempt stayed pending for 48 h — an admin looks at it.
 --
 -- Additive only (one new, empty table), idempotent. The FK to reservation takes SHARE ROW EXCLUSIVE on reservation for
@@ -23,7 +25,7 @@ CREATE TABLE IF NOT EXISTS custom_payment (
     -- Cents. The 5 % card fee is already inside the contract amount: nothing is added.
     amount_minor           BIGINT        NOT NULL,
     currency               VARCHAR(3)    NOT NULL DEFAULT 'EUR',
-    provider               VARCHAR(16)   NOT NULL DEFAULT 'REVOLUT',
+    provider               VARCHAR(16)   NOT NULL DEFAULT 'MOLLIE',
     provider_order_id      VARCHAR(64),
     provider_payment_id    VARCHAR(64),
     checkout_url           TEXT,
@@ -35,12 +37,12 @@ CREATE TABLE IF NOT EXISTS custom_payment (
     accepted_at            TIMESTAMPTZ   NOT NULL,
     created_at             TIMESTAMPTZ   NOT NULL DEFAULT now(),
     completed_at           TIMESTAMPTZ,
-    -- Last time the status endpoint / reconcile job asked Revolut (claimCheck: at most once per 10 s per row).
+    -- Last time the status endpoint / reconcile job asked Mollie (claimCheck: at most once per 10 s per row).
     last_checked_at        TIMESTAMPTZ,
     last_webhook_event     VARCHAR(64),
     last_webhook_at        TIMESTAMPTZ,
     refunded_amount_minor  BIGINT        NOT NULL DEFAULT 0,
-    -- Whitelisted copy of the Revolut order (ids, states, amounts, timestamps, card brand + last 4) — no payer data.
+    -- Whitelisted copy of the Mollie payment (id, status, method, amounts, timestamps, card label + last 4) — no payer data.
     order_snapshot         JSONB,
     reservation_id         BIGINT        REFERENCES reservation (id) ON DELETE SET NULL,
     admin_note             TEXT,

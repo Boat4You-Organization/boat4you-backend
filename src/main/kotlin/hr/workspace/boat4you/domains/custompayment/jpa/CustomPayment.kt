@@ -25,7 +25,7 @@ open class CustomPayment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     open var id: Long? = null
 
-    /** `merchant_order_data.reference` of the Revolut order and the `?ref=` of the success page. */
+    /** `metadata.customPaymentToken` of the Mollie payment and the `?ref=` of the success page. */
     @Column(name = "public_token", nullable = false, updatable = false)
     open var publicToken: UUID = UUID.randomUUID()
 
@@ -43,7 +43,7 @@ open class CustomPayment {
     open var currency: String = CURRENCY_EUR
 
     @Column(name = "provider", length = 16, nullable = false)
-    open var provider: String = PROVIDER_REVOLUT
+    open var provider: String = PROVIDER_MOLLIE
 
     @Column(name = "provider_order_id", length = 64)
     open var providerOrderId: String? = null
@@ -92,7 +92,7 @@ open class CustomPayment {
     @Column(name = "refunded_amount_minor", nullable = false)
     open var refundedAmountMinor: Long = 0
 
-    /** JSON of `OrderSnapshot` (whitelisted Revolut order fields). */
+    /** JSON of `OrderSnapshot` (whitelisted Mollie payment fields). */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "order_snapshot")
     open var orderSnapshot: String? = null
@@ -105,6 +105,6 @@ open class CustomPayment {
 
     companion object {
         const val CURRENCY_EUR = "EUR"
-        const val PROVIDER_REVOLUT = "REVOLUT"
+        const val PROVIDER_MOLLIE = "MOLLIE"
     }
 }

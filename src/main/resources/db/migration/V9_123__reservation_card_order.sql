@@ -1,21 +1,21 @@
--- Online-booking card payments through Revolut (13.10.2026, Mario; Revolut plan Part 2, 2A.5 + second review M3/M4).
+-- Online-booking card payments through Mollie (13.10.2026, Mario; Mollie plan Part 2, 2A.5 + second review M3/M4).
 --
 -- Provider swap only: the phases a checkout pays and the amount (card surcharge included) are computed exactly as for
 -- Stripe (CardChargeCalculator). What is new is WHERE the payment is recorded:
 --
--- 1. reservation_payment_phase gets three provider-neutral columns, filled when a Revolut order pays the phase:
---    payment_provider ('REVOLUT'), provider_order_id, provider_payment_id. The old stripe_* columns stay (read-only
+-- 1. reservation_payment_phase gets three provider-neutral columns, filled when a Mollie order pays the phase:
+--    payment_provider ('MOLLIE'), provider_order_id, provider_payment_id. The old stripe_* columns stay (read-only
 --    history of Stripe payments; V1_56's UNIQUE index on stripe_session_id is untouched). provider_order_id is NOT
 --    unique: a pay-full checkout stamps ONE order on several phases.
 --
--- 2. reservation_card_order = the ledger of every Revolut booking order: the expected charge frozen at creation
+-- 2. reservation_card_order = the ledger of every Mollie booking order: the expected charge frozen at creation
 --    (phase ids, base + surcharge, amount_minor), the dedupe source ("reuse before create": the web regenerates its
 --    idempotency key on every page mount), the reconcile source (missed webhooks) and the idempotent claim of the
 --    completion (status PENDING -> COMPLETED under FOR UPDATE in the same transaction as the phase marking).
 --    expires_at = the effective expire_pending_after of the order (order TTL, capped by an OPTION's expiry with a
 --    15-minute floor — plan 2A.10 M3); the reuse window is computed from it. promote_state tracks the rare pay-full
 --    "promote to booking" after the payment commit (M4): NULL = not needed, PENDING -> DONE | FAILED.
---    Status: PENDING -> COMPLETED | FAILED | CANCELLED; NEEDS_REVIEW = Revolut says completed but something does not
+--    Status: PENDING -> COMPLETED | FAILED | CANCELLED; NEEDS_REVIEW = Mollie says completed but something does not
 --    match (amount, currency, reference, a phase already paid, cancelled reservation) — an admin looks at it.
 --
 -- Additive only (three nullable columns, one new empty table), idempotent. ADD COLUMN without a default is a catalog
@@ -35,8 +35,11 @@ CREATE INDEX IF NOT EXISTS idx_reservation_payment_phase_provider_order_id
 
 CREATE TABLE IF NOT EXISTS reservation_card_order (
     id                   BIGSERIAL      PRIMARY KEY,
-    provider             VARCHAR(16)    NOT NULL DEFAULT 'REVOLUT',
+    provider             VARCHAR(16)    NOT NULL DEFAULT 'MOLLIE',
     provider_order_id    VARCHAR(64)    NOT NULL,
+    -- Our own token in the Mollie redirectUrl (?paymentRef=) and metadata: the payment-success page asks the status
+    -- with it (Mollie also sends payers who did NOT pay back to the redirectUrl).
+    checkout_token       UUID           NOT NULL,
     -- SET NULL: the admin spam purge deletes reservations natively; the money trail stays.
     reservation_id       BIGINT         REFERENCES reservation (id) ON DELETE SET NULL,
     -- No FK (informational, like the purge above): the flow whose phases the order pays.
@@ -48,7 +51,7 @@ CREATE TABLE IF NOT EXISTS reservation_card_order (
     payment_phase_id     BIGINT,
     base_amount          NUMERIC(12, 2) NOT NULL,
     surcharge_amount     NUMERIC(12, 2) NOT NULL,
-    -- Cents actually charged = toCentsLong(base + surcharge); compared with Revolut's amount on completion.
+    -- Cents actually charged = toCentsLong(base + surcharge); compared with Mollie's amount on completion.
     amount_minor         BIGINT         NOT NULL,
     currency             VARCHAR(3)     NOT NULL DEFAULT 'EUR',
     -- merchant_order_data.reference = reservation number (sanitised) or id: dashboard search by booking number.
@@ -62,12 +65,13 @@ CREATE TABLE IF NOT EXISTS reservation_card_order (
     created_at           TIMESTAMPTZ    NOT NULL DEFAULT now(),
     expires_at           TIMESTAMPTZ    NOT NULL,
     completed_at         TIMESTAMPTZ,
-    -- Last time the status endpoint / reconcile job asked Revolut (claimCheck: at most once per 10 s per row).
+    -- Last time the status endpoint / reconcile job asked Mollie (claimCheck: at most once per 10 s per row).
     last_checked_at      TIMESTAMPTZ,
     last_webhook_at      TIMESTAMPTZ,
     last_webhook_event   VARCHAR(64),
     CONSTRAINT uq_reservation_card_order_provider_order_id UNIQUE (provider_order_id),
-    CONSTRAINT chk_reservation_card_order_provider CHECK (provider = 'REVOLUT'),
+    CONSTRAINT uq_reservation_card_order_checkout_token UNIQUE (checkout_token),
+    CONSTRAINT chk_reservation_card_order_provider CHECK (provider = 'MOLLIE'),
     CONSTRAINT chk_reservation_card_order_phase_ids CHECK (phase_ids ~ '^([0-9]+(,[0-9]+)*)?$'),
     CONSTRAINT chk_reservation_card_order_amounts CHECK (amount_minor > 0 AND base_amount >= 0 AND surcharge_amount >= 0),
     CONSTRAINT chk_reservation_card_order_currency CHECK (currency = 'EUR'),

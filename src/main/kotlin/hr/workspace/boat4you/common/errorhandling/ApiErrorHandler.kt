@@ -29,6 +29,7 @@ import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistE
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationStatusException
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationUserNotExists
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAlreadyPaidException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardAmountAboveLimitException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentInProgressException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentNotFoundException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProviderException
@@ -753,6 +754,18 @@ internal class ApiErrorHandler {
                 ApiErrorCodes.CARD_PAYMENT_PROVIDER_ERROR.message,
             ),
             HttpStatus.BAD_GATEWAY,
+        )
+    }
+
+    @ExceptionHandler(CardAmountAboveLimitException::class)
+    fun handleCardAmountAboveLimitException(e: CardAmountAboveLimitException): ResponseEntity<ErrorSchema> {
+        logger.info("CardAmountAboveLimitException")
+        return ResponseEntity(
+            ErrorSchema(
+                ApiErrorCodes.CARD_AMOUNT_ABOVE_LIMIT.code,
+                ApiErrorCodes.CARD_AMOUNT_ABOVE_LIMIT.message,
+            ),
+            HttpStatus.UNPROCESSABLE_ENTITY,
         )
     }
 

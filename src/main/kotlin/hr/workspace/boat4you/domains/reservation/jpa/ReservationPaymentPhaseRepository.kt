@@ -35,7 +35,7 @@ interface ReservationPaymentPhaseRepository : JpaRepository<ReservationPaymentPh
     fun findByReservationFlowIdIn(reservationFlowIds: Set<Long>): List<ReservationPaymentPhase>
 
     /**
-     * Row locks (`SELECT ... FOR UPDATE`) on the phases a card checkout pays (Revolut plan 2A.4). A phase that is already
+     * Row locks (`SELECT ... FOR UPDATE`) on the phases a card checkout pays (card checkout plan 2A.4). A phase that is already
      * managed in the transaction keeps its loaded state (Hibernate does not refresh it) — check the current paid state
      * with [countByIdInAndPaidOnIsNotNull] after taking the locks.
      */

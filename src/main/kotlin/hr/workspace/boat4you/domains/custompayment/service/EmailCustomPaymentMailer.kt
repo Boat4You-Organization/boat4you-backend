@@ -168,7 +168,7 @@ class EmailCustomPaymentMailer(
                 appendLine("Payer:      ${payment.payerEmail}")
                 appendLine("Created:    ${adminDateLabel(payment.createdAt)}")
                 appendLine("Completed:  ${payment.completedAt?.let { adminDateLabel(it) } ?: "-"}")
-                appendLine("Revolut:    order ${payment.providerOrderId ?: "-"}, payment ${payment.providerPaymentId ?: "-"}")
+                appendLine("Mollie:    payment ${payment.providerOrderId ?: "-"}")
                 appendLine("Ours:       id ${payment.id}, payment reference ${payment.publicToken}")
                 appendLine()
                 appendLine("Admin:      ${adminListUrl(payment)}")
@@ -219,7 +219,7 @@ class EmailCustomPaymentMailer(
             .onFailure { log.warn("Custom payment receipt: application.email.from-address not parseable, default From used") }
             .getOrNull()
 
-    /** The card of the successful payment: the one Revolut reported as paid, else the last successful one; null when unknown. */
+    /** The card of the successful payment: the one Mollie reported as paid, else the last successful one; null when unknown. */
     private fun cardLabel(payment: CustomPayment): String? {
         val payments = OrderSnapshot.parseOrNull(payment.orderSnapshot)?.payments ?: return null
         val card =
@@ -252,7 +252,7 @@ class EmailCustomPaymentMailer(
         private const val BOAT4YOU_SITE = "boat4you"
         private const val MAX_SUBJECT_CHARS = 140
         private val ZAGREB: ZoneId = ZoneId.of("Europe/Zagreb")
-        private val SUCCESSFUL_PAYMENT_STATES = setOf("completed", "captured", "authorised")
+        private val SUCCESSFUL_PAYMENT_STATES = setOf("paid")
         private val LINE_BREAKS = Regex("[\\r\\n]+")
         private val ADMIN_DATE: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, yyyy · HH:mm", Locale.ENGLISH)
         private val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -268,17 +268,17 @@ class EmailCustomPaymentMailer(
         private val ALERT_EXPLANATIONS =
             mapOf(
                 CustomPaymentAlertKind.NEEDS_REVIEW to
-                    "Revolut reports a completed payment that does not match this attempt. The client got NO payment " +
-                    "confirmation. Check the order in the Revolut dashboard before telling the client anything.",
+                    "Mollie reports a completed payment that does not match this attempt. The client got NO payment " +
+                    "confirmation. Check the order in the Mollie dashboard before telling the client anything.",
                 CustomPaymentAlertKind.LATE_COMPLETION to
                     "The payment completed after the attempt had already been closed. The client has now received the " +
                     "payment confirmation and the office the usual notification - check that it is not a second " +
                     "payment for the same contract.",
                 CustomPaymentAlertKind.REFUND to
-                    "Money was refunded for this payment (Revolut dashboard). The client is not e-mailed by us.",
+                    "Money was refunded for this payment (Mollie dashboard). The client is not e-mailed by us.",
                 CustomPaymentAlertKind.STALE to
-                    "This attempt is still pending 48 hours after it was created; Revolut neither completed nor failed " +
-                    "it. It is now NEEDS_REVIEW - check the order in the Revolut dashboard.",
+                    "This attempt is still pending 48 hours after it was created; Mollie neither completed nor failed " +
+                    "it. It is now NEEDS_REVIEW - check the order in the Mollie dashboard.",
             )
 
         /** Like the reservation e-mails: two decimals (HALF_UP), then the currency symbol ("2500.00€"). */

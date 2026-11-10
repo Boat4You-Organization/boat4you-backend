@@ -39,7 +39,7 @@ interface CustomPaymentRepository : JpaRepository<CustomPayment, Long> {
         @Param("key") key: String,
     ): Int
 
-    /** A still usable attempt with the same data: [status] (PENDING), created after [since], Revolut checkout attached. */
+    /** A still usable attempt with the same data: [status] (PENDING), created after [since], Mollie checkout attached. */
     @Query(
         """
         SELECT p FROM CustomPayment p
@@ -70,8 +70,8 @@ interface CustomPaymentRepository : JpaRepository<CustomPayment, Long> {
     ): Long
 
     /**
-     * Claims one Revolut check for the status endpoint: stamps `last_checked_at` only when the row is PENDING and was
-     * not checked in the last 10 s (database clock). 1 = go ask Revolut, 0 = someone just did / nothing to ask.
+     * Claims one Mollie check for the status endpoint: stamps `last_checked_at` only when the row is PENDING and was
+     * not checked in the last 10 s (database clock). 1 = go ask Mollie, 0 = someone just did / nothing to ask.
      */
     @Transactional
     @Modifying
@@ -113,7 +113,7 @@ interface CustomPaymentRepository : JpaRepository<CustomPayment, Long> {
     )
     fun findStalePendingIds(): List<Long>
 
-    /** Reconcile job: rows whose Revolut order was never attached (node died mid-create) -> FAILED after 15 min. */
+    /** Reconcile job: rows whose Mollie payment was never attached (node died mid-create) -> FAILED after 15 min. */
     @Transactional
     @Modifying
     @Query(

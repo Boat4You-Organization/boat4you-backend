@@ -1,4 +1,4 @@
-package hr.workspace.boat4you.domains.payment.revolut.booking.jpa
+package hr.workspace.boat4you.domains.payment.mollie.booking.jpa
 
 import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
@@ -13,6 +13,8 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
     fun findByProviderOrderId(providerOrderId: String): ReservationCardOrder?
 
     fun existsByProviderOrderId(providerOrderId: String): Boolean
+
+    fun findByCheckoutToken(checkoutToken: java.util.UUID): ReservationCardOrder?
 
     /**
      * Row lock (`SELECT ... FOR UPDATE`) that serialises the webhook, the status endpoint, the reconcile job and the
@@ -49,7 +51,7 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
 
     /**
      * Reuse before create: a PENDING order of [reservationFlowId] for exactly this charge — same phase set, same cents,
-     * same `payment_phase_id` ([paymentPhaseKey] = the id, or -1 for NULL) — that Revolut keeps open until after
+     * same `payment_phase_id` ([paymentPhaseKey] = the id, or -1 for NULL) — that Mollie keeps open until after
      * [expiresAfter]. Newest first.
      */
     @Query(
@@ -88,8 +90,8 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
     ): List<ReservationCardOrder>
 
     /**
-     * Claims one Revolut check for the status endpoint: stamps `last_checked_at` only when the order is PENDING and was
-     * not checked in the last 10 s (database clock). 1 = go ask Revolut, 0 = someone just did / nothing to ask.
+     * Claims one Mollie check for the status endpoint: stamps `last_checked_at` only when the order is PENDING and was
+     * not checked in the last 10 s (database clock). 1 = go ask Mollie, 0 = someone just did / nothing to ask.
      */
     @Transactional
     @Modifying

@@ -5,7 +5,7 @@ package hr.workspace.boat4you.domains.reservation.service.payment
  * (81xx) via ApiErrorHandler — never a provider message.
  */
 
-/** The configured provider cannot take payments on this node (e.g. `revolut` without Merchant API keys) -> 503, 8101. */
+/** The configured provider cannot take payments on this node (e.g. `mollie` without an API key) -> 503, 8101. */
 class CardPaymentsUnavailableException : RuntimeException()
 
 /** A card payment for the same phases is already being processed by the provider -> 409, 8102. */
@@ -19,3 +19,6 @@ class CardPaymentProviderException : RuntimeException()
 
 /** No provider knows the checkout reference of a status request -> 404, 8105. */
 class CardPaymentNotFoundException : RuntimeException()
+
+/** The charge is above the Mollie card limit (10,000 EUR per payment) -> 422, 8106: bank transfer only. */
+class CardAmountAboveLimitException : RuntimeException()

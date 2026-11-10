@@ -14,7 +14,7 @@ class StripeConfig(
 
     @PostConstruct
     fun init() {
-        // Blank key (allowed since the Revolut switch, plan 2A.9): leave Stripe.apiKey unset instead of setting an
+        // Blank key (allowed since the provider switch): leave Stripe.apiKey unset instead of setting an
         // invalid placeholder; every Stripe call then fails with Stripe's own authentication error. Never logged.
         if (secretKey.isBlank()) {
             logger.warn("STRIPE_SECRET_KEY is not set on this node — Stripe checkouts will fail")

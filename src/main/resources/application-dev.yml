@@ -39,9 +39,9 @@ application:
     dev-log-dir: /tmp/b4y-emails
   stripe:
     enabled: true
-  revolut:
-    # Sandbox locally; still disabled until REVOLUT_SECRET_KEY + REVOLUT_WEBHOOK_SECRET are set.
-    base-url: ${REVOLUT_BASE_URL:https://sandbox-merchant.revolut.com}
+  mollie:
+    # Locally a test_ key (MOLLIE_API_KEY); disabled while it is not set. No webhook URL locally (not reachable).
+    reconcile-enabled: ${MOLLIE_RECONCILE_ENABLED:true}
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:boat4you_db}

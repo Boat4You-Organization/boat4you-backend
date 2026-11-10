@@ -57,8 +57,8 @@ import java.util.concurrent.ConcurrentHashMap
  *    boat4you-web server actions fill with the visitor IP.
  *  - `POST /public/payments/custom/orders` (5 / 10 min) and
  *    `GET /public/payments/custom/orders/{token}` (30 / min) — the secret
- *    `/pay/<key>` card payments (13.10.2026): each create opens a Revolut
- *    order; the status poll can trigger a Revolut read.
+ *    `/pay/<key>` card payments (13.10.2026): each create opens a Mollie
+ *    payment; the status poll can trigger a Mollie read.
  *
  * Implementation: token bucket keyed by (rule path, client IP). Every
  * accepted call consumes 1 token; tokens refill at
@@ -262,7 +262,6 @@ class PublicEndpointRateLimiter(
                 return
             }
         val ip = clientIp(request, rule)
-        val ip = ClientIp.of(request)
         if (!acquire(rule, ip)) {
             log.warn("Rate limit hit on {} {} for ip={}", rule.method, rule.path, ip)
             response.status = 429

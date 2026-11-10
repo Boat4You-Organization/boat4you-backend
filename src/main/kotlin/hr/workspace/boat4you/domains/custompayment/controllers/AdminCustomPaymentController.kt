@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController
 class AdminCustomPaymentController(
     private val adminService: CustomPaymentAdminService,
 ) {
-    @Operation(summary = "List custom payments, newest first; optional status, site and q (reference / e-mail / Revolut order id)")
+    @Operation(summary = "List custom payments, newest first; optional status, site and q (reference / e-mail / Mollie payment id)")
     @GetMapping
     fun list(
         @RequestParam(required = false) status: CustomPaymentStatus?,
@@ -41,7 +41,7 @@ class AdminCustomPaymentController(
         @RequestBody body: CustomPaymentNoteRequest,
     ): ResponseEntity<AdminCustomPaymentDto> = ResponseEntity.ok(adminService.updateNote(id, body.note))
 
-    @Operation(summary = "Re-read the payment's Revolut order now and apply it (status, refunds)")
+    @Operation(summary = "Re-read the payment's Mollie payment now and apply it (status, refunds)")
     @PostMapping("/{id}/refresh")
     fun refresh(
         @PathVariable id: Long,

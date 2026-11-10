@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam
 class PublicCardPaymentController(
     private val router: CardPaymentRouter,
 ) {
-    @Operation(summary = "Create a card checkout (public / guest; Stripe or Revolut, per application.payment.card-provider)")
+    @Operation(summary = "Create a card checkout (public / guest; Stripe or Mollie, per application.payment.card-provider)")
     @PostMapping("/create-checkout-session/{reservationId}")
     fun createCheckoutSession(
         @PathVariable reservationId: Long,

@@ -28,14 +28,14 @@ interface CardPaymentProvider {
     fun checkStatus(ref: String): CheckoutSessionDto?
 }
 
-/** Values of `application.payment.card-provider` (`stripe` | `revolut`, case-insensitive). */
+/** Values of `application.payment.card-provider` (`stripe` | `mollie`, case-insensitive). */
 enum class CardProvider {
     STRIPE,
-    REVOLUT,
+    MOLLIE,
     ;
 
     companion object {
-        /** `null` for anything else than `stripe` / `revolut` (blank included). */
+        /** `null` for anything else than `stripe` / `mollie` (blank included). */
         fun fromConfig(value: String?): CardProvider? = entries.firstOrNull { it.name.equals(value?.trim(), ignoreCase = true) }
     }
 }
