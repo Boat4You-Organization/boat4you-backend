@@ -95,6 +95,8 @@ data class AdminCustomPaymentDto(
     val refundedAmountMinor: Long,
     val currency: String,
     val status: CustomPaymentStatus,
+    /** `CARD` (cards, Apple Pay, Pay by Bank) or `KLARNA`. */
+    val method: String,
     val payerEmail: String,
     val providerOrderId: String?,
     val adminNote: String?,

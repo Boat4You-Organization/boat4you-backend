@@ -73,6 +73,7 @@ class CustomPaymentAdminService(
             refundedAmountMinor = refundedAmountMinor,
             currency = currency,
             status = status,
+            method = method ?: CustomPayment.METHOD_CARD,
             payerEmail = payerEmail,
             providerOrderId = providerOrderId,
             adminNote = adminNote,

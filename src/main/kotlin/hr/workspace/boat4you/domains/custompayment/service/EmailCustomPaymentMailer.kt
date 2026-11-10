@@ -127,6 +127,7 @@ class EmailCustomPaymentMailer(
             variables =
                 mapOf(
                     "title" to "${methodLabel(payment)} payment received",
+                    "paidHow" to if (payment.method == CustomPayment.METHOD_KLARNA) "with Klarna" else "by card",
                     "brandName" to site.brandName,
                     "siteKey" to site.key,
                     "locale" to payment.locale,

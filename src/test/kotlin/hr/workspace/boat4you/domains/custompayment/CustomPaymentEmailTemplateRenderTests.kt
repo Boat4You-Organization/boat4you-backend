@@ -177,6 +177,27 @@ class CustomPaymentEmailTemplateRenderTests {
     }
 
     @Test
+    fun `Klarna - the office e-mail and the receipt name Klarna, never a card`() {
+        val klarna = payment("boat4you", "en").apply { method = CustomPayment.METHOD_KLARNA }
+        val office = mailer.adminMail(klarna, listOf("office@boat4you.com"))
+        office.subject shouldContain "Klarna payment received"
+        with(render(office)) {
+            this shouldContain "Klarna payment received"
+            this shouldContain "paid <span>with Klarna</span> through the secret /pay link"
+            this shouldContain "Payment method"
+            this shouldContain ">Klarna</td>"
+            this shouldNotContain "by card"
+            this shouldNotContain "Visa"
+        }
+        with(render(mailer.receiptMail(klarna))) {
+            this shouldContain "Payment method"
+            this shouldContain "Klarna"
+            this shouldNotContain "card payment"
+            this shouldNotContain "Visa"
+        }
+    }
+
+    @Test
     fun `office notification - plain English, no inline images, reply goes to the payer, admin link filtered by reference`() {
         val admins = listOf("office@boat4you.com", "mario@boat4you.com")
         val mail = mailer.adminMail(payment("europe-yachts", "de").apply { reservationId = 777 }, admins)
@@ -191,6 +212,7 @@ class CustomPaymentEmailTemplateRenderTests {
         html shouldNotContain "??"
         html shouldNotContain "cid:"
         html shouldContain "Card payment received"
+        html shouldContain "paid <span>by card</span> through the secret /pay link"
         html shouldContain "2500.00€"
         html shouldContain "100116/2027"
         html shouldContain "href=\"mailto:client@example.com\""
