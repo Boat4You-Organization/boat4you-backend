@@ -4,6 +4,7 @@ import hr.workspace.boat4you.domains.social.jpa.SocialMediaRepository
 import hr.workspace.boat4you.domains.social.service.SocialConfigException
 import hr.workspace.boat4you.domains.social.service.SocialImages
 import hr.workspace.boat4you.domains.social.service.SocialMediaStore
+import hr.workspace.boat4you.domains.social.service.SocialRules
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
@@ -61,5 +62,27 @@ class SocialMediaGuardTest {
         val vp8x = "RIFF".toByteArray() + ByteArray(4) + "WEBPVP8X".toByteArray() + ByteArray(8) + byteArrayOf(0x3F, 0x9C.toByte(), 0x00, 0x1F, 0x4E, 0x00)
         SocialImages.webpSize(vp8x) shouldBe (40_000 to 20_000)
         SocialImages.webpSize("RIFF....WEBPVP8 ".toByteArray()).shouldBeNull()
+    }
+
+    @Test
+    fun `catalogue photos are centre-cropped into Instagram's 4_5 to 1_91 range, other photos are kept whole`() {
+        fun jpeg(
+            w: Int,
+            h: Int,
+        ) = ByteArrayOutputStream().also { ImageIO.write(BufferedImage(w, h, BufferedImage.TYPE_INT_RGB), "jpg", it) }.toByteArray()
+        // 2160×1102 (1.96:1) is the photo that kept the AI post of 10.11.2026 from Instagram.
+        val wide = SocialImages.normalize(jpeg(2160, 1102), fitInstagram = true)!!
+        SocialRules.instagramRatioOk(wide.width, wide.height) shouldBe true
+        wide.height shouldBe 1102
+        val tall = SocialImages.normalize(jpeg(1000, 2000), fitInstagram = true)!!
+        SocialRules.instagramRatioOk(tall.width, tall.height) shouldBe true
+        tall.width shouldBe 1000
+        SocialImages.normalize(jpeg(1600, 1000), fitInstagram = true)!!.let { (it.width to it.height) shouldBe (1600 to 1000) }
+        SocialImages.normalize(jpeg(2160, 1102))!!.let { (it.width to it.height) shouldBe (2160 to 1102) }
+        SocialImages.instagramCrop(4000, 1000)!!.let { (it.x to it.width) shouldBe (1045 to 1910) }
+        // Cropped, then still wider than 2160: crop and downscale together stay inside the range.
+        val panorama = SocialImages.normalize(jpeg(6000, 1500), fitInstagram = true)!!
+        SocialRules.instagramRatioOk(panorama.width, panorama.height) shouldBe true
+        panorama.width shouldBe 2160
     }
 }
