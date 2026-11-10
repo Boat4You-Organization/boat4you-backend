@@ -39,6 +39,9 @@ application:
     dev-log-dir: /tmp/b4y-emails
   stripe:
     enabled: true
+  mollie:
+    # Locally a test_ key (MOLLIE_API_KEY); disabled while it is not set. No webhook URL locally (not reachable).
+    reconcile-enabled: ${MOLLIE_RECONCILE_ENABLED:true}
 spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5434}/${DB_NAME:boat4you_db}

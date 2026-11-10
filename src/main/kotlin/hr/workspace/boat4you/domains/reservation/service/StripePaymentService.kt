@@ -24,7 +24,6 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
-import java.math.RoundingMode
 import java.time.Instant
 import kotlin.jvm.optionals.getOrElse
 
@@ -39,6 +38,8 @@ class StripePaymentService(
     private val stripeEventIdempotencyService: StripeEventIdempotencyService,
     private val voucherService: VoucherService,
     private val eventPublisher: ApplicationEventPublisher,
+    private val stripeSessionExpirer: StripeSessionExpirer,
+    private val doublePaymentAlert: CardDoublePaymentAlert,
     @Value("\${server.host-public}") private val serverHostPublic: String,
     @Value("\${application.stripe.enabled}") private val stripeEnabled: Boolean,
     // 3-letter ISO 4217. Stripe wants lowercase. EUR is the product default;
@@ -68,79 +69,15 @@ class StripePaymentService(
         val reservationFlowId = reservationFlow.id
             ?: throw ReservationNotExistException()
 
-        if (payFullAmount == null && paymentPhaseId == null) {
-            throw ParameterValidationException(mapOf("payFullAmount" to "Provide either payFullAmount or paymentPhaseId parameter"))
-        }
-
-        // Phases that are NOT yet paid — the only valid targets for a fresh
-        // Stripe charge. Admin-created replacement reservations may have the
-        // first installment already marked paid (carry-over from a cancelled
-        // booking), and an installment that was paid earlier on this same
-        // reservation obviously must not be re-charged. Filtering here once
-        // keeps the branches below simple.
-        val unpaidPhases = reservationFlow.paymentPhases.filter { it.paidOn == null }
-
-        val dbPrice: BigDecimal =
-            when {
-                // A specific phase was pinned from the UI (next-due or later
-                // installment). Wins over `payFullAmount` if both are present.
-                // F3-026: reject already-paid phases here, before any
-                // Stripe Session.create call, so we never have to abandon
-                // a created Stripe session because the local state was
-                // wrong.
-                paymentPhaseId != null -> {
-                    val phase = reservationFlow.paymentPhases.find { it.id == paymentPhaseId }
-                        ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase not found"))
-                    if (phase.paidOn != null) {
-                        throw ParameterValidationException(mapOf("paymentPhaseId" to "Payment phase is already paid"))
-                    }
-                    phase.amount
-                }
-                // "Pay full remaining" — sum of unpaid phases (NOT the full
-                // reservation total, otherwise customers with a partially-paid
-                // reservation would be overcharged).
-                payFullAmount == true -> {
-                    val remaining = unpaidPhases.sumOf { it.amount }
-                    if (remaining > BigDecimal.ZERO) {
-                        remaining
-                    } else {
-                        // Legacy fallback: no phase rows yet (brand-new
-                        // reservation, phases generated later). Use the
-                        // reservation total. F1-026: explicit exception
-                        // when even calculatedTotalPrice is missing
-                        // instead of `!!` → NPE → 500.
-                        reservationFlow.calculatedTotalPrice
-                            ?: throw ParameterValidationException(
-                                mapOf("calculatedTotalPrice" to "Reservation has no total price and no payment phases"),
-                            )
-                    }
-                }
-                // "Pay first installment" — next DUE unpaid phase, not the
-                // historically-oldest one which might already be paid.
-                // F1-026: `it.deadline` is a `lateinit var` (non-null in
-                // Kotlin type) so the previous `!!` was redundant noise.
-                payFullAmount == false -> {
-                    unpaidPhases.minByOrNull { it.deadline }?.amount
-                        ?: throw ParameterValidationException(mapOf("paymentPhaseId" to "No unpaid payment phases remain"))
-                }
-                else -> throw ParameterValidationException(mapOf("payFullAmount" to "Provide either payFullAmount or paymentPhaseId parameter"))
-            }
-
-        val cardSurchargePercentage = settingsService.getSetting(SettingsKeyEnum.CARD_PAYMENT_SURCHARGE).value?.toBigDecimal() ?: BigDecimal(0.0)
-        // Whole-euro surcharge (Mario 1.7.2026: fees must not introduce cents) —
-        // HALF_UP on the fee itself; the frontend mirrors this with Math.round so
-        // the displayed fee always equals the charged fee.
-        //
-        // MUST multiply first, divide LAST with an explicit scale+rounding: the
-        // old `cardSurchargePercentage.div(100)` used Kotlin's BigDecimal.div
-        // operator whose result scale = max(operand scales) = 0 for an integer
-        // percent like "5", so 5 / 100 rounded to scale 0 = 0 → the surcharge
-        // was SILENTLY 0 on every card payment (Mario 12.7.2026: Stripe charged
-        // 2677.60 instead of 2811.60 on reservation 1441002).
-        val cardSurchargeAmount = dbPrice
-            .multiply(cardSurchargePercentage)
-            .divide(BigDecimal(100), 0, RoundingMode.HALF_UP)
-        val totalPriceInCents = (dbPrice + cardSurchargeAmount).toCentsLong()
+        // Phase selection (400s), card surcharge and cents: CardChargeCalculator — moved verbatim from here and
+        // shared with the provider-neutral /payments/card checkout, so Stripe and Mollie charge byte-identical
+        // amounts (golden values pinned in CardChargeCalculatorTests). Same order as before: the selection's 400s
+        // fire before the surcharge setting is read and before any Stripe call.
+        val dbPrice: BigDecimal = CardChargeCalculator.select(reservationFlow, payFullAmount, paymentPhaseId).baseAmount
+        val cardSurchargePercentage =
+            CardChargeCalculator.surchargePercentage(settingsService.getSetting(SettingsKeyEnum.CARD_PAYMENT_SURCHARGE).value)
+        val cardSurchargeAmount = CardChargeCalculator.surcharge(dbPrice, cardSurchargePercentage)
+        val totalPriceInCents = CardChargeCalculator.toCentsLong(dbPrice + cardSurchargeAmount)
 
         // The customer-facing booking number is the public payment reference
         // across all channels (bank transfer instructions, emails, Stripe).
@@ -270,6 +207,31 @@ class StripePaymentService(
 
         val dbPaymentPhases = paymentPhaseRepository.findByStripeSessionIdOrderByDeadlineAsc(session.id)
 
+        // A phase of this session was paid meanwhile by something else (a Mollie card payment, the office marking a
+        // bank transfer): this Stripe payment is a SECOND payment. Never overwrite the phase or confirm the booking
+        // again — the office gets an alert and refunds one of the two.
+        val stripeTargets =
+            when {
+                payFullAmount == true -> dbPaymentPhases
+                payFullAmount == false -> listOfNotNull(dbPaymentPhases.firstOrNull())
+                paymentPhaseId != null -> dbPaymentPhases.filter { it.id == paymentPhaseId }
+                else -> emptyList()
+            }
+        // Row locks first, then a fresh count: a Mollie completion that holds the same phases commits before or after
+        // this check, never in between (the loaded entities would not show its paidOn).
+        val stripeTargetIds = stripeTargets.mapNotNull { it.id }
+        if (stripeTargetIds.isNotEmpty()) {
+            paymentPhaseRepository.findAllByIdIn(stripeTargetIds)
+            if (paymentPhaseRepository.countByIdInAndPaidOnIsNotNull(stripeTargetIds) > 0) {
+                logger.error(
+                    "Stripe event ${event.id}: session ${session.id} paid, but a phase of $stripeTargetIds of reservation " +
+                        "$reservationId was already paid — DOUBLE PAYMENT, nothing changed",
+                )
+                doublePaymentAlert.stripeAfterAnotherPayment(reservationId, session.id, paymentIntentId, stripeTargetIds)
+                return
+            }
+        }
+
         when {
             // payFullAmount=true tolerates an empty list — the legacy
             // "first payment, no installment plan rows yet" flow runs
@@ -361,30 +323,8 @@ class StripePaymentService(
             // this call), expire the old one before overwriting so the
             // funds cannot be captured against both sessions in the gap
             // between issuing the new one and the user paying.
-            phase.stripeSessionId?.let { expireStripeSessionSafely(it) }
+            phase.stripeSessionId?.let { stripeSessionExpirer.expireStripeSessionSafely(it) }
             phase.stripeSessionId = sessionId
-        }
-    }
-
-    /**
-     * Best-effort expire of a previously-issued Stripe Checkout Session.
-     *
-     * Stripe rejects `expire` on terminal sessions (status `complete` or
-     * `expired`); we retrieve first and only call expire while still
-     * `open`. Network or API errors are logged but swallowed — the
-     * caller already has a new sessionId to stamp on the phase and
-     * blocking that on a Stripe API hiccup would be worse than the rare
-     * orphan-open-session it leaves behind.
-     */
-    private fun expireStripeSessionSafely(oldSessionId: String) {
-        try {
-            val oldSession = Session.retrieve(oldSessionId)
-            if (oldSession.status == "open") {
-                oldSession.expire()
-                logger.info("Expired prior open Stripe session $oldSessionId after reissue")
-            }
-        } catch (e: Exception) {
-            logger.warn("Could not expire prior Stripe session $oldSessionId: ${e.message}")
         }
     }
 
@@ -402,10 +342,6 @@ class StripePaymentService(
         runCatching { voucherService.issueForConfirmedReservation(reservationId) }
             .onFailure { logger.error("Voucher issuance failed for reservation $reservationId", it) }
     }
-
-    // B6: HALF_UP so the Stripe cents amount rounds to nearest (matters for the
-    // card-surcharge path which can produce >2dp); UP always over-charged.
-    private fun BigDecimal.toCentsLong(): Long = this.setScale(2, RoundingMode.HALF_UP).times(100.toBigDecimal()).toLong()
 
     private fun checkIfStripeIsEnabled() {
         if (!stripeEnabled) {

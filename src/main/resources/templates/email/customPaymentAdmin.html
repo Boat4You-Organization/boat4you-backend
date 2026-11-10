@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<!--/*
+  Office notification for a completed custom payment (secret /pay/<linkKey> link). Plain English, no cid: images
+  (listed in EmailService.templatesWithoutSharedFooter). Reply-To = the payer.
+*/-->
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title th:text="${title}">Card payment received</title>
+</head>
+<body style="margin:0; padding:24px; background-color:#f6f8fb;">
+  <div style="max-width:680px; margin:0 auto; background:#ffffff; border:1px solid #e2e8f0; border-radius:10px; padding:20px 24px; font-family:Arial,sans-serif; color:#0f172a;">
+    <h2 th:text="${title}" style="font-family:Arial,sans-serif; font-size:17px; color:#15803d; margin:0 0 6px;">
+      Card payment received
+    </h2>
+    <p style="font-size:13px; line-height:1.55; color:#334155; margin:0 0 16px;">
+      A client paid by card through the secret /pay link on <b th:text="${brandName}">Catamaran Charter Croatia</b>.
+      Nothing in bookings changes automatically: match the payment to the contract. A payment
+      confirmation e-mail is sent to the client. Reply goes to the client.
+    </p>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse; font-size:13px; line-height:1.5;">
+      <tr>
+        <td style="padding:6px 12px 6px 0; color:#64748b; width:190px; vertical-align:top;">Amount</td>
+        <td th:text="${amountLabel}" style="padding:6px 0; font-weight:bold; font-size:15px;">2500.00€</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Contract / booking no.</td>
+        <td th:text="${reference}" style="padding:6px 0; font-weight:bold;">100116/2027</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Payer e-mail</td>
+        <td style="padding:6px 0;"><a th:href="${'mailto:' + payerEmail}" th:text="${payerEmail}" href="mailto:client@example.com" style="color:#2856ff; text-decoration:none;">client@example.com</a></td>
+      </tr>
+      <tr>
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Paid at</td>
+        <td th:text="${paidAtLabel}" style="padding:6px 0;">Oct 13, 2026 · 15:20 (GMT+2)</td>
+      </tr>
+      <tr th:if="${cardLabel}">
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Card</td>
+        <td th:text="${cardLabel}" style="padding:6px 0;">Visa •••• 4242</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Site</td>
+        <td style="padding:6px 0;"><span th:text="${brandName}">Catamaran Charter Croatia</span> (<span th:text="${siteKey}">catamaran-croatia-charter</span>), language <span th:text="${locale}">en</span></td>
+      </tr>
+      <tr th:if="${reservationUrl}">
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Web reservation</td>
+        <td style="padding:6px 0;"><a th:href="${reservationUrl}" href="#" style="color:#2856ff; text-decoration:none;">The reference matches a web reservation &#8594;</a></td>
+      </tr>
+      <tr>
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Mollie payment</td>
+        <td th:text="${providerOrderId}" style="padding:6px 0; font-family:Menlo,Consolas,monospace; font-size:12px;">tr_7UhSN1zuXS</td>
+      </tr>
+      <tr>
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Payment reference (ours)</td>
+        <td style="padding:6px 0; font-family:Menlo,Consolas,monospace; font-size:12px;"><span th:text="${paymentRef}">3f2b8c1e-…</span> · id <span th:text="${paymentId}">42</span></td>
+      </tr>
+    </table>
+
+    <p style="margin:18px 0 0;">
+      <a th:href="${adminUrl}" href="#"
+        style="display:inline-block; padding:10px 18px; border-radius:8px; background-color:#2856ff; color:#ffffff; font-size:14px; font-weight:bold; text-decoration:none;">Open in admin &#8594; Custom payments</a>
+    </p>
+  </div>
+</body>
+</html>

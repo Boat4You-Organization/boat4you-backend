@@ -2,7 +2,9 @@ package hr.workspace.boat4you.domains.gdpr.services
 
 import hr.workspace.boat4you.domains.catalouge.jpa.CustomOfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
+import hr.workspace.boat4you.domains.custompayment.jpa.CustomPaymentRepository
 import hr.workspace.boat4you.domains.gdpr.dto.ExportedCustomOfferDto
+import hr.workspace.boat4you.domains.gdpr.dto.ExportedCustomPaymentDto
 import hr.workspace.boat4you.domains.gdpr.dto.ExportedGdprActivityDto
 import hr.workspace.boat4you.domains.gdpr.dto.ExportedInquiryDto
 import hr.workspace.boat4you.domains.gdpr.dto.ExportedPaymentPhaseDto
@@ -28,7 +30,8 @@ import kotlin.jvm.optionals.getOrElse
  * frontend which serves it as a `Content-Disposition: attachment` download.
  *
  * Scope: user profile, every reservation chain (with payment phases +
- * cancellation context), custom-offer history, and the GDPR audit log
+ * cancellation context), custom-offer history, inquiries and custom /pay
+ * card payments (both matched by e-mail), and the GDPR audit log
  * itself (so the customer sees their own request history). Anonymized rows
  * (post-Article-17 delete) export the tombstone state — Article 20 is
  * "give me what you currently hold", not "what you used to hold".
@@ -41,6 +44,7 @@ class DataExportService(
     private val customOfferRepository: CustomOfferRepository,
     private val inquiryRepository: InquiryRepository,
     private val gdprAuditRepository: GdprAuditLogRepository,
+    private val customPaymentRepository: CustomPaymentRepository,
 ) {
     private val logger: Logger = LoggerFactory.getLogger(this::class.java.name)
 
@@ -85,6 +89,8 @@ class DataExportService(
                         amount = phase.amount,
                         paidOn = phase.paidOn,
                         stripePaymentIntentId = phase.stripePaymentIntentId,
+                        paymentProvider = phase.paymentProvider,
+                        providerPaymentId = phase.providerPaymentId,
                     )
                 } ?: emptyList(),
             )
@@ -124,6 +130,27 @@ class DataExportService(
             )
         }
 
+        // Custom /pay card payments are keyed by the e-mail the payer typed (no user FK), like inquiries.
+        val customPayments =
+            customPaymentRepository.findAllByPayerEmailIgnoreCase(user.email).map { payment ->
+                ExportedCustomPaymentDto(
+                    id = payment.id ?: 0L,
+                    site = payment.site,
+                    reference = payment.reference,
+                    amountMinor = payment.amountMinor,
+                    refundedAmountMinor = payment.refundedAmountMinor,
+                    currency = payment.currency,
+                    status = payment.status.name,
+                    payerEmail = payment.payerEmail,
+                    locale = payment.locale,
+                    clientIp = payment.clientIp,
+                    termsVersion = payment.termsVersion,
+                    acceptedAt = payment.acceptedAt,
+                    createdAt = payment.createdAt,
+                    completedAt = payment.completedAt,
+                )
+            }
+
         return UserDataExportDto(
             exportedAt = Instant.now(),
             user = ExportedUserDto(
@@ -145,6 +172,7 @@ class DataExportService(
             customOffers = customOffers,
             inquiries = inquiries,
             gdprActivityLog = gdprActivity,
+            customPayments = customPayments,
         )
     }
 

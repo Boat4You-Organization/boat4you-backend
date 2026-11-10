@@ -55,6 +55,13 @@ import java.util.concurrent.ConcurrentHashMap
  *  - Chat rules key on X-Real-IP since 26.10.2026 (BACKEND-22); inquiries,
  *    reviews, reservations and auth keep the left-most X-Forwarded-For, which
  *    boat4you-web server actions fill with the visitor IP.
+ *  - `POST /public/payments/custom/orders` (5 / 10 min) and
+ *    `GET /public/payments/custom/orders/{token}` (30 / min) — the secret
+ *    `/pay/<key>` card payments (13.10.2026): each create opens a Mollie
+ *    payment; the status poll can trigger a Mollie read.
+ *  - `POST /public/payments/card/create-checkout-session/{id}` (20 / 10 min) and
+ *    `POST /public/payments/card/checkPaymentStatus/{ref}` (60 / min) — guest
+ *    card checkouts of online bookings (10.11.2026).
  *
  * Implementation: token bucket keyed by (rule path, client IP). Every
  * accepted call consumes 1 token; tokens refill at
@@ -138,6 +145,22 @@ class PublicEndpointRateLimiter(
     private val ccHandoffCapacity: Int,
     @Value("\${application.rate-limit.cc-handoff.window-seconds:600}")
     private val ccHandoffWindowSeconds: Long,
+    @Value("\${application.rate-limit.custom-payment-create.capacity:5}")
+    private val customPaymentCreateCapacity: Int,
+    @Value("\${application.rate-limit.custom-payment-create.window-seconds:600}")
+    private val customPaymentCreateWindowSeconds: Long,
+    @Value("\${application.rate-limit.custom-payment-status.capacity:30}")
+    private val customPaymentStatusCapacity: Int,
+    @Value("\${application.rate-limit.custom-payment-status.window-seconds:60}")
+    private val customPaymentStatusWindowSeconds: Long,
+    @Value("\${application.rate-limit.card-checkout.capacity:20}")
+    private val cardCheckoutCapacity: Int,
+    @Value("\${application.rate-limit.card-checkout.window-seconds:600}")
+    private val cardCheckoutWindowSeconds: Long,
+    @Value("\${application.rate-limit.card-status.capacity:60}")
+    private val cardStatusCapacity: Int,
+    @Value("\${application.rate-limit.card-status.window-seconds:60}")
+    private val cardStatusWindowSeconds: Long,
 ) : OncePerRequestFilter() {
     internal var clock: Clock = Clock.systemUTC()
 
@@ -207,6 +230,39 @@ class PublicEndpointRateLimiter(
             // No rule for /public/cc/v1/replay-assets/ (P6 R2): every admin reaches it through the cusma1 proxy, one IP, so one
             // bucket would let anyone switch replay styling off; cusma1 limits per client, the reads have their own bounded slots.
             Rule("POST", "/public/cc/v1/handoff", capacity = ccHandoffCapacity, windowSeconds = ccHandoffWindowSeconds, label = "cc-handoff", realIp = true),
+            Rule(
+                "POST",
+                "/public/payments/custom/orders",
+                capacity = customPaymentCreateCapacity,
+                windowSeconds = customPaymentCreateWindowSeconds,
+                label = "custom-payment-create",
+            ),
+            Rule(
+                "GET",
+                "/public/payments/custom/orders/",
+                prefix = true,
+                capacity = customPaymentStatusCapacity,
+                windowSeconds = customPaymentStatusWindowSeconds,
+                label = "custom-payment-status",
+            ),
+            // Guest card checkouts of online bookings (Mollie / Stripe): each create can open a provider payment and
+            // supersede an open one, so an id walk is cut short here. boat4you-web forwards the visitor IP.
+            Rule(
+                "POST",
+                "/public/payments/card/create-checkout-session/{id}",
+                pattern = Regex("^/public/payments/card/create-checkout-session/[0-9]+$"),
+                capacity = cardCheckoutCapacity,
+                windowSeconds = cardCheckoutWindowSeconds,
+                label = "card-checkout",
+            ),
+            Rule(
+                "POST",
+                "/public/payments/card/checkPaymentStatus/",
+                prefix = true,
+                capacity = cardStatusCapacity,
+                windowSeconds = cardStatusWindowSeconds,
+                label = "card-status",
+            ),
         )
     }
 

@@ -40,6 +40,14 @@ class PublicEndpointRateLimiterTest {
             ccBeatWindowSeconds = 600,
             ccHandoffCapacity = 10,
             ccHandoffWindowSeconds = 600,
+            customPaymentCreateCapacity = 5,
+            customPaymentCreateWindowSeconds = 600,
+            customPaymentStatusCapacity = 30,
+            customPaymentStatusWindowSeconds = 60,
+            cardCheckoutCapacity = 20,
+            cardCheckoutWindowSeconds = 600,
+            cardStatusCapacity = 60,
+            cardStatusWindowSeconds = 60,
         )
 
     private fun hit(
@@ -70,6 +78,27 @@ class PublicEndpointRateLimiterTest {
         hit("/public/cc/v1/beat").status shouldBe 429
         repeat(10) { hit("/public/cc/v1/handoff").status shouldBe 200 }
         hit("/public/cc/v1/handoff").status shouldBe 429
+    }
+
+    @Test
+    fun `guest card checkout - only numeric reservation ids are limited, all ids share one budget per IP, the status poll has its own`() {
+        limiter.clock = CcTestClock()
+        repeat(20) { hit("/public/payments/card/create-checkout-session/${37 + it}").status shouldBe 200 }
+        hit("/public/payments/card/create-checkout-session/37").let {
+            it.status shouldBe 429
+            it.getHeader("Retry-After") shouldBe "600"
+        }
+        // Not a numeric id: no rule matches (the controller answers 400/404 itself).
+        repeat(30) { hit("/public/payments/card/create-checkout-session/abc").status shouldBe 200 }
+        hit("/public/payments/card/create-checkout-session/37", xff = "2.2.2.2").status shouldBe 200
+        // GET is not a checkout create.
+        hit("/public/payments/card/create-checkout-session/37", method = "GET").status shouldBe 200
+
+        repeat(60) { hit("/public/payments/card/checkPaymentStatus/tr_$it").status shouldBe 200 }
+        hit("/public/payments/card/checkPaymentStatus/tr_x").let {
+            it.status shouldBe 429
+            it.getHeader("Retry-After") shouldBe "60"
+        }
     }
 
     @Test

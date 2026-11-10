@@ -23,11 +23,23 @@ services:
       - NAUSYS_USERNAME=${NAUSYS_USERNAME:-}
       - NAUSYS_PASSWORD=${NAUSYS_PASSWORD:-}
       - MMK_TOKEN=${MMK_TOKEN:-}
-      # Stripe — both must be present for card payments to work. If empty,
-      # application.yml falls back to the literal "sk_test"/"whsec" placeholders
-      # which are invalid and Stripe API calls return 401 ("oops, something went wrong").
+      # Stripe — both must be present for Stripe card payments to work. If empty,
+      # the app still starts (StripeConfig WARNs) and Stripe API calls fail with 401.
       - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-}
       - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      # Provider of new online-booking card checkouts: stripe (default) | revolut (needs the Revolut keys below).
+      - PAYMENT_CARD_PROVIDER=${PAYMENT_CARD_PROVIDER:-stripe}
+      # Revolut Merchant API — optional; without the two secrets the feature stays disabled.
+      # Defaults mirror application(-dev).yml: an empty value would override them, not fall back.
+      - REVOLUT_BASE_URL=${REVOLUT_BASE_URL:-https://sandbox-merchant.revolut.com}
+      - REVOLUT_SECRET_KEY=${REVOLUT_SECRET_KEY:-}
+      - REVOLUT_WEBHOOK_SECRET=${REVOLUT_WEBHOOK_SECRET:-}
+      - REVOLUT_RECONCILE_ENABLED=${REVOLUT_RECONCILE_ENABLED:-false}
+      - REVOLUT_CHECKOUT_ORIGINS=${REVOLUT_CHECKOUT_ORIGINS:-https://checkout.revolut.com}
+      - CUSTOM_PAYMENT_LINK_KEYS=${CUSTOM_PAYMENT_LINK_KEYS:-}
+      - CUSTOM_PAYMENT_MAX_AMOUNT=${CUSTOM_PAYMENT_MAX_AMOUNT:-100000}
+      - CUSTOM_PAYMENT_ORDER_TTL=${CUSTOM_PAYMENT_ORDER_TTL:-PT1H}
+      - CUSTOM_PAYMENT_TERMS_VERSION=${CUSTOM_PAYMENT_TERMS_VERSION:-2026-10-08}
     depends_on:
       boat4you_db:
         condition: service_healthy

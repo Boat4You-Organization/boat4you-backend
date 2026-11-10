@@ -16,4 +16,10 @@ data class CheckoutSessionDto(
 enum class CheckoutSessionStatusEnum {
     PAYMENT_PENDING,
     PAYMENT_SUCCESS,
+
+    /**
+     * Mollie only: the payer came back to the success page while the payment is still `open` (no attempt finished —
+     * a declined card or the checkout's back link). Not paid; the web shows the "payment not completed" page.
+     */
+    PAYMENT_NOT_COMPLETED,
 }

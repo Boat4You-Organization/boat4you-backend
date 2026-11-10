@@ -45,6 +45,7 @@ class SecurityConfiguration(
                             pathMatcher.matcher("/users/invite"),
                             pathMatcher.matcher("/webhooks/stripe"),
                             pathMatcher.matcher("/webhooks/elevenlabs"),
+                            pathMatcher.matcher("/webhooks/mollie"),
                             pathMatcher.matcher("/swagger/**"),
                             pathMatcher.matcher("/swagger-ui/**"),
                             pathMatcher.matcher("/v3/api-docs/swagger-config"),

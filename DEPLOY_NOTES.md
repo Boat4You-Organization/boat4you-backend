@@ -1,5 +1,35 @@
 # Backend deploy notes
 
+## 2026-11-10 — 💳 Mollie umjesto Stripea/Revoluta: tajni `/pay/<ključ>` na boat4you.com (za ugovore svih 7 sajtova) + kartično plaćanje online rezervacija (V9_122, V9_123) — ⏳ NIJE DEPLOYANO (grana `feat/mollie-payments`, čeka Mariovo „da“)
+
+Mario 10.11.2026: Revolut odbio merchant račun; Mollie račun aktivan (org_19333861, profil „Boat4You - part of Europe Yachts Charter group“, rezerva 0). Odluke: SVE kartice preko Mollieja, Stripe se klijentima nigdje ne spominje (račun i ključevi ostaju tihi rezervni plan iza prekidača); kartica najviše 10.000 € po uplati (Mollie limit), iznad toga virman ili više uplata; +5 % na kartice u bookingu ostaje, `/pay` bez dodatka.
+
+**Što jar donosi**
+- `domains/payment/mollie`: `MollieClient` (Payments API v2, Idempotency-Key, ključ nikad u logu), `/webhooks/mollie` (Mollie šalje samo `id`, bez potpisa → plaćanje se UVIJEK ponovno čita s Mollie API-ja prije bilo kakve promjene; nepoznat id = 200).
+- **`/pay` (custom_payment, V9_122):** `GET/POST /public/payments/custom/{config,orders,orders/{ref}}`, potvrda klijentu + obavijest uredu, admin `GET /admin/custom-payments`. Metode: kartica, Apple Pay, Pay by Bank. Min 50 €, max = limit kartice. Povrat i chargeback → alarm uredu. Povratak s Mollieja bez plaćanja (status `open`) = „nije dovršeno“.
+- **Booking (reservation_card_order, V9_123 + 3 stupca na reservation_payment_phase):** `/public|secured/payments/card/{create-checkout-session,checkPaymentStatus}` iza `PAYMENT_CARD_PROVIDER` (`stripe` zadano | `mollie`). Iznos i rate iz `CardChargeCalculator` kao Stripe. Rata > 10.000 € = 422 (8106), web nudi samo virman. Završetak: rate plaćene + ledger COMPLETED u jednoj transakciji; potvrda rezervacije (prva uplata bez `paymentPhaseId`) tek nakon commita. Zamijenjeni checkout = `SUPERSEDED` (Mollie ga može i dalje naplatiti → čita se dok ga Mollie ne zatvori; kasna uplata se bilježi). Dvostruka uplata, krivi iznos, otkazana rezervacija → `NEEDS_REVIEW` + mail uredu. Reconcile job svakih 10 min (propušteni webhook), 48 h otvoreno → alarm.
+- **Stripe:** webhook više ne prepisuje već plaćenu ratu (alarm „DOUBLE PAYMENT“); ključevi smiju biti prazni (WARN).
+- Rate limit: `/public/payments/custom/orders` 5/10 min, status 30/min; `/public/payments/card/create-checkout-session/{id}` 20/10 min, `checkPaymentStatus` 60/min (po IP-u posjetitelja; web šalje X-Forwarded-For).
+- Contact Center tracker: `/pay/<ključ>` je tajna putanja (ne sprema se).
+
+**Migracije (samo dodavanje, idempotentne, `lock_timeout 5s`):** `V9_122__custom_payment.sql` (nova tablica), `V9_123__reservation_card_order.sql` (nova tablica + 3 nullable stupca na `reservation_payment_phase`). ⚠️ Kratki ACCESS EXCLUSIVE na `reservation_payment_phase` i FK na `reservation` → start jara IZVAN sync prozora.
+
+**⛔ Jar se NE gradi s ove grane same:** fali joj `V9_121__pr_module.sql` (live). Jar = live release linija (`feat/pr-module` + `fix/iris-area-model-check`, zadnji live `origin/release/iris-area-model` `8f2d2d57`, tag `live/2026-11-08-iris-size`) + `feat/mollie-payments`. `git merge-tree` 10.11.: kod se spaja čisto, jedini konflikt je `DEPLOY_NOTES.md` (zadržati oba unosa). Prije builda: `ls src/main/resources/db/migration | grep V9_12` mora pokazati 120, 121, 122, 123.
+
+**Env cusma2 (`boat4you_vars.env`, backup prije):**
+- `MOLLIE_API_KEY=live_…` (iz `~/.b4y-mollie.env`, nikad u chat/git), `MOLLIE_WEBHOOK_URL=https://api.boat4you.com/webhooks/mollie`, `MOLLIE_RECONCILE_ENABLED=true`
+- `CUSTOM_PAYMENT_LINK_KEYS=boat4you=<k>` (≥ 32 znaka A–Z a–z 0–9 _ -; isti ključ ide u `PAY_LINK_KEYS` weba boat4you na cusma1). **Mario 10.11.: jedna stranica za sve ugovore** — `www.boat4you.com/pay/<k>`; sisteri nemaju `/pay` (Mollie profil je prijavljen samo za boat4you.com), pa se njihovi ključevi NE postavljaju (kod ih podržava, ali bez ključa = 404)
+- `PAYMENT_CARD_PROVIDER` ostaje `stripe` pri prvom deployu; `mollie` tek nakon live testa `/pay`.
+- cusma3: ništa (bez ključa Mollie = disabled, job se ne pali). Stripe ključevi ostaju.
+- nginx: `/webhooks/mollie` prolazi kroz postojeći `location /`; opcionalno `infra/docs/nginx/mollie-webhook-2026-11-10.conf`.
+
+**Redoslijed:** (1) jar cusma2 (provider=stripe) → health, log „Mollie: enabled=true, mode=live, webhook=set, reconcile=true“ i „Card payments: provider=stripe“; (2) b4y web + admin; (3) live test `/pay` 10 € + povrat (Mario, po mogućnosti Amex); (4) sisteri ×6 (samo tekstovi: Mollie umjesto Stripea/Revoluta, bez `/pay`, ne ovise o backendu); (5) `PAYMENT_CARD_PROVIDER=mollie` + restart cusma2 → test rate na testnoj rezervaciji + povrat; (6) cusma3 isti jar kroz gate. Napomena: novi b4y web zove `/payments/card/*` → backend PRVI.
+
+**Rollback:** `PAYMENT_CARD_PROVIDER=stripe` + restart (Mollie plaćanja u tijeku i dalje se bilježe: webhook, status i reconcile ne ovise o prekidaču); cijeli jar: `webservice.jar.prev` (migracije su samo dodavanje, stari jar ih ignorira — Hibernate validate ne gleda nepoznate tablice/stupce).
+
+**Testirano lokalno (Mollie TEST ključ, PG 18, kopija lokalne baze):** `/pay` Karibi i CY: 1.109 € / 750 € → checkout → COMPLETED, potvrda + obavijest; iznad 10.000 € odbijeno; povratak bez plaćanja = „not completed / Try again“. Booking: rata 1.173,25 + 59 = 1.232,25 €, njemački checkout, rata plaćena (MOLLIE), dvoklik = isto plaćanje, plaćena rata odbijena, 12.000 € → 8106, otkazana rezervacija → 400, zamijenjeni checkout plaćen naknadno → zabilježen. Testovi: 572 u diranim paketima, 0 palih (ledger i custom payment na PG 18 s cijelim Flyway lancem + Hibernate validate). **Nije viđeno:** potvrda rezervacije nakon prve uplate (poziv partneru, MMK/NauSys) i stvarni povrat/chargeback (test mod ih drži „pending“) — pokriveno testovima, stvarno tek na live testu.
+
+**Pregled:** 1 neovisni agent (Opus): 1 blocker (V9_121, gore), 2 high + 7 medium → ispravljeno u `f3928201` (web `2d75ded1d`); ponovni pregled bez blockera, 6 niskih napomena, 4 ispravljene u sljedećem commitu (ostaje: NEEDS_REVIEW je konačan i za kasnu uplatu nakon 48 h; lokalne baze koje su već primijenile raniju verziju V9_122/123 trebaju reset). Otvoreno kao follow-up: guest token za `/public/payments/card/create-checkout-session` (isto kao kod Stripea), admin pregled ledgera (planirana stranica „Plaćanja (Mollie)“).
 ## 2026-11-08 — IRIS size rule (lengthFt ±4 ft, picks spread over sizes and models, max 8) — LIVE cusma2 14:35 UTC + cusma3 18:06:43 UTC (gate passed, both nodes on c5284b50)
 
 - Jar md5 `c5284b50565d7a67d356f9f31eff1f2e` from `release/iris-area-model` 8f549e12 (= 6.11. release + `fix/iris-area-model-check` d7dedda4). No migration (205/205, newest 9.121). `.prev` on both nodes = e60f9e32 (6.11. IRIS release).

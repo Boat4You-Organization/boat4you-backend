@@ -1,6 +1,8 @@
 package hr.workspace.boat4you.domains.reservation.jpa
 
+import jakarta.persistence.LockModeType
 import org.springframework.data.jpa.repository.JpaRepository
+import org.springframework.data.jpa.repository.Lock
 import org.springframework.data.jpa.repository.Query
 import org.springframework.stereotype.Repository
 import java.math.BigDecimal
@@ -31,4 +33,15 @@ interface ReservationPaymentPhaseRepository : JpaRepository<ReservationPaymentPh
     fun calculateTotalPaid(reservationFlowIds: Set<Long>): BigDecimal
 
     fun findByReservationFlowIdIn(reservationFlowIds: Set<Long>): List<ReservationPaymentPhase>
+
+    /**
+     * Row locks (`SELECT ... FOR UPDATE`) on the phases a card checkout pays (card checkout plan 2A.4). A phase that is already
+     * managed in the transaction keeps its loaded state (Hibernate does not refresh it) — check the current paid state
+     * with [countByIdInAndPaidOnIsNotNull] after taking the locks.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    fun findAllByIdIn(ids: Collection<Long>): List<ReservationPaymentPhase>
+
+    /** How many of [ids] are paid according to the database right now (a scalar query: no persistence-context state). */
+    fun countByIdInAndPaidOnIsNotNull(ids: Collection<Long>): Long
 }

@@ -275,12 +275,45 @@ application:
     expiration: 60m
   stripe:
     enabled: true
-    # Fail fast at startup if the Stripe credentials are missing instead of
-    # falling back to literal "sk_test"/"whsec" placeholders that lead to
-    # confusing "session not found" errors downstream.
-    # Keys MUST come from the environment (.env / boat4you_vars.env).
-    secret-key: ${STRIPE_SECRET_KEY:?STRIPE_SECRET_KEY required}
-    webhook-secret: ${STRIPE_WEBHOOK_SECRET:?STRIPE_WEBHOOK_SECRET required}
+    # Keys come from the environment (.env / boat4you_vars.env). Blank defaults since the Mollie switch: a node
+    # without them still starts — StripeConfig then WARNs once and Stripe calls fail (no literal placeholder key is
+    # ever used). cusma2 keeps both set after PAYMENT_CARD_PROVIDER=mollie (in-flight sessions, webhooks, disputes,
+    # emergency rollback).
+    secret-key: ${STRIPE_SECRET_KEY:}
+    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
+  payment:
+    # Provider of NEW online-booking card checkouts (/payments/card/*): stripe | mollie. Read once at startup
+    # (startup line "Card payments: provider=..."); rollback = stripe + restart. mollie without the Mollie key logs
+    # an ERROR and every checkout answers 503 (the boot never fails because of it).
+    card-provider: ${PAYMENT_CARD_PROVIDER:stripe}
+  mollie:
+    # Mollie Payments API (secret /pay/<key> custom payments + online-booking card payments). Blank defaults on
+    # purpose (pattern chat.anthropic-api-key): a node without the env vars keeps starting and the feature reports
+    # itself disabled. Enabled only when the api-key is set; the prod profile with a test_ key is refused (ERROR).
+    base-url: ${MOLLIE_BASE_URL:https://api.mollie.com}
+    # live_… on cusma2 (profile "Boat4You - part of Europe Yachts Charter group"); test_… locally. Never logged.
+    api-key: ${MOLLIE_API_KEY:}
+    # Public URL Mollie calls with ?id only (https://api.boat4you.com/webhooks/mollie); blank locally = no webhook.
+    webhook-url: ${MOLLIE_WEBHOOK_URL:}
+    # Reconcile jobs (missed webhooks) — cusma2 only.
+    reconcile-enabled: ${MOLLIE_RECONCILE_ENABLED:false}
+    # Comma-separated origins a checkout URL returned by Mollie may have.
+    checkout-origins: ${MOLLIE_CHECKOUT_ORIGINS:https://www.mollie.com}
+    # Mollie card limit per transaction for this account, whole EUR (Mollie e-mail 17.10.2025). Above it: no card.
+    card-max-amount: ${MOLLIE_CARD_MAX_AMOUNT:10000}
+    custom-payment:
+      # 50 EUR in cents.
+      min-amount-minor: 5000
+      # How long an open checkout is handed out again for the same data (dedupe = 5/6 of it).
+      order-ttl: ${CUSTOM_PAYMENT_ORDER_TTL:PT15M}
+      terms-version: ${CUSTOM_PAYMENT_TERMS_VERSION:2026-11-10}
+      # Secret link keys per site: site=key[,key];site2=key (two keys per site during a rotation).
+      link-keys: ${CUSTOM_PAYMENT_LINK_KEYS:}
+      # LOCAL TESTS ONLY: origin of the /pay success / failed pages (ignored under the prod profile).
+      return-base-url: ${CUSTOM_PAYMENT_RETURN_BASE_URL:}
+    booking:
+      # How long a booking checkout is handed out again for the same charge (ledger expires_at).
+      checkout-ttl: ${MOLLIE_BOOKING_CHECKOUT_TTL:PT15M}
   trip-push:
     # Web-push VAPID keypair for the Boat4You Trip hub reminders (base64url,
     # P-256). Deliberately optional: blank keys = push disabled, the hub hides

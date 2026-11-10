@@ -23,6 +23,8 @@ data class UserDataExportDto(
     val customOffers: List<ExportedCustomOfferDto>,
     val inquiries: List<ExportedInquiryDto>,
     val gdprActivityLog: List<ExportedGdprActivityDto>,
+    /** Card payments from the secret /pay link made with the user's e-mail (no user FK; matched by e-mail). */
+    val customPayments: List<ExportedCustomPaymentDto> = emptyList(),
 )
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -74,6 +76,8 @@ data class ExportedPaymentPhaseDto(
     val amount: BigDecimal?,
     val paidOn: Instant?,
     val stripePaymentIntentId: String?,
+    val paymentProvider: String? = null,
+    val providerPaymentId: String? = null,
 )
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -102,4 +106,22 @@ data class ExportedGdprActivityDto(
     val requestedAt: Instant,
     val completedAt: Instant?,
     val notes: String?,
+)
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
+data class ExportedCustomPaymentDto(
+    val id: Long,
+    val site: String,
+    val reference: String,
+    val amountMinor: Long,
+    val refundedAmountMinor: Long,
+    val currency: String,
+    val status: String,
+    val payerEmail: String,
+    val locale: String,
+    val clientIp: String?,
+    val termsVersion: String,
+    val acceptedAt: Instant,
+    val createdAt: Instant,
+    val completedAt: Instant?,
 )
