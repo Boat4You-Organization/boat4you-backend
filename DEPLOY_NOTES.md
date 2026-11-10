@@ -1,6 +1,6 @@
 # Backend deploy notes
 
-## 2026-11-10 — ✅ LIVE cusma2 20:05 UTC: Klarna (booking + /pay) UKLJUČENA — jar `e20302a4ca5c336fc01c97c3c245b9c4`, grana `release/mollie-payments` `73ca42cd` (+ `feat/mollie-klarna` 84845573); ⏳ cusma3 čeka prozor 21:05–22:15 UTC (20:26 gate ABORT: mmkAvailabilitySync u 20:40)
+## 2026-11-10 — ✅ LIVE oba čvora (cusma2 20:05, cusma3 21:08 UTC): Klarna (booking + /pay) UKLJUČENA — jar `e20302a4ca5c336fc01c97c3c245b9c4`, grana `release/mollie-payments` `73ca42cd` (+ `feat/mollie-klarna` 84845573); ✅ cusma3 21:08 UTC isti jar (20:26 gate ABORT zbog mmkAvailabilitySync u 20:40, drugi pokušaj prošao); tag `live/2026-11-10-klarna`
 
 Mario 10.11.2026: „Da, radi Klarnu“ → „Da, deployaj i uključi“. Doplata: na booking +5 % kao kartica (zadano); `/pay` bez doplate (iznos s ugovora već sadrži 5 %).
 
