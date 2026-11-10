@@ -8,16 +8,16 @@ import com.stripe.model.checkout.Session
 import hr.workspace.boat4you.common.errorhandling.ApiErrorCodes
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
-import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantClient
-import hr.workspace.boat4you.domains.payment.revolut.RevolutProperties
-import hr.workspace.boat4you.domains.payment.revolut.TEST_SECRET_KEY
-import hr.workspace.boat4you.domains.payment.revolut.booking.BookingOrderCompletion
-import hr.workspace.boat4you.domains.payment.revolut.booking.ReservationCardOrderTx
-import hr.workspace.boat4you.domains.payment.revolut.booking.RevolutBookingCreateTx
-import hr.workspace.boat4you.domains.payment.revolut.booking.RevolutBookingPaymentService
-import hr.workspace.boat4you.domains.payment.revolut.booking.RevolutBookingProperties
-import hr.workspace.boat4you.domains.payment.revolut.booking.jpa.ReservationCardOrderRepository
-import hr.workspace.boat4you.domains.payment.revolut.revolutProperties
+import hr.workspace.boat4you.domains.payment.mollie.MollieClient
+import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
+import hr.workspace.boat4you.domains.payment.mollie.TEST_API_KEY
+import hr.workspace.boat4you.domains.payment.mollie.booking.BookingCardCompletionFollowUp
+import hr.workspace.boat4you.domains.payment.mollie.booking.MollieBookingCreateTx
+import hr.workspace.boat4you.domains.payment.mollie.booking.MollieBookingPaymentService
+import hr.workspace.boat4you.domains.payment.mollie.booking.MollieBookingProperties
+import hr.workspace.boat4you.domains.payment.mollie.booking.ReservationCardOrderTx
+import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
+import hr.workspace.boat4you.domains.payment.mollie.mollieProperties
 import hr.workspace.boat4you.domains.reservation.controllers.CardPaymentController
 import hr.workspace.boat4you.domains.reservation.controllers.PublicCardPaymentController
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
@@ -27,6 +27,7 @@ import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhase
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
 import hr.workspace.boat4you.domains.reservation.service.StripePaymentService
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAlreadyPaidException
+import hr.workspace.boat4you.domains.reservation.service.payment.CardAmountAboveLimitException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentInProgressException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProvider
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProviderException
@@ -60,20 +61,20 @@ import java.time.Duration
 /**
  * HTTP contract of the provider-neutral `/secured|public/payments/card` endpoints: provider routing by
  * `application.payment.card-provider`, the Stripe mapping (= the old Stripe controllers), 404 / 409 / 502 / 503
- * bodies through ApiErrorHandler. Stripe and the database are mocked; Revolut is a fake provider.
+ * bodies through ApiErrorHandler. Stripe and the database are mocked; Mollie is a fake provider.
  */
 class CardPaymentControllerTests {
     private val stripeService: StripePaymentService = mock(StripePaymentService::class.java)
     private val phases: ReservationPaymentPhaseRepository = mock(ReservationPaymentPhaseRepository::class.java)
-    private val revolut = FakeRevolutProvider()
+    private val mollie = FakeMollieProvider()
     private val stripeSession =
         Session().apply {
             id = "cs_test_a1B2c3"
             url = "https://checkout.stripe.com/c/pay/cs_test_a1B2c3"
         }
 
-    private class FakeRevolutProvider : CardPaymentProvider {
-        override val provider = CardProvider.REVOLUT
+    private class FakeMollieProvider : CardPaymentProvider {
+        override val provider = CardProvider.MOLLIE
         var failWith: RuntimeException? = null
         val calls = mutableListOf<List<Any?>>()
         val known = mutableMapOf<String, CheckoutSessionDto>()
@@ -87,7 +88,7 @@ class CardPaymentControllerTests {
         ): CheckoutSessionDto {
             calls += listOf(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, locale)
             failWith?.let { throw it }
-            return CheckoutSessionDto("ord-7f3a", CheckoutSessionStatusEnum.PAYMENT_PENDING, "https://checkout.revolut.com/payment-link/ord-7f3a")
+            return CheckoutSessionDto("tr_7UhSN1zuXS", CheckoutSessionStatusEnum.PAYMENT_PENDING, "https://www.mollie.com/checkout/select-method/7UhSN1zuXS")
         }
 
         override fun checkStatus(ref: String): CheckoutSessionDto? = known[ref]
@@ -95,12 +96,12 @@ class CardPaymentControllerTests {
 
     private fun router(
         configured: String,
-        properties: RevolutProperties = revolutProperties(),
-        revolutProvider: CardPaymentProvider = revolut,
+        properties: MollieProperties = mollieProperties(),
+        mollieProvider: CardPaymentProvider = mollie,
     ) = CardPaymentRouter(
-        listOf(StripeCardPaymentProvider(stripeService, phases), revolutProvider),
+        listOf(StripeCardPaymentProvider(stripeService, phases), mollieProvider),
         properties,
-        RevolutBookingProperties(Duration.ofHours(1), "automatic"),
+        MollieBookingProperties(Duration.ofMinutes(15)),
         configured,
     )
 
@@ -127,7 +128,7 @@ class CardPaymentControllerTests {
     @Test
     fun `stripe (default, unknown or blank value) - Stripe session mapped like the old Stripe controllers, locale ignored`() {
         `when`(stripeService.initiatePayment(42, null, 7, "key-1")).thenReturn(stripeSession)
-        listOf("stripe", "STRIPE", " Stripe ", "", "revoult").forEach { configured ->
+        listOf("stripe", "STRIPE", " Stripe ", "", "mollie-typo").forEach { configured ->
             val router = router(configured)
             router.activeProvider shouldBe CardProvider.STRIPE
             listOf("/public/payments/card", "/secured/payments/card").forEach { base ->
@@ -139,7 +140,7 @@ class CardPaymentControllerTests {
                 }
             }
         }
-        revolut.calls.size shouldBe 0
+        mollie.calls.size shouldBe 0
     }
 
     @Test
@@ -162,94 +163,97 @@ class CardPaymentControllerTests {
     }
 
     @Test
-    fun `revolut - new checkouts go to Revolut with every parameter incl locale, Stripe untouched`() {
-        val router = router("revolut")
-        router.activeProvider shouldBe CardProvider.REVOLUT
+    fun `mollie - new checkouts go to Mollie with every parameter incl locale, Stripe untouched`() {
+        val router = router("mollie")
+        router.activeProvider shouldBe CardProvider.MOLLIE
         listOf("/public/payments/card", "/secured/payments/card").forEach { base ->
             mvc(router).create(base).andExpect {
                 status { isOk() }
-                jsonPath("$.sessionIdOrOrderCode") { value("ord-7f3a") }
+                jsonPath("$.sessionIdOrOrderCode") { value("tr_7UhSN1zuXS") }
                 jsonPath("$.status") { value("PAYMENT_PENDING") }
-                jsonPath("$.redirectUrl") { value("https://checkout.revolut.com/payment-link/ord-7f3a") }
+                jsonPath("$.redirectUrl") { value("https://www.mollie.com/checkout/select-method/7UhSN1zuXS") }
             }
         }
-        revolut.calls shouldBe List(2) { listOf(42L, null, 7L, "key-1", "de") }
+        mollie.calls shouldBe List(2) { listOf(42L, null, 7L, "key-1", "de") }
         verifyNoInteractions(stripeService)
     }
 
     @Test
-    fun `revolut flag without Revolut keys - router starts, every checkout 503 (8101), nobody called`() {
-        listOf(revolutProperties(secretKey = ""), revolutProperties(profiles = listOf("prod"))).forEach { disabled ->
+    fun `mollie flag without Mollie api key (or a test key under prod) - router starts, every checkout 503 (8101), nobody called`() {
+        listOf(mollieProperties(apiKey = ""), mollieProperties(apiKey = TEST_API_KEY, profiles = listOf("prod"))).forEach { disabled ->
             disabled.enabled shouldBe false
-            val router = router("revolut", disabled)
+            val router = router("mollie", disabled)
             listOf("/public/payments/card", "/secured/payments/card").forEach { base ->
                 mvc(router).create(base).expectError(503, ApiErrorCodes.CARD_PAYMENTS_UNAVAILABLE)
             }
         }
-        revolut.calls.size shouldBe 0
+        mollie.calls.size shouldBe 0
         verifyNoInteractions(stripeService)
     }
 
     @Test
-    fun `the wired Revolut provider - a reference without a ledger row is unknown (Stripe, then 404), disabled keys 503 before any work`() {
+    fun `the wired Mollie provider - a reference without a ledger row is unknown (Stripe, then 404), disabled keys 503 before any work`() {
         val orders = mock(ReservationCardOrderRepository::class.java)
-        val client = mock(RevolutMerchantClient::class.java)
-        val createTx = mock(RevolutBookingCreateTx::class.java)
-        fun provider(properties: RevolutProperties) =
-            RevolutBookingPaymentService(
+        val client = mock(MollieClient::class.java)
+        val createTx = mock(MollieBookingCreateTx::class.java)
+        fun provider(properties: MollieProperties) =
+            MollieBookingPaymentService(
                 properties,
-                RevolutBookingProperties(Duration.ofHours(1), "automatic"),
                 client,
                 createTx,
                 mock(ReservationCardOrderTx::class.java),
                 orders,
-                mock(BookingOrderCompletion::class.java),
+                mock(BookingCardCompletionFollowUp::class.java),
                 "https://www.boat4you.com",
             )
-        val enabled = provider(revolutProperties())
-        enabled.provider shouldBe CardProvider.REVOLUT
-        enabled.checkStatus("ord-7f3a").shouldBeNull()
-        verify(orders).findByProviderOrderId("ord-7f3a")
-        mvc(router("revolut", revolutProvider = enabled)).post("/public/payments/card/checkPaymentStatus/ord-7f3a").expectError(404, ApiErrorCodes.CARD_PAYMENT_NOT_FOUND)
+        val enabled = provider(mollieProperties())
+        enabled.provider shouldBe CardProvider.MOLLIE
+        enabled.checkStatus("tr_7UhSN1zuXS").shouldBeNull()
+        verify(orders).findByProviderOrderId("tr_7UhSN1zuXS")
+        mvc(router("mollie", mollieProvider = enabled)).post("/public/payments/card/checkPaymentStatus/tr_7UhSN1zuXS").expectError(404, ApiErrorCodes.CARD_PAYMENT_NOT_FOUND)
 
-        val disabled = provider(revolutProperties(secretKey = ""))
+        val disabled = provider(mollieProperties(apiKey = ""))
         shouldThrow<CardPaymentsUnavailableException> { disabled.createCheckout(42, null, 7, "key-1", "de") }
-        mvc(router("revolut", revolutProperties(secretKey = ""), revolutProvider = disabled)).create("/public/payments/card").expectError(503, ApiErrorCodes.CARD_PAYMENTS_UNAVAILABLE)
+        mvc(router("mollie", mollieProperties(apiKey = ""), mollieProvider = disabled)).create("/public/payments/card").expectError(503, ApiErrorCodes.CARD_PAYMENTS_UNAVAILABLE)
         verifyNoInteractions(client, createTx, stripeService)
     }
 
     @Test
-    fun `409 bodies - in progress and already paid carry static friendly text, 502 for a provider error`() {
-        val mvc = mvc(router("revolut"))
-        revolut.failWith = CardPaymentInProgressException()
+    fun `409 bodies - in progress and already paid carry static friendly text, 502 for a provider error, 422 above the card limit`() {
+        val mvc = mvc(router("mollie"))
+        mollie.failWith = CardPaymentInProgressException()
         mvc.create("/public/payments/card").expectError(409, ApiErrorCodes.CARD_PAYMENT_IN_PROGRESS).andExpect {
             jsonPath("$.code") { value(8102) }
             jsonPath("$.message") {
                 value("A card payment for this booking is already being processed. Please wait a few minutes and check your booking before paying again.")
             }
         }
-        revolut.failWith = CardAlreadyPaidException()
+        mollie.failWith = CardAlreadyPaidException()
         mvc.create("/secured/payments/card").expectError(409, ApiErrorCodes.CARD_ALREADY_PAID).andExpect {
             jsonPath("$.code") { value(8103) }
             jsonPath("$.message") { value("This payment has already been received. Please refresh the page to see your booking.") }
         }
-        revolut.failWith = CardPaymentProviderException()
+        mollie.failWith = CardPaymentProviderException()
         mvc.create("/public/payments/card").expectError(502, ApiErrorCodes.CARD_PAYMENT_PROVIDER_ERROR)
+        mollie.failWith = CardAmountAboveLimitException()
+        mvc.create("/public/payments/card").expectError(422, ApiErrorCodes.CARD_AMOUNT_ABOVE_LIMIT).andExpect {
+            jsonPath("$.code") { value(8106) }
+        }
     }
 
     @Test
-    fun `status - Revolut ref, Stripe ref, unknown or absurd ref 404 (whatever the flag says)`() {
-        revolut.known["ord-7f3a"] = CheckoutSessionDto("ord-7f3a", CheckoutSessionStatusEnum.PAYMENT_SUCCESS)
+    fun `status - Mollie ref, Stripe ref, unknown or absurd ref 404 (whatever the flag says)`() {
+        mollie.known["tr_7UhSN1zuXS"] = CheckoutSessionDto("tr_7UhSN1zuXS", CheckoutSessionStatusEnum.PAYMENT_SUCCESS)
         val stripePhase = ReservationPaymentPhase().apply { id = 7 }
         `when`(phases.findByStripeSessionIdOrderByDeadlineAsc("cs_test_a1B2c3")).thenReturn(listOf(stripePhase))
         `when`(stripeService.checkPaymentStatus("cs_test_a1B2c3"))
             .thenReturn(CheckoutSessionDto("cs_test_a1B2c3", CheckoutSessionStatusEnum.PAYMENT_PENDING))
 
-        listOf(router("stripe"), router("revolut"), router("revolut", revolutProperties(secretKey = ""))).forEach { router ->
+        listOf(router("stripe"), router("mollie"), router("mollie", mollieProperties(apiKey = ""))).forEach { router ->
             listOf("/public/payments/card", "/secured/payments/card").forEach { base ->
-                mvc(router).post("$base/checkPaymentStatus/ord-7f3a").andExpect {
+                mvc(router).post("$base/checkPaymentStatus/tr_7UhSN1zuXS").andExpect {
                     status { isOk() }
-                    jsonPath("$.sessionIdOrOrderCode") { value("ord-7f3a") }
+                    jsonPath("$.sessionIdOrOrderCode") { value("tr_7UhSN1zuXS") }
                     jsonPath("$.status") { value("PAYMENT_SUCCESS") }
                 }
                 mvc(router).post("$base/checkPaymentStatus/cs_test_a1B2c3").andExpect {
@@ -285,72 +289,70 @@ class CardPaymentControllerTests {
         ApplicationContextRunner()
             .withInitializer { it.beanFactory.conversionService = ApplicationConversionService.getSharedInstance() }
             .withBean(StripeCardPaymentProvider::class.java, { StripeCardPaymentProvider(stripeService, phases) })
-            // The Revolut provider's collaborators (database + Merchant API) are mocks; the provider itself is the real bean.
-            .withBean(RevolutMerchantClient::class.java, { mock(RevolutMerchantClient::class.java) })
-            .withBean(RevolutBookingCreateTx::class.java, { mock(RevolutBookingCreateTx::class.java) })
+            // The Mollie provider's collaborators (database + Mollie API) are mocks; the provider itself is the real bean.
+            .withBean(MollieClient::class.java, { mock(MollieClient::class.java) })
+            .withBean(MollieBookingCreateTx::class.java, { mock(MollieBookingCreateTx::class.java) })
             .withBean(ReservationCardOrderTx::class.java, { mock(ReservationCardOrderTx::class.java) })
             .withBean(ReservationCardOrderRepository::class.java, { mock(ReservationCardOrderRepository::class.java) })
-            .withBean(BookingOrderCompletion::class.java, { mock(BookingOrderCompletion::class.java) })
+            .withBean(BookingCardCompletionFollowUp::class.java, { mock(BookingCardCompletionFollowUp::class.java) })
             .withPropertyValues("server.host-public=https://www.boat4you.com")
             .withUserConfiguration(
-                RevolutProperties::class.java,
-                RevolutBookingProperties::class.java,
-                RevolutBookingPaymentService::class.java,
+                MollieProperties::class.java,
+                MollieBookingProperties::class.java,
+                MollieBookingPaymentService::class.java,
                 CardPaymentRouter::class.java,
             )
 
     @Test
-    fun `spring wiring - default stripe with one INFO line, revolut without keys still starts with an ERROR, no secrets logged`() {
+    fun `spring wiring - default stripe with one INFO line, mollie without a key still starts with an ERROR, no secrets logged`() {
         val defaultLogs =
             captureLogs(CardPaymentRouter::class.java) {
                 contextRunner.run { context ->
                     context.startupFailure.shouldBeNull()
                     context.getBean(CardPaymentRouter::class.java).activeProvider shouldBe CardProvider.STRIPE
-                    context.getBean(RevolutBookingProperties::class.java).orderTtl shouldBe Duration.ofHours(1)
-                    context.getBean(RevolutBookingProperties::class.java).enforceChallenge shouldBe "automatic"
+                    context.getBean(MollieBookingProperties::class.java).checkoutTtl shouldBe Duration.ofMinutes(15)
+                    context.getBean(MollieProperties::class.java).enabled shouldBe false
+                    context.getBean(MollieProperties::class.java).cardMaxAmountMinor shouldBe 1_000_000L
                 }
             }
         defaultLogs.filter { it.level == Level.ERROR }.shouldBeEmpty()
         defaultLogs.filter { it.level == Level.INFO } shouldHaveSize 1
         defaultLogs.single { it.level == Level.INFO }.formattedMessage shouldBe
-            "Card payments: provider=stripe, revolut-enabled=false, revolut-booking order-ttl=PT1H, enforce-challenge=automatic"
+            "Card payments: provider=stripe, mollie-enabled=false, mollie checkout-ttl=PT15M, card-max=1000000 cents"
 
-        val revolutLogs =
+        val mollieLogs =
             captureLogs(CardPaymentRouter::class.java) {
                 contextRunner
                     .withPropertyValues(
-                        "application.payment.card-provider=revolut",
-                        "application.revolut.booking.order-ttl=PT3M",
-                        "application.revolut.booking.enforce-challenge=FORCED",
+                        "application.payment.card-provider=mollie",
+                        "application.mollie.booking.checkout-ttl=PT3M",
                     ).run { context ->
                         context.startupFailure.shouldBeNull()
-                        context.getBean(CardPaymentRouter::class.java).activeProvider shouldBe CardProvider.REVOLUT
-                        context.getBean(RevolutBookingProperties::class.java).orderTtl shouldBe Duration.ofMinutes(3)
-                        context.getBean(RevolutBookingProperties::class.java).enforceChallenge shouldBe "forced"
+                        context.getBean(CardPaymentRouter::class.java).activeProvider shouldBe CardProvider.MOLLIE
+                        context.getBean(MollieBookingProperties::class.java).checkoutTtl shouldBe Duration.ofMinutes(3)
                     }
             }
-        revolutLogs.single { it.level == Level.ERROR }.formattedMessage shouldContain "not configured"
-        revolutLogs.single { it.level == Level.INFO }.formattedMessage shouldContain "provider=revolut, revolut-enabled=false"
+        mollieLogs.single { it.level == Level.ERROR }.formattedMessage shouldContain "not configured"
+        mollieLogs.single { it.level == Level.INFO }.formattedMessage shouldContain "provider=mollie, mollie-enabled=false"
 
         val enabledLogs =
             captureLogs(CardPaymentRouter::class.java) {
                 contextRunner
                     .withPropertyValues(
-                        "application.payment.card-provider=revolut",
-                        "application.revolut.base-url=https://sandbox-merchant.revolut.com",
-                        "application.revolut.secret-key=$TEST_SECRET_KEY",
-                        "application.revolut.webhook-secret=wsk_test_not_a_real_secret",
-                    ).run { context -> context.getBean(CardPaymentRouter::class.java).activeProvider shouldBe CardProvider.REVOLUT }
+                        "application.payment.card-provider=mollie",
+                        "application.mollie.base-url=https://api.mollie.test",
+                        "application.mollie.api-key=$TEST_API_KEY",
+                    ).run { context -> context.getBean(CardPaymentRouter::class.java).activeProvider shouldBe CardProvider.MOLLIE }
             }
         enabledLogs.filter { it.level == Level.ERROR }.shouldBeEmpty()
-        enabledLogs.single { it.level == Level.INFO }.formattedMessage shouldContain "provider=revolut, revolut-enabled=true"
+        enabledLogs.single { it.level == Level.INFO }.formattedMessage shouldContain "provider=mollie, mollie-enabled=true"
         val typoLogs =
             captureLogs(CardPaymentRouter::class.java) {
                 contextRunner
-                    .withPropertyValues("application.payment.card-provider=revoult")
+                    .withPropertyValues("application.payment.card-provider=revolut")
                     .run { context -> context.getBean(CardPaymentRouter::class.java).activeProvider shouldBe CardProvider.STRIPE }
             }
-        typoLogs.single { it.level == Level.ERROR }.formattedMessage shouldContain "'revoult' is not stripe|revolut"
+        typoLogs.single { it.level == Level.ERROR }.formattedMessage shouldContain "'revolut' is not stripe|mollie"
         typoLogs.single { it.level == Level.INFO }.formattedMessage shouldContain "provider=stripe"
         val blankLogs =
             captureLogs(CardPaymentRouter::class.java) {
@@ -359,19 +361,17 @@ class CardPaymentControllerTests {
                     .run { context -> context.getBean(CardPaymentRouter::class.java).activeProvider shouldBe CardProvider.STRIPE }
             }
         blankLogs.filter { it.level == Level.ERROR }.shouldBeEmpty()
-        (defaultLogs + revolutLogs + enabledLogs).forEach {
-            it.formattedMessage shouldNotContain TEST_SECRET_KEY
-            it.formattedMessage shouldNotContain "wsk_"
+        (defaultLogs + mollieLogs + enabledLogs).forEach {
+            it.formattedMessage shouldNotContain TEST_API_KEY
         }
     }
 
     @Test
-    fun `booking settings - zero TTL or unknown enforce-challenge fall back to the defaults with an ERROR`() {
-        lateinit var properties: RevolutBookingProperties
-        val logs = captureLogs(RevolutBookingProperties::class.java) { properties = RevolutBookingProperties(Duration.ZERO, "sometimes") }
-        properties.orderTtl shouldBe Duration.ofHours(1)
-        properties.enforceChallenge shouldBe "automatic"
-        logs.filter { it.level == Level.ERROR } shouldHaveSize 2
+    fun `booking settings - a non-positive checkout TTL falls back to the default with an ERROR`() {
+        lateinit var properties: MollieBookingProperties
+        val logs = captureLogs(MollieBookingProperties::class.java) { properties = MollieBookingProperties(Duration.ZERO) }
+        properties.checkoutTtl shouldBe Duration.ofMinutes(15)
+        logs.filter { it.level == Level.ERROR } shouldHaveSize 1
     }
 
     @Test

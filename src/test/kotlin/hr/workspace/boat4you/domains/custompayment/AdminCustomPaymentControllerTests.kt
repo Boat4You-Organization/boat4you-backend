@@ -41,7 +41,7 @@ class AdminCustomPaymentControllerTests {
             currency = "EUR",
             status = CustomPaymentStatus.COMPLETED,
             payerEmail = "payer@example.com",
-            providerOrderId = "ord-1",
+            providerOrderId = "tr_7UhSN1zuXS",
             adminNote = "Paid by the charterer",
             reservationId = 1441,
             reservationNumber = "1441012/2026",
@@ -110,7 +110,7 @@ class AdminCustomPaymentControllerTests {
     }
 
     @Test
-    fun `refresh - 200 with the reconciled row, Revolut error 502`() {
+    fun `refresh - 200 with the reconciled row, Mollie error 502`() {
         `when`(adminService.refresh(5)).thenReturn(dto)
         mvc.post("/admin/custom-payments/5/refresh").andExpect {
             status { isOk() }

@@ -14,14 +14,13 @@ import hr.workspace.boat4you.domains.custompayment.service.CustomPaymentMailer
 import hr.workspace.boat4you.domains.custompayment.service.CustomPaymentService
 import hr.workspace.boat4you.domains.custompayment.service.CustomPaymentTx
 import hr.workspace.boat4you.domains.custompayment.service.CustomPaymentVerdict
-import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantClient
-import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantOrderData
-import hr.workspace.boat4you.domains.payment.revolut.RevolutOrder
-import hr.workspace.boat4you.domains.payment.revolut.RevolutOrderEventHandler.HandlerResult
-import hr.workspace.boat4you.domains.payment.revolut.RevolutOrderTypes
-import hr.workspace.boat4you.domains.payment.revolut.RevolutPayment
-import hr.workspace.boat4you.domains.payment.revolut.RevolutWebhookEvents
-import hr.workspace.boat4you.domains.payment.revolut.revolutProperties
+import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
+import hr.workspace.boat4you.domains.payment.mollie.MollieClient
+import hr.workspace.boat4you.domains.payment.mollie.MollieLink
+import hr.workspace.boat4you.domains.payment.mollie.MollieLinks
+import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
+import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler.HandlerResult
+import hr.workspace.boat4you.domains.payment.mollie.mollieProperties
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.matchers.collections.shouldContainExactly
@@ -72,10 +71,10 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * custom_payment against a real PostgreSQL 18 (prod: cusma4): the V9_80 migration (run by the container's init, then
+ * custom_payment against a real PostgreSQL 18 (prod: cusma4): the V9_122 migration (run by the container's init, then
  * twice more in a transaction like Flyway — idempotent), Hibernate `ddl-auto=validate` of the entity against it, the
  * CHECK constraints, the state rules of CustomPaymentTx under real row locks, and CustomPaymentService (create, status,
- * webhook events, refunds, reconcile) on top of them with a mocked Revolut client. Only the custom payment entity and
+ * webhooks, refunds, reconcile) on top of them with a mocked Mollie client. Only the custom payment entity and
  * repository are in the context: the full Flyway chain cannot run on an empty database (V9_18 is a prod data fix),
  * so the FK target `reservation` is a one-column stand-in.
  */
@@ -87,7 +86,7 @@ import java.util.concurrent.TimeUnit
 @TestMethodOrder(MethodOrderer.OrderAnnotation::class)
 class CustomPaymentStateIntegrationTest {
     companion object {
-        private const val MIGRATION = "db/migration/V9_80__custom_payment.sql"
+        private const val MIGRATION = "db/migration/V9_122__custom_payment.sql"
         private val LINK_KEY = "it-".repeat(12)
 
         @Container
@@ -151,13 +150,13 @@ class CustomPaymentStateIntegrationTest {
     @Autowired
     private lateinit var jdbc: JdbcTemplate
 
-    private val client: RevolutMerchantClient = mock(RevolutMerchantClient::class.java)
+    private val client: MollieClient = mock(MollieClient::class.java)
     private val reservations: ReservationRepository = mock(ReservationRepository::class.java)
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> any(): T = ArgumentMatchers.any<T>() ?: null as T
 
-    private fun service() = CustomPaymentService(revolutProperties(linkKeys = "boat4you=$LINK_KEY"), tx, repository, reservations, client)
+    private fun service() = CustomPaymentService(mollieProperties(linkKeys = "boat4you=$LINK_KEY"), tx, repository, reservations, client)
 
     @BeforeEach
     fun resetMailer() {
@@ -175,7 +174,7 @@ class CustomPaymentStateIntegrationTest {
         payerEmail = email,
         clientIp = "203.0.113.9",
         locale = "en",
-        termsVersion = "2026-10-08",
+        termsVersion = "2026-11-10",
         acceptedAt = Instant.now(),
         reservationId = null,
     )
@@ -189,26 +188,22 @@ class CustomPaymentStateIntegrationTest {
 
     private fun row(id: Long): CustomPayment = repository.findById(id).orElseThrow()
 
-    private fun order(
+    private fun payment(
         id: String,
-        state: String,
+        status: String,
         reference: String,
         amount: Long = 110_900,
         checkoutUrl: String? = null,
         refunded: Long? = null,
-    ) = RevolutOrder(
+    ) = MolliePayment(
         id = id,
-        type = "payment",
-        state = state,
-        amount = amount,
-        currency = "EUR",
-        outstandingAmount = 0,
-        refundedAmount = refunded,
-        checkoutUrl = checkoutUrl,
-        merchantOrderData = RevolutMerchantOrderData(reference),
-        payments = listOf(RevolutPayment("pay-$id", state)),
+        status = status,
+        amount = MollieAmount.eur(amount),
+        amountRefunded = refunded?.let { MollieAmount.eur(it) },
+        metadata = mapOf(CustomPaymentVerdict.TOKEN_METADATA_KEY to reference),
         createdAt = Instant.now(),
-        updatedAt = Instant.now(),
+        paidAt = Instant.now().takeIf { status == "paid" },
+        links = checkoutUrl?.let { MollieLinks(checkout = MollieLink(it)) },
     )
 
     @Test
@@ -232,7 +227,7 @@ class CustomPaymentStateIntegrationTest {
         with(row(id)) {
             status shouldBe CustomPaymentStatus.PENDING
             currency shouldBe "EUR"
-            provider shouldBe "REVOLUT"
+            provider shouldBe "MOLLIE"
             refundedAmountMinor shouldBe 0L
             publicToken.shouldNotBeNull()
         }
@@ -267,7 +262,7 @@ class CustomPaymentStateIntegrationTest {
         )
 
         insert() shouldBe 1
-        insert(reference = "100116/2027 A_b.c-d", status = "NEEDS_REVIEW", refunded = 5000, note = "n".repeat(2000), orderId = "ord-check") shouldBe 1
+        insert(reference = "100116/2027 A_b.c-d", status = "NEEDS_REVIEW", refunded = 5000, note = "n".repeat(2000), orderId = "tr_check") shouldBe 1
         val bad: List<() -> Int> =
             listOf(
                 { insert(site = "evil.example") },
@@ -282,7 +277,7 @@ class CustomPaymentStateIntegrationTest {
                 { insert(refunded = -1) },
                 { insert(refunded = 5001) },
                 { insert(note = "n".repeat(2001)) },
-                { insert(orderId = "ord-check") },
+                { insert(orderId = "tr_check") },
             )
         bad.forEach { shouldThrow<DataIntegrityViolationException> { it() } }
     }
@@ -307,14 +302,14 @@ class CustomPaymentStateIntegrationTest {
         try {
             repeat(3) { round ->
                 val id = pending("RACE-$round")
-                tx.attachOrder(id, "ord-race-$round", "https://checkout.revolut.com/x")
+                tx.attachOrder(id, "tr_race-$round", "https://www.mollie.com/checkout/x")
                 mailer.clear()
                 val start = CountDownLatch(1)
                 val results =
                     (1..2).map {
                         pool.submit<CustomPaymentStatus?> {
                             start.await()
-                            tx.applyVerdict(id, CustomPaymentVerdict.Complete("pay-1"), """{"id":"ord-race-$round"}""", "ORDER_COMPLETED")
+                            tx.applyVerdict(id, CustomPaymentVerdict.Complete("pay-1"), """{"id":"tr_race-$round"}""", "mollie-webhook:paid")
                         }
                     }
                 start.countDown()
@@ -326,8 +321,8 @@ class CustomPaymentStateIntegrationTest {
                     status shouldBe CustomPaymentStatus.COMPLETED
                     completedAt.shouldNotBeNull()
                     providerPaymentId shouldBe "pay-1"
-                    orderSnapshot!! shouldContain "ord-race-$round"
-                    lastWebhookEvent shouldBe "ORDER_COMPLETED"
+                    orderSnapshot!! shouldContain "tr_race-$round"
+                    lastWebhookEvent shouldBe "mollie-webhook:paid"
                     lastWebhookAt.shouldNotBeNull()
                 }
             }
@@ -393,11 +388,11 @@ class CustomPaymentStateIntegrationTest {
         noCheckout.existing shouldBe false
         noCheckout.payment.id shouldNotBe first.payment.id
 
-        tx.attachOrder(first.payment.id!!, "ord-dedupe-1", "https://checkout.revolut.com/d1")
+        tx.attachOrder(first.payment.id!!, "tr_dedupe-1", "https://www.mollie.com/checkout/d1")
         val again = tx.insertPending(draft("DEDUPE-1", email = "  PAYER@example.com".trim()), since())
         again.existing shouldBe true
         again.payment.id shouldBe first.payment.id
-        again.payment.checkoutUrl shouldBe "https://checkout.revolut.com/d1"
+        again.payment.checkoutUrl shouldBe "https://www.mollie.com/checkout/d1"
 
         tx.insertPending(draft("DEDUPE-1", amountMinor = 110_901), since()).existing shouldBe false
         tx.insertPending(draft("DEDUPE-2"), since()).existing shouldBe false
@@ -409,11 +404,11 @@ class CustomPaymentStateIntegrationTest {
 
     @Test
     @Order(8)
-    fun `service - happy path, identical retry reuses the checkout, 5 attempts per e-mail per hour, status reads Revolut once per 10 s`() {
+    fun `service - happy path, identical retry reuses the checkout, 5 attempts per e-mail per hour, status reads Mollie once per 10 s`() {
         var n = 0
-        `when`(client.createOrder(any())).thenAnswer {
+        `when`(client.createPayment(any(), any())).thenAnswer {
             n++
-            order("ord-svc-$n", "pending", "-", checkoutUrl = "https://checkout.revolut.com/svc-$n")
+            payment("tr_svc-$n", "open", "-", checkoutUrl = "https://www.mollie.com/checkout/svc-$n")
         }
         val service = service()
 
@@ -431,12 +426,12 @@ class CustomPaymentStateIntegrationTest {
         )
 
         val first = service.create(request("CAP-1"), "203.0.113.7")
-        first.redirectUrl shouldBe "https://checkout.revolut.com/svc-1"
+        first.redirectUrl shouldBe "https://www.mollie.com/checkout/svc-1"
         service.create(request("CAP-1"), "203.0.113.7") shouldBe first
         (2..5).forEach { service.create(request("CAP-$it"), "203.0.113.7") }
         shouldThrow<CustomPaymentTooManyException> { service.create(request("CAP-6", email = "CAP@Example.com"), "203.0.113.7") }
-        service.create(request("CAP-6", email = "other@example.com"), "203.0.113.7").redirectUrl shouldBe "https://checkout.revolut.com/svc-6"
-        verify(client, times(6)).createOrder(any())
+        service.create(request("CAP-6", email = "other@example.com"), "203.0.113.7").redirectUrl shouldBe "https://www.mollie.com/checkout/svc-6"
+        verify(client, times(6)).createPayment(any(), any())
 
         val rows = repository.findAllByPayerEmailIgnoreCase("CAP@example.com")
         rows shouldHaveSize 5
@@ -448,10 +443,10 @@ class CustomPaymentStateIntegrationTest {
         }
 
         val created = repository.findByPublicToken(java.util.UUID.fromString(first.ref))!!
-        `when`(client.getOrder(created.providerOrderId!!)).thenReturn(order(created.providerOrderId!!, "completed", first.ref))
+        `when`(client.getPaymentOnce(created.providerOrderId!!)).thenReturn(payment(created.providerOrderId!!, "paid", first.ref))
         service.status(first.ref).status shouldBe CustomPaymentStatus.COMPLETED
         service.status(first.ref).status shouldBe CustomPaymentStatus.COMPLETED
-        verify(client, times(1)).getOrder(created.providerOrderId!!)
+        verify(client, times(1)).getPaymentOnce(created.providerOrderId!!)
         mailer.receipts shouldContainExactly listOf(created.id!!)
 
         jdbc.update("UPDATE custom_payment SET created_at = now() - interval '31 days' WHERE id = ?", created.id)
@@ -460,23 +455,23 @@ class CustomPaymentStateIntegrationTest {
 
     @Test
     @Order(9)
-    fun `reconcile sweep - unattached after 15 min FAILED, expired order FAILED, still pending after 48 h NEEDS_REVIEW + alert`() {
+    fun `reconcile sweep - unattached after 15 min FAILED, expired payment FAILED, still pending after 48 h NEEDS_REVIEW + alert`() {
         val unattached = pending("SWEEP-UNATTACHED")
         jdbc.update("UPDATE custom_payment SET created_at = now() - interval '20 minutes' WHERE id = ?", unattached)
 
         val expired = pending("SWEEP-EXPIRED")
-        tx.attachOrder(expired, "ord-sweep-expired", "https://checkout.revolut.com/e")
-        `when`(client.getOrder("ord-sweep-expired")).thenReturn(order("ord-sweep-expired", "failed", row(expired).publicToken.toString()))
+        tx.attachOrder(expired, "tr_sweep-expired", "https://www.mollie.com/checkout/e")
+        `when`(client.getPayment("tr_sweep-expired")).thenReturn(payment("tr_sweep-expired", "expired", row(expired).publicToken.toString()))
 
         val stale = pending("SWEEP-STALE")
-        tx.attachOrder(stale, "ord-sweep-stale", "https://checkout.revolut.com/s")
+        tx.attachOrder(stale, "tr_sweep-stale", "https://www.mollie.com/checkout/s")
         jdbc.update("UPDATE custom_payment SET created_at = now() - interval '49 hours' WHERE id = ?", stale)
-        `when`(client.getOrder("ord-sweep-stale")).thenReturn(order("ord-sweep-stale", "pending", row(stale).publicToken.toString()))
+        `when`(client.getPayment("tr_sweep-stale")).thenReturn(payment("tr_sweep-stale", "open", row(stale).publicToken.toString()))
 
         val refunded = pending("SWEEP-REFUND", amountMinor = 20_000)
-        tx.attachOrder(refunded, "ord-sweep-refund", "https://checkout.revolut.com/r")
-        `when`(client.getOrder("ord-sweep-refund"))
-            .thenReturn(order("ord-sweep-refund", "completed", row(refunded).publicToken.toString(), amount = 20_000, refunded = 5_000))
+        tx.attachOrder(refunded, "tr_sweep-refund", "https://www.mollie.com/checkout/r")
+        `when`(client.getPayment("tr_sweep-refund"))
+            .thenReturn(payment("tr_sweep-refund", "paid", row(refunded).publicToken.toString(), amount = 20_000, refunded = 5_000))
 
         service().reconcileSweep()
 
@@ -510,7 +505,7 @@ class CustomPaymentStateIntegrationTest {
             it.page.totalElements shouldBe 5L
             it.page.totalPages shouldBe 3L
         }
-        admin.list(null, null, "ord-sweep-stale", 0, 20).content.single().status shouldBe CustomPaymentStatus.NEEDS_REVIEW
+        admin.list(null, null, "tr_sweep-stale", 0, 20).content.single().status shouldBe CustomPaymentStatus.NEEDS_REVIEW
 
         val id = refund.content.single().id
         jdbc.update("INSERT INTO reservation (id, reservation_number) VALUES (1441, '1441012/2026')")
@@ -529,33 +524,32 @@ class CustomPaymentStateIntegrationTest {
         row(id).reservationId shouldBe null
     }
 
-    /** A PENDING row with its Revolut order attached, as after a successful create. */
+    /** A PENDING row with its Mollie payment attached, as after a successful create. */
     private fun attached(
         reference: String,
-        orderId: String,
+        paymentId: String,
         amountMinor: Long = 110_900,
-    ): Long = pending(reference, amountMinor).also { tx.attachOrder(it, orderId, "https://checkout.revolut.com/$orderId") }
+    ): Long = pending(reference, amountMinor).also { tx.attachOrder(it, paymentId, "https://www.mollie.com/checkout/$paymentId") }
 
     @Test
     @Order(11)
-    fun `webhook - a declined or failed card attempt only stamps the row and never asks Revolut, an order we do not know is ignored`() {
-        val id = attached("WH-DECLINED", "ord-wh-declined")
+    fun `webhook - a payment we do not know is ignored without asking Mollie, an open payment only stamps the row`() {
+        val id = attached("WH-OPEN", "tr_wh-open")
+        `when`(client.getPayment("tr_wh-open")).thenReturn(payment("tr_wh-open", "open", row(id).publicToken.toString()))
         val service = service()
 
-        service.onEvent(RevolutWebhookEvents.ORDER_PAYMENT_DECLINED, "ord-wh-declined") shouldBe HandlerResult.HANDLED
+        service.ownsPayment("tr_wh-open") shouldBe true
+        service.ownsPayment("tr_wh-nobody") shouldBe false
+        service.onPaymentChanged("tr_wh-nobody") shouldBe HandlerResult.HANDLED
+        verifyNoInteractions(client)
+
+        service.onPaymentChanged("tr_wh-open") shouldBe HandlerResult.HANDLED
         with(row(id)) {
             status shouldBe CustomPaymentStatus.PENDING
-            lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_PAYMENT_DECLINED
+            lastWebhookEvent shouldBe "mollie-webhook:open"
             lastWebhookAt.shouldNotBeNull()
-            lastCheckedAt.shouldBeNull()
-            orderSnapshot.shouldBeNull()
+            completedAt.shouldBeNull()
         }
-        service.onEvent(RevolutWebhookEvents.ORDER_PAYMENT_FAILED, "ord-wh-declined") shouldBe HandlerResult.HANDLED
-        row(id).status shouldBe CustomPaymentStatus.PENDING
-        row(id).lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_PAYMENT_FAILED
-
-        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-nobody") shouldBe HandlerResult.HANDLED
-        verifyNoInteractions(client)
         mailer.receipts shouldHaveSize 0
         mailer.officeMails shouldHaveSize 0
         mailer.alerts shouldHaveSize 0
@@ -563,15 +557,15 @@ class CustomPaymentStateIntegrationTest {
 
     @Test
     @Order(12)
-    fun `webhook - Revolut unreachable or 5xx is TRANSIENT (503, Revolut retries) and leaves the row untouched, an unknown order is stamped`() {
-        val id = attached("WH-TRANSIENT", "ord-wh-transient")
-        `when`(client.getOrder("ord-wh-transient"))
+    fun `webhook - Mollie unreachable or 5xx is TRANSIENT (503, Mollie retries) and leaves the row untouched, an unknown payment is stamped`() {
+        val id = attached("WH-TRANSIENT", "tr_wh-transient")
+        `when`(client.getPayment("tr_wh-transient"))
             .thenThrow(ResourceAccessException("I/O error: connect timed out"), HttpServerErrorException(HttpStatus.SERVICE_UNAVAILABLE))
             .thenReturn(null)
         val service = service()
 
-        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-transient") shouldBe HandlerResult.TRANSIENT
-        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-transient") shouldBe HandlerResult.TRANSIENT
+        service.onPaymentChanged("tr_wh-transient") shouldBe HandlerResult.TRANSIENT
+        service.onPaymentChanged("tr_wh-transient") shouldBe HandlerResult.TRANSIENT
         with(row(id)) {
             status shouldBe CustomPaymentStatus.PENDING
             lastWebhookEvent.shouldBeNull()
@@ -581,100 +575,125 @@ class CustomPaymentStateIntegrationTest {
             completedAt.shouldBeNull()
         }
 
-        // Revolut answers 404 (client -> null): nothing to decide, the event is stamped and not retried.
-        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-transient") shouldBe HandlerResult.HANDLED
+        // Mollie answers 404 (client -> null): nothing to decide, the call is stamped and not retried.
+        service.onPaymentChanged("tr_wh-transient") shouldBe HandlerResult.HANDLED
         with(row(id)) {
             status shouldBe CustomPaymentStatus.PENDING
-            lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_COMPLETED
+            lastWebhookEvent shouldBe "mollie-webhook"
             lastWebhookAt.shouldNotBeNull()
         }
-        verify(client, times(3)).getOrder("ord-wh-transient")
+        verify(client, times(3)).getPayment("tr_wh-transient")
         mailer.receipts shouldHaveSize 0
         mailer.alerts shouldHaveSize 0
     }
 
     @Test
     @Order(13)
-    fun `webhook - re-reads the order and applies the verdict, completion sends one receipt, a repeated event sends nothing more`() {
-        val id = attached("WH-COMPLETE", "ord-wh-complete")
+    fun `webhook - re-reads the payment and applies the verdict, completion sends one receipt, a repeated call sends nothing more`() {
+        val id = attached("WH-COMPLETE", "tr_wh-complete")
         val token = row(id).publicToken.toString()
-        `when`(client.getOrder("ord-wh-complete"))
-            .thenReturn(order("ord-wh-complete", "processing", token), order("ord-wh-complete", "completed", token))
+        `when`(client.getPayment("tr_wh-complete"))
+            .thenReturn(payment("tr_wh-complete", "pending", token), payment("tr_wh-complete", "paid", token))
         val service = service()
 
-        service.onEvent(RevolutWebhookEvents.ORDER_AUTHORISED, "ord-wh-complete") shouldBe HandlerResult.HANDLED
+        service.onPaymentChanged("tr_wh-complete") shouldBe HandlerResult.HANDLED
         row(id).status shouldBe CustomPaymentStatus.PENDING
-        row(id).lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_AUTHORISED
+        row(id).lastWebhookEvent shouldBe "mollie-webhook:pending"
         mailer.receipts shouldHaveSize 0
 
-        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-complete") shouldBe HandlerResult.HANDLED
+        service.onPaymentChanged("tr_wh-complete") shouldBe HandlerResult.HANDLED
         with(row(id)) {
             status shouldBe CustomPaymentStatus.COMPLETED
             completedAt.shouldNotBeNull()
-            providerPaymentId shouldBe "pay-ord-wh-complete"
-            orderSnapshot!! shouldContain "ord-wh-complete"
-            lastWebhookEvent shouldBe RevolutWebhookEvents.ORDER_COMPLETED
+            providerPaymentId shouldBe "tr_wh-complete"
+            orderSnapshot!! shouldContain "tr_wh-complete"
+            lastWebhookEvent shouldBe "mollie-webhook:paid"
             lastWebhookAt.shouldNotBeNull()
         }
         mailer.receipts shouldContainExactly listOf(id)
         mailer.officeMails shouldContainExactly listOf(id)
 
-        service.onEvent(RevolutWebhookEvents.ORDER_COMPLETED, "ord-wh-complete") shouldBe HandlerResult.HANDLED
+        service.onPaymentChanged("tr_wh-complete") shouldBe HandlerResult.HANDLED
         row(id).status shouldBe CustomPaymentStatus.COMPLETED
         mailer.receipts shouldContainExactly listOf(id)
         mailer.officeMails shouldContainExactly listOf(id)
         mailer.alerts shouldHaveSize 0
-        verify(client, times(3)).getOrder("ord-wh-complete")
+        verify(client, times(3)).getPayment("tr_wh-complete")
     }
 
     @Test
     @Order(14)
-    fun `refund webhook - Revolut's running total from the original order, the refund order's amount when that total is unreadable`() {
-        fun refundOrder(
-            id: String,
-            originalOrderId: String,
-            amount: Long,
-        ) = order(id, "completed", "-", amount = amount).copy(type = RevolutOrderTypes.REFUND, relatedOrderId = originalOrderId)
-
+    fun `refund - the refunded total is read from the same payment, only ever grows, one alert per increase, unreadable changes nothing`() {
         fun paid(
             reference: String,
-            orderId: String,
+            paymentId: String,
         ): Long =
-            attached(reference, orderId, amountMinor = 10_000).also {
-                tx.applyVerdict(it, CustomPaymentVerdict.Complete("pay-$orderId"), null) shouldBe CustomPaymentStatus.COMPLETED
+            attached(reference, paymentId, amountMinor = 10_000).also {
+                tx.applyVerdict(it, CustomPaymentVerdict.Complete(paymentId), null) shouldBe CustomPaymentStatus.COMPLETED
             }
 
-        val total = paid("WH-REFUND-TOTAL", "ord-wh-refund-total")
-        val unreadable = paid("WH-REFUND-UNREADABLE", "ord-wh-refund-unreadable")
-        val noTotal = paid("WH-REFUND-NO-TOTAL", "ord-wh-refund-no-total")
-        `when`(client.getOrder("ord-wh-refund-total"))
-            .thenReturn(order("ord-wh-refund-total", "completed", row(total).publicToken.toString(), amount = 10_000, refunded = 3000))
-        `when`(client.getOrder("ord-wh-refund-unreadable")).thenThrow(ResourceAccessException("I/O error: read timed out"))
-        `when`(client.getOrder("ord-wh-refund-no-total"))
-            .thenReturn(order("ord-wh-refund-no-total", "completed", row(noTotal).publicToken.toString(), amount = 10_000))
+        val total = paid("WH-REFUND-TOTAL", "tr_wh-refund-total")
+        val unreadable = paid("WH-REFUND-UNREADABLE", "tr_wh-refund-unreadable")
+        val noRefund = paid("WH-REFUND-NONE", "tr_wh-refund-none")
+        fun refundedPayment(
+            id: String,
+            rowId: Long,
+            refunded: Long?,
+        ) = payment(id, "paid", row(rowId).publicToken.toString(), amount = 10_000, refunded = refunded)
+
+        `when`(client.getPayment("tr_wh-refund-total"))
+            .thenReturn(
+                refundedPayment("tr_wh-refund-total", total, 3000),
+                refundedPayment("tr_wh-refund-total", total, 3000),
+                refundedPayment("tr_wh-refund-total", total, 1000),
+                refundedPayment("tr_wh-refund-total", total, 4000),
+            )
+        `when`(client.getPayment("tr_wh-refund-unreadable")).thenThrow(ResourceAccessException("I/O error: read timed out"))
+        `when`(client.getPayment("tr_wh-refund-none")).thenReturn(refundedPayment("tr_wh-refund-none", noRefund, null))
         val service = service()
         mailer.clear()
 
-        // The refund order itself says 1000, Revolut's running total on the original order says 3000: the total wins.
-        service.onRefund("ord-wh-refund-total", refundOrder("ref-wh-1", "ord-wh-refund-total", 1000))
+        service.onPaymentChanged("tr_wh-refund-total") shouldBe HandlerResult.HANDLED
         row(total).refundedAmountMinor shouldBe 3000L
-        service.onRefund("ord-wh-refund-total", refundOrder("ref-wh-1", "ord-wh-refund-total", 1000))
+        service.onPaymentChanged("tr_wh-refund-total") shouldBe HandlerResult.HANDLED
         row(total).refundedAmountMinor shouldBe 3000L
         mailer.alerts.filter { it.first == total } shouldContainExactly listOf(total to CustomPaymentAlertKind.REFUND)
+        // A lower total never shrinks the stored one; a higher one raises it and alerts again.
+        service.onPaymentChanged("tr_wh-refund-total") shouldBe HandlerResult.HANDLED
+        row(total).refundedAmountMinor shouldBe 3000L
+        service.onPaymentChanged("tr_wh-refund-total") shouldBe HandlerResult.HANDLED
+        row(total).refundedAmountMinor shouldBe 4000L
+        mailer.alerts.filter { it.first == total } shouldHaveSize 2
 
-        service.onRefund("ord-wh-refund-unreadable", refundOrder("ref-wh-2", "ord-wh-refund-unreadable", 2500))
-        row(unreadable).refundedAmountMinor shouldBe 2500L
-        mailer.alerts.filter { it.first == unreadable } shouldContainExactly listOf(unreadable to CustomPaymentAlertKind.REFUND)
+        service.onPaymentChanged("tr_wh-refund-unreadable") shouldBe HandlerResult.TRANSIENT
+        row(unreadable).refundedAmountMinor shouldBe 0L
 
-        service.onRefund("ord-wh-refund-no-total", refundOrder("ref-wh-3", "ord-wh-refund-no-total", 4000))
-        row(noTotal).refundedAmountMinor shouldBe 4000L
-        mailer.alerts.filter { it.first == noTotal } shouldContainExactly listOf(noTotal to CustomPaymentAlertKind.REFUND)
+        service.onPaymentChanged("tr_wh-refund-none") shouldBe HandlerResult.HANDLED
+        row(noRefund).refundedAmountMinor shouldBe 0L
 
-        // A refund for an order that is not ours: nothing read, nothing written.
-        service.onRefund("ord-wh-refund-nobody", refundOrder("ref-wh-4", "ord-wh-refund-nobody", 500))
-        verify(client, times(0)).getOrder("ord-wh-refund-nobody")
-        listOf(total, unreadable, noTotal).forEach { row(it).status shouldBe CustomPaymentStatus.COMPLETED }
-        mailer.alerts shouldHaveSize 3
+        // A payment that is not ours: nothing read, nothing written.
+        service.onPaymentChanged("tr_wh-refund-nobody") shouldBe HandlerResult.HANDLED
+        verify(client, times(0)).getPayment("tr_wh-refund-nobody")
+        listOf(total, unreadable, noRefund).forEach { row(it).status shouldBe CustomPaymentStatus.COMPLETED }
+        mailer.alerts shouldHaveSize 2
         mailer.receipts shouldHaveSize 0
+    }
+
+    @Test
+    @Order(15)
+    fun `status - a payment still open at Mollie shows CANCELLED to the payer while the row stays PENDING for a late payment`() {
+        val id = attached("OPEN-BACK", "tr_open-back")
+        val token = row(id).publicToken.toString()
+        `when`(client.getPaymentOnce("tr_open-back")).thenReturn(payment("tr_open-back", "open", token))
+        val service = service()
+
+        service.status(token).status shouldBe CustomPaymentStatus.CANCELLED
+        row(id).status shouldBe CustomPaymentStatus.PENDING
+
+        // The payer finishes on the old checkout after all: the webhook completes the same row.
+        `when`(client.getPayment("tr_open-back")).thenReturn(payment("tr_open-back", "paid", token))
+        service.onPaymentChanged("tr_open-back") shouldBe HandlerResult.HANDLED
+        row(id).status shouldBe CustomPaymentStatus.COMPLETED
+        service.status(token).status shouldBe CustomPaymentStatus.COMPLETED
     }
 }

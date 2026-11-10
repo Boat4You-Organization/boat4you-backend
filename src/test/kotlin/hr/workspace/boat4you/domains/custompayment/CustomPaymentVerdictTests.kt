@@ -2,10 +2,11 @@ package hr.workspace.boat4you.domains.custompayment
 
 import hr.workspace.boat4you.domains.custompayment.service.CustomPaymentVerdict
 import hr.workspace.boat4you.domains.custompayment.service.OrderSnapshot
-import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantOrderData
-import hr.workspace.boat4you.domains.payment.revolut.RevolutOrder
-import hr.workspace.boat4you.domains.payment.revolut.RevolutPayment
-import hr.workspace.boat4you.domains.payment.revolut.RevolutPaymentMethod
+import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
+import hr.workspace.boat4you.domains.payment.mollie.MollieLink
+import hr.workspace.boat4you.domains.payment.mollie.MollieLinks
+import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
+import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentDetails
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -18,85 +19,80 @@ class CustomPaymentVerdictTests {
     private val token = "0b6f7c1e-3c55-4d1e-9a7e-1f2d3c4b5a69"
     private val at = Instant.parse("2026-10-13T10:00:00Z")
 
-    private fun order(
-        state: String = "completed",
-        type: String = "payment",
-        amount: Long = 110_900,
-        currency: String = "EUR",
-        outstanding: Long? = 0,
+    private fun payment(
+        status: String = "paid",
+        amount: MollieAmount = MollieAmount.eur(110_900),
         reference: String? = token,
-        payments: List<RevolutPayment> = listOf(RevolutPayment("pay-1", "completed", at)),
-    ) = RevolutOrder(
-        id = "ord-1",
-        type = type,
-        state = state,
+        details: MolliePaymentDetails? = null,
+        refunded: MollieAmount? = null,
+    ) = MolliePayment(
+        id = "tr_7UhSN1zuXS",
+        status = status,
         amount = amount,
-        currency = currency,
-        outstandingAmount = outstanding,
-        merchantOrderData = RevolutMerchantOrderData(reference),
-        payments = payments,
+        amountRefunded = refunded,
+        metadata = reference?.let { mapOf("customPaymentToken" to it) },
+        details = details,
         createdAt = at,
-        updatedAt = at,
+        paidAt = at.takeIf { status == "paid" },
+        links = MollieLinks(checkout = MollieLink("https://www.mollie.com/checkout/select-method/7UhSN1zuXS")),
     )
 
-    private fun verdict(order: RevolutOrder) = CustomPaymentVerdict.of(order, 110_900, token)
+    private fun verdict(payment: MolliePayment) = CustomPaymentVerdict.of(payment, 110_900, token)
 
     @Test
-    fun `completed payment with every check matching - COMPLETE with the successful payment id`() {
-        verdict(order()) shouldBe CustomPaymentVerdict.Complete("pay-1")
-        verdict(order(outstanding = null)) shouldBe CustomPaymentVerdict.Complete("pay-1")
-        verdict(order(state = "COMPLETED", currency = "eur")) shouldBe CustomPaymentVerdict.Complete("pay-1")
-        val declinedThenPaid = listOf(RevolutPayment("pay-0", "declined", at), RevolutPayment("pay-1", "completed", at))
-        verdict(order(payments = declinedThenPaid)) shouldBe CustomPaymentVerdict.Complete("pay-1")
-        verdict(order(payments = emptyList())) shouldBe CustomPaymentVerdict.Complete(null)
+    fun `paid payment with every check matching - COMPLETE with the payment id`() {
+        verdict(payment()) shouldBe CustomPaymentVerdict.Complete("tr_7UhSN1zuXS")
+        verdict(payment(status = "PAID", amount = MollieAmount("eur", "1109.00"))) shouldBe CustomPaymentVerdict.Complete("tr_7UhSN1zuXS")
     }
 
     @Test
-    fun `completed but anything off - NEEDS_REVIEW with the reason, never COMPLETE`() {
+    fun `paid but anything off - NEEDS_REVIEW with the reason, never COMPLETE`() {
         val cases =
             mapOf(
-                order(amount = 110_800) to "amount 110800 instead of 110900",
-                order(currency = "GBP") to "currency GBP",
-                order(outstanding = 100) to "outstanding 100",
-                order(reference = "another-token") to "reference does not match",
-                order(reference = null) to "reference does not match",
-                order(type = "refund") to "type refund",
+                payment(amount = MollieAmount.eur(110_800)) to "amount 1108.00 instead of 110900",
+                payment(amount = MollieAmount("GBP", "1109.00")) to "currency GBP",
+                payment(amount = MollieAmount("EUR", "1109.001")) to "instead of 110900",
+                payment(reference = "another-token") to "reference does not match",
+                payment(reference = null) to "reference does not match",
             )
-        cases.forEach { (order, reason) ->
-            val result = verdict(order)
+        cases.forEach { (payment, reason) ->
+            val result = verdict(payment)
             result.shouldBeInstanceOf<CustomPaymentVerdict.NeedsReview>()
             result.reason shouldContain reason
         }
-        val all = verdict(order(amount = 1, currency = "USD", reference = "x")) as CustomPaymentVerdict.NeedsReview
-        all.reason shouldContain "amount 1 instead of 110900"
+        val all = verdict(payment(amount = MollieAmount("USD", "0.01"), reference = "x")) as CustomPaymentVerdict.NeedsReview
+        all.reason shouldContain "amount 0.01 instead of 110900"
         all.reason shouldContain "currency USD"
     }
 
     @Test
-    fun `failed and cancelled end the attempt, every other state is still pending`() {
-        verdict(order(state = "failed")) shouldBe CustomPaymentVerdict.Failed
-        verdict(order(state = "cancelled")) shouldBe CustomPaymentVerdict.Cancelled
-        listOf("pending", "processing", "authorised", "something_new").forEach {
-            verdict(order(state = it)) shouldBe CustomPaymentVerdict.StillPending
+    fun `failed expired and canceled end the attempt, every other status is still pending`() {
+        verdict(payment(status = "failed")) shouldBe CustomPaymentVerdict.Failed
+        verdict(payment(status = "expired")) shouldBe CustomPaymentVerdict.Failed
+        verdict(payment(status = "canceled")) shouldBe CustomPaymentVerdict.Cancelled
+        listOf("open", "pending", "authorized", "something_new").forEach {
+            verdict(payment(status = it)) shouldBe CustomPaymentVerdict.StillPending
         }
-        // A wrong amount on a failed order is irrelevant: nothing was paid.
-        verdict(order(state = "failed", amount = 1)) shouldBe CustomPaymentVerdict.Failed
+        // A wrong amount on a failed payment is irrelevant: nothing was paid.
+        verdict(payment(status = "failed", amount = MollieAmount.eur(1))) shouldBe CustomPaymentVerdict.Failed
     }
 
     @Test
     fun `snapshot keeps the whitelisted fields only - card brand and last four, nothing about the payer`() {
-        val method = RevolutPaymentMethod(type = "card", cardBrand = "visa", cardLastFour = "4242")
-        val bad = RevolutPaymentMethod(type = "card", cardBrand = "<script>", cardLastFour = "42424242")
         val json =
             OrderSnapshot
-                .of(order(payments = listOf(RevolutPayment("pay-1", "completed", at, method), RevolutPayment("pay-2", "declined", null, bad))))
+                .of(payment(details = MolliePaymentDetails(cardLabel = "Visa", cardNumber = "4242", cardCountryCode = "HR"), refunded = MollieAmount.eur(500)))
                 .toJson()
-        json shouldContain "\"card_brand\":\"visa\""
+        json shouldContain "\"card_brand\":\"Visa\""
         json shouldContain "\"card_last_four\":\"4242\""
-        json shouldContain "\"id\":\"ord-1\""
-        json shouldContain "\"outstanding_amount\":0"
-        json shouldNotContain "<script>"
-        json shouldNotContain "42424242"
+        json shouldContain "\"id\":\"tr_7UhSN1zuXS\""
+        json shouldContain "\"state\":\"paid\""
+        json shouldContain "\"refunded_amount\":500"
         json shouldNotContain token
+        json shouldNotContain "HR"
+
+        val bad = OrderSnapshot.of(payment(details = MolliePaymentDetails(cardLabel = "<script>", cardNumber = "42424242"))).toJson()
+        bad shouldNotContain "<script>"
+        bad shouldNotContain "42424242"
     }
 }

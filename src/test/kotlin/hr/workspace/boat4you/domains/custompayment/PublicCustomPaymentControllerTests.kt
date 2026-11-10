@@ -12,13 +12,14 @@ import hr.workspace.boat4you.domains.custompayment.service.CustomPaymentTx
 import hr.workspace.boat4you.domains.custompayment.service.CustomPaymentVerdict
 import hr.workspace.boat4you.domains.custompayment.service.OrderSnapshot
 import hr.workspace.boat4you.domains.custompayment.service.PendingInsert
-import hr.workspace.boat4you.domains.payment.revolut.RevolutCreateOrderRequest
-import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantClient
-import hr.workspace.boat4you.domains.payment.revolut.RevolutMerchantOrderData
-import hr.workspace.boat4you.domains.payment.revolut.RevolutOrder
-import hr.workspace.boat4you.domains.payment.revolut.RevolutPayment
-import hr.workspace.boat4you.domains.payment.revolut.RevolutProperties
-import hr.workspace.boat4you.domains.payment.revolut.revolutProperties
+import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
+import hr.workspace.boat4you.domains.payment.mollie.MollieClient
+import hr.workspace.boat4you.domains.payment.mollie.MollieCreatePaymentRequest
+import hr.workspace.boat4you.domains.payment.mollie.MollieLink
+import hr.workspace.boat4you.domains.payment.mollie.MollieLinks
+import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
+import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
+import hr.workspace.boat4you.domains.payment.mollie.mollieProperties
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -47,15 +48,15 @@ import java.time.Instant
 import java.util.Optional
 import java.util.UUID
 
-/** HTTP contract of `/public/payments/custom`: the real service with Revolut and the database mocked. */
+/** HTTP contract of `/public/payments/custom`: the real service with Mollie and the database mocked. */
 class PublicCustomPaymentControllerTests {
     private val linkKey = "Kx7_".repeat(10)
     private val token = "0b6f7c1e-3c55-4d1e-9a7e-1f2d3c4b5a69"
-    private val checkoutUrl = "https://checkout.revolut.com/payment-link/abc123"
+    private val checkoutUrl = "https://www.mollie.com/checkout/select-method/abc123"
     private val tx: CustomPaymentTx = mock(CustomPaymentTx::class.java)
     private val repository: CustomPaymentRepository = mock(CustomPaymentRepository::class.java)
     private val reservations: ReservationRepository = mock(ReservationRepository::class.java)
-    private val client: RevolutMerchantClient = mock(RevolutMerchantClient::class.java)
+    private val client: MollieClient = mock(MollieClient::class.java)
 
     @Suppress("UNCHECKED_CAST")
     private fun <T> any(): T = ArgumentMatchers.any<T>() ?: null as T
@@ -63,7 +64,7 @@ class PublicCustomPaymentControllerTests {
     @Suppress("UNCHECKED_CAST")
     private fun <T> capture(captor: ArgumentCaptor<T>): T = captor.capture() ?: null as T
 
-    private fun mvc(properties: RevolutProperties = revolutProperties(linkKeys = "boat4you=$linkKey;europe-yachts=${"e".repeat(32)}")) =
+    private fun mvc(properties: MollieProperties = mollieProperties(linkKeys = "boat4you=$linkKey;europe-yachts=${"e".repeat(32)}")) =
         MockMvcBuilders
             .standaloneSetup(PublicCustomPaymentController(CustomPaymentService(properties, tx, repository, reservations, client)))
             .setControllerAdvice(ApiErrorHandler())
@@ -83,7 +84,7 @@ class PublicCustomPaymentControllerTests {
     private fun row(
         status: CustomPaymentStatus = CustomPaymentStatus.PENDING,
         createdAt: Instant = Instant.now(),
-        orderId: String? = "ord-1",
+        orderId: String? = "tr_abc123",
     ) = CustomPayment().apply {
         id = 7
         publicToken = UUID.fromString(token)
@@ -98,25 +99,22 @@ class PublicCustomPaymentControllerTests {
     }
 
     private fun order(
-        state: String = "pending",
+        status: String = "open",
         url: String? = checkoutUrl,
-    ) = RevolutOrder(
-        id = "ord-1",
-        type = "payment",
-        state = state,
-        amount = 110_900,
-        currency = "EUR",
-        outstandingAmount = 0,
-        checkoutUrl = url,
-        merchantOrderData = RevolutMerchantOrderData(token),
-        payments = listOf(RevolutPayment("pay-1", state)),
+        amount: MollieAmount = MollieAmount.eur(110_900),
+    ) = MolliePayment(
+        id = "tr_abc123",
+        status = status,
+        amount = amount,
+        metadata = mapOf("customPaymentToken" to token),
         createdAt = Instant.parse("2026-10-13T10:00:00Z"),
-        updatedAt = Instant.parse("2026-10-13T10:00:00Z"),
+        paidAt = Instant.parse("2026-10-13T10:01:00Z").takeIf { status == "paid" },
+        links = url?.let { MollieLinks(checkout = MollieLink(it)) },
     )
 
     private fun postOrder(
         content: String,
-        properties: RevolutProperties? = null,
+        properties: MollieProperties? = null,
     ) = (if (properties == null) mvc() else mvc(properties)).post("/public/payments/custom/orders") {
         contentType = MediaType.APPLICATION_JSON
         this.content = content
@@ -130,9 +128,9 @@ class PublicCustomPaymentControllerTests {
             header { string("Cache-Control", "no-store") }
             jsonPath("$.enabled") { value(true) }
             jsonPath("$.minAmountMinor") { value(5000) }
-            jsonPath("$.maxAmountMinor") { value(10_000_000) }
+            jsonPath("$.maxAmountMinor") { value(1_000_000) }
             jsonPath("$.currency") { value("EUR") }
-            jsonPath("$.termsVersion") { value("2026-10-08") }
+            jsonPath("$.termsVersion") { value("2026-11-10") }
         }
         listOf(
             "site=boat4you&linkKey=${linkKey.dropLast(1)}x",
@@ -145,7 +143,7 @@ class PublicCustomPaymentControllerTests {
                 jsonPath("$.code") { value(8002) }
             }
         }
-        mvc(revolutProperties(secretKey = "", linkKeys = "boat4you=$linkKey"))
+        mvc(mollieProperties(apiKey = "", linkKeys = "boat4you=$linkKey"))
             .get("/public/payments/custom/config?site=boat4you&linkKey=$linkKey")
             .andExpect {
                 status { isOk() }
@@ -154,13 +152,13 @@ class PublicCustomPaymentControllerTests {
     }
 
     @Test
-    fun `create - invalid fields 400 and Revolut is never called`() {
+    fun `create - invalid fields 400 and Mollie is never called`() {
         val invalid =
             listOf(
                 body(amountMinor = "\"abc\""),
                 body(amountMinor = "4999"),
                 body(amountMinor = "5000.5"),
-                body(amountMinor = "10000001"),
+                body(amountMinor = "1000001"),
                 body(amountMinor = "null"),
                 body(reference = "ab"),
                 body(reference = "100116<script>"),
@@ -177,19 +175,19 @@ class PublicCustomPaymentControllerTests {
             postOrder(content).andExpect { status { isBadRequest() } }
         }
         postOrder(body(amountMinor = "\"abc\"")).andExpect { jsonPath("$.code") { value(1101) } }
-        postOrder(body(amountMinor = "10000001")).andExpect { jsonPath("$.code") { value(1102) } }
+        postOrder(body(amountMinor = "1000001")).andExpect { jsonPath("$.code") { value(1102) } }
         verifyNoInteractions(client, tx)
     }
 
     @Test
-    fun `create - wrong link key 404, Revolut not configured 503 8001, too many per e-mail 429 8003`() {
+    fun `create - wrong link key 404, Mollie not configured 503 8001, too many per e-mail 429 8003`() {
         postOrder(body(key = "w".repeat(40))).andExpect {
             status { isNotFound() }
             jsonPath("$.code") { value(8002) }
         }
         postOrder(body(site = "europe-yachts")).andExpect { status { isNotFound() } }
 
-        postOrder(body(), revolutProperties(secretKey = "", linkKeys = "boat4you=$linkKey")).andExpect {
+        postOrder(body(), mollieProperties(apiKey = "", linkKeys = "boat4you=$linkKey")).andExpect {
             status { isServiceUnavailable() }
             jsonPath("$.code") { value(8001) }
         }
@@ -203,9 +201,9 @@ class PublicCustomPaymentControllerTests {
     }
 
     @Test
-    fun `create - happy path builds the Revolut order exactly and returns the hosted checkout`() {
+    fun `create - happy path builds the Mollie payment request exactly and returns the hosted checkout`() {
         `when`(tx.insertPending(any(), any())).thenReturn(PendingInsert(row(orderId = null), existing = false))
-        `when`(client.createOrder(any())).thenReturn(order())
+        `when`(client.createPayment(any(), any())).thenReturn(order())
 
         postOrder(body()).andExpect {
             status { isOk() }
@@ -223,44 +221,46 @@ class PublicCustomPaymentControllerTests {
         draft.value.payerEmail shouldBe "payer@example.com"
         draft.value.locale shouldBe "de"
         draft.value.clientIp shouldBe "203.0.113.9"
-        draft.value.termsVersion shouldBe "2026-10-08"
+        draft.value.termsVersion shouldBe "2026-11-10"
         draft.value.reservationId shouldBe null
-        Duration.between(since.value, Instant.now()).toMinutes() shouldBe 50L
+        Duration.between(since.value, Instant.now()).toSeconds() shouldBe 750L // 5/6 of the 15 min order TTL
 
-        val request: ArgumentCaptor<RevolutCreateOrderRequest> = ArgumentCaptor.forClass(RevolutCreateOrderRequest::class.java)
-        verify(client).createOrder(capture(request))
+        val request: ArgumentCaptor<MollieCreatePaymentRequest> = ArgumentCaptor.forClass(MollieCreatePaymentRequest::class.java)
+        val idempotency: ArgumentCaptor<String> = ArgumentCaptor.forClass(String::class.java)
+        verify(client).createPayment(capture(request), capture(idempotency))
+        idempotency.value shouldBe "custom-payment-$token"
         with(request.value) {
-            amount shouldBe 110_900L
-            currency shouldBe "EUR"
-            captureMode shouldBe "automatic"
-            description shouldBe "Boat4You payment — 100116/2027"
+            amount shouldBe MollieAmount("EUR", "1109.00")
+            description shouldBe "Boat4You - contract 100116/2027"
             redirectUrl shouldBe "https://www.boat4you.com/de/pay/$linkKey/success?ref=$token"
-            merchantOrderData?.reference shouldBe token
-            metadata shouldBe mapOf("customPaymentId" to "7")
-            expirePendingAfter shouldBe "PT1H"
-            enforceChallenge shouldBe "forced"
+            cancelUrl shouldBe "https://www.boat4you.com/de/pay/$linkKey/failed?ref=$token"
+            webhookUrl shouldBe "https://api.boat4you.com/webhooks/mollie"
+            locale shouldBe "de_DE"
+            method shouldBe listOf("creditcard", "applepay", "paybybank")
+            metadata shouldBe mapOf("customPaymentToken" to token, "customPaymentId" to "7", "site" to "boat4you")
         }
         val json = jacksonObjectMapper().writeValueAsString(request.value)
-        json shouldContain "\"capture_mode\":\"automatic\""
-        json shouldContain "\"merchant_order_data\":{\"reference\":\"$token\"}"
+        json shouldContain "\"value\":\"1109.00\""
+        json shouldContain "\"customPaymentToken\":\"$token\""
         json shouldNotContain "customer"
         json shouldNotContain "payer@example.com"
-        verify(tx).attachOrder(7, "ord-1", checkoutUrl)
+        verify(tx).attachOrder(7, "tr_abc123", checkoutUrl)
     }
 
     @Test
     fun `create - english has no locale prefix, a sister site uses its own domain and brand`() {
         `when`(tx.insertPending(any(), any())).thenReturn(PendingInsert(row(orderId = null).apply { site = "europe-yachts" }, existing = false))
-        `when`(client.createOrder(any())).thenReturn(order())
+        `when`(client.createPayment(any(), any())).thenReturn(order())
         postOrder(body(site = "europe-yachts", key = "e".repeat(32), locale = "en")).andExpect { status { isOk() } }
-        val request: ArgumentCaptor<RevolutCreateOrderRequest> = ArgumentCaptor.forClass(RevolutCreateOrderRequest::class.java)
-        verify(client).createOrder(capture(request))
+        val request: ArgumentCaptor<MollieCreatePaymentRequest> = ArgumentCaptor.forClass(MollieCreatePaymentRequest::class.java)
+        val idempotency: ArgumentCaptor<String> = ArgumentCaptor.forClass(String::class.java)
+        verify(client).createPayment(capture(request), capture(idempotency))
         request.value.redirectUrl shouldBe "https://www.europe-yachts.com/pay/${"e".repeat(32)}/success?ref=$token"
-        request.value.description shouldBe "Europe Yachts Charter payment — 100116/2027"
+        request.value.description shouldBe "Europe Yachts Charter - contract 100116/2027"
     }
 
     @Test
-    fun `create - same attempt again returns the existing checkout without a new Revolut order`() {
+    fun `create - same attempt again returns the existing checkout without a new Mollie payment`() {
         `when`(tx.insertPending(any(), any())).thenReturn(PendingInsert(row(), existing = true))
         postOrder(body()).andExpect {
             status { isOk() }
@@ -271,23 +271,23 @@ class PublicCustomPaymentControllerTests {
     }
 
     @Test
-    fun `create - Revolut error or a checkout on a foreign origin - 502 8004 and the attempt is closed`() {
+    fun `create - Mollie error or a checkout on a foreign origin - 502 8004 and the attempt is closed`() {
         `when`(tx.insertPending(any(), any())).thenReturn(PendingInsert(row(orderId = null), existing = false))
-        `when`(client.createOrder(any())).thenThrow(ResourceAccessException("timeout"))
+        `when`(client.createPayment(any(), any())).thenThrow(ResourceAccessException("timeout"))
         postOrder(body()).andExpect {
             status { isBadGateway() }
             jsonPath("$.code") { value(8004) }
         }
         verify(tx).markCreateFailed(7, null)
 
-        doThrow(HttpClientErrorException.create(HttpStatus.UNAUTHORIZED, "", HttpHeaders(), ByteArray(0), null)).`when`(client).createOrder(any())
+        doThrow(HttpClientErrorException.create(HttpStatus.UNAUTHORIZED, "", HttpHeaders(), ByteArray(0), null)).`when`(client).createPayment(any(), any())
         postOrder(body()).andExpect { status { isBadGateway() } }
 
-        doReturn(order(url = "https://evil.example/checkout")).`when`(client).createOrder(any())
+        doReturn(order(url = "https://evil.example/checkout")).`when`(client).createPayment(any(), any())
         postOrder(body()).andExpect { status { isBadGateway() } }
-        doReturn(order(url = "http://checkout.revolut.com/x")).`when`(client).createOrder(any())
+        doReturn(order(url = "http://www.mollie.com/x")).`when`(client).createPayment(any(), any())
         postOrder(body()).andExpect { status { isBadGateway() } }
-        verify(tx, times(2)).markCreateFailed(7, "ord-1")
+        verify(tx, times(2)).markCreateFailed(7, "tr_abc123")
         verify(tx, never()).attachOrder(ArgumentMatchers.anyLong(), ArgumentMatchers.anyString(), ArgumentMatchers.anyString())
     }
 
@@ -302,7 +302,7 @@ class PublicCustomPaymentControllerTests {
         `when`(repository.findByPublicToken(UUID.fromString(token))).thenReturn(row(createdAt = Instant.now().minus(Duration.ofDays(31))))
         mvc().get("/public/payments/custom/orders/$token").andExpect { status { isNotFound() } }
 
-        // Checked less than 10 s ago (claimCheck = 0): the stored status, Revolut not asked.
+        // Checked less than 10 s ago (claimCheck = 0): the stored status, Mollie not asked.
         `when`(repository.findByPublicToken(UUID.fromString(token))).thenReturn(row())
         mvc().get("/public/payments/custom/orders/$token").andExpect {
             status { isOk() }
@@ -319,20 +319,20 @@ class PublicCustomPaymentControllerTests {
     }
 
     @Test
-    fun `status - a claimed check reads the order and applies the verdict, a Revolut hiccup is swallowed`() {
+    fun `status - a claimed check reads the payment and applies the verdict, a Mollie hiccup is swallowed`() {
         `when`(repository.findByPublicToken(UUID.fromString(token))).thenReturn(row())
         `when`(repository.claimCheck(7)).thenReturn(1)
-        val completed = order(state = "completed")
-        `when`(client.getOrder("ord-1")).thenReturn(completed)
+        val completed = order(status = "paid")
+        `when`(client.getPaymentOnce("tr_abc123")).thenReturn(completed)
         `when`(repository.findById(7)).thenReturn(Optional.of(row(status = CustomPaymentStatus.COMPLETED)))
 
         mvc().get("/public/payments/custom/orders/$token").andExpect {
             status { isOk() }
             jsonPath("$.status") { value("COMPLETED") }
         }
-        verify(tx).applyVerdict(7, CustomPaymentVerdict.Complete("pay-1"), OrderSnapshot.of(completed).toJson(), null)
+        verify(tx).applyVerdict(7, CustomPaymentVerdict.Complete("tr_abc123"), OrderSnapshot.of(completed).toJson(), null)
 
-        doThrow(ResourceAccessException("timeout")).`when`(client).getOrder("ord-1")
+        doThrow(ResourceAccessException("timeout")).`when`(client).getPaymentOnce("tr_abc123")
         mvc().get("/public/payments/custom/orders/$token").andExpect {
             status { isOk() }
             jsonPath("$.status") { value("PENDING") }

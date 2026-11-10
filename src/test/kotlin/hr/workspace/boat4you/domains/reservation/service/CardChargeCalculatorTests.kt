@@ -15,7 +15,7 @@ import java.time.LocalDate
 
 /**
  * Golden values of the card charge (surcharge math moved verbatim out of StripePaymentService, plan 2D) and every
- * phase-selection rule. Stripe and Revolut both charge [CardChargeCalculator.CardCharge.totalMinor].
+ * phase-selection rule. Stripe and Mollie both charge [CardChargeCalculator.CardCharge.totalMinor].
  */
 class CardChargeCalculatorTests {
     private val five = CardChargeCalculator.surchargePercentage("5")

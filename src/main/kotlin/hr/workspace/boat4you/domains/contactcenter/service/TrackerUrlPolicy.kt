@@ -141,8 +141,8 @@ class TrackerUrlPolicy(
                 "utm_content",
             )
 
-        /** Pages whose URL is a credential (WEB-18). */
-        val SECRET_PATH = Regex("^(/[a-z]{2})?/(review|unsubscribe|custom-offers|trip|confirm-email-change|forgot-password)(/|$)")
+        /** Pages whose URL is a credential (WEB-18; /pay/<key> = the secret card payment link of the 7 sites). */
+        val SECRET_PATH = Regex("^(/[a-z]{2})?/(review|unsubscribe|custom-offers|trip|confirm-email-change|forgot-password|pay)(/|$)")
         val SECRET_PARAMS = setOf("token", "passwordResetCode")
 
         const val MAX_URL = 1000

@@ -40,6 +40,10 @@ class PublicEndpointRateLimiterTest {
             ccBeatWindowSeconds = 600,
             ccHandoffCapacity = 10,
             ccHandoffWindowSeconds = 600,
+            customPaymentCreateCapacity = 5,
+            customPaymentCreateWindowSeconds = 600,
+            customPaymentStatusCapacity = 30,
+            customPaymentStatusWindowSeconds = 60,
         )
 
     private fun hit(
