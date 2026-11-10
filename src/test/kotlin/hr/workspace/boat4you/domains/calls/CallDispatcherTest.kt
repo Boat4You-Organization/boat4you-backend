@@ -57,6 +57,8 @@ class CallDispatcherTest : CallsJpaTest() {
         }
 
         override fun getConversation(conversationId: String) = ConversationData()
+
+        override fun deleteConversation(conversationId: String) = Unit
     }
 
     private val api = FakeElevenLabs()
@@ -70,6 +72,7 @@ class CallDispatcherTest : CallsJpaTest() {
                 CallPlanner(calls, inquiries, settings, jdbc, clock),
                 notifier,
                 CallAudioStore(Files.createTempDirectory("dispatch").toString()),
+                api,
                 clock,
             )
         CallDispatcher(calls, inquiries, CallEligibility(calls, jdbc), outcomes, api, settings, notifier, txManager)

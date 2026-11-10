@@ -1,11 +1,13 @@
 package hr.workspace.boat4you.domains.calls.service
 
 import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationData
+import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsApi
 import hr.workspace.boat4you.domains.calls.enums.CallOutcome
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCall
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCallRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Clock
@@ -24,8 +26,11 @@ class CallOutcomeService(
     private val planner: CallPlanner,
     private val notifier: CallNotifier,
     private val audio: CallAudioStore,
+    private val elevenLabs: ElevenLabsApi,
     private val clock: Clock = Clock.systemUTC(),
 ) {
+    private val log = LoggerFactory.getLogger(javaClass)
+
     @Transactional
     fun applyTranscription(
         row: InquiryCall,
@@ -63,6 +68,11 @@ class CallOutcomeService(
         if (call.outcome == CallOutcome.NO_CONSENT_TO_RECORD) {
             call.audioPath?.let(audio::delete)
             call.audioPath = null
+            // ElevenLabs' own copy goes too. We keep the transcript; if the request fails, their 30-day retention removes it.
+            call.elevenlabsConversationId?.let { conversation ->
+                runCatching { elevenLabs.deleteConversation(conversation) }
+                    .onFailure { log.warn("call {}: ElevenLabs did not delete the refused recording: {}", call.id, it.message) }
+            }
         }
         calls.save(call)
 

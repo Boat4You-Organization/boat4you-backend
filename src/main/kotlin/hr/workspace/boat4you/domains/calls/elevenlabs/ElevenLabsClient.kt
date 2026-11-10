@@ -19,7 +19,7 @@ import java.time.Duration
  * ElevenLabs Agents REST client (docs 30.10.2026): `POST /v1/convai/twilio/outbound-call` with `agent_id`,
  * `agent_phone_number_id`, `to_number` and `conversation_initiation_client_data` {`dynamic_variables`,
  * `conversation_config_override.agent.language`}, answered by {`success`, `message`, `conversation_id`, `callSid`};
- * `GET /v1/convai/conversations/{id}`. Auth header `xi-api-key`. Timeouts 10 s connect / 30 s read, no retries.
+ * `GET` and `DELETE /v1/convai/conversations/{id}`. Auth header `xi-api-key`. Timeouts 10 s connect / 30 s read, no retries.
  * Request and response bodies are never logged (personal data).
  */
 @Component
@@ -83,16 +83,21 @@ class ElevenLabsClient(
         return json.readValue(exchange("GET", "/v1/convai/conversations/$conversationId", null))
     }
 
+    override fun deleteConversation(conversationId: String) {
+        check(props.apiKey.isNotBlank()) { "ElevenLabs not configured" }
+        exchange("DELETE", "/v1/convai/conversations/$conversationId", null)
+    }
+
     private fun exchange(
         method: String,
         path: String,
         body: String?,
     ): String {
         val spec =
-            if (method == "POST") {
-                client.post().uri(path).contentType(MediaType.APPLICATION_JSON).body(body!!)
-            } else {
-                client.get().uri(path)
+            when (method) {
+                "POST" -> client.post().uri(path).contentType(MediaType.APPLICATION_JSON).body(body!!)
+                "DELETE" -> client.delete().uri(path)
+                else -> client.get().uri(path)
             }
         return spec
             .header("xi-api-key", props.apiKey)
