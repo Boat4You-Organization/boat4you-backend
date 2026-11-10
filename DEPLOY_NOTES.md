@@ -1,5 +1,30 @@
 # Backend deploy notes
 
+## 2026-11-10 — ✅ LIVE cusma2 20:05 UTC: Klarna (booking + /pay) UKLJUČENA — jar `e20302a4ca5c336fc01c97c3c245b9c4`, grana `release/mollie-payments` `73ca42cd` (+ `feat/mollie-klarna` 84845573); ⏳ cusma3 čeka prozor 21:05–22:15 UTC (20:26 gate ABORT: mmkAvailabilitySync u 20:40)
+
+Mario 10.11.2026: „Da, radi Klarnu“ → „Da, deployaj i uključi“. Doplata: na booking +5 % kao kartica (zadano); `/pay` bez doplate (iznos s ugovora već sadrži 5 %).
+
+**Što jar donosi**
+- **V9_124** `reservation_card_order.method`, **V9_125** `custom_payment.method` (`CARD` | `KLARNA`, NULL = CARD; primijenjene 19:54:30 UTC, 44 ms).
+- Booking: opcionalno tijelo `{"klarna":{givenName,familyName,streetAndNumber,postalCode,city,country}}` na `…/payments/card/create-checkout-session/{id}` → Mollie plaćanje samo `klarna`, s `billingAddress`, `lines` (rata + red „Payment fee“ tipa surcharge) i `captureMode=automatic`. `/pay`: isti blok `klarna` u `POST /public/payments/custom/orders`, bez doplate, svaki Klarna submit vlastito plaćanje (adresa se ne sprema).
+- `GET /public/payments/card/klarna` (204 = ne nudi se) i `klarna` u `/pay` configu: države i limiti. **Uz naplatu u EUR samo adrese naplate AT, BE, DE, FI, FR, NL (≤ 10.000 €) i ES, GR, IE, IT, PT, SK (≤ 4.000 €)**; ostalo 422 kod 8107 (HR odbija i sam Mollie; UK traži GBP; SAD/AU/CA nisu podržane).
+- Reuse-before-create i checkout token znaju metodu (kartični checkout se nikad ne vraća kupcu koji je odabrao Klarnu i obratno; Klarna checkout se ponovno daje samo istom zahtjevu — isti ključ i ista adresa).
+- Uzbune uredu: plaćanje `authorized` bez naplate (ne očekuje se); uplata NAKON 48-satnog „stale“ pregleda (Klarna ostaje otvorena 48 h+).
+- E-mailovi: uredu „Klarna payment received“ / „Card payment received“; potvrda klijentu više ne kaže „plaćanje karticom“ nego „plaćanje“ (10 datoteka poruka), red „Payment method“.
+- Admin: `method` u `/admin/card-payments` i `/admin/custom-payments`.
+
+**Env cusma2:** `MOLLIE_KLARNA_ENABLED=true` (infra `KLARNA=on bash mollie_env_set.sh`, 19:49 UTC). Isključivanje: `KLARNA=off bash mollie_env_set.sh` + restart (web tada sam sakrije opciju). `MOLLIE_KLARNA_SURCHARGE_PERCENT` prazno = kartična doplata.
+
+**⚠️ Nađeno prvim stvarnim pozivom nakon deploya (19:55 UTC):** uživo je checkout URL Klarna plaćanja `https://pay.klarna.com/eu/hpp/…` (Klarnina stranica), a ne `www.mollie.com` → allow-lista `application.mollie.checkout-origins` ga je odbila, svaki Klarna checkout 502 (8004). Mollie TEST način ostaje na mollie.com, zato lokalni e2e to nije pokazao. Ispravak: zadana lista = `https://www.mollie.com,https://pay.klarna.com` (jar e20302a4, 20:05 UTC) + isto na webu (dvije allow-liste preusmjeravanja). Web s Klarna opcijom je deployan tek nakon ispravka, kupci grešku nisu mogli vidjeti.
+
+**Tijek (UTC):** 19:49 env; 19:54 cusma2 jar a0d280e0 (migracije, Klarna on, greška 502); 20:05 cusma2 jar e20302a4 (ispravak); 20:06 stvarni pozivi: Klarna DE na `/pay` → 200 s `pay.klarna.com`, HR → 422/8107, kartica → 200 `www.mollie.com`; 20:07 web 1396bc092; 20:12 admin; 20:26 cusma3 ABORT (sync cron) → ponovno nakon 21:05.
+
+**Provjereno:** lokalni e2e u Mollie test načinu kroz pravi backend i web (booking rata 2.703 + 135 €, `/pay` 1.109 €, kartica→Klarna, odbijanja, kartična regresija, admin); uživo samo stvaranje naplate (gore). **NIJE provjereno uživo:** plaćena Klarna uplata, webhook za Klarnu, Klarna na rati bookinga.
+
+**Otvoreno u Mollieu (probe, nitko ne plaća, istječu za 48 h):** tr_kBkjBKcWCmaaQmXHX8PZJ, tr_sUdmUzg3oxc8DzyZd9PZJ (Klarna), tr_AwNfJcyKZU8H4XMgd9PZJ (kartica).
+
+**Rollback:** Klarna off = env + restart; jar = `webservice.jar.prev` (a0d280e0; stariji jar dcbee084 u `~/.cache/boat4you-deploy/mollie/`) — migracije su samo dodavanje, stari jar ih ignorira.
+
 ## 2026-11-10 — ✅ LIVE oba čvora: Mollie (/pay + kartice bookinga) + admin praćenje uplata + Instagram omjer Objava — jar `dcbee0846fd0b28fccd6680acbf894a7`, grana `release/mollie-payments` `c06b8a19`, tag `live/2026-11-10-mollie`
 
 **Jar** = live linija (`release/iris-area-model` 8f2d2d57 + `release/ai-call-center-p2` 3a51b2e5, sadrži pr-module V9_121 i iris) + `feat/mollie-payments` 3a235936 (Mollie + admin praćenje) + `fix/social-ai-instagram-ratio` 0bfbc2a8 (sesija ADMIN, Mariovo „da“). Migracije V9_122, V9_123 primijenjene 14:03 UTC; kasniji jarovi bez migracija.
