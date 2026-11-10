@@ -148,7 +148,7 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
     @Query(
         value = """
         SELECT id FROM reservation_card_order
-        WHERE status = 'COMPLETED' AND promote_state = 'PENDING' AND completed_at < now() - interval '10 minutes'
+        WHERE status = 'COMPLETED' AND promote_state = 'PENDING' AND completed_at < now() - interval '30 minutes'
         ORDER BY completed_at
         LIMIT 20
         """,

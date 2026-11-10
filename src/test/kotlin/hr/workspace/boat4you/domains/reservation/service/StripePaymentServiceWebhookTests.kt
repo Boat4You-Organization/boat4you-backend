@@ -81,6 +81,8 @@ class StripePaymentServiceWebhookTests {
         val paidAt = Instant.parse("2026-11-09T10:00:00Z")
         val paid = phase(7, paidAt, intent = null)
         `when`(phases.findByStripeSessionIdOrderByDeadlineAsc("cs_test_a1B2c3")).thenReturn(listOf(paid))
+        // The guard decides on a fresh count taken under the row locks, not on the loaded entity.
+        `when`(phases.countByIdInAndPaidOnIsNotNull(listOf(7L))).thenReturn(1L)
 
         // The first payment path (no pinned phase) would promote the reservation; the pinned path just records.
         service.handleWebhookEvent(event(mapOf("reservationId" to "42", "payFullAmount" to "true")))

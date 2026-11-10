@@ -824,7 +824,7 @@ class ReservationCardOrderIntegrationTest {
         row(first.id!!).status shouldBe ReservationCardOrderStatus.COMPLETED
         orders.countOtherCompleted(901, second.id!!) shouldBe 1L
         orders.findStuckPromoteIds().contains(first.id!!) shouldBe false
-        jdbc.update("UPDATE reservation_card_order SET completed_at = now() - interval '11 minutes' WHERE id = ?", first.id)
+        jdbc.update("UPDATE reservation_card_order SET completed_at = now() - interval '31 minutes' WHERE id = ?", first.id)
         orders.findStuckPromoteIds().contains(first.id!!) shouldBe true
         tx.markPromote(first.id!!, CardOrderPromoteState.DONE)
         orders.findStuckPromoteIds().contains(first.id!!) shouldBe false

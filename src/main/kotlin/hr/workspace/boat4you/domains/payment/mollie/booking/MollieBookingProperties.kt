@@ -21,8 +21,14 @@ class MollieBookingProperties(
      * of a card payment; a payment that is still paid later is picked up by the webhook all the same.
      */
     val checkoutTtl: Duration =
-        if (checkoutTtl.isNegative || checkoutTtl.isZero) {
-            log.error("application.mollie.booking.checkout-ttl {} is not positive — using {}", checkoutTtl, DEFAULT_CHECKOUT_TTL)
+        if (checkoutTtl <= ReservationCardOrderTx.REUSE_MARGIN) {
+            // At or below the reuse margin a checkout would never be reused (a double click could create two payments).
+            log.error(
+                "application.mollie.booking.checkout-ttl {} is not above the reuse margin {} — using {}",
+                checkoutTtl,
+                ReservationCardOrderTx.REUSE_MARGIN,
+                DEFAULT_CHECKOUT_TTL,
+            )
             DEFAULT_CHECKOUT_TTL
         } else {
             checkoutTtl

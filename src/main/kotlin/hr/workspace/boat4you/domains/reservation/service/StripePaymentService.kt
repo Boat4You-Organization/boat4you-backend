@@ -217,14 +217,19 @@ class StripePaymentService(
                 paymentPhaseId != null -> dbPaymentPhases.filter { it.id == paymentPhaseId }
                 else -> emptyList()
             }
-        val alreadyPaid = stripeTargets.filter { it.paidOn != null }
-        if (alreadyPaid.isNotEmpty()) {
-            logger.error(
-                "Stripe event ${event.id}: session ${session.id} paid, but phase(s) ${alreadyPaid.map { it.id }} of reservation " +
-                    "$reservationId were already paid — DOUBLE PAYMENT, nothing changed",
-            )
-            doublePaymentAlert.stripeAfterAnotherPayment(reservationId, session.id, paymentIntentId, alreadyPaid.mapNotNull { it.id })
-            return
+        // Row locks first, then a fresh count: a Mollie completion that holds the same phases commits before or after
+        // this check, never in between (the loaded entities would not show its paidOn).
+        val stripeTargetIds = stripeTargets.mapNotNull { it.id }
+        if (stripeTargetIds.isNotEmpty()) {
+            paymentPhaseRepository.findAllByIdIn(stripeTargetIds)
+            if (paymentPhaseRepository.countByIdInAndPaidOnIsNotNull(stripeTargetIds) > 0) {
+                logger.error(
+                    "Stripe event ${event.id}: session ${session.id} paid, but a phase of $stripeTargetIds of reservation " +
+                        "$reservationId was already paid — DOUBLE PAYMENT, nothing changed",
+                )
+                doublePaymentAlert.stripeAfterAnotherPayment(reservationId, session.id, paymentIntentId, stripeTargetIds)
+                return
+            }
         }
 
         when {

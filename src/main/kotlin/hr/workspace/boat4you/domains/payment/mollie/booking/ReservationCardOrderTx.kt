@@ -232,7 +232,7 @@ class ReservationCardOrderTx(
         val reasons = mutableListOf<String>()
         if (refunded > row.refundedAmountMinor) {
             row.refundedAmountMinor = refunded
-            reasons += "refunded $refunded of ${row.amountMinor} cents (the phases are still marked paid — adjust the booking)"
+            reasons += "refunded $refunded of ${row.amountMinor} cents (ledger status ${row.status}; phases this payment marked stay paid — adjust the booking)"
         }
         if (chargedBack > row.chargedBackAmountMinor) {
             row.chargedBackAmountMinor = chargedBack

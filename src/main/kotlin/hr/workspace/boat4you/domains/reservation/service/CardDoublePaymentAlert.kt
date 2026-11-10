@@ -34,11 +34,12 @@ class CardDoublePaymentAlert(
             val title = "DOUBLE PAYMENT: Stripe payment for an already paid instalment"
             val body =
                 buildString {
-                    appendLine("A Stripe card payment was completed for an instalment that was already paid.")
-                    appendLine("Nothing was changed in the booking. Refund one of the two payments.")
+                    appendLine("A Stripe card payment was completed, but at least one instalment it pays was already paid.")
+                    appendLine("Nothing was changed in the booking: check which instalments of this Stripe payment were")
+                    appendLine("still unpaid, mark those by hand, and refund what was paid twice.")
                     appendLine()
                     appendLine("Reservation:  id $reservationId")
-                    appendLine("Phases:       ${phaseIds.joinToString(",")}")
+                    appendLine("Phases of the Stripe payment: ${phaseIds.joinToString(",")}")
                     appendLine("Stripe:       session $stripeSessionId, payment intent ${stripePaymentIntentId ?: "-"}")
                     append("Admin:        ${serverHostAdminPublic.trimEnd('/')}/reservations/$reservationId")
                 }

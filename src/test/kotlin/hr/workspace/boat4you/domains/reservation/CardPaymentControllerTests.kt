@@ -331,11 +331,11 @@ class CardPaymentControllerTests {
                 contextRunner
                     .withPropertyValues(
                         "application.payment.card-provider=mollie",
-                        "application.mollie.booking.checkout-ttl=PT3M",
+                        "application.mollie.booking.checkout-ttl=PT12M",
                     ).run { context ->
                         context.startupFailure.shouldBeNull()
                         context.getBean(CardPaymentRouter::class.java).activeProvider shouldBe CardProvider.MOLLIE
-                        context.getBean(MollieBookingProperties::class.java).checkoutTtl shouldBe Duration.ofMinutes(3)
+                        context.getBean(MollieBookingProperties::class.java).checkoutTtl shouldBe Duration.ofMinutes(12)
                     }
             }
         mollieLogs.single { it.level == Level.ERROR }.formattedMessage shouldContain "not configured"
