@@ -286,6 +286,24 @@ class PublicCustomPaymentControllerTests {
     }
 
     @Test
+    fun `create - a live Klarna checkout is Klarna's own hosted page (pay_klarna_com), allowed by the default origins`() {
+        val klarnaPage = "https://pay.klarna.com/eu/hpp/payments/1oDEbeE"
+        `when`(tx.insertPending(any(), any())).thenReturn(PendingInsert(row(orderId = null), existing = false))
+        `when`(client.createPayment(any(), any())).thenReturn(order(url = klarnaPage))
+        // The production default of application.mollie.checkout-origins.
+        val properties = mollieProperties(linkKeys = "boat4you=$linkKey", checkoutOrigins = "https://www.mollie.com,https://pay.klarna.com")
+        mvc(properties)
+            .post("/public/payments/custom/orders") {
+                contentType = MediaType.APPLICATION_JSON
+                content = body(klarna = klarnaAddress())
+            }.andExpect {
+                status { isOk() }
+                jsonPath("$.redirectUrl") { value(klarnaPage) }
+            }
+        verify(tx).attachOrder(7, "tr_abc123", klarnaPage)
+    }
+
+    @Test
     fun `create - Klarna for a country it does not serve, above its limit, with a broken address or switched off - nothing is created`() {
         // Croatia is not a Klarna country; Italy stops at 4 000 EUR; Germany takes 1 109 EUR (previous test).
         postOrder(body(klarna = klarnaAddress("HR"))).andExpect {
