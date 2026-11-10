@@ -189,7 +189,8 @@ class MollieBookingPaymentService(
         if (!properties.enabled) throw CardPaymentsUnavailableException()
         val payment =
             try {
-                client.getPayment(row.providerOrderId)
+                // One attempt: an admin is waiting (the retried read can take 45 s before it gives up).
+                client.getPaymentOnce(row.providerOrderId)
             } catch (e: Exception) {
                 log.warn("Mollie booking ledger {}: admin refresh could not read the payment ({})", id, e.javaClass.simpleName)
                 throw CardPaymentProviderException()

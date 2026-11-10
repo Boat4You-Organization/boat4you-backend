@@ -19,6 +19,7 @@ import org.mockito.ArgumentMatchers
 import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
+import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 import org.springframework.web.client.ResourceAccessException
@@ -136,7 +137,7 @@ class MollieBookingPaymentServiceTests {
     fun `admin refresh - applies what Mollie says like the webhook, an expired payment closes the row`() {
         val row = row(ReservationCardOrderStatus.PENDING)
         givenRow(row)
-        `when`(client.getPayment("tr_7UhSN1zuXS")).thenReturn(payment("paid"))
+        `when`(client.getPaymentOnce("tr_7UhSN1zuXS")).thenReturn(payment("paid"))
         `when`(orderTx.applyCompleted(ArgumentMatchers.eq(5L), any(), ArgumentMatchers.isNull())).thenAnswer {
             row.status = ReservationCardOrderStatus.COMPLETED
             CompletionResult(completedNow = true, promote = false, reservationId = 42)
@@ -145,9 +146,16 @@ class MollieBookingPaymentServiceTests {
         verify(followUp).afterCompletion(ArgumentMatchers.eq(5L), any(), ArgumentMatchers.isNull())
         verify(orderTx).applyMoneyBack(ArgumentMatchers.eq(5L), any())
 
-        `when`(client.getPayment("tr_7UhSN1zuXS")).thenReturn(payment("expired"))
+        `when`(client.getPaymentOnce("tr_7UhSN1zuXS")).thenReturn(payment("expired"))
         service().refresh(5)
         verify(orderTx).closeIfPending(5, ReservationCardOrderStatus.FAILED)
+
+        // Still open at Mollie: nothing to apply, the row stays as it is.
+        `when`(client.getPaymentOnce("tr_7UhSN1zuXS")).thenReturn(payment("open"))
+        service().refresh(5)
+        verify(orderTx, times(1)).applyCompleted(ArgumentMatchers.eq(5L), any(), ArgumentMatchers.isNull())
+        verify(orderTx, times(1)).closeIfPending(5, ReservationCardOrderStatus.FAILED)
+        verify(client, never()).getPayment(ArgumentMatchers.anyString())
     }
 
     @Test
@@ -158,10 +166,10 @@ class MollieBookingPaymentServiceTests {
         givenRow(row(ReservationCardOrderStatus.PENDING))
         shouldThrow<CardPaymentsUnavailableException> { service(enabledKey = "").refresh(5) }
 
-        `when`(client.getPayment("tr_7UhSN1zuXS")).thenThrow(ResourceAccessException("timeout"))
+        `when`(client.getPaymentOnce("tr_7UhSN1zuXS")).thenThrow(ResourceAccessException("timeout"))
         shouldThrow<CardPaymentProviderException> { service().refresh(5) }
         // doReturn: a plain `when(...)` would call the stub that throws.
-        doReturn(null).`when`(client).getPayment("tr_7UhSN1zuXS")
+        doReturn(null).`when`(client).getPaymentOnce("tr_7UhSN1zuXS")
         shouldThrow<CardPaymentProviderException> { service().refresh(5) }
 
         verify(orderTx, never()).applyCompleted(ArgumentMatchers.anyLong(), any(), ArgumentMatchers.any())
