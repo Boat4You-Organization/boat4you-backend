@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component
 /**
  * What runs AFTER [ReservationCardOrderTx.applyCompleted] committed (plan 2A.10 M4), outside any transaction:
  * - an alert reason (NEEDS_REVIEW: mismatch or double payment) -> office mail;
+ * - THIS call completed the row -> "Card payment received" to the office + the payment confirmation to the client
+ *   ([BookingCardPaymentMailer], Mario 10.11.2026), whatever the kind of payment;
  * - the first payment of a booking ([CompletionResult.promote]) when THIS call completed the row -> the same booking
  *   confirmation Stripe runs (partner confirm, reservation confirmed, customer mail with PaymentType.CARD, voucher),
  *   never for a reservation that is CANCELLED meanwhile. The payment stays recorded if the confirmation fails: the
@@ -30,17 +32,23 @@ class BookingCardCompletionFollowUp(
     private val reservationEmailService: ReservationEmailService,
     private val voucherService: VoucherService,
     private val alertMailer: BookingCardAlertMailer,
+    private val paymentMailer: BookingCardPaymentMailer,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
     fun afterCompletion(
         ledgerId: Long,
         result: CompletionResult,
+        cardLabel: String? = null,
     ) {
         result.alert?.let { reason ->
             orders.findById(ledgerId).orElse(null)?.let { alertMailer.alert(it, "Card payment needs review", reason) }
         }
-        if (!result.completedNow || !result.promote) return
+        if (!result.completedNow) return
+        // Once per payment: "Card payment received" to the office and the payment confirmation to the client.
+        runCatching { orderTx.paymentNotice(ledgerId)?.let { paymentMailer.paymentRecorded(it, cardLabel) } }
+            .onFailure { log.error("Mollie booking ledger {}: payment e-mails failed", ledgerId, it) }
+        if (!result.promote) return
         val reservationId = result.reservationId ?: return
         val reservation = reservationRepository.findById(reservationId).orElse(null)
         if (reservation == null || reservation.sysStatus == ReservationStatus.CANCELLED) {

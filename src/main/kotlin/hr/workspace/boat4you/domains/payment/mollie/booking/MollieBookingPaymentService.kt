@@ -394,7 +394,7 @@ class MollieBookingPaymentService(
         when (payment.status.lowercase()) {
             MolliePaymentStatuses.PAID -> {
                 val result = orderTx.applyCompleted(ledgerId, payment, event)
-                followUp.afterCompletion(ledgerId, result)
+                followUp.afterCompletion(ledgerId, result, cardLabel(payment))
                 orderTx.applyMoneyBack(ledgerId, payment)?.let { reason ->
                     orders.findById(ledgerId).orElse(null)?.let { alertMailer.alert(it, "Card payment refunded or charged back", reason) }
                 }
@@ -403,6 +403,13 @@ class MollieBookingPaymentService(
             MolliePaymentStatuses.FAILED, MolliePaymentStatuses.EXPIRED -> orderTx.closeIfPending(ledgerId, ReservationCardOrderStatus.FAILED)
             else -> if (event != null) orderTx.stampWebhook(ledgerId, event)
         }
+    }
+
+    /** "Visa •••• 9996" from Mollie's card details (label + last four digits); null when Mollie sent neither. */
+    private fun cardLabel(payment: MolliePayment): String? {
+        val brand = payment.details?.cardLabel?.takeIf { CARD_BRAND.matches(it) }
+        val lastFour = payment.details?.cardNumber?.takeIf { LAST_FOUR.matches(it) }?.let { "•••• $it" }
+        return listOfNotNull(brand, lastFour).joinToString(" ").ifBlank { null }
     }
 
     private fun isOpenOnOurSide(status: ReservationCardOrderStatus): Boolean =
@@ -436,6 +443,8 @@ class MollieBookingPaymentService(
 
     private companion object {
         const val WEBHOOK_EVENT = "mollie-webhook"
+        val CARD_BRAND = Regex("^[A-Za-z_ ]{1,32}$")
+        val LAST_FOUR = Regex("^[0-9]{4}$")
 
         /**
          * next-intl `as-needed`: English has no prefix, every other web language `/<code>`; anything else (junk, a

@@ -45,7 +45,7 @@ class BookingCardAlertMailer(
                     appendLine("Phases:       ${order.phaseIds.ifEmpty { "-" }}")
                     appendLine("Mollie:       payment ${order.providerOrderId} (Mollie dashboard -> Payments)")
                     appendLine("Ledger:       id ${order.id}, status ${order.status}")
-                    order.reservationId?.let { appendLine("Admin:        ${serverHostAdminPublic.trimEnd('/')}/reservations/$it") }
+                    order.reservationId?.let { appendLine("Admin:        ${serverHostAdminPublic.trimEnd('/')}/bookings/$it") }
                     appendLine()
                     append("Check the payment in the Mollie dashboard before telling the client anything; refunds are made there.")
                 }

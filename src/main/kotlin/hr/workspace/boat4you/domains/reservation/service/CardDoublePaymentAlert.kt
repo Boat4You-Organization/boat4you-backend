@@ -41,7 +41,7 @@ class CardDoublePaymentAlert(
                     appendLine("Reservation:  id $reservationId")
                     appendLine("Phases of the Stripe payment: ${phaseIds.joinToString(",")}")
                     appendLine("Stripe:       session $stripeSessionId, payment intent ${stripePaymentIntentId ?: "-"}")
-                    append("Admin:        ${serverHostAdminPublic.trimEnd('/')}/reservations/$reservationId")
+                    append("Admin:        ${serverHostAdminPublic.trimEnd('/')}/bookings/$reservationId")
                 }
             emailService.sendEmail(
                 recipients = recipients,
