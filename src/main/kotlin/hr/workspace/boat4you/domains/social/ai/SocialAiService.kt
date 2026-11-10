@@ -26,6 +26,7 @@ import hr.workspace.boat4you.domains.social.jpa.SocialMediaRepository
 import hr.workspace.boat4you.domains.social.jpa.SocialPlatform
 import hr.workspace.boat4you.domains.social.jpa.SocialPostAction
 import hr.workspace.boat4you.domains.social.jpa.SocialPostSource
+import hr.workspace.boat4you.domains.social.jpa.SocialPostStatus
 import hr.workspace.boat4you.domains.social.service.SocialActor
 import hr.workspace.boat4you.domains.social.service.SocialConflictException
 import hr.workspace.boat4you.domains.social.service.SocialMediaStore
@@ -196,8 +197,8 @@ class SocialAiService(
                         .apply {
                             status = SocialAiRunStatus.RUNNING
                             error = null
-                            topic = null
-                            postId = null
+                            // A post this run already made stays its post: the re-run takes it up instead of a second one.
+                            if (postId == null) topic = null
                         }.let { runs.save(it) }
                 else -> throw SocialConflictException("Today's AI post for this site is already made")
             }
@@ -213,6 +214,7 @@ class SocialAiService(
         date: LocalDate,
     ): SocialAiRun {
         val site = setting.site!!
+        run.postId?.let { return resume(setting, run, date, it) }
         val profile = brands.byId[site]?.ai ?: throw SocialValidationException("No site profile for $site")
         val channels = usableChannels(setting)
         if (channels.isEmpty()) return skip(run, "No connected channel is selected for this site")
@@ -240,14 +242,66 @@ class SocialAiService(
         val day = DayContext(setting, date, boat, photos, draft)
         val withVideo = setting.useVideo && props.higgsfieldConfigured
         val photoChannels = channels.filter { !(withVideo && it.platform in VIDEO_PLATFORMS) && it.platform != SocialPlatform.YOUTUBE }
+        val topic = "yacht:${boat.id} ${boat.facts["name"] ?: boat.slug}: ${draft.topic}".take(TOPIC_MAX)
         val photoPost = if (photoChannels.isEmpty()) null else createPhotoPost(day, photoChannels)
+        // Recorded at once: whatever fails after this point, a re-run takes this draft up instead of making a second one.
+        updateRun(run.id!!) {
+            it.topic = topic
+            it.postId = photoPost?.id
+        }
+        // Scheduled before the video is queued: a post with an open video generation cannot be scheduled.
+        val draftKept =
+            photoPost?.takeUnless { setting.requireApproval }?.let { p -> scheduleOrReason(p.id, setting, date)?.let { draftKept(p.id, it) } }
         val videoQueued = withVideo && queueVideo(day, run, channels.filter { it.platform in VIDEO_PLATFORMS }, photoPost?.id)
         return updateRun(run.id!!) {
             it.status = if (videoQueued) SocialAiRunStatus.WAITING_VIDEO else SocialAiRunStatus.DONE
-            it.topic = "yacht:${boat.id} ${boat.facts["name"] ?: boat.slug}: ${draft.topic}".take(TOPIC_MAX)
-            it.postId = photoPost?.id
+            it.error = draftKept
         }
     }
+
+    /**
+     * A re-run of a run that already made its photo post (it failed or died after the draft was saved): no second boat,
+     * text or post. The draft is scheduled now when the site publishes alone and it is still a draft; otherwise the run
+     * is simply done. The video of a failed run is not made again (its texts were in the failed run's memory).
+     */
+    private fun resume(
+        setting: SocialAiSetting,
+        run: SocialAiRun,
+        date: LocalDate,
+        postId: Long,
+    ): SocialAiRun {
+        val post = runCatching { postService.get(postId) }.getOrNull()
+        val notScheduled =
+            when {
+                post == null -> "the post is gone"
+                setting.requireApproval || post.status != SocialPostStatus.DRAFT -> null
+                else -> scheduleOrReason(postId, setting, date)
+            }
+        return updateRun(run.id!!) {
+            it.status = SocialAiRunStatus.DONE
+            it.error = notScheduled?.let { reason -> draftKept(postId, reason) }
+        }
+    }
+
+    /** Schedules the AI draft; the reason when a channel's rules (or anything else) refuse it — the draft then stays. */
+    @Suppress("TooGenericExceptionCaught") // the draft is kept whatever refused it; the reason goes to the run
+    private fun scheduleOrReason(
+        postId: Long,
+        setting: SocialAiSetting,
+        date: LocalDate,
+    ): String? =
+        try {
+            schedule(postId, setting, date)
+            null
+        } catch (e: Exception) {
+            log.warn("AI post {} stays a draft: {}", postId, e.message)
+            e.message ?: e.javaClass.simpleName
+        }
+
+    private fun draftKept(
+        postId: Long,
+        reason: String,
+    ) = "Post #$postId stays a draft, not scheduled: $reason".take(ERROR_MAX)
 
     /** Everything one site's run produced before the posts: the setting, the day, the boat, our photos and the texts. */
     private data class DayContext(
@@ -306,7 +360,6 @@ class SocialAiService(
         if (offRatio > 0 && post.targets.any { it.platform == SocialPlatform.INSTAGRAM }) {
             log.info("AI post {}: {} photo(s) outside Instagram's ratio", post.id, offRatio)
         }
-        if (!setting.requireApproval) schedule(post.id, setting, date)
         return post
     }
 
@@ -429,7 +482,8 @@ class SocialAiService(
         (g.payload["runId"] as? Number)?.toLong()?.let { runId ->
             updateRun(runId) {
                 it.status = SocialAiRunStatus.DONE
-                if (failed) it.error = "Video: ${error ?: "failed"}".take(ERROR_MAX)
+                // Kept next to a draft warning the run may already carry.
+                if (failed) it.error = listOfNotNull(it.error, "Video: ${error ?: "failed"}").joinToString("; ").take(ERROR_MAX)
             }
         }
     }
