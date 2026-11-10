@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.calls.service
 
 import hr.workspace.boat4you.domains.calls.CallSite
+import hr.workspace.boat4you.domains.calls.NikaLanguage
 import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCall
 import hr.workspace.boat4you.domains.catalouge.jpa.Inquiry
@@ -35,7 +36,7 @@ object CallContextBuilder {
             "offer_summary" to (inquiry.offerNote ?: ""),
             "transfer_allowed" to CallClock.transferAllowed(now, s).toString(),
             "transfer_hours_text" to CallClock.transferHoursText(s),
-            "language" to (call.language ?: inquiry.locale ?: "en"),
+            "language" to NikaLanguage.of(call.language ?: inquiry.locale),
             "client_timezone" to (inquiry.phoneE164?.let { CallClock.clientZone(it).id } ?: CallClock.ZAGREB.id),
             "other_inquiries" to others.joinToString(" | ") { mention(it) },
             // Echoed back in the webhook, so a call whose start was unclear still finds its row (no conversation id).

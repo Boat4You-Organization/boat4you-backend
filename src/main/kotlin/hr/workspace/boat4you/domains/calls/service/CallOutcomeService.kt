@@ -59,6 +59,11 @@ class CallOutcomeService(
         }
         call.status = CallStatus.DONE
         call.outcome = outcomeOf(data, collected)
+        // The client refused recording: a recording that already arrived is not kept (applyAudio refuses a later one).
+        if (call.outcome == CallOutcome.NO_CONSENT_TO_RECORD) {
+            call.audioPath?.let(audio::delete)
+            call.audioPath = null
+        }
         calls.save(call)
 
         when (call.outcome) {
@@ -113,7 +118,7 @@ class CallOutcomeService(
         row: InquiryCall,
         base64Mp3: String,
     ) {
-        val call = calls.lockFresh(row.id!!)?.takeIf { it.audioPath == null } ?: return
+        val call = calls.lockFresh(row.id!!)?.takeIf { it.audioPath == null && it.outcome != CallOutcome.NO_CONSENT_TO_RECORD } ?: return
         val conversation = call.elevenlabsConversationId ?: return
         call.audioPath = audio.save(conversation, Base64.getDecoder().decode(base64Mp3), clock.instant())
         calls.save(call)
@@ -154,12 +159,14 @@ class CallOutcomeService(
         ): CallOutcome {
             fun yes(key: String) = collected[key] == true || collected[key]?.toString().equals("true", ignoreCase = true)
             val transferred = data.transcript.any { t -> t.toolCalls.orEmpty().any { (it["tool_name"] ?: it["name"]) == "transfer_to_number" } }
+            val callback = !collected["callback_time"]?.toString().isNullOrBlank()
             return when {
                 yes("do_not_call") -> CallOutcome.DO_NOT_CALL
                 yes("recording_refused") -> CallOutcome.NO_CONSENT_TO_RECORD
-                transferred -> CallOutcome.TRANSFERRED
+                // A transfer Mario did not pick up ends with an agreed time: that is a task for him, not a done transfer.
+                transferred && !callback -> CallOutcome.TRANSFERRED
                 yes("ready_to_book") -> CallOutcome.READY_TO_BOOK
-                !collected["callback_time"]?.toString().isNullOrBlank() -> CallOutcome.CALL_BACK
+                callback -> CallOutcome.CALL_BACK
                 yes("booked_elsewhere") -> CallOutcome.BOOKED_ELSEWHERE
                 yes("not_interested") -> CallOutcome.NOT_INTERESTED
                 yes("wants_changes") -> CallOutcome.WANTS_CHANGES

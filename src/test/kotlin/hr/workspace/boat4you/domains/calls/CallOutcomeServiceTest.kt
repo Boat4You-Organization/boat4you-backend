@@ -181,6 +181,32 @@ class CallOutcomeServiceTest : CallsJpaTest() {
     }
 
     @Test
+    fun `a transfer Mario did not pick up, ending in an agreed time, is a task for him and not a done transfer`() {
+        val time = "sutra u 10 po hrvatskom vremenu"
+        // The client asked for a person: call back. The client wanted to book: ready to book. Both create Mario's task.
+        outcomeOf(data(mapOf("callback_time" to time), tools = listOf("transfer_to_number"))) shouldBe CallOutcome.CALL_BACK
+        outcomeOf(data(mapOf("ready_to_book" to true, "callback_time" to time), tools = listOf("transfer_to_number"))) shouldBe CallOutcome.READY_TO_BOOK
+    }
+
+    @Test
+    fun `a recording that arrives after the client refused recording is not kept`() {
+        val c = dialling()
+        service.applyTranscription(c, data(mapOf("recording_refused" to true)))
+        service.applyAudio(c, Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3)))
+        calls.findById(c.id!!).get().audioPath shouldBe null
+    }
+
+    @Test
+    fun `a recording stored before the client's refusal is known is deleted`() {
+        val c = dialling()
+        service.applyAudio(c, Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3)))
+        val path = calls.findById(c.id!!).get().audioPath.shouldNotBeNull()
+        service.applyTranscription(c, data(mapOf("recording_refused" to true)))
+        calls.findById(c.id!!).get().audioPath shouldBe null
+        Files.exists(uploadDir.resolve(path)) shouldBe false
+    }
+
+    @Test
     fun `audio is written under calls yyyy mm and the path stored`() {
         val c = dialling()
         service.applyAudio(c, Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3)))
