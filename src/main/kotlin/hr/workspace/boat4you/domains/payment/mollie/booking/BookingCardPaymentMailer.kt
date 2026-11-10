@@ -1,10 +1,10 @@
 package hr.workspace.boat4you.domains.payment.mollie.booking
 
 import hr.workspace.boat4you.common.services.resolveEmailLocale
-import org.openapitools.model.LanguageEnum
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.custompayment.service.EmailCustomPaymentMailer
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
+import org.openapitools.model.LanguageEnum
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.MessageSource
@@ -30,6 +30,8 @@ data class BookingPaymentNotice(
     val completedAt: Instant,
     val payerEmail: String?,
     val language: LanguageEnum?,
+    /** Paid with Klarna instead of a card (the e-mails name the method). */
+    val klarna: Boolean = false,
 )
 
 /**
@@ -72,23 +74,31 @@ class BookingCardPaymentMailer(
             return
         }
         val amount = EmailCustomPaymentMailer.amountLabel(notice.amountMinor, CURRENCY)
+        val how = if (notice.klarna) "Klarna" else "Card"
         val bookingUrl = "${serverHostAdminPublic.trimEnd('/')}/bookings/${notice.reservationId}"
         emailService.sendEmail(
             recipients = recipients,
-            subject = "Card payment received: $amount · booking ${notice.reference} · Boat4You",
+            subject = "$how payment received: $amount · booking ${notice.reference} · Boat4You",
             templateName = EmailCustomPaymentMailer.ADMIN_TEMPLATE,
             variables =
                 mapOf(
-                    "title" to "Card payment received",
+                    "title" to "$how payment received",
                     "bookingIntro" to
-                        "A client paid an instalment of online booking ${notice.reference} by card (Mollie). The instalment is " +
+                        "A client paid an instalment of online booking ${notice.reference} ${if (notice.klarna) "with Klarna" else "by card"} (Mollie). The instalment is " +
                         "marked as paid; confirming the booking with the charter company stays a manual step. A payment " +
                         "confirmation e-mail is sent to the client. Reply goes to the client.",
                     "brandName" to BRAND,
                     "siteKey" to "boat4you",
                     "locale" to (notice.language?.value?.lowercase() ?: "en"),
                     "amountLabel" to amount,
-                    "amountNote" to "instalment ${notice.baseAmount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()}€ + card surcharge ${notice.surchargeAmount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()}€",
+                    "amountNote" to
+                        "instalment ${notice.baseAmount.setScale(
+                            2,
+                            java.math.RoundingMode.HALF_UP,
+                        ).toPlainString()}€ + ${if (notice.klarna) "Klarna" else "card"} surcharge ${notice.surchargeAmount.setScale(
+                            2,
+                            java.math.RoundingMode.HALF_UP,
+                        ).toPlainString()}€",
                     "reference" to notice.reference,
                     "payerEmail" to (notice.payerEmail ?: "-"),
                     "paidAtLabel" to EmailCustomPaymentMailer.adminDateLabel(notice.completedAt),

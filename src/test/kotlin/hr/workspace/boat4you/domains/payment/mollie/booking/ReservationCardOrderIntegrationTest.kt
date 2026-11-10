@@ -1,29 +1,16 @@
 package hr.workspace.boat4you.domains.payment.mollie.booking
 
+import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
+import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.BookingCheckoutMethod
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.CardOrderPromoteState
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrder
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
-import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
-import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.reservation.events.ReservationPaymentRecordedEvent
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.matchers.string.shouldContain
-import io.kotest.matchers.string.shouldNotContain
-import org.flywaydb.core.Flyway
-import org.flywaydb.core.api.callback.Callback
-import org.flywaydb.core.api.callback.Context
-import org.flywaydb.core.api.callback.Event
-import org.springframework.context.annotation.ComponentScan
-import org.springframework.context.event.EventListener
-import org.springframework.stereotype.Component
-import org.springframework.test.context.DynamicPropertyRegistry
-import org.springframework.test.context.DynamicPropertySource
-import java.util.UUID
-import java.util.concurrent.CopyOnWriteArrayList
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
@@ -31,8 +18,14 @@ import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.longs.shouldBeLessThan
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
-import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
+import org.flywaydb.core.Flyway
+import org.flywaydb.core.api.callback.Callback
+import org.flywaydb.core.api.callback.Context
+import org.flywaydb.core.api.callback.Event
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.MethodOrderer
 import org.junit.jupiter.api.Order
@@ -44,7 +37,9 @@ import org.springframework.boot.autoconfigure.domain.EntityScan
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection
+import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.Import
+import org.springframework.context.event.EventListener
 import org.springframework.core.io.ClassPathResource
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.dao.PessimisticLockingFailureException
@@ -52,6 +47,9 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories
 import org.springframework.jdbc.core.ConnectionCallback
 import org.springframework.jdbc.core.JdbcTemplate
+import org.springframework.stereotype.Component
+import org.springframework.test.context.DynamicPropertyRegistry
+import org.springframework.test.context.DynamicPropertySource
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
@@ -64,6 +62,8 @@ import org.testcontainers.utility.MountableFile
 import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
+import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -276,7 +276,13 @@ class ReservationCardOrderIntegrationTest {
     private fun row(id: Long): ReservationCardOrder = orders.findById(id).orElseThrow()
 
     private fun reusable(plan: BookingOrderPlan) =
-        orders.findReusable(plan.reservationFlowId, plan.phaseIds, plan.amountMinor, ReservationCardOrderTx.paymentPhaseKey(plan.paymentPhaseId), ReservationCardOrderTx.reusableUntil())
+        orders.findReusable(
+            plan.reservationFlowId,
+            plan.phaseIds,
+            plan.amountMinor,
+            ReservationCardOrderTx.paymentPhaseKey(plan.paymentPhaseId),
+            ReservationCardOrderTx.reusableUntil(),
+        )
 
     @Test
     @Order(1)
@@ -294,7 +300,8 @@ class ReservationCardOrderIntegrationTest {
         jdbc.queryForObject(
             "SELECT pg_get_indexdef('idx_reservation_card_order_pending_created'::regclass)",
             String::class.java,
-        ) shouldBe "CREATE INDEX idx_reservation_card_order_pending_created ON public.reservation_card_order USING btree (created_at) WHERE ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SUPERSEDED'::character varying])::text[]))"
+        ) shouldBe
+            "CREATE INDEX idx_reservation_card_order_pending_created ON public.reservation_card_order USING btree (created_at) WHERE ((status)::text = ANY ((ARRAY['PENDING'::character varying, 'SUPERSEDED'::character varying])::text[]))"
 
         // The phase columns: nullable VARCHARs, a partial NON-unique index, V1_56's unique index untouched.
         jdbc.queryForList(
@@ -495,6 +502,7 @@ class ReservationCardOrderIntegrationTest {
     fun `reconcile candidates - PENDING, 5 min to 48 h old, not checked in 5 min, oldest first`() {
         jdbc.update("UPDATE reservation_card_order SET status = 'CANCELLED' WHERE status = 'PENDING'")
         var nextPhaseId = 60L
+
         fun pendingAged(
             orderId: String,
             age: String,
@@ -558,10 +566,20 @@ class ReservationCardOrderIntegrationTest {
     @Test
     @Order(10)
     fun `insertPending - the same Mollie payment id twice gives ONE row, the second call returns it as existing`() {
-        val first = tx.insertPending(plan(flowId = 900, phaseIds = "71", paymentPhaseId = 71).copy(checkoutToken = UUID.randomUUID()), "tr_same-id", "https://www.mollie.com/checkout/select-method/same-1")
+        val first =
+            tx.insertPending(
+                plan(flowId = 900, phaseIds = "71", paymentPhaseId = 71).copy(checkoutToken = UUID.randomUUID()),
+                "tr_same-id",
+                "https://www.mollie.com/checkout/select-method/same-1",
+            )
         first.existing shouldBe false
         // An Idempotency-Key replay: same Mollie id, even for a plan that would not be reusable on its own.
-        val second = tx.insertPending(plan(flowId = 901, phaseIds = "72", amountMinor = 99_900, paymentPhaseId = 72).copy(checkoutToken = UUID.randomUUID()), "tr_same-id", "https://www.mollie.com/checkout/select-method/same-2")
+        val second =
+            tx.insertPending(
+                plan(flowId = 901, phaseIds = "72", amountMinor = 99_900, paymentPhaseId = 72).copy(checkoutToken = UUID.randomUUID()),
+                "tr_same-id",
+                "https://www.mollie.com/checkout/select-method/same-2",
+            )
         second.existing shouldBe true
         second.order.id shouldBe first.order.id
         second.order.checkoutUrl shouldBe "https://www.mollie.com/checkout/select-method/same-1"
@@ -715,8 +733,12 @@ class ReservationCardOrderIntegrationTest {
         }
         review("tr_bad-amount", { paidPayment(it, amountMinor = it.amountMinor - 100) }, "amount")
         review("tr_bad-currency", { paidPayment(it, currency = "USD") }, "currency USD")
-        review("tr_bad-flow", { paidPayment(it).copy(metadata = mapOf(ReservationCardOrderTx.FLOW_METADATA_KEY to "901", ReservationCardOrderTx.PHASES_METADATA_KEY to it.phaseIds)) }, "metadata")
-        review("tr_bad-phases", { paidPayment(it).copy(metadata = mapOf(ReservationCardOrderTx.FLOW_METADATA_KEY to "900", ReservationCardOrderTx.PHASES_METADATA_KEY to "1")) }, "metadata")
+        review("tr_bad-flow", {
+            paidPayment(it).copy(metadata = mapOf(ReservationCardOrderTx.FLOW_METADATA_KEY to "901", ReservationCardOrderTx.PHASES_METADATA_KEY to it.phaseIds))
+        }, "metadata")
+        review("tr_bad-phases", {
+            paidPayment(it).copy(metadata = mapOf(ReservationCardOrderTx.FLOW_METADATA_KEY to "900", ReservationCardOrderTx.PHASES_METADATA_KEY to "1"))
+        }, "metadata")
         events.recorded.size shouldBe 0
     }
 
@@ -840,6 +862,7 @@ class ReservationCardOrderIntegrationTest {
         val phase = newPhase(900)
         val order = pendingOver("tr_moneyback", listOf(phase), paymentPhaseId = phase, amountMinor = 150_000)
         tx.applyCompleted(order.id!!, paidPayment(order), null).completedNow shouldBe true
+
         fun withTotals(
             refunded: Long?,
             chargedBack: Long?,
@@ -893,7 +916,10 @@ class ReservationCardOrderIntegrationTest {
         val failed = order("tr_adminFailed", 73, 300_000)
         // A payment whose reservation was purged (ON DELETE SET NULL): it stays in the list, without a booking number.
         val orphan = order("tr_adminOrphan", 74, 400_000)
-        jdbc.update("UPDATE reservation_card_order SET status = 'COMPLETED', completed_at = now(), refunded_amount_minor = 5000, charged_back_amount_minor = 1000 WHERE id = ?", paid.id)
+        jdbc.update(
+            "UPDATE reservation_card_order SET status = 'COMPLETED', completed_at = now(), refunded_amount_minor = 5000, charged_back_amount_minor = 1000 WHERE id = ?",
+            paid.id,
+        )
         jdbc.update("UPDATE reservation_card_order SET status = 'FAILED' WHERE id = ?", failed.id)
         jdbc.update("UPDATE reservation_card_order SET status = 'COMPLETED', reservation_id = NULL WHERE id = ?", orphan.id)
         val firstPage = PageRequest.of(0, 10)
@@ -948,7 +974,14 @@ class ReservationCardOrderIntegrationTest {
         fun reusableFor(
             plan: BookingOrderPlan,
             method: BookingCheckoutMethod,
-        ) = orders.findReusable(plan.reservationFlowId, plan.phaseIds, plan.amountMinor, ReservationCardOrderTx.paymentPhaseKey(plan.paymentPhaseId), ReservationCardOrderTx.reusableUntil(), method.name)
+        ) = orders.findReusable(
+            plan.reservationFlowId,
+            plan.phaseIds,
+            plan.amountMinor,
+            ReservationCardOrderTx.paymentPhaseKey(plan.paymentPhaseId),
+            ReservationCardOrderTx.reusableUntil(),
+            method.name,
+        )
 
         val cardPlan = plan(flowId = 901, phaseIds = "81", amountMinor = 111_100, paymentPhaseId = 81)
         val card = insert("tr_methodCard", cardPlan)
@@ -971,5 +1004,34 @@ class ReservationCardOrderIntegrationTest {
         reusableFor(cardPlan, BookingCheckoutMethod.CARD)?.id shouldBe card.id
         shouldThrow<Exception> { jdbc.update("UPDATE reservation_card_order SET method = 'PAYPAL' WHERE id = ?", card.id) }
         jdbc.queryForObject("SELECT count(*) FROM pg_constraint WHERE conname IN ('chk_reservation_card_order_method', 'chk_custom_payment_method')", Long::class.java) shouldBe 2L
+    }
+
+    @Test
+    @Order(22)
+    fun `paid after the 48 h stale review (Klarna stays open that long) - one alert, the phase stays unpaid for a human`() {
+        jdbc.update("UPDATE reservation_card_order SET status = 'CANCELLED' WHERE status IN ('PENDING', 'SUPERSEDED')")
+        val phase = newPhase(900)
+        val order = pendingOver("tr_staleThenPaid", listOf(phase), paymentPhaseId = phase, amountMinor = 150_000)
+        tx.markStaleOpen(order.id!!) shouldBe true
+        with(row(order.id!!)) {
+            status shouldBe ReservationCardOrderStatus.NEEDS_REVIEW
+            reviewReason.shouldNotBeNull() shouldContain ReservationCardOrderTx.STALE_REASON
+        }
+
+        // Still open at Mollie: nothing to say.
+        tx.applyCompleted(order.id!!, paidPayment(order).copy(status = "open"), null) shouldBe CompletionResult.NOTHING
+
+        val late = tx.applyCompleted(order.id!!, paidPayment(order), "webhook:paid")
+        late.completedNow shouldBe false
+        late.promote shouldBe false
+        late.alert.shouldNotBeNull() shouldContain "PAID at Mollie after the 48 hour stale review"
+        with(row(order.id!!)) {
+            status shouldBe ReservationCardOrderStatus.NEEDS_REVIEW
+            reviewReason.shouldNotBeNull() shouldContain "NOT marked paid"
+        }
+        phaseRow(phase).paidOn.shouldBeNull()
+        // Once: the webhook, the status endpoint and the reconcile job may all report the same payment again.
+        tx.applyCompleted(order.id!!, paidPayment(order), "webhook:paid") shouldBe CompletionResult.NOTHING
+        events.recorded.shouldBeEmpty()
     }
 }

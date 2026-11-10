@@ -19,8 +19,7 @@ data class MollieAmount(
     val value: String,
 ) {
     /** Cents, or null when the value is not a plain decimal with at most two decimals. */
-    fun toMinorOrNull(): Long? =
-        runCatching { BigDecimal(value).setScale(2, RoundingMode.UNNECESSARY).movePointRight(2).longValueExact() }.getOrNull()
+    fun toMinorOrNull(): Long? = runCatching { BigDecimal(value).setScale(2, RoundingMode.UNNECESSARY).movePointRight(2).longValueExact() }.getOrNull()
 
     companion object {
         fun eur(minor: Long): MollieAmount = MollieAmount("EUR", BigDecimal.valueOf(minor, 2).toPlainString())
@@ -47,6 +46,11 @@ data class MollieCreatePaymentRequest(
     val billingAddress: MollieBillingAddress? = null,
     /** Order lines; their `totalAmount`s must add up to [amount]. Required for Klarna. */
     val lines: List<MolliePaymentLine>? = null,
+    /**
+     * `automatic` for Klarna, stated explicitly: the payment must end `paid` (captured at once), never stay
+     * `authorized` waiting for a capture we do not make. Not sent for cards (Mollie's default, as before).
+     */
+    val captureMode: String? = null,
 )
 
 data class MollieBillingAddress(
@@ -190,6 +194,9 @@ object MolliePaymentStatuses {
 
 object MollieMethods {
     const val KLARNA = "klarna"
+
+    /** `captureMode` of a Klarna payment: Mollie captures as soon as Klarna approves. */
+    const val CAPTURE_AUTOMATIC = "automatic"
     const val CREDIT_CARD = "creditcard"
     const val APPLE_PAY = "applepay"
     const val PAY_BY_BANK = "paybybank"

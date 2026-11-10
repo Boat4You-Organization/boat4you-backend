@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.custompayment.dto.CreateCustomPaymentReques
 import hr.workspace.boat4you.domains.custompayment.dto.CreateCustomPaymentResponse
 import hr.workspace.boat4you.domains.custompayment.dto.CustomPaymentConfigDto
 import hr.workspace.boat4you.domains.custompayment.dto.CustomPaymentStatusDto
+import hr.workspace.boat4you.domains.custompayment.dto.KlarnaOfferDto
 import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentNotFoundException
 import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentProviderException
 import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentTooManyException
@@ -14,17 +15,16 @@ import hr.workspace.boat4you.domains.custompayment.exceptions.CustomPaymentsUnav
 import hr.workspace.boat4you.domains.custompayment.jpa.CustomPayment
 import hr.workspace.boat4you.domains.custompayment.jpa.CustomPaymentRepository
 import hr.workspace.boat4you.domains.custompayment.jpa.CustomPaymentStatus
-import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
-import hr.workspace.boat4you.domains.custompayment.dto.KlarnaOfferDto
 import hr.workspace.boat4you.domains.payment.mollie.KlarnaBilling
+import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
 import hr.workspace.boat4you.domains.payment.mollie.MollieClient
-import hr.workspace.boat4you.domains.payment.mollie.MollieKlarnaProperties
-import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentLine
 import hr.workspace.boat4you.domains.payment.mollie.MollieCreatePaymentRequest
+import hr.workspace.boat4you.domains.payment.mollie.MollieKlarnaProperties
 import hr.workspace.boat4you.domains.payment.mollie.MollieMethods
 import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentHandler.HandlerResult
+import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentLine
 import hr.workspace.boat4you.domains.payment.mollie.MolliePaymentStatuses
 import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
@@ -108,7 +108,7 @@ class CustomPaymentService(
                 termsVersion = properties.customPayment.termsVersion,
                 acceptedAt = now,
                 reservationId = reservationIdFor(input.reference),
-                method = if (input.klarna != null) METHOD_KLARNA else METHOD_CARD,
+                method = if (input.klarna != null) CustomPayment.METHOD_KLARNA else CustomPayment.METHOD_CARD,
             )
         // A Klarna checkout carries the billing address (not stored here), so it is never handed out again: every
         // Klarna submit is its own payment. Card attempts dedupe as before, among card attempts only.
@@ -335,6 +335,7 @@ class CustomPaymentService(
             locale = MOLLIE_LOCALES[input.locale] ?: DEFAULT_MOLLIE_LOCALE,
             method = if (input.klarna != null) listOf(MollieMethods.KLARNA) else CUSTOM_PAYMENT_METHODS,
             billingAddress = input.klarna?.toMollie(),
+            captureMode = input.klarna?.let { MollieMethods.CAPTURE_AUTOMATIC },
             lines = input.klarna?.let { MolliePaymentLine.of("${site.brandName} - contract ${input.reference}", input.amountMinor, 0, "Payment fee") },
             metadata =
                 mapOf(
@@ -367,8 +368,6 @@ class CustomPaymentService(
 
         /** Cards (incl. Google Pay inside the card page), Apple Pay and Pay by Bank — no Klarna, no slow bank transfer. */
         val CUSTOM_PAYMENT_METHODS = listOf(MollieMethods.CREDIT_CARD, MollieMethods.APPLE_PAY, MollieMethods.PAY_BY_BANK)
-        const val METHOD_CARD = "CARD"
-        const val METHOD_KLARNA = "KLARNA"
 
         /** Our site locales -> Mollie checkout locales (Mollie has no Croatian: hr -> English). */
         val MOLLIE_LOCALES =

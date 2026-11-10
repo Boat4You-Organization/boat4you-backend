@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.reservation.dto
 
+import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.domains.payment.mollie.KlarnaBilling
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Email
@@ -44,6 +45,21 @@ data class KlarnaBillingRequest(
 ) {
     /** Trimmed, control characters removed, country upper case. [fallbackEmail] when the form sent none. */
     fun toBilling(fallbackEmail: String?): KlarnaBilling =
+        billing(fallbackEmail).also { b ->
+            // A field of control characters only passes @NotBlank and is empty after cleaning: a 400, not a Mollie error.
+            val empty =
+                listOf(
+                    "givenName" to b.givenName,
+                    "familyName" to b.familyName,
+                    "email" to b.email,
+                    "streetAndNumber" to b.streetAndNumber,
+                    "postalCode" to b.postalCode,
+                    "city" to b.city,
+                ).filter { it.second.isEmpty() }
+            if (empty.isNotEmpty()) throw ParameterValidationException(empty.associate { "klarna.${it.first}" to "must not be blank" })
+        }
+
+    private fun billing(fallbackEmail: String?): KlarnaBilling =
         KlarnaBilling(
             givenName = clean(givenName),
             familyName = clean(familyName),

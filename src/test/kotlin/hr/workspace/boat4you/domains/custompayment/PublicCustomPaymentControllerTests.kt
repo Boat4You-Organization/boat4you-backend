@@ -244,6 +244,9 @@ class PublicCustomPaymentControllerTests {
             webhookUrl shouldBe "https://api.boat4you.com/webhooks/mollie"
             locale shouldBe "de_DE"
             method shouldBe listOf("creditcard", "applepay", "paybybank")
+            captureMode shouldBe null
+            billingAddress shouldBe null
+            lines shouldBe null
             metadata shouldBe mapOf("customPaymentToken" to token, "customPaymentId" to "7", "site" to "boat4you")
         }
         val json = jacksonObjectMapper().writeValueAsString(request.value)
@@ -272,6 +275,8 @@ class PublicCustomPaymentControllerTests {
         verify(client).createPayment(capture(request), any())
         with(request.value) {
             method shouldBe listOf("klarna")
+            // Stated explicitly: a Klarna payment must end `paid`, never wait as `authorized` for a capture.
+            captureMode shouldBe "automatic"
             amount shouldBe MollieAmount("EUR", "1109.00")
             // The e-mail of the form wins over the one inside the address; names are trimmed, the country upper-cased.
             billingAddress shouldBe MollieBillingAddress("Hans", "Mueller", "payer@example.com", "Hellersbergstrasse 14", "41460", "Neuss", "DE")
@@ -293,8 +298,9 @@ class PublicCustomPaymentControllerTests {
 
         val properties = mollieProperties(linkKeys = "boat4you=$linkKey")
         MockMvcBuilders
-            .standaloneSetup(PublicCustomPaymentController(CustomPaymentService(properties, tx, repository, reservations, client, klarnaProperties(enabled = false, mollie = properties))))
-            .setControllerAdvice(ApiErrorHandler())
+            .standaloneSetup(
+                PublicCustomPaymentController(CustomPaymentService(properties, tx, repository, reservations, client, klarnaProperties(enabled = false, mollie = properties))),
+            ).setControllerAdvice(ApiErrorHandler())
             .build()
             .post("/public/payments/custom/orders") {
                 contentType = MediaType.APPLICATION_JSON

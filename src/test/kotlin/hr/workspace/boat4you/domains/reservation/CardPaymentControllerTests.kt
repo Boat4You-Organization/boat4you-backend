@@ -22,8 +22,8 @@ import hr.workspace.boat4you.domains.payment.mollie.mollieProperties
 import hr.workspace.boat4you.domains.reservation.controllers.CardPaymentController
 import hr.workspace.boat4you.domains.reservation.controllers.PublicCardPaymentController
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
-import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
+import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
 import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhase
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
@@ -54,8 +54,8 @@ import org.mockito.Mockito.`when`
 import org.slf4j.LoggerFactory
 import org.springframework.boot.convert.ApplicationConversionService
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
-import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.http.MediaType
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.ResultActionsDsl
 import org.springframework.test.web.servlet.post
@@ -196,16 +196,24 @@ class CardPaymentControllerTests {
                 }.andExpect { status { isOk() } }
         }
         mollie.klarnaSeen.map { it?.country to it?.city } shouldBe List(2) { "DE" to "Neuss" }
-        // No body, or a body without klarna = the card checkout as before.
+        // No body, an empty body with a JSON content type (what the web sends for cards), or {} = the card checkout as before.
         mvc(router("mollie")).create("/public/payments/card").andExpect { status { isOk() } }
         mollie.klarnaSeen.last() shouldBe null
+        listOf("", "{}", """{"klarna":null}""").forEach { cardBody ->
+            mvc(router("mollie"))
+                .post("/public/payments/card/create-checkout-session/42?paymentPhaseId=7&idempotencyKey=key-1&locale=de") {
+                    contentType = MediaType.APPLICATION_JSON
+                    content = cardBody
+                }.andExpect { status { isOk() } }
+            mollie.klarnaSeen.last() shouldBe null
+        }
 
         mvc(router("mollie"))
             .post("/public/payments/card/create-checkout-session/42?paymentPhaseId=7") {
                 contentType = MediaType.APPLICATION_JSON
                 content = """{"klarna":{"givenName":"Hans","country":"Germany"}}"""
             }.andExpect { status { isBadRequest() } }
-        mollie.klarnaSeen.size shouldBe 3
+        mollie.klarnaSeen.size shouldBe 6
 
         mvc(router("stripe"))
             .post("/public/payments/card/create-checkout-session/42?paymentPhaseId=7") {
@@ -233,6 +241,7 @@ class CardPaymentControllerTests {
         val orders = mock(ReservationCardOrderRepository::class.java)
         val client = mock(MollieClient::class.java)
         val createTx = mock(MollieBookingCreateTx::class.java)
+
         fun provider(properties: MollieProperties) =
             MollieBookingPaymentService(
                 properties,

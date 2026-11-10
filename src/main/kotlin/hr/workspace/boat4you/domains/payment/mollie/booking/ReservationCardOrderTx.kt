@@ -10,10 +10,10 @@ import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardO
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
 import hr.workspace.boat4you.domains.reservation.enums.ReservationStatus
 import hr.workspace.boat4you.domains.reservation.events.ReservationPaymentRecordedEvent
-import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationPaymentPhaseRepository
-import org.springframework.context.ApplicationEventPublisher
+import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -177,8 +177,17 @@ class ReservationCardOrderTx(
         orders.setLocalLockTimeout()
         val row = orders.lockById(id) ?: return CompletionResult.NOTHING
         stamp(row, event)
+        val paid = payment.status.lowercase() == MolliePaymentStatuses.PAID && payment.id == row.providerOrderId
+        if (paid && row.status == ReservationCardOrderStatus.NEEDS_REVIEW && row.reviewReason?.startsWith(STALE_REASON) == true) {
+            // Klarna keeps a payment open for 48 h and longer: it may be paid AFTER the row was parked as stale. The
+            // phases are not marked here (nobody checked them since), but the office must hear about the money - once.
+            val reason = "PAID at Mollie after the 48 hour stale review — the instalment is NOT marked paid; check the booking and mark it by hand"
+            row.reviewReason = reason
+            log.warn("Mollie booking order {} (ledger {}) paid after the stale review", row.providerOrderId, row.id)
+            return CompletionResult(completedNow = false, promote = false, reservationId = row.reservationId, alert = reason)
+        }
         if (row.status == ReservationCardOrderStatus.COMPLETED || row.status == ReservationCardOrderStatus.NEEDS_REVIEW) return CompletionResult.NOTHING
-        if (payment.status.lowercase() != MolliePaymentStatuses.PAID || payment.id != row.providerOrderId) return CompletionResult.NOTHING
+        if (!paid) return CompletionResult.NOTHING
 
         val mismatches =
             listOfNotNull(
@@ -255,7 +264,7 @@ class ReservationCardOrderTx(
         val row = orders.lockById(id) ?: return false
         if (row.status != ReservationCardOrderStatus.PENDING && row.status != ReservationCardOrderStatus.SUPERSEDED) return false
         row.status = ReservationCardOrderStatus.NEEDS_REVIEW
-        row.reviewReason = "still open 48 hours after the checkout was created — check the payment in the Mollie dashboard"
+        row.reviewReason = "$STALE_REASON after the checkout was created — check the payment in the Mollie dashboard"
         log.warn("Mollie booking payment {} (ledger {}) still open after 48 h -> NEEDS_REVIEW", row.providerOrderId, row.id)
         return true
     }
@@ -282,6 +291,7 @@ class ReservationCardOrderTx(
             completedAt = row.completedAt ?: Instant.now(),
             payerEmail = flow?.email,
             language = flow?.user?.language,
+            klarna = row.methodOrCard == BookingCheckoutMethod.KLARNA,
         )
     }
 
@@ -331,6 +341,9 @@ class ReservationCardOrderTx(
         const val FLOW_METADATA_KEY = "reservationFlowId"
         const val PHASES_METADATA_KEY = "phaseIds"
         private const val MAX_REVIEW_REASON = 1000
+
+        /** Start of the review reason of [markStaleOpen]; [applyCompleted] recognises a stale row by it. */
+        const val STALE_REASON = "still open 48 hours"
         private const val MAX_EVENT_LENGTH = 64
 
         /** A PENDING order is reused only while Mollie keeps it open for at least this long. */

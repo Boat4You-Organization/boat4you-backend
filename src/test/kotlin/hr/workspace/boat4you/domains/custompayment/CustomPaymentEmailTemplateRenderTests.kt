@@ -154,7 +154,7 @@ class CustomPaymentEmailTemplateRenderTests {
         de.variables["paidAtLabel"] shouldBe "13. Oktober 2026 · 15:20 (GMT+2)"
         render(de) shouldContain "Bezahlt am 13. Oktober 2026 · 15:20 (GMT+2)"
         render(mailer.receiptMail(payment("catamaran-charter-greece", "fr"))) shouldContain
-            "Cet e-mail confirme votre paiement par carte à Catamaran Charter Greece (Cusmanich d.o.o.)."
+            "Cet e-mail confirme votre paiement à Catamaran Charter Greece (Cusmanich d.o.o.)."
         render(mailer.receiptMail(payment("boat4you", "hr"))) shouldContain "Plaćeno 13. listopada 2026. · 15:20 (GMT+2)"
 
         EmailCustomPaymentMailer.amountLabel(5000, "EUR") shouldBe "50.00€"

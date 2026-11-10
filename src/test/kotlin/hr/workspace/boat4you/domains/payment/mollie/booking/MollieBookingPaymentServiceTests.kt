@@ -175,4 +175,33 @@ class MollieBookingPaymentServiceTests {
         verify(orderTx, never()).applyCompleted(ArgumentMatchers.anyLong(), any(), ArgumentMatchers.any())
         verify(orderTx, never()).closeIfPending(ArgumentMatchers.anyLong(), any())
     }
+
+    @Test
+    fun `authorized but not captured - the office is alerted by the webhook, never by the status polling`() {
+        val alerts = mock(BookingCardAlertMailer::class.java)
+        val service =
+            MollieBookingPaymentService(
+                mollieProperties(),
+                client,
+                mock(MollieBookingCreateTx::class.java),
+                orderTx,
+                orders,
+                followUp,
+                mock(StripeSessionExpirer::class.java),
+                alerts,
+                "https://www.boat4you.com",
+            )
+        val row = row(ReservationCardOrderStatus.PENDING)
+        givenRow(row)
+
+        `when`(client.getPayment("tr_7UhSN1zuXS")).thenReturn(payment("authorized"))
+        service.onPaymentChanged("tr_7UhSN1zuXS")
+        verify(alerts).alert(any(), ArgumentMatchers.contains("AUTHORIZED"), ArgumentMatchers.anyString())
+        verify(orderTx, never()).applyCompleted(ArgumentMatchers.anyLong(), any(), ArgumentMatchers.any())
+
+        // The payer's success page polls the status: "we are confirming your payment", and no second e-mail.
+        `when`(client.getPaymentOnce("tr_7UhSN1zuXS")).thenReturn(payment("authorized"))
+        service.checkStatus(token.toString())!!.status shouldBe CheckoutSessionStatusEnum.PAYMENT_PENDING
+        verify(alerts, times(1)).alert(any(), ArgumentMatchers.anyString(), ArgumentMatchers.anyString())
+    }
 }

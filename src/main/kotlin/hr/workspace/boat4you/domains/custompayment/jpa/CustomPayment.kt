@@ -113,6 +113,8 @@ open class CustomPayment {
 
     companion object {
         const val CURRENCY_EUR = "EUR"
+        const val METHOD_CARD = "CARD"
+        const val METHOD_KLARNA = "KLARNA"
         const val PROVIDER_MOLLIE = "MOLLIE"
     }
 }
