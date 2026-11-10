@@ -18,7 +18,7 @@
       A client paid an instalment of an online booking by card.
     </p>
     <p th:unless="${bookingIntro}" style="font-size:13px; line-height:1.55; color:#334155; margin:0 0 16px;">
-      A client paid by card through the secret /pay link on <b th:text="${brandName}">Catamaran Charter Croatia</b>.
+      A client paid <span th:text="${paidHow} ?: 'by card'">by card</span> through the secret /pay link on <b th:text="${brandName}">Catamaran Charter Croatia</b>.
       Nothing in bookings changes automatically: match the payment to the contract. A payment
       confirmation e-mail is sent to the client. Reply goes to the client.
     </p>
@@ -45,7 +45,7 @@
         <td th:text="${paidAtLabel}" style="padding:6px 0;">Oct 13, 2026 · 15:20 (GMT+2)</td>
       </tr>
       <tr th:if="${cardLabel}">
-        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Card</td>
+        <td style="padding:6px 12px 6px 0; color:#64748b; vertical-align:top;">Payment method</td>
         <td th:text="${cardLabel}" style="padding:6px 0;">Visa •••• 4242</td>
       </tr>
       <tr>

@@ -1,5 +1,7 @@
 package hr.workspace.boat4you.domains.reservation.service.payment
 
+import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
+
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
 
 /**
@@ -22,6 +24,8 @@ interface CardPaymentProvider {
         paymentPhaseId: Long?,
         idempotencyKey: String?,
         locale: String?,
+        /** Non-null = a Klarna checkout with this billing address (Mollie only; 422 from any other provider). */
+        klarna: KlarnaBillingRequest? = null,
     ): CheckoutSessionDto
 
     /** Status of a checkout this provider created; `null` when the provider does not know [ref]. */

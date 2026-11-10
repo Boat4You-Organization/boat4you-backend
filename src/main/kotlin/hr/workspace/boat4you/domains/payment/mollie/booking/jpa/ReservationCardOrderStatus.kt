@@ -17,6 +17,21 @@ enum class ReservationCardOrderStatus {
     NEEDS_REVIEW,
 }
 
+/** `reservation_card_order.method` (CHECK in V9_124): which Mollie methods the hosted checkout of the order offers. */
+enum class BookingCheckoutMethod {
+    /** Cards and Apple Pay. */
+    CARD,
+
+    /** Klarna only (needs the billing address and order lines). */
+    KLARNA,
+    ;
+
+    companion object {
+        /** NULL / unknown = CARD (rows from before V9_124). */
+        fun fromStored(value: String?): BookingCheckoutMethod = entries.firstOrNull { it.name == value } ?: CARD
+    }
+}
+
 /**
  * `reservation_card_order.promote_state` (CHECK in V9_123, plan 2A.10 M4): the pay-full "promote to booking" that runs
  * AFTER the payment marking has committed. NULL = no promote needed (the normal per-phase path).

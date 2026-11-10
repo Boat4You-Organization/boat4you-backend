@@ -59,7 +59,8 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
 
     /**
      * Reuse before create: a PENDING order of [reservationFlowId] for exactly this charge — same phase set, same cents,
-     * same `payment_phase_id` ([paymentPhaseKey] = the id, or -1 for NULL) — that Mollie keeps open until after
+     * same `payment_phase_id` ([paymentPhaseKey] = the id, or -1 for NULL), same [method] group (a card checkout is
+     * never handed out to a payer who picked Klarna, and vice versa) — that Mollie keeps open until after
      * [expiresAfter]. Newest first.
      */
     @Query(
@@ -70,6 +71,7 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
           AND phase_ids = :phaseIds
           AND amount_minor = :amountMinor
           AND COALESCE(payment_phase_id, -1) = :paymentPhaseKey
+          AND COALESCE(method, 'CARD') = :method
           AND expires_at > :expiresAfter
         ORDER BY created_at DESC, id DESC
         LIMIT 1
@@ -82,6 +84,7 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
         @Param("amountMinor") amountMinor: Long,
         @Param("paymentPhaseKey") paymentPhaseKey: Long,
         @Param("expiresAfter") expiresAfter: Instant,
+        @Param("method") method: String = BookingCheckoutMethod.CARD.name,
     ): ReservationCardOrder?
 
     /** Every PENDING order of [reservationFlowId], oldest first (the ones a new checkout must clean up first). */

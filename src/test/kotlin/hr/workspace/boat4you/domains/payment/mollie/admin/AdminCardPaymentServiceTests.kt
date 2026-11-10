@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.custompayment.jpa.CustomPaymentRepository
 import hr.workspace.boat4you.domains.payment.mollie.MollieClient
 import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.payment.mollie.booking.MollieBookingPaymentService
+import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.BookingCheckoutMethod
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrder
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderRepository
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
@@ -143,6 +144,7 @@ class AdminCardPaymentServiceTests {
         `when`(orders.findAdminRowById(5)).thenReturn(listOf(arrayOf(order, " Ana ", "Kovac", "ana@example.com", " ", "1441002/2026")))
         with(service().refresh(5)) {
             status shouldBe ReservationCardOrderStatus.COMPLETED
+            method shouldBe BookingCheckoutMethod.CARD
             clientName shouldBe "Ana Kovac"
             clientEmail shouldBe "ana@example.com"
             clientPhone shouldBe null

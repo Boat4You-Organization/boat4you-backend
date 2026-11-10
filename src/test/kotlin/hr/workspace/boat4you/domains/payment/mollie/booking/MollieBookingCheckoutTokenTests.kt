@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.payment.mollie.booking
 
+import hr.workspace.boat4you.domains.payment.mollie.KlarnaBilling
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import org.junit.jupiter.api.Test
@@ -27,6 +28,23 @@ class MollieBookingCheckoutTokenTests {
     fun `a new attempt with the same web key gets a new token`() {
         token(attempt = 1) shouldNotBe token(attempt = 0)
         token(attempt = 1) shouldBe token(attempt = 1)
+    }
+
+    @Test
+    fun `a Klarna checkout has its own token, and a changed billing address changes it`() {
+        val billing = KlarnaBilling("Hans", "Mueller", "hans@example.com", "Hellersbergstrasse 14", "41460", "Neuss", "DE")
+        val key = MollieBookingCreateTx.billingFingerprint(billing)
+        key shouldBe MollieBookingCreateTx.billingFingerprint(billing.copy())
+        key.length shouldBe 64
+        MollieBookingCreateTx.billingFingerprint(billing.copy(streetAndNumber = "Hellersbergstrasse 15")) shouldNotBe key
+        // Field boundaries count: "a" + "bc" is not "ab" + "c".
+        MollieBookingCreateTx.billingFingerprint(billing.copy(givenName = "Hans M", familyName = "ueller")) shouldNotBe
+            MollieBookingCreateTx.billingFingerprint(billing.copy(givenName = "Hans", familyName = "M ueller"))
+
+        fun klarnaToken(billingKey: String?) = MollieBookingCreateTx.checkoutToken(900, "7,8", 281_160, "web-key-1", 0, billingKey)
+        klarnaToken(key) shouldBe klarnaToken(key)
+        klarnaToken(key) shouldNotBe token()
+        klarnaToken(null) shouldBe token()
     }
 
     @Test

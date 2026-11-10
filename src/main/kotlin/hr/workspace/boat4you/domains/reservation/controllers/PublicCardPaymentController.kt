@@ -1,15 +1,18 @@
 package hr.workspace.boat4you.domains.reservation.controllers
 
+import hr.workspace.boat4you.domains.reservation.dto.CardCheckoutRequest
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentRouter
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Controller
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 
@@ -40,7 +43,11 @@ class PublicCardPaymentController(
         @Parameter(description = "Web locale (next-intl), used for the provider's return URL")
         @RequestParam(value = "locale", required = false)
         locale: String? = null,
-    ): ResponseEntity<CheckoutSessionDto> = ResponseEntity.ok(router.createCheckout(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, locale))
+        @Valid
+        @RequestBody(required = false)
+        body: CardCheckoutRequest? = null,
+    ): ResponseEntity<CheckoutSessionDto> =
+        ResponseEntity.ok(router.createCheckout(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, locale, body?.klarna))
 
     @Operation(summary = "Check a card payment status by its checkout reference (public / guest; 404 when unknown)")
     @PostMapping("/checkPaymentStatus/{ref}")

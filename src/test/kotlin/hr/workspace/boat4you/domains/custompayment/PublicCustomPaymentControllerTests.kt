@@ -13,12 +13,14 @@ import hr.workspace.boat4you.domains.custompayment.service.CustomPaymentVerdict
 import hr.workspace.boat4you.domains.custompayment.service.OrderSnapshot
 import hr.workspace.boat4you.domains.custompayment.service.PendingInsert
 import hr.workspace.boat4you.domains.payment.mollie.MollieAmount
+import hr.workspace.boat4you.domains.payment.mollie.MollieBillingAddress
 import hr.workspace.boat4you.domains.payment.mollie.MollieClient
 import hr.workspace.boat4you.domains.payment.mollie.MollieCreatePaymentRequest
 import hr.workspace.boat4you.domains.payment.mollie.MollieLink
 import hr.workspace.boat4you.domains.payment.mollie.MollieLinks
 import hr.workspace.boat4you.domains.payment.mollie.MolliePayment
 import hr.workspace.boat4you.domains.payment.mollie.MollieProperties
+import hr.workspace.boat4you.domains.payment.mollie.klarnaProperties
 import hr.workspace.boat4you.domains.payment.mollie.mollieProperties
 import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import io.kotest.matchers.shouldBe
@@ -66,7 +68,7 @@ class PublicCustomPaymentControllerTests {
 
     private fun mvc(properties: MollieProperties = mollieProperties(linkKeys = "boat4you=$linkKey;europe-yachts=${"e".repeat(32)}")) =
         MockMvcBuilders
-            .standaloneSetup(PublicCustomPaymentController(CustomPaymentService(properties, tx, repository, reservations, client)))
+            .standaloneSetup(PublicCustomPaymentController(CustomPaymentService(properties, tx, repository, reservations, client, klarnaProperties(mollie = properties))))
             .setControllerAdvice(ApiErrorHandler())
             .build()
 
@@ -78,8 +80,13 @@ class PublicCustomPaymentControllerTests {
         locale: String = "de",
         site: String = "boat4you",
         key: String = linkKey,
+        klarna: String? = null,
     ) = """{"reference":"$reference","amountMinor":$amountMinor,"email":"$email","acceptTerms":$acceptTerms,""" +
-        """"locale":"$locale","site":"$site","linkKey":"$key"}"""
+        """"locale":"$locale","site":"$site","linkKey":"$key"${klarna?.let { ""","klarna":$it""" }.orEmpty()}}"""
+
+    private fun klarnaAddress(country: String = "de") =
+        """{"givenName":" Hans ","familyName":"Mueller","email":"other@example.com","streetAndNumber":"Hellersbergstrasse 14",""" +
+            """"postalCode":"41460","city":"Neuss","country":"$country"}"""
 
     private fun row(
         status: CustomPaymentStatus = CustomPaymentStatus.PENDING,
@@ -237,6 +244,9 @@ class PublicCustomPaymentControllerTests {
             webhookUrl shouldBe "https://api.boat4you.com/webhooks/mollie"
             locale shouldBe "de_DE"
             method shouldBe listOf("creditcard", "applepay", "paybybank")
+            captureMode shouldBe null
+            billingAddress shouldBe null
+            lines shouldBe null
             metadata shouldBe mapOf("customPaymentToken" to token, "customPaymentId" to "7", "site" to "boat4you")
         }
         val json = jacksonObjectMapper().writeValueAsString(request.value)
@@ -245,6 +255,60 @@ class PublicCustomPaymentControllerTests {
         json shouldNotContain "customer"
         json shouldNotContain "payer@example.com"
         verify(tx).attachOrder(7, "tr_abc123", checkoutUrl)
+    }
+
+    @Test
+    fun `create - Klarna sends Klarna only with the billing address and one line, and never reuses a checkout`() {
+        `when`(tx.insertPending(any(), any())).thenReturn(PendingInsert(row(orderId = null), existing = false))
+        `when`(client.createPayment(any(), any())).thenReturn(order())
+
+        postOrder(body(klarna = klarnaAddress())).andExpect { status { isOk() } }
+
+        val draft: ArgumentCaptor<CustomPaymentDraft> = ArgumentCaptor.forClass(CustomPaymentDraft::class.java)
+        val since: ArgumentCaptor<Instant> = ArgumentCaptor.forClass(Instant::class.java)
+        verify(tx).insertPending(capture(draft), capture(since))
+        draft.value.method shouldBe "KLARNA"
+        // No dedupe window: the billing address is not stored, so an earlier Klarna checkout is never handed out again.
+        Duration.between(since.value, Instant.now()).toSeconds() shouldBe 0L
+
+        val request: ArgumentCaptor<MollieCreatePaymentRequest> = ArgumentCaptor.forClass(MollieCreatePaymentRequest::class.java)
+        verify(client).createPayment(capture(request), any())
+        with(request.value) {
+            method shouldBe listOf("klarna")
+            // Stated explicitly: a Klarna payment must end `paid`, never wait as `authorized` for a capture.
+            captureMode shouldBe "automatic"
+            amount shouldBe MollieAmount("EUR", "1109.00")
+            // The e-mail of the form wins over the one inside the address; names are trimmed, the country upper-cased.
+            billingAddress shouldBe MollieBillingAddress("Hans", "Mueller", "payer@example.com", "Hellersbergstrasse 14", "41460", "Neuss", "DE")
+            lines!!.map { it.totalAmount } shouldBe listOf(MollieAmount("EUR", "1109.00"))
+            lines!!.single().description shouldBe "Boat4You - contract 100116/2027"
+        }
+    }
+
+    @Test
+    fun `create - Klarna for a country it does not serve, above its limit, with a broken address or switched off - nothing is created`() {
+        // Croatia is not a Klarna country; Italy stops at 4 000 EUR; Germany takes 1 109 EUR (previous test).
+        postOrder(body(klarna = klarnaAddress("HR"))).andExpect {
+            status { isEqualTo(422) }
+            jsonPath("$.code") { value(8107) }
+        }
+        postOrder(body(amountMinor = "400001", klarna = klarnaAddress("IT"))).andExpect { status { isEqualTo(422) } }
+        postOrder(body(klarna = klarnaAddress("DEU"))).andExpect { status { isBadRequest() } }
+        postOrder(body(klarna = """{"givenName":"Hans","country":"DE"}""")).andExpect { status { isBadRequest() } }
+
+        val properties = mollieProperties(linkKeys = "boat4you=$linkKey")
+        MockMvcBuilders
+            .standaloneSetup(
+                PublicCustomPaymentController(CustomPaymentService(properties, tx, repository, reservations, client, klarnaProperties(enabled = false, mollie = properties))),
+            ).setControllerAdvice(ApiErrorHandler())
+            .build()
+            .post("/public/payments/custom/orders") {
+                contentType = MediaType.APPLICATION_JSON
+                content = body(klarna = klarnaAddress())
+            }.andExpect { status { isEqualTo(422) } }
+
+        verify(tx, never()).insertPending(any(), any())
+        verify(client, never()).createPayment(any(), any())
     }
 
     @Test
