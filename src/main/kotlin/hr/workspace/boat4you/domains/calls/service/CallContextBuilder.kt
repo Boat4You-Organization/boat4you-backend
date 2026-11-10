@@ -30,13 +30,15 @@ object CallContextBuilder {
             "site_name" to site.spokenName,
             "site_domain" to site.domain,
             "client_name" to listOfNotNull(inquiry.name, inquiry.surname).joinToString(" ").trim(),
+            // Offers go out by e-mail only (Mario 10.11.2026), so Nika confirms the address the inquiry came from.
+            "client_email" to inquiry.email.orEmpty().trim(),
             "inquiry_kind" to kind(call.kind),
             "inquiry_summary" to summary(inquiry, details),
             "week_price_eur" to (details["weekPriceEur"]?.toString()?.toBigDecimalOrNull()?.toBigInteger()?.toString() ?: ""),
             "offer_summary" to (inquiry.offerNote ?: ""),
             "transfer_allowed" to CallClock.transferAllowed(now, s).toString(),
             "transfer_hours_text" to CallClock.transferHoursText(s),
-            "language" to NikaLanguage.of(call.language ?: inquiry.locale),
+            "language" to NikaLanguage.forCall(call.toNumber ?: inquiry.phoneE164, call.language ?: inquiry.locale),
             "client_timezone" to (inquiry.phoneE164?.let { CallClock.clientZone(it).id } ?: CallClock.ZAGREB.id),
             "other_inquiries" to others.joinToString(" | ") { mention(it) },
             // Echoed back in the webhook, so a call whose start was unclear still finds its row (no conversation id).

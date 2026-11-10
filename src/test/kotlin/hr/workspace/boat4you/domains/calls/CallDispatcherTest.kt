@@ -41,7 +41,7 @@ class CallDispatcherTest : CallsJpaTest() {
         val languages = CopyOnWriteArrayList<String>()
         var failure: RuntimeException? = null
         val attempts = AtomicInteger()
-        private val n = AtomicInteger()
+        val n = AtomicInteger() // reset per test: ids must not depend on the order the tests run in
 
         override fun startOutboundCall(
             toNumber: String,
@@ -84,6 +84,7 @@ class CallDispatcherTest : CallsJpaTest() {
         api.languages.clear()
         api.failure = null
         api.attempts.set(0)
+        api.n.set(0)
         clearInvocations(notifier)
         settings.write(mapOf("calls.enabled" to "true"))
     }
@@ -193,16 +194,16 @@ class CallDispatcherTest : CallsJpaTest() {
     }
 
     @Test
-    fun `a call in a language Nika does not speak is placed in English, not refused by ElevenLabs`() {
-        call(inquiry(), scheduledAt = now) { language = "sl" }
+    fun `a call to a country whose language Nika does not speak is placed in English, not refused by ElevenLabs`() {
+        call(inquiry(phone = "+38641234567"), scheduledAt = now) { language = "sl" } // Slovenia
         dispatcher.runOnce(now) shouldBe 1
         api.languages.single() shouldBe "en"
         api.dialled.single().second["language"] shouldBe "en"
     }
 
     @Test
-    fun `a regional language code reaches ElevenLabs as the plain language`() {
-        call(inquiry(), scheduledAt = now) { language = "de-AT" }
+    fun `the country of the number decides the language, whatever the form said`() {
+        call(inquiry(phone = "+436641234567"), scheduledAt = now) { language = "en-GB" } // Austria
         dispatcher.runOnce(now) shouldBe 1
         api.languages.single() shouldBe "de"
         api.dialled.single().second["language"] shouldBe "de"

@@ -28,6 +28,36 @@ class NikaLanguageTest {
     }
 
     @Test
+    fun `a call starts in the language of the number's country`() {
+        NikaLanguage.forCall("+33612345678", "en") shouldBe "fr"
+        NikaLanguage.forCall("+385981234567", "en") shouldBe "hr"
+        NikaLanguage.forCall("+4915112345678", null) shouldBe "de"
+        NikaLanguage.forCall("+5511912345678", "es") shouldBe "pt"
+    }
+
+    @Test
+    fun `a number from a country whose language Nika does not speak is greeted in English, whatever the form`() {
+        NikaLanguage.forCall("+96550012345", "de") shouldBe "en" // Kuwait
+        NikaLanguage.forCall("+966501234567", "fr") shouldBe "en" // Saudi Arabia
+        NikaLanguage.forCall("+447911123456", "hr") shouldBe "en"
+        NikaLanguage.forCall("+12125550100", "it") shouldBe "en"
+    }
+
+    @Test
+    fun `in a multilingual country the form picks among its languages, else the most spoken one`() {
+        NikaLanguage.forCall("+41791234567", "fr-CH") shouldBe "fr"
+        NikaLanguage.forCall("+41791234567", "hr") shouldBe "de"
+        NikaLanguage.forCall("+32470123456", null) shouldBe "nl"
+    }
+
+    @Test
+    fun `a missing or unreadable number leaves the form language`() {
+        NikaLanguage.forCall(null, "pl") shouldBe "pl"
+        NikaLanguage.forCall("not a number", "it") shouldBe "it"
+        NikaLanguage.forCall("", "cs") shouldBe "en"
+    }
+
+    @Test
     fun `the nine languages are the ones the forms are written in`() {
         NikaLanguage.SPOKEN shouldBe setOf("en", "hr", "de", "es", "fr", "it", "nl", "pl", "pt")
     }
