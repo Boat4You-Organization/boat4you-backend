@@ -8,6 +8,7 @@ import hr.workspace.boat4you.domains.social.jpa.SocialMediaRepository
 import org.opencv.core.Mat
 import org.opencv.core.MatOfByte
 import org.opencv.core.MatOfInt
+import org.opencv.core.Rect
 import org.opencv.core.Size
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
@@ -135,7 +136,9 @@ class SocialMediaStore(
         // A small file can still claim a huge canvas (decompression bomb): the header decides before anything is decoded.
         val (w, h) = SocialImages.headerSize(tmp) ?: throw SocialValidationException("The photo cannot be read")
         if (w.toLong() * h > MAX_PIXELS) throw SocialValidationException("Photo larger than ${MAX_PIXELS / 1_000_000} megapixels")
-        val jpeg = SocialImages.normalize(Files.readAllBytes(tmp)) ?: throw SocialValidationException("The photo cannot be read")
+        // Catalogue photos feed the AI's daily posts, which go to Instagram unattended: crop them into its 4:5–1.91:1 range.
+        val fit = media.origin == SocialMediaOrigin.CATALOGUE
+        val jpeg = SocialImages.normalize(Files.readAllBytes(tmp), fit) ?: throw SocialValidationException("The photo cannot be read")
         Files.write(dir.resolve("media.jpg"), jpeg.bytes)
         media.kind = SocialMediaKind.IMAGE
         media.mimeType = "image/jpeg"
@@ -417,19 +420,43 @@ object SocialImages {
 
     private const val WEBP_HEAD = 30
 
-    /** Any JPEG / PNG / WebP → JPEG, longest side ≤ 2160; null when undecodable. */
-    fun normalize(bytes: ByteArray): Jpeg? =
-        decode(bytes)?.using { img ->
-            val scale = minOf(1.0, MAX_SIDE.toDouble() / max(img.cols(), img.rows()))
-            if (scale < 1.0) {
-                Mat().using { small ->
-                    Imgproc.resize(img, small, Size(img.cols() * scale, img.rows() * scale), 0.0, 0.0, Imgproc.INTER_AREA)
-                    encode(small, QUALITY)?.let { Jpeg(it, small.cols(), small.rows()) }
-                }
-            } else {
-                encode(img, QUALITY)?.let { Jpeg(it, img.cols(), img.rows()) }
-            }
+    /**
+     * Any JPEG / PNG / WebP → JPEG, longest side ≤ 2160; null when undecodable. With [fitInstagram] a photo wider than
+     * 1.91:1 or taller than 4:5 is centre-cropped into that range first.
+     */
+    fun normalize(
+        bytes: ByteArray,
+        fitInstagram: Boolean = false,
+    ): Jpeg? =
+        decode(bytes)?.using { decoded ->
+            val crop = if (fitInstagram) instagramCrop(decoded.cols(), decoded.rows()) else null
+            if (crop == null) scaled(decoded) else decoded.submat(crop).using { scaled(it) }
         }
+
+    private fun scaled(img: Mat): Jpeg? {
+        val scale = minOf(1.0, MAX_SIDE.toDouble() / max(img.cols(), img.rows()))
+        if (scale >= 1.0) return encode(img, QUALITY)?.let { Jpeg(it, img.cols(), img.rows()) }
+        return Mat().using { small ->
+            Imgproc.resize(img, small, Size(img.cols() * scale, img.rows() * scale), 0.0, 0.0, Imgproc.INTER_AREA)
+            encode(small, QUALITY)?.let { Jpeg(it, small.cols(), small.rows()) }
+        }
+    }
+
+    /** The centred rectangle that brings [w]×[h] into Instagram's 4:5–1.91:1, or null when it already fits. */
+    fun instagramCrop(
+        w: Int,
+        h: Int,
+    ): Rect? {
+        val ratio = w.toDouble() / h
+        return when {
+            ratio > IG_MAX_RATIO -> (h * IG_MAX_RATIO).toInt().let { cw -> Rect((w - cw) / 2, 0, cw, h) }
+            ratio < IG_MIN_RATIO -> (w / IG_MIN_RATIO).toInt().let { ch -> Rect(0, (h - ch) / 2, w, ch) }
+            else -> null
+        }
+    }
+
+    private const val IG_MIN_RATIO = 0.8
+    private const val IG_MAX_RATIO = 1.91
 
     /** JPEG at most [maxBytes]: lower quality first, then 80 % of the size, until it fits (or gives up). */
     fun shrink(

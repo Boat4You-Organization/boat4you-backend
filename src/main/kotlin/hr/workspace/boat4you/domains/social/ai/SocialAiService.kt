@@ -301,7 +301,7 @@ class SocialAiService(
                 AI_ACTOR,
                 setting.site,
             )
-        // Instagram refuses photos outside 4:5–1.91:1: the admin sees it on the draft, the AI only notes it.
+        // Catalogue photos are cropped into Instagram's 4:5–1.91:1 when stored; anything still off is only noted here.
         val offRatio = photos.count { it.width != null && it.height != null && !SocialRules.instagramRatioOk(it.width!!, it.height!!) }
         if (offRatio > 0 && post.targets.any { it.platform == SocialPlatform.INSTAGRAM }) {
             log.info("AI post {}: {} photo(s) outside Instagram's ratio", post.id, offRatio)
