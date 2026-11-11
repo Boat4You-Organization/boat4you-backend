@@ -11,7 +11,7 @@ import java.util.concurrent.Executors
 /**
  * Booking review request right after a payment. AFTER_COMMIT: a rolled-back payment never sends; fallbackExecution:
  * the admin endpoints publish after their service transaction already committed. The work is handed to a virtual
- * thread so the Stripe webhook / admin request returns without waiting, and any failure stays in the log — the
+ * thread so the payment webhook / admin request returns without waiting, and any failure stays in the log — the
  * payment flow cannot fail because of the review e-mail. The service decides eligibility (first payment only).
  */
 @Component

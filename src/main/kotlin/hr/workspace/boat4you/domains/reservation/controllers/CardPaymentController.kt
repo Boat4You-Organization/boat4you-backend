@@ -18,10 +18,9 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 
 /**
- * Provider-neutral card checkout for logged-in bookers: same parameters and [CheckoutSessionDto] as
- * `StripePaymentController` plus `locale`; the provider comes from `application.payment.card-provider`.
+ * Card checkout (Mollie) for logged-in bookers.
  * Errors: 400 invalid phase selection, 404 unknown reservation / status reference, 409 (8102 in progress,
- * 8103 already paid), 502 (8104) provider error, 503 (8101) provider not configured.
+ * 8103 already paid), 502 (8104) provider error, 503 (8101) Mollie not configured.
  */
 @Tag(name = "Payments")
 @Validated
@@ -31,7 +30,7 @@ import org.springframework.web.bind.annotation.RequestParam
 class CardPaymentController(
     private val router: CardPaymentRouter,
 ) {
-    @Operation(summary = "Create a card checkout (Stripe or Mollie, per application.payment.card-provider)")
+    @Operation(summary = "Create a card checkout (Mollie)")
     @PostMapping("/create-checkout-session/{reservationId}")
     fun createCheckoutSession(
         @PathVariable reservationId: Long,
@@ -53,7 +52,7 @@ class CardPaymentController(
     ): ResponseEntity<CheckoutSessionDto> =
         ResponseEntity.ok(router.createCheckout(reservationId, payFullAmount, paymentPhaseId, idempotencyKey, locale, body?.klarna))
 
-    @Operation(summary = "Check a card payment status by its checkout reference (404 when no provider knows it)")
+    @Operation(summary = "Check a card payment status by its checkout reference (404 when unknown)")
     @PostMapping("/checkPaymentStatus/{ref}")
     fun checkPaymentStatus(
         @PathVariable ref: String,

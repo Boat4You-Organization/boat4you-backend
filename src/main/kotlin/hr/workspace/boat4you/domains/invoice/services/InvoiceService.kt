@@ -349,7 +349,7 @@ class InvoiceService(
             (view.reservationCommission ?: reservationFlow.agencyCommission ?: BigDecimal.ZERO)
                 .roundDecimals()
         // Use BigDecimal throughout — Float mixing (vatPercentage / (vat+100))
-        // loses precision on totals like 1234.56 × 0.2 and Stripe charges a
+        // loses precision on totals like 1234.56 × 0.2 and the card provider charges a
         // fraction-of-a-cent mismatch vs what the invoice printed. Keep the
         // decimal field as Float (it's what the entity stores) but compute
         // the amount with exact arithmetic.

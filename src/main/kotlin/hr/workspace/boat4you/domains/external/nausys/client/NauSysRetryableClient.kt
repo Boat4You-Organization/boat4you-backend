@@ -193,7 +193,7 @@ class NauSysRetryableClient(
     // F3-002: NO @Retryable. Confirming an option flips a yacht from
     // optioned to firmly booked partner-side — a duplicate confirm on
     // retry triggers a duplicate booking + duplicate customer charge
-    // (Stripe is already captured by the time we reach this call,
+    // (the card is already charged by the time we reach this call,
     // F3-022 chain). Mario-side reconciliation if the network fails
     // here is far cheaper than a silent double-booking.
     fun confirmReservation(request: RestYachtReservationBookingRequest): RestYachtReservation {

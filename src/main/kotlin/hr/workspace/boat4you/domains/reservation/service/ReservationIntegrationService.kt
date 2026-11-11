@@ -140,7 +140,7 @@ class ReservationIntegrationService(
 
         // Stale skip-flow / fictitious bookings carry no partner-side option,
         // so there's nothing to confirm on the partner side. Synthesize the
-        // RESERVED wrapper so the customer-side confirm flow (Stripe) succeeds.
+        // RESERVED wrapper so the customer-side confirm flow (card payment) succeeds.
         if (reservation.externalId == null) {
             log.info(
                 "No external_id on reservation $reservationId — synthesizing RESERVED wrapper " +

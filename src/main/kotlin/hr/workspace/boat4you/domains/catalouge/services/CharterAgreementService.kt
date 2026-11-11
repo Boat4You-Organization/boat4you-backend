@@ -248,8 +248,8 @@ class CharterAgreementService(
         // our accounting). Bank transfer = BANK_TRANSFER_FIXED_FEE split
         // whole-euro across phases (BankTransferFeeShare — same math as the
         // wire-payment emails). Credit card = CARD_PAYMENT_SURCHARGE % per
-        // phase, whole-euro HALF_UP (same math as StripePaymentService, so the
-        // contract equals the Stripe charge).
+        // phase, whole-euro HALF_UP (same math as CardChargeCalculator, so the
+        // contract equals the card charge).
         val cardSurchargePct = settingsService.getSetting(SettingsKeyEnum.CARD_PAYMENT_SURCHARGE).value
             ?.toBigDecimalOrNull() ?: BigDecimal.ZERO
         val bankTransferFee = settingsService.getSetting(SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE).value

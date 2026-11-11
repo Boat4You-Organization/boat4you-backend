@@ -219,7 +219,7 @@ class ReservationFlowMutationService(
             extra.name = it.name
             extra.obligatory = it.obligatory
             // This bucket is paid separately (on-site at the marina / to the
-            // operator in advance) — always "at base", never in our Stripe total.
+            // operator in advance) — always "at base", never in our card total.
             extra.payableAtBase = true
             extra.unitPrice = it.unitPriceEur
             extra.unit = it.unit
@@ -233,7 +233,7 @@ class ReservationFlowMutationService(
 
         // Loyalty voucher: atomically claim the code inside THIS transaction
         // (rollback releases it) and let the FIRST installment absorb the
-        // discount below — Stripe amounts and every wire email read the phase
+        // discount below — card amounts and every wire email read the phase
         // rows, so the reduction propagates with no further changes.
         val voucherValue =
             createReservationDto.voucherCode
@@ -455,7 +455,7 @@ class ReservationFlowMutationService(
                 this.reservationFlow = reservationFlow
                 if (p.markPaid) {
                     // Carry-over from the cancelled reservation's installment.
-                    // No stripe session id — this wasn't paid through Stripe on
+                    // No card payment — this wasn't paid by card on
                     // THIS reservation; the reference payment lives on the
                     // prior (cancelled) reservation's payment history.
                     paidOn = Instant.now()

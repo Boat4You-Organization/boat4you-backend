@@ -43,7 +43,6 @@ class SecurityConfiguration(
                             pathMatcher.matcher("/auth/register/**"),
                             pathMatcher.matcher("/auth/oauth/**"),
                             pathMatcher.matcher("/users/invite"),
-                            pathMatcher.matcher("/webhooks/stripe"),
                             pathMatcher.matcher("/webhooks/elevenlabs"),
                             pathMatcher.matcher("/webhooks/mollie"),
                             pathMatcher.matcher("/swagger/**"),

@@ -93,7 +93,7 @@ enum class ApiErrorCodes(
     CUSTOM_PAYMENT_TOO_MANY(8003, "Too many payment attempts. Please try again later."),
     CUSTOM_PAYMENT_PROVIDER_ERROR(8004, "We couldn't start the card payment. Please try again in a moment."),
 
-    // 81xx: online-booking card payments (provider-neutral /payments/card, Stripe or Mollie). Static customer-facing
+    // 81xx: online-booking card payments (/payments/card, Mollie). Static customer-facing
     // wording — the web shows the message in a toast, so never a provider or exception text.
     CARD_PAYMENTS_UNAVAILABLE(8101, "Card payments are temporarily unavailable. Please try again later."),
     CARD_PAYMENT_IN_PROGRESS(

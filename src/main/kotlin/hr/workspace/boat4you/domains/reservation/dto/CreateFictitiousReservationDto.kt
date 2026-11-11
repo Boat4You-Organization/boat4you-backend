@@ -48,7 +48,7 @@ data class CreateFictitiousReservationDto(
      * Explicit per-phase breakdown. Sum of amounts MUST equal `totalPrice`
      * (service validates with 0.01 tolerance). `markPaid` on a phase means
      * the customer already paid it on the previous reservation — we record
-     * `paidOn = now` with no Stripe session id.
+     * `paidOn = now` with no card payment behind it.
      */
     @field:NotEmpty
     @field:Valid

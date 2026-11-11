@@ -27,7 +27,7 @@ import java.util.Currency
 import java.util.Locale
 
 // Every customer-facing money string is rounded to 2 decimals (HALF_UP — same
-// convention as the Stripe charge in StripePaymentService.toCentsLong). Raw
+// convention as the card charge in CardChargeCalculator.toCentsLong). Raw
 // BigDecimal totals can carry partner-side sub-cent artefacts (e.g. a total of
 // 974.99994 €) that must never reach a customer's eyes; 974.99994 -> "975.00".
 private fun BigDecimal.money(): String = this.setScale(2, RoundingMode.HALF_UP).toPlainString()
@@ -161,7 +161,7 @@ class ReservationEmailService(
         // bank-transfer fee (BANK_TRANSFER_FIXED_FEE split across phases,
         // whole euros) — this email IS the bank-transfer instruction, so the
         // amount here is what the customer must actually wire. Card payers
-        // pay via Stripe instead, where the card surcharge applies.
+        // pay by card instead, where the card surcharge applies.
         val bankFeeTotal = settingsService.getSetting(
             hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum.BANK_TRANSFER_FIXED_FEE,
         ).value?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO

@@ -245,7 +245,7 @@ class PublicEndpointRateLimiter(
                 windowSeconds = customPaymentStatusWindowSeconds,
                 label = "custom-payment-status",
             ),
-            // Guest card checkouts of online bookings (Mollie / Stripe): each create can open a provider payment and
+            // Guest card checkouts of online bookings (Mollie): each create can open a provider payment and
             // supersede an open one, so an id walk is cut short here. boat4you-web forwards the visitor IP.
             Rule(
                 "POST",

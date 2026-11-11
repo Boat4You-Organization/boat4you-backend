@@ -33,7 +33,6 @@ val jjwtVersion = "0.12.7"
 val apacheCommonsValidatorVersion = "1.10.1"
 val apacheCommonsTextVersion = "1.15.0"
 val libPhoneNumberVersion = "9.0.23"
-val stripeSdkVersion = "31.1.0"
 val webPushVersion = "5.1.1"
 val eCacheVersion = "3.12.0"
 val opencvVersion = "4.9.0-0"
@@ -74,7 +73,6 @@ dependencies {
     implementation("com.googlecode.libphonenumber:libphonenumber:$libPhoneNumberVersion")
     // AI call center: client time zone from the E.164 number (PhoneNumberToTimeZonesMapper); 3.23 pairs with 9.0.23.
     implementation("com.googlecode.libphonenumber:geocoder:3.23")
-    implementation("com.stripe:stripe-java:$stripeSdkVersion")
     // Web-push (VAPID) for Boat4You Trip hub reminders. Exclude its bundled
     // bcprov-jdk15on — we already ship bcprov-jdk18on and two BC providers on
     // the classpath fight over provider registration.

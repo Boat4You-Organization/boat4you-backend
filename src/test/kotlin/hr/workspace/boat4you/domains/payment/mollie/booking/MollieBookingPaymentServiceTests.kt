@@ -8,7 +8,6 @@ import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardO
 import hr.workspace.boat4you.domains.payment.mollie.booking.jpa.ReservationCardOrderStatus
 import hr.workspace.boat4you.domains.payment.mollie.mollieProperties
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
-import hr.workspace.boat4you.domains.reservation.service.StripeSessionExpirer
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentNotFoundException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProviderException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentsUnavailableException
@@ -44,7 +43,6 @@ class MollieBookingPaymentServiceTests {
             orderTx,
             orders,
             followUp,
-            mock(StripeSessionExpirer::class.java),
             mock(BookingCardAlertMailer::class.java),
             "https://www.boat4you.com",
         )
@@ -187,7 +185,6 @@ class MollieBookingPaymentServiceTests {
                 orderTx,
                 orders,
                 followUp,
-                mock(StripeSessionExpirer::class.java),
                 alerts,
                 "https://www.boat4you.com",
             )

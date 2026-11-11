@@ -8,8 +8,7 @@ import java.math.RoundingMode
 
 /**
  * What an online-booking card payment charges: which payment phases, the base amount, the card surcharge and the
- * amount in cents. Pure (no I/O, no Spring) and provider-neutral — moved VERBATIM out of `StripePaymentService`
- * (phase selection + surcharge + `toCentsLong`) so Stripe and Mollie charge byte-identical amounts.
+ * amount in cents. Pure (no I/O, no Spring): phase selection + surcharge + `toCentsLong`.
  * `CardChargeCalculatorTests` pins the golden values; do not change the arithmetic without changing those.
  */
 object CardChargeCalculator {
@@ -100,7 +99,7 @@ object CardChargeCalculator {
                 }
             }
             // "Pay first installment" — next DUE unpaid phase, not the historically-oldest one which might already be
-            // paid. Same expression as StripePaymentService.oldestUnpaid(), so a deadline tie picks the same phase.
+            // paid.
             payFullAmount == false -> {
                 val phase =
                     unpaidPhases.minByOrNull { it.deadline }
@@ -121,7 +120,7 @@ object CardChargeCalculator {
      * MUST multiply first, divide LAST with an explicit scale+rounding: the old `cardSurchargePercentage.div(100)`
      * used Kotlin's BigDecimal.div operator whose result scale = max(operand scales) = 0 for an integer percent like
      * "5", so 5 / 100 rounded to scale 0 = 0 → the surcharge was SILENTLY 0 on every card payment (Mario 12.7.2026:
-     * Stripe charged 2677.60 instead of 2811.60 on reservation 1441002).
+     * the card was charged 2677.60 instead of 2811.60 on reservation 1441002).
      */
     fun surcharge(
         baseAmount: BigDecimal,

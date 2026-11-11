@@ -12,9 +12,7 @@ data class PaymentPhaseDto(
     val amount: BigDecimal,
     @Schema(name = "Paid on", description = "Non-null if the phase has been paid", required = false)
     val paidOn: LocalDateTime? = null,
-    @Schema(name = "Stripe Payment Intent ID", description = "Non-null if the phase has been paid by Stripe", required = false)
-    val stripePaymentIntentId: String? = null,
-    @Schema(name = "Payment provider", description = "Card provider that recorded the payment (MOLLIE); null for Stripe-era or manual payments", required = false)
+    @Schema(name = "Payment provider", description = "Card provider that recorded the payment (MOLLIE); null for manual payments", required = false)
     val paymentProvider: String? = null,
     @Schema(name = "Provider payment ID", description = "Non-null if the phase has been paid through paymentProvider", required = false)
     val providerPaymentId: String? = null,

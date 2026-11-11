@@ -88,7 +88,6 @@ class DataExportService(
                         deadline = phase.deadline,
                         amount = phase.amount,
                         paidOn = phase.paidOn,
-                        stripePaymentIntentId = phase.stripePaymentIntentId,
                         paymentProvider = phase.paymentProvider,
                         providerPaymentId = phase.providerPaymentId,
                     )

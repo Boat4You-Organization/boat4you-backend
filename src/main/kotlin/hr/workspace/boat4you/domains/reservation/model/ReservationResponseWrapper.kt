@@ -50,7 +50,7 @@ data class ReservationResponseWrapper(
     val calculatedSysStatus: ReservationStatus,
 ) {
     /**
-     * The partner code is not a display copy: NauSys gets it back as the reservation `uuid` on confirm (Stripe webhook,
+     * The partner code is not a display copy: NauSys gets it back as the reservation `uuid` on confirm (card payment,
      * after capture) and on cancel, so it may never be cut to fit `reservation.external_reservation_code`. A code we
      * cannot store is refused while the adapter can still release the option (observed max: 36 chars).
      */

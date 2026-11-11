@@ -4,7 +4,6 @@ import hr.workspace.boat4you.domains.custompayment.dto.KlarnaOfferDto
 import hr.workspace.boat4you.domains.payment.mollie.MollieKlarnaProperties
 import hr.workspace.boat4you.domains.reservation.service.CardChargeCalculator
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentRouter
-import hr.workspace.boat4you.domains.reservation.service.payment.CardProvider
 import hr.workspace.boat4you.domains.settings.enums.SettingsKeyEnum
 import hr.workspace.boat4you.domains.settings.services.AdminSettingsService
 import io.swagger.v3.oas.annotations.Operation
@@ -29,7 +28,7 @@ class PublicKlarnaConfigController(
     @Operation(summary = "Klarna offer of the booking payment step (204 when Klarna is not offered)")
     @GetMapping("/klarna")
     fun klarna(): ResponseEntity<KlarnaOfferDto> {
-        if (!klarnaProperties.enabled || router.activeProvider != CardProvider.MOLLIE) return ResponseEntity.noContent().build()
+        if (!klarnaProperties.enabled) return ResponseEntity.noContent().build()
         val surcharge =
             klarnaProperties.surchargePercentOverride
                 ?: CardChargeCalculator.surchargePercentage(settingsService.getSetting(SettingsKeyEnum.CARD_PAYMENT_SURCHARGE).value)

@@ -139,7 +139,7 @@ class ReservationMutationService(
          * Admin override — when the admin manually creates a reservation with a
          * bespoke price (replacement after a cancel), the offer's catalogue
          * price is NOT the source of truth. We apply the override to every
-         * price field on the Reservation so downstream (customer view, Stripe,
+         * price field on the Reservation so downstream (customer view, card charge,
          * email templates) reads the admin price. When null, behaviour is
          * unchanged (external partner's price wins).
          */
@@ -154,7 +154,7 @@ class ReservationMutationService(
 
         // Assign the customer-facing booking number at reservation creation,
         // regardless of status (OPTION or RESERVATION). The number needs to be
-        // visible during the payment flow (bank transfer reference, Stripe
+        // visible during the payment flow (bank transfer reference, card payment
         // description, option emails), not only after payment confirmation.
         // Charter year = year the charter actually starts (not booking year),
         // so a reservation booked in Dec 2025 for a May 2026 charter gets
@@ -292,7 +292,7 @@ class ReservationMutationService(
     }
 
     // Partner-owned strings versus our column widths. A value over the width fails bean validation at flush and rolls
-    // the whole booking back AFTER the partner option (or, on the Stripe webhook, the partner confirmation) already
+    // the whole booking back AFTER the partner option (or, after a card payment, the partner confirmation) already
     // exists - the 19.9.2026 incident. These are display copies; the full payload stays in `reservation.response`.
     private fun fitExternalStatus(value: String?): String? = value?.take(Reservation.EXTERNAL_STATUS_MAX_LENGTH)
 

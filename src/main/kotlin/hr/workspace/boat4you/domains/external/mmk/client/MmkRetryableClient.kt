@@ -236,7 +236,7 @@ class MmkRetryableClient(
 
     // F3-002: NO @Retryable. Confirm transitions a reservation to
     // firmly booked partner-side — duplicate confirm = duplicate
-    // booking after Stripe has already captured (F3-022 chain). Fail
+    // booking after the card has already been charged (F3-022 chain). Fail
     // visible, reconcile by hand.
     fun confirmReservation(reservationId: Long): ReservationResponse {
         val reservationResponse = runCatching { mmkClient.bookingApi.confirmReservation(reservationId) }

@@ -14,8 +14,8 @@ import java.time.Instant
 import java.time.LocalDate
 
 /**
- * Golden values of the card charge (surcharge math moved verbatim out of StripePaymentService, plan 2D) and every
- * phase-selection rule. Stripe and Mollie both charge [CardChargeCalculator.CardCharge.totalMinor].
+ * Golden values of the card charge and every phase-selection rule. The card provider charges
+ * [CardChargeCalculator.CardCharge.totalMinor].
  */
 class CardChargeCalculatorTests {
     private val five = CardChargeCalculator.surchargePercentage("5")
@@ -91,7 +91,7 @@ class CardChargeCalculatorTests {
     }
 
     @Test
-    fun `calculate - pay full rounds the surcharge on the SUM of unpaid phases (as Stripe today)`() {
+    fun `calculate - pay full rounds the surcharge on the SUM of unpaid phases`() {
         val first = phase(1, "1000.00", "2026-11-01")
         val second = phase(2, "1677.60", "2027-05-01")
         val charge = CardChargeCalculator.calculate(flow(first, second), payFullAmount = true, paymentPhaseId = null, surchargePercentage = five)

@@ -29,7 +29,7 @@ import java.util.Locale
  * their FIRST confirmed booking, redeemable on any future booking with a
  * client total >= 1500 EUR within 18 months. Transferable — the code is the
  * credential. The discount is absorbed by the first payment phase (see
- * ReservationPaymentPhasesService.applyVoucherAbsorption), so Stripe amounts
+ * ReservationPaymentPhasesService.applyVoucherAbsorption), so card amounts
  * and every wire-instruction email pick it up from the phase rows unchanged.
  */
 @Service

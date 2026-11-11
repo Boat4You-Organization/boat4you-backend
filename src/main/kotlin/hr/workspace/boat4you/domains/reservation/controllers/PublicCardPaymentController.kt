@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 
 /**
- * Public (guest) twin of [CardPaymentController] under `/public` (permitAll), mirroring
- * `PublicStripePaymentController` so anonymous bookers can pay without an account.
+ * Public (guest) twin of [CardPaymentController] under `/public` (permitAll), so anonymous bookers can pay without an
+ * account.
  */
 @Tag(name = "Payments (public)")
 @Validated
@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RequestParam
 class PublicCardPaymentController(
     private val router: CardPaymentRouter,
 ) {
-    @Operation(summary = "Create a card checkout (public / guest; Stripe or Mollie, per application.payment.card-provider)")
+    @Operation(summary = "Create a card checkout (public / guest; Mollie)")
     @PostMapping("/create-checkout-session/{reservationId}")
     fun createCheckoutSession(
         @PathVariable reservationId: Long,

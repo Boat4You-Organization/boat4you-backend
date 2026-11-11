@@ -20,7 +20,6 @@ import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionDto
 import hr.workspace.boat4you.domains.reservation.dto.CheckoutSessionStatusEnum
 import hr.workspace.boat4you.domains.reservation.dto.KlarnaBillingRequest
 import hr.workspace.boat4you.domains.reservation.service.CardChargeCalculator
-import hr.workspace.boat4you.domains.reservation.service.StripeSessionExpirer
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAlreadyPaidException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardAmountAboveLimitException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentInProgressException
@@ -28,7 +27,6 @@ import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentNotF
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProvider
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentProviderException
 import hr.workspace.boat4you.domains.reservation.service.payment.CardPaymentsUnavailableException
-import hr.workspace.boat4you.domains.reservation.service.payment.CardProvider
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.dao.PessimisticLockingFailureException
@@ -40,7 +38,7 @@ import java.util.UUID
 
 /**
  * Mollie hosted checkout for ONLINE-BOOKING card payments (provider swap only — the phases and the amount, +5 % card
- * surcharge included, come from CardChargeCalculator exactly as for Stripe). Also the owner of the Mollie webhooks of
+ * surcharge included, come from CardChargeCalculator). Also the owner of the Mollie webhooks of
  * these payments ([MolliePaymentHandler]).
  *
  * No transaction here on purpose: every Mollie HTTP call happens OUTSIDE a database transaction. The database work is
@@ -55,8 +53,7 @@ import java.util.UUID
  *    payment is recorded (a second one for the same phase becomes NEEDS_REVIEW + office alert);
  *    `pending|authorized` -> 409 in progress; `paid` -> completion, then 409 already paid;
  *    `failed|expired|canceled` -> ledger closed;
- * 3. M1: open Stripe Checkout sessions of the target phases are expired (best effort, outside any transaction);
- * 4. create the payment (Idempotency-Key; error -> 502, no ledger row), check the checkout origin, insert the PENDING
+ * 3. create the payment (Idempotency-Key; error -> 502, no ledger row), check the checkout origin, insert the PENDING
  *    ledger row (a concurrent identical checkout that won the race is returned instead).
  *
  * Marking paid: ONLY from a payment read from the Mollie API (webhook, status endpoint, reconcile, stale check) —
@@ -70,13 +67,10 @@ class MollieBookingPaymentService(
     private val orderTx: ReservationCardOrderTx,
     private val orders: ReservationCardOrderRepository,
     private val followUp: BookingCardCompletionFollowUp,
-    private val stripeSessionExpirer: StripeSessionExpirer,
     private val alertMailer: BookingCardAlertMailer,
     @Value("\${server.host-public}") serverHostPublic: String,
 ) : CardPaymentProvider,
     MolliePaymentHandler {
-    override val provider: CardProvider = CardProvider.MOLLIE
-
     private val log = LoggerFactory.getLogger(javaClass)
     private val hostPublic = serverHostPublic.trim().trimEnd('/')
 
@@ -96,14 +90,10 @@ class MollieBookingPaymentService(
         }
         return when (outcome) {
             is CreateOutcome.Reuse -> {
-                outcome.stripeSessionIds.forEach(stripeSessionExpirer::expireQuickly)
                 log.info("Mollie booking checkout for reservation {}: reusing payment {}", reservationId, outcome.orderId)
                 CheckoutSessionDto(outcome.orderId, CheckoutSessionStatusEnum.PAYMENT_PENDING, outcome.checkoutUrl)
             }
-            is CreateOutcome.Create -> {
-                outcome.stripeSessionIds.forEach(stripeSessionExpirer::expireQuickly)
-                create(outcome.plan, locale)
-            }
+            is CreateOutcome.Create -> create(outcome.plan, locale)
             CreateOutcome.PaidMeanwhile -> throw CardAlreadyPaidException()
             CreateOutcome.AboveCardLimit -> throw CardAmountAboveLimitException()
             CreateOutcome.ReservationClosed -> throw ParameterValidationException(mapOf("reservationId" to "Reservation is cancelled"))
@@ -117,7 +107,7 @@ class MollieBookingPaymentService(
 
     /**
      * Status of a checkout this provider created, by our checkout token (`?paymentRef=` of the success page) or the
-     * Mollie payment id. Unknown -> null (the router asks Stripe, then answers 404). A row still open on our side
+     * Mollie payment id. Unknown -> null (the router answers 404). A row still open on our side
      * (PENDING or SUPERSEDED) asks Mollie at most once per 10 s (claimCheck); a Mollie hiccup is swallowed.
      * COMPLETED -> PAYMENT_SUCCESS; Mollie closed it without money, or it is still `open` at Mollie right now ->
      * PAYMENT_NOT_COMPLETED; anything else (not read just now, in review, processing) -> PAYMENT_PENDING, which the

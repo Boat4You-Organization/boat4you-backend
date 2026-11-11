@@ -35,8 +35,6 @@ sealed interface CreateOutcome {
     data class Reuse(
         val orderId: String,
         val checkoutUrl: String,
-        /** M1: Stripe Checkout sessions of the target phases to expire (outside the transaction) before answering. */
-        val stripeSessionIds: List<String> = emptyList(),
     ) : CreateOutcome
 
     /** PENDING payments of the reservation flow for another charge (or about to expire): clean up first. */
@@ -44,7 +42,7 @@ sealed interface CreateOutcome {
         val orders: List<StaleOrder>,
     ) : CreateOutcome
 
-    /** A target phase was paid by someone else (Stripe webhook, admin, another payment) while we waited for its lock. */
+    /** A target phase was paid by someone else (admin, another payment) while we waited for its lock. */
     data object PaidMeanwhile : CreateOutcome
 
     /** The charge is above the Mollie card limit: no card checkout, the web offers bank transfer only. */
@@ -56,15 +54,13 @@ sealed interface CreateOutcome {
     /** Nothing to reuse or clean up: create this payment. */
     data class Create(
         val plan: BookingOrderPlan,
-        val stripeSessionIds: List<String> = emptyList(),
     ) : CreateOutcome
 }
 
 /**
- * The TRANSACTIONAL part of a Mollie booking checkout: reservation (404) -> phase selection and amount exactly as
- * Stripe (CardChargeCalculator, 400s) -> cancelled reservation -> Mollie card limit -> row locks on the target phases
- * -> reuse before create -> stale PENDING payments -> the plan of a new payment. No Mollie or Stripe call happens in
- * here: the Stripe sessions of the target phases (M1) travel in the outcome and the caller expires them afterwards.
+ * The TRANSACTIONAL part of a Mollie booking checkout: reservation (404) -> phase selection and amount
+ * (CardChargeCalculator, 400s) -> cancelled reservation -> Mollie card limit -> row locks on the target phases
+ * -> reuse before create -> stale PENDING payments -> the plan of a new payment. No Mollie call happens in here.
  */
 @Service
 class MollieBookingCreateTx(
@@ -117,18 +113,13 @@ class MollieBookingCreateTx(
         val targetIds = charge.phases.mapNotNull { it.id }
         if (targetIds.isNotEmpty()) {
             phaseRepository.findAllByIdIn(targetIds)
-            // The selection read the phases before the locks: a concurrent payment (Stripe webhook, admin "mark as
+            // The selection read the phases before the locks: a concurrent payment (another checkout, admin "mark as
             // paid") that committed meanwhile is only visible to a fresh query.
             if (phaseRepository.countByIdInAndPaidOnIsNotNull(targetIds) > 0) {
                 log.info("Mollie booking checkout for reservation {}: a target phase of {} was paid meanwhile", reservationId, targetIds)
                 return CreateOutcome.PaidMeanwhile
             }
         }
-
-        // M1: a Stripe Checkout session still open on a target phase must not stay payable next to the Mollie payment;
-        // expired by the caller OUTSIDE this transaction (a slow Stripe call must not hold the phase locks).
-        // stripeSessionId is kept (history).
-        val stripeSessionIds = charge.phases.mapNotNull { it.stripeSessionId }.distinct()
 
         val phaseIds = ReservationCardOrder.phaseIdsOf(targetIds)
         // A double click sends the same web key twice before any row exists (attempt 0 both times -> the same Mollie
@@ -141,7 +132,7 @@ class MollieBookingCreateTx(
             // A Klarna checkout carries the billing address (not stored here): it is handed out again only to the very
             // same request (same web key, same address = the token of the previous attempt); anything else is stale.
             ?.takeIf { klarna == null || (attempt > 0 && it.checkoutToken == checkoutToken(reservationFlowId, phaseIds, amountMinor, webKey, attempt - 1, billingKey)) }
-            ?.let { return CreateOutcome.Reuse(it.providerOrderId, it.checkoutUrl, stripeSessionIds) }
+            ?.let { return CreateOutcome.Reuse(it.providerOrderId, it.checkoutUrl) }
 
         val pending = orders.findPendingByReservationFlow(reservationFlowId)
         if (pending.isNotEmpty()) return CreateOutcome.StalePending(pending.map { StaleOrder(it.id!!, it.providerOrderId) })
@@ -166,7 +157,6 @@ class MollieBookingCreateTx(
                 method = method,
                 klarna = klarna,
             ),
-            stripeSessionIds,
         )
     }
 
@@ -205,7 +195,7 @@ class MollieBookingCreateTx(
         private val UNSAFE_REFERENCE_CHARS = Regex("[^A-Za-z0-9/_-]")
 
         /**
-         * The public payment reference, as Stripe's (StripePaymentService): the reservation number, else the id,
+         * The public payment reference: the reservation number, else the id,
          * reduced to letters, digits, `/`, `_` and `-` so admin-entered junk never reaches a card statement.
          */
         fun reference(

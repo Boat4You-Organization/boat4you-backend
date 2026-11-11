@@ -11,7 +11,7 @@ import java.time.Instant
 /**
  * A browser/device subscribed to Boat4You Trip push reminders via the
  * /trip/{token} hub. Deliberately NOT an [hr.workspace.boat4you.common.jpa.AbstractEntity]
- * (no Envers audit — same reasoning as [ProcessedStripeEvent]): high-churn
+ * (no Envers audit): high-churn
  * technical rows with no business meaning to audit.
  *
  * `isOwner` is set when the subscribing browser also carried the booking

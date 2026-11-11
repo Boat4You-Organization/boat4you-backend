@@ -52,7 +52,7 @@ open class ReservationCardOrder {
     @Column(name = "pay_full_amount")
     open var payFullAmount: Boolean? = null
 
-    /** As requested by the web; NULL = the pay-full path (promote to booking after payment, as Stripe). */
+    /** As requested by the web; NULL = the pay-full path (promote to booking after payment). */
     @Column(name = "payment_phase_id")
     open var paymentPhaseId: Long? = null
 

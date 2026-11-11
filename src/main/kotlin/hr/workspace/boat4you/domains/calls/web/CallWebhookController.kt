@@ -14,7 +14,7 @@ import java.time.Clock
 
 /**
  * ElevenLabs post-call webhooks (design §6.2, §6.6). Verifies the HMAC, stores the raw event once and answers 200 at once;
- * the event is applied asynchronously. Never logs the body (personal data). Public (permitAll), like /webhooks/stripe.
+ * the event is applied asynchronously. Never logs the body (personal data). Public (permitAll), like /webhooks/mollie.
  */
 @RestController
 @RequestMapping("/webhooks/elevenlabs")

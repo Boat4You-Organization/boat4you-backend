@@ -273,21 +273,9 @@ application:
     # tokens (typically not more than ~1h). 60 minutes balances the
     # security posture with users who don't open their inbox immediately.
     expiration: 60m
-  stripe:
-    enabled: true
-    # Keys come from the environment (.env / boat4you_vars.env). Blank defaults since the Mollie switch: a node
-    # without them still starts — StripeConfig then WARNs once and Stripe calls fail (no literal placeholder key is
-    # ever used). cusma2 keeps both set after PAYMENT_CARD_PROVIDER=mollie (in-flight sessions, webhooks, disputes,
-    # emergency rollback).
-    secret-key: ${STRIPE_SECRET_KEY:}
-    webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
-  payment:
-    # Provider of NEW online-booking card checkouts (/payments/card/*): stripe | mollie. Read once at startup
-    # (startup line "Card payments: provider=..."); rollback = stripe + restart. mollie without the Mollie key logs
-    # an ERROR and every checkout answers 503 (the boot never fails because of it).
-    card-provider: ${PAYMENT_CARD_PROVIDER:stripe}
   mollie:
-    # Mollie Payments API (secret /pay/<key> custom payments + online-booking card payments). Blank defaults on
+    # Mollie Payments API (secret /pay/<key> custom payments + online-booking card payments, the only card provider:
+    # without the api-key every card checkout answers 503 and the startup logs an ERROR). Blank defaults on
     # purpose (pattern chat.anthropic-api-key): a node without the env vars keeps starting and the feature reports
     # itself disabled. Enabled only when the api-key is set; the prod profile with a test_ key is refused (ERROR).
     base-url: ${MOLLIE_BASE_URL:https://api.mollie.com}

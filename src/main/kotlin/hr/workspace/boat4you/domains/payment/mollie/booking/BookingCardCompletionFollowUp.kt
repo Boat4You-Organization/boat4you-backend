@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component
  * - THIS call completed the row -> "Card payment received" to the office + the payment confirmation to the client
  *   ([BookingCardPaymentMailer], Mario 10.11.2026), whatever the kind of payment;
  * - the first payment of a booking ([CompletionResult.promote]) when THIS call completed the row -> the same booking
- *   confirmation Stripe runs (partner confirm, reservation confirmed, customer mail with PaymentType.CARD, voucher),
+ *   confirmation as always (partner confirm, reservation confirmed, customer mail with PaymentType.CARD, voucher),
  *   never for a reservation that is CANCELLED meanwhile. The payment stays recorded if the confirmation fails: the
  *   row gets promote_state FAILED and the office an alert (confirm by hand).
  */

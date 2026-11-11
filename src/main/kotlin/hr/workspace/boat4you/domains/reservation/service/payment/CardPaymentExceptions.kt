@@ -5,7 +5,7 @@ package hr.workspace.boat4you.domains.reservation.service.payment
  * (81xx) via ApiErrorHandler — never a provider message.
  */
 
-/** The configured provider cannot take payments on this node (e.g. `mollie` without an API key) -> 503, 8101. */
+/** Mollie is not configured on this node (no API key), so card payments cannot be taken -> 503, 8101. */
 class CardPaymentsUnavailableException : RuntimeException()
 
 /** A card payment for the same phases is already being processed by the provider -> 409, 8102. */

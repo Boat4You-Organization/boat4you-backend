@@ -163,7 +163,7 @@ class ReservationCardOrderTx(
      * for the ledger row [id], in this one transaction (M2: never inside the create transaction):
      * - a row already COMPLETED / NEEDS_REVIEW -> nothing (idempotent: webhook, status endpoint and reconcile may race);
      * - amount, currency or the flow / phases in the metadata not matching -> NEEDS_REVIEW + alert, phases untouched;
-     * - a target phase already paid (Stripe, admin, another payment) -> NEEDS_REVIEW + alert "double payment";
+     * - a target phase already paid (admin, another payment) -> NEEDS_REVIEW + alert "double payment";
      * - otherwise every target phase gets paidOn + provider ids, the row COMPLETED, ReservationPaymentRecordedEvent.
      * A row closed earlier (CANCELLED / FAILED: superseded or expired on our side) that Mollie still reports paid is
      * recorded the same way — the money is real. The booking confirmation of the first payment runs after the

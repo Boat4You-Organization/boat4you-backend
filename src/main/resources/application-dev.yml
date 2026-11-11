@@ -1,5 +1,5 @@
 server:
-  # Frontend URL — used as the base for Stripe success/cancel redirects and
+  # Frontend URL — used as the base for the card checkout return URL and
   # any email link pointing back to the customer-facing site. Must NOT be the
   # backend port (8443); the browser has to land on the Next.js app.
   host-public: http://localhost:3000
@@ -37,8 +37,6 @@ application:
     # email.enabled is true.
     dev-log-to-file: true
     dev-log-dir: /tmp/b4y-emails
-  stripe:
-    enabled: true
   mollie:
     # Locally a test_ key (MOLLIE_API_KEY); disabled while it is not set. No webhook URL locally (not reachable).
     reconcile-enabled: ${MOLLIE_RECONCILE_ENABLED:true}

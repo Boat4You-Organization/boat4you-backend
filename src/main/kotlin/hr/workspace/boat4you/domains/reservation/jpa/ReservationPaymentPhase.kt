@@ -25,13 +25,10 @@ class ReservationPaymentPhase : AbstractEntity<Long>() {
     @Column(name = "paid_on", columnDefinition = "TIMESTAMP", nullable = true)
     var paidOn: Instant? = null
 
-    @Column(name = "stripe_session_id", columnDefinition = "VARCHAR(511)", nullable = true)
-    var stripeSessionId: String? = null
+    // The table still has stripe_session_id and stripe_payment_intent_id (both NULL in every row; card payments went
+    // live on Mollie). They are not mapped any more.
 
-    @Column(name = "stripe_payment_intent_id", columnDefinition = "VARCHAR(511)", nullable = true)
-    var stripePaymentIntentId: String? = null
-
-    /** Card provider that recorded the payment of this phase (`MOLLIE`, V9_123); null for Stripe-era and manual payments. */
+    /** Card provider that recorded the payment of this phase (`MOLLIE`, V9_123); null for manual payments. */
     @Column(name = "payment_provider", columnDefinition = "VARCHAR(16)", nullable = true)
     var paymentProvider: String? = null
 
@@ -49,11 +46,10 @@ class ReservationPaymentPhase : AbstractEntity<Long>() {
     lateinit var reservationFlow: ReservationFlow
 
     // Id-based equals/hashCode. F2-036 — earlier the structural comparison
-    // used mutable fields (deadline, amount, paidOn, stripeSessionId,
-    // stripePaymentIntentId) as equality key, which:
+    // used mutable fields (deadline, amount, paidOn, …) as equality key, which:
     //   1. Broke `MutableSet<ReservationPaymentPhase>` semantics on
     //      `ReservationFlow.paymentPhases` once any field was reassigned
-    //      (notably `paidOn = Instant.now()` on Stripe webhook completion):
+    //      (notably `paidOn = Instant.now()` when a payment completes):
     //      the hashCode migrated buckets, leaving the entity unreachable.
     //   2. The `paidOn?.equals(other.paidOn) != true` expression evaluated
     //      to `true` (i.e. NOT equal) when both sides were null — making two
