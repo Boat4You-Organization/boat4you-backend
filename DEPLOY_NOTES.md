@@ -6,7 +6,7 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
-## 2026-11-11 — ✅ LIVE cusma2 17:02 UTC (cusma3: čeka prozor od 17:50 UTC): Stripe uklonjen, kartično plaćanje je samo Mollie — jar `c82b89d634c2e98068eae60c13d4a9fc` (208 MB, prije 240 MB), `main` `2a63b6eb`, tag `live/2026-11-11-no-stripe`
+## 2026-11-11 — ✅ LIVE oba čvora (cusma2 17:02, cusma3 17:52 UTC): Stripe uklonjen, kartično plaćanje je samo Mollie — jar `c82b89d634c2e98068eae60c13d4a9fc` (208 MB, prije 240 MB), `main` `2a63b6eb`, tag `live/2026-11-11-no-stripe`
 
 Mario 11.11.2026: „ne treba spajat stripe, samo da ga više ne vidim, samo ostavi mollie“ → „Da, ukloni“. **Bez migracije.**
 
@@ -19,7 +19,8 @@ Mario 11.11.2026: „ne treba spajat stripe, samo da ga više ne vidim, samo ost
 - `ReservationPaymentPhase` više ne mapira `stripe_session_id` / `stripe_payment_intent_id` (stupci i tablica `processed_stripe_events` OSTAJU u bazi); `PaymentPhaseDto` i GDPR izvoz više nemaju `stripePaymentIntentId`.
 
 **⚠️ Rollback i env**
-- **Nema više prekidača natrag na Stripe.** Jedini rollback je `webservice.jar.prev` (cusma2 = `2742e66e`, jar s PDF izvještajem; kopija u `~/.cache/boat4you-deploy/mollie/`).
+- **Nema više prekidača natrag na Stripe.** Jedini rollback je `webservice.jar.prev` (cusma2 = `2742e66e`, jar s PDF izvještajem; cusma3 = `07c3a08e`, jar s naknadama; kopije u `~/.cache/boat4you-deploy/mollie/`).
+- cusma3 17:52 UTC: gate prošao (prozor, bez sync crona u 15 min, bez ShedLocka, scheduler miran), „Schema up to date“, „Started“ 17:52:33, servis aktivan.
 - **`PAYMENT_CARD_PROVIDER=mollie` OSTAJE u env datotekama oba čvora**: novi jar ga ne čita, ali stariji jar bez njega pada na Stripe (zadana vrijednost `stripe`). `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` su i dalje u env datotekama, novi jar ih ne čita; maknuti ih kad stari jar više nije rollback. `infra/deploy-scripts/mollie_env_set.sh` više ne prima argument `stripe`.
 - **cusma3 (scheduler) nema Mollie ključ**: pri svakom startu sada ispisuje `ERROR Card payments: Mollie is not configured on this node`. To je očekivano na cusma3 (ne obrađuje web zahtjeve); na cusma2 ta linija znači da kartice ne rade.
 - **Mario u Stripe nadzornoj ploči:** obrisati webhook endpoint `https://api.boat4you.com/webhooks/stripe` (inače Stripe dobiva 403, ponavlja danima i šalje e-mailove o neuspjehu) i po želji opozvati API ključeve. Kasniji povrat ili spor na staroj Stripe uplati rješava se u Stripe nadzornoj ploči.
@@ -30,7 +31,7 @@ Mario 11.11.2026: „ne treba spajat stripe, samo da ga više ne vidim, samo ost
 
 **Usput viđeno (nije dirano):** nepostojeća ruta pod `/public/**` vraća 500 „Unknown error“ umjesto 404 (i prije ovog deploya).
 
-## 2026-11-11 — ✅ LIVE cusma2 16:11 UTC (cusma3 ovaj jar nije dobio: u prozoru od 17:50 UTC ide odmah jar bez Stripea, koji sadrži i ovo): PDF za knjigovodstvo, uplate i isplate (Mollie) — jar `2742e66e0ce0641aa8953db076d0d127`, `main` `43896348`, tag `live/2026-11-11-payments-report`
+## 2026-11-11 — ✅ LIVE cusma2 16:11 UTC (cusma3 ovaj jar nije dobio: u 17:52 UTC dobio je odmah jar bez Stripea, koji sadrži i ovo): PDF za knjigovodstvo, uplate i isplate (Mollie) — jar `2742e66e0ce0641aa8953db076d0d127`, `main` `43896348`, tag `live/2026-11-11-payments-report`
 
 Mario 11.11.2026: „treba mi mogućnost da izvučem sve uplate i isplate knjigovodstvu u PDF formatu … koji iznos je došao, od koga i reference, datum vrijeme, tako da mogu spajat uplate s ugovorima“; potvrda „Da, kreni“ u ovoj sesiji. **Bez migracije.**
 
