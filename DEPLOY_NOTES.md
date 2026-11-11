@@ -19,6 +19,8 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Provjereno:** cijeli test 2296 (0 padova, 3 preskočena) na `dd3fdeba` (merge s `main` dodao samo bilješke); novi `YachtSearchLengthUnitTest` (svi jezici); Flyway preflight „will apply: none“; prije deploya md5 živog jara na cusma2 i cusma3 = `c82b89d6` (jar bez Stripea); cusma2 „Started“ 18:41:21, cusma3 18:41:46 (gate prošao). Uživo: katamarani Hrvatska `maxLength=20` en = hr = de = 793 (prije en 0); „od 12 m, 4 kabine, od 2020.“ en = hr = 306 = `distribution`; b4y `/en/search…&maxLength=20` 793 plovila, CC `/catamarans?maxLength=20` 813 (prije 0); `/public/payments/custom/config` 404 (8002), `/webhooks/mollie` 200, `card-surcharge` 200. **Nije provjereno uživo:** Iris pretraga po veličini (pokriveno testovima `AiChatToolAreaModelTest`).
 
+**SEO Stage B, svih 7 sajtova (quick, 18:51 UTC):** jedini novi nalaz nije od ovog deploya: C6 caribbean, tvrdnja „300+ Catamarans“ (početna i /about) prema /fleet ukupno 376 (prag je 0,8 × ukupno = 300,8). Izvještaj: `_seo-audit-2026-11-11/regression/185125-B-all/summary.md`. Uživo nakon deploya provjereno i 5 sistera na engleskom s regijom i dužinom (GR, IT, CB, CY, EY): „do 20 m“ i „12–14 m“ vraćaju plovila, brojevi jednaki API-ju.
+
 **Rollback:** `webservice.jar.prev` na oba čvora = `c82b89d6`; stari jar opet čita dužinu na `en` kao stope (web „Slični brodovi“ rade s oba).
 
 **Ostalo za kasnije:** integracijski test `/public/yachts` s dužinom na `en`; `/catalogue/filters` na `en` i dalje vraća granice dužine u stopama (nitko ih ne šalje natrag kao filter).
