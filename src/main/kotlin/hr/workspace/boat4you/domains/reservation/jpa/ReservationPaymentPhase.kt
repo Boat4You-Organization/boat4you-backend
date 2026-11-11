@@ -25,8 +25,8 @@ class ReservationPaymentPhase : AbstractEntity<Long>() {
     @Column(name = "paid_on", columnDefinition = "TIMESTAMP", nullable = true)
     var paidOn: Instant? = null
 
-    // The table still has stripe_session_id and stripe_payment_intent_id (both NULL in every row; card payments went
-    // live on Mollie). They are not mapped any more.
+    // The table still has the columns stripe_session_id and stripe_payment_intent_id of the previous card provider.
+    // They are not mapped any more: nothing reads or writes them.
 
     /** Card provider that recorded the payment of this phase (`MOLLIE`, V9_123); null for manual payments. */
     @Column(name = "payment_provider", columnDefinition = "VARCHAR(16)", nullable = true)
