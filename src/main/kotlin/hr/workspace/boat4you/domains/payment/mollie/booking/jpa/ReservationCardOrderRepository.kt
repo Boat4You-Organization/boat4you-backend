@@ -231,6 +231,40 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
         @Param("id") id: Long,
     ): List<Array<Any?>>
 
+    /**
+     * Accounting report: `[order, flow.name, flow.surname, flow.email, reservation.reservationNumber]` of the payments
+     * paid in `[from, to)`, oldest first. A refunded payment stays [completed] and is listed (the money did arrive).
+     */
+    @Query(
+        """
+        SELECT o, f.name, f.surname, f.email, r.reservationNumber
+        FROM ReservationCardOrder o
+        LEFT JOIN ReservationFlow f ON f.id = o.reservationFlowId
+        LEFT JOIN Reservation r ON r.id = o.reservationId
+        WHERE o.status = :completed AND o.completedAt >= :from AND o.completedAt < :to
+        ORDER BY o.completedAt, o.id
+        """,
+    )
+    fun findReportRowsPaidBetween(
+        @Param("completed") completed: ReservationCardOrderStatus,
+        @Param("from") from: Instant,
+        @Param("to") to: Instant,
+    ): List<Array<Any?>>
+
+    /** Accounting report: the same row shape as [findReportRowsPaidBetween] for the given Mollie payment ids (any status). */
+    @Query(
+        """
+        SELECT o, f.name, f.surname, f.email, r.reservationNumber
+        FROM ReservationCardOrder o
+        LEFT JOIN ReservationFlow f ON f.id = o.reservationFlowId
+        LEFT JOIN Reservation r ON r.id = o.reservationId
+        WHERE o.providerOrderId IN :providerOrderIds
+        """,
+    )
+    fun findReportRowsByProviderOrderIdIn(
+        @Param("providerOrderIds") providerOrderIds: Collection<String>,
+    ): List<Array<Any?>>
+
     /** Fee sync: `[providerOrderId, createdAt]` of the paid payments without a known Mollie fee, completed after [since]. */
     @Query(
         """

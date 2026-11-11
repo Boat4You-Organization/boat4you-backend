@@ -168,6 +168,17 @@ interface CustomPaymentRepository : JpaRepository<CustomPayment, Long> {
         @Param("completed") completed: CustomPaymentStatus,
     ): Long
 
+    /** Accounting report: the payments paid in `[from, to)`, oldest first (a refunded payment stays [completed]). */
+    @Query("SELECT p FROM CustomPayment p WHERE p.status = :completed AND p.completedAt >= :from AND p.completedAt < :to ORDER BY p.completedAt, p.id")
+    fun findPaidBetween(
+        @Param("completed") completed: CustomPaymentStatus,
+        @Param("from") from: Instant,
+        @Param("to") to: Instant,
+    ): List<CustomPayment>
+
+    /** Accounting report: the rows of the given Mollie payment ids (any status). */
+    fun findAllByProviderOrderIdIn(providerOrderIds: Collection<String>): List<CustomPayment>
+
     /** Fee sync: `[providerOrderId, createdAt]` of the paid payments without a known Mollie fee, completed after [since]. */
     @Query(
         """

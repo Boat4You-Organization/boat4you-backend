@@ -230,6 +230,21 @@ data class MollieBalanceTransaction(
         val id = node.get("paymentId") ?: node.firstOrNull { it.isObject && it.has("paymentId") }?.get("paymentId")
         return id?.takeIf { it.isTextual }?.asText()?.takeIf { MollieClient.isValidPaymentId(it) }
     }
+
+    /** `context.settlementId` / `context.transferId` of a payout (`outgoing-transfer`): plain Mollie ids, else null. */
+    val settlementId: String? get() = contextToken("settlementId")
+    val transferId: String? get() = contextToken("transferId")
+
+    /** `context.paymentDescription`: the description the payment was created with (free text, shortened). */
+    val paymentDescription: String? get() =
+        context?.get("paymentDescription")?.takeIf { it.isTextual }?.asText()?.trim()?.take(MAX_DESCRIPTION)?.ifEmpty { null }
+
+    private fun contextToken(field: String): String? = context?.get(field)?.takeIf { it.isTextual }?.asText()?.takeIf { CONTEXT_TOKEN.matches(it) }
+
+    private companion object {
+        const val MAX_DESCRIPTION = 120
+        val CONTEXT_TOKEN = Regex("^[A-Za-z0-9_.-]{1,64}$")
+    }
 }
 
 object MolliePaymentStatuses {

@@ -25,6 +25,12 @@ interface ReservationRepository : JpaRepository<Reservation, Long> {
         @Param("ids") ids: Collection<Long>,
     ): List<Array<Any?>>
 
+    /** Accounting report: `[id, reservationNumber, flow.name, flow.surname]` of the reservations a `/pay` payment is linked to. */
+    @Query("SELECT r.id, r.reservationNumber, f.name, f.surname FROM Reservation r LEFT JOIN r.reservationFlow f WHERE r.id IN :ids")
+    fun findReportPartiesByIdIn(
+        @Param("ids") ids: Collection<Long>,
+    ): List<Array<Any?>>
+
     /**
      * All confirmed, customer-real bookings of a user — loyalty-voucher
      * "is this their first booking" check. Fictitious (admin-only) rows are

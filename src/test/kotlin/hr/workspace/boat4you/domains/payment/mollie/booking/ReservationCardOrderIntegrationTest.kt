@@ -183,6 +183,9 @@ class ReservationCardOrderIntegrationTest {
     private lateinit var orders: ReservationCardOrderRepository
 
     @Autowired
+    private lateinit var reservations: ReservationRepository
+
+    @Autowired
     private lateinit var tx: ReservationCardOrderTx
 
     @Autowired
@@ -1033,5 +1036,29 @@ class ReservationCardOrderIntegrationTest {
         // Once: the webhook, the status endpoint and the reconcile job may all report the same payment again.
         tx.applyCompleted(order.id!!, paidPayment(order), "webhook:paid") shouldBe CompletionResult.NOTHING
         events.recorded.shouldBeEmpty()
+    }
+
+    @Test
+    @Order(23)
+    fun `accounting report - the paid rows of a period with client and booking number, and the rows of given Mollie payment ids`() {
+        jdbc.update("UPDATE reservation_card_order SET status = 'CANCELLED' WHERE status IN ('PENDING', 'SUPERSEDED')")
+        jdbc.update("UPDATE reservation_flow SET name = 'Ana', surname = 'Šimić', email = 'ana@example.com' WHERE id = 900")
+        jdbc.update("UPDATE reservation SET reservation_flow_id = 900, reservation_number = '1441002/2026' WHERE id = 42")
+        val paid = insert("tr_reportPaid")
+        insert("tr_reportOpen", plan(phaseIds = "8", paymentPhaseId = 8))
+        jdbc.update("UPDATE reservation_card_order SET status = 'COMPLETED', completed_at = TIMESTAMPTZ '2031-03-10 12:00:00+00' WHERE id = ?", paid.id)
+        val march = Instant.parse("2031-03-01T00:00:00Z")
+        val april = Instant.parse("2031-04-01T00:00:00Z")
+
+        val rows = orders.findReportRowsPaidBetween(ReservationCardOrderStatus.COMPLETED, march, april)
+        rows.map { (it[0] as ReservationCardOrder).providerOrderId } shouldBe listOf("tr_reportPaid")
+        rows[0].drop(1) shouldBe listOf("Ana", "Šimić", "ana@example.com", "1441002/2026")
+        orders.findReportRowsPaidBetween(ReservationCardOrderStatus.COMPLETED, april, april.plus(Duration.ofDays(30))) shouldBe emptyList()
+
+        orders
+            .findReportRowsByProviderOrderIdIn(listOf("tr_reportPaid", "tr_reportOpen", "tr_nobody"))
+            .map { (it[0] as ReservationCardOrder).providerOrderId to it[4] }
+            .toSet() shouldBe setOf("tr_reportPaid" to "1441002/2026", "tr_reportOpen" to "1441002/2026")
+        reservations.findReportPartiesByIdIn(listOf(42L)).single().toList() shouldBe listOf(42L, "1441002/2026", "Ana", "Šimić")
     }
 }

@@ -750,4 +750,20 @@ class CustomPaymentStateIntegrationTest {
         row(open).providerFeeMinor shouldBe null
         ("tr_feepaid" in waiting()) shouldBe false
     }
+
+    @Test
+    @Order(18)
+    fun `accounting report - the paid rows of a period, oldest first, and the rows of given Mollie payment ids`() {
+        val later = attached("REP-LATER", "tr_replater")
+        val earlier = attached("REP-EARLIER", "tr_repearlier")
+        attached("REP-OPEN", "tr_repopen")
+        jdbc.update("UPDATE custom_payment SET status = 'COMPLETED', completed_at = TIMESTAMPTZ '2031-03-20 12:00:00+00' WHERE id = ?", later)
+        jdbc.update("UPDATE custom_payment SET status = 'COMPLETED', completed_at = TIMESTAMPTZ '2031-03-05 12:00:00+00' WHERE id = ?", earlier)
+        val march = Instant.parse("2031-03-01T00:00:00Z")
+        val april = Instant.parse("2031-04-01T00:00:00Z")
+
+        repository.findPaidBetween(CustomPaymentStatus.COMPLETED, march, april).map { it.reference } shouldBe listOf("REP-EARLIER", "REP-LATER")
+        repository.findPaidBetween(CustomPaymentStatus.COMPLETED, april, april.plus(Duration.ofDays(30))) shouldBe emptyList()
+        repository.findAllByProviderOrderIdIn(listOf("tr_replater", "tr_repopen", "tr_nobody")).map { it.reference }.toSet() shouldBe setOf("REP-LATER", "REP-OPEN")
+    }
 }

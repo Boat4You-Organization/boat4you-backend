@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:th="http://www.thymeleaf.org" lang="hr">
+<head>
+    <meta charset="UTF-8" />
+    <title>Uplate i isplate (Mollie)</title>
+    <style type="text/css">
+        @page {
+            size: A4 landscape;
+            margin: 14mm 12mm 14mm 12mm;
+            @bottom-left {
+                content: "Boat4You · Cusmanich d.o.o. · uplate i isplate (Mollie)";
+                font-family: 'Inter';
+                font-size: 7pt;
+                color: #6b7280;
+            }
+            @bottom-right {
+                content: "Stranica " counter(page) " / " counter(pages);
+                font-family: 'Inter';
+                font-size: 7pt;
+                color: #6b7280;
+            }
+        }
+
+        body {
+            font-family: 'Inter';
+            font-size: 8pt;
+            line-height: 1.35;
+            color: #111827;
+        }
+        h1 { font-size: 15pt; font-weight: 600; margin: 0 0 2pt 0; }
+        h2 { font-size: 10.5pt; font-weight: 600; margin: 16pt 0 2pt 0; page-break-after: avoid; }
+        p { margin: 0; }
+        b { font-weight: 600; }
+        .meta { color: #4b5563; font-size: 8.5pt; }
+        .lead { color: #4b5563; margin-bottom: 5pt; page-break-after: avoid; }
+        .note { color: #4b5563; font-size: 7.5pt; margin-top: 4pt; }
+        .empty { color: #6b7280; padding: 5pt 0; }
+        .warn { border: 0.6pt solid #d97706; background: #fffbeb; padding: 5pt 7pt; margin-top: 10pt; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            -fs-table-paginate: paginate;
+        }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
+        th {
+            font-weight: 600;
+            font-size: 7.5pt;
+            text-align: left;
+            background: #f3f4f6;
+            border-bottom: 0.6pt solid #9ca3af;
+            padding: 3.5pt 4pt;
+        }
+        td {
+            border-bottom: 0.4pt solid #e5e7eb;
+            padding: 3.5pt 4pt;
+            vertical-align: top;
+        }
+        .num { text-align: right; white-space: nowrap; }
+        .nowrap { white-space: nowrap; }
+        .sub { display: block; color: #6b7280; font-size: 7pt; }
+        .id { font-size: 7pt; color: #374151; }
+        tr.total td {
+            font-weight: 600;
+            border-top: 0.6pt solid #9ca3af;
+            border-bottom: none;
+            background: #f9fafb;
+        }
+        tr.diff td { border-bottom: none; color: #92400e; }
+
+        .payout { margin-top: 9pt; }
+        .payout-head {
+            font-weight: 600;
+            font-size: 9pt;
+            padding: 4pt 5pt;
+            background: #e5edf7;
+            border-left: 2.5pt solid #1d4ed8;
+            page-break-after: avoid;
+        }
+        .payout-head .sub { display: inline; font-weight: 400; margin-left: 6pt; }
+    </style>
+</head>
+<body>
+
+<h1>Uplate i isplate (Mollie)</h1>
+<p class="meta">Boat4You · Cusmanich d.o.o.</p>
+<p class="meta">
+    Razdoblje: <b th:text="${period}">01.11.2026. – 30.11.2026.</b>
+    · Izrađeno: <span th:text="${generatedAt}">11.11.2026. 14:40</span>
+    · Sva vremena su po hrvatskom vremenu, svi iznosi u eurima.
+</p>
+
+<!-- 1. Payments -->
+<h2>1. Uplate kupaca</h2>
+<p class="lead">
+    Uplate karticom i Klarnom zaprimljene u razdoblju, po vremenu uplate. Referenca je broj rezervacije (ugovora);
+    kod uplate preko linka za plaćanje to je referenca koju je upisao platitelj.
+</p>
+<p class="empty" th:if="${#lists.isEmpty(payments)}">U razdoblju nema zaprimljenih uplata.</p>
+<table th:unless="${#lists.isEmpty(payments)}">
+    <thead>
+    <tr>
+        <th style="width: 11%">Datum i vrijeme</th>
+        <th style="width: 20%">Platitelj</th>
+        <th style="width: 15%">Referenca</th>
+        <th style="width: 6%">Način</th>
+        <th style="width: 12%">Mollie oznaka</th>
+        <th class="num" style="width: 12%">Naplaćeno</th>
+        <th class="num" style="width: 8%">Naknada Mollie</th>
+        <th class="num" style="width: 8%">Neto</th>
+        <th class="num" style="width: 8%">Vraćeno</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="p : ${payments}">
+        <td class="nowrap" th:text="${p.at}">05.11.2026. 14:21</td>
+        <td>
+            <span th:text="${p.payer}">Ime Prezime</span>
+            <span class="sub" th:if="${p.payerNote}" th:text="${p.payerNote}">e-mail</span>
+        </td>
+        <td>
+            <span th:text="${p.reference}">1441001/2026</span>
+            <span class="sub" th:each="n : ${p.referenceNotes}" th:text="${n}">link za plaćanje</span>
+        </td>
+        <td th:text="${p.method}">Kartica</td>
+        <td class="id" th:text="${p.mollieId}">tr_xxx</td>
+        <td class="num">
+            <span th:text="${p.amount}">1.030,00</span>
+            <span class="sub" th:if="${p.amountNote}" th:text="${p.amountNote}">rata + naknada</span>
+        </td>
+        <td class="num" th:text="${p.fee}">18,54</td>
+        <td class="num" th:text="${p.net}">1.011,46</td>
+        <td class="num" th:text="${p.back}">—</td>
+    </tr>
+    <tr class="total">
+        <td colspan="5">Ukupno uplata: <span th:text="${paymentsCount}">0</span></td>
+        <td class="num" th:text="${paymentsAmount}">0,00</td>
+        <td class="num" th:text="${paymentsFee}">0,00</td>
+        <td class="num" th:text="${paymentsNet}">0,00</td>
+        <td class="num" th:text="${paymentsBack}">0,00</td>
+    </tr>
+    </tbody>
+</table>
+<p class="note" th:if="${feesMissing > 0}">
+    Uplate kojima naknada još nije poznata (oznaka —): <span th:text="${feesMissing}">1</span>. Mollie ih još nije
+    proknjižio, pa zbroj naknada i neto iznosa ne uključuje njihove naknade.
+</p>
+<p class="note" th:unless="${#lists.isEmpty(payments)}">
+    „Vraćeno“ je iznos koji je do izrade izvještaja vraćen kupcu ili osporen, bez obzira na datum povrata.
+</p>
+
+<div class="warn" th:unless="${ledgerAvailable}">
+    Podaci s Mollie računa trenutno nisu dostupni, pa povrati, isplate na bankovni račun i njihov sastav nisu
+    prikazani. Izvještaj izradite ponovno kasnije.
+</div>
+
+<div th:if="${ledgerAvailable}">
+
+    <!-- 2. Refunds and chargebacks -->
+    <h2>2. Povrati i osporene uplate</h2>
+    <p class="lead">Povrati kupcima i osporene uplate koje je Mollie proknjižio u razdoblju. Iznosi koji odlaze s računa su negativni.</p>
+    <p class="empty" th:if="${#lists.isEmpty(moneyBack)}">U razdoblju nema povrata ni osporenih uplata.</p>
+    <table th:unless="${#lists.isEmpty(moneyBack)}">
+        <thead>
+        <tr>
+            <th style="width: 11%">Datum i vrijeme</th>
+            <th style="width: 13%">Stavka</th>
+            <th style="width: 20%">Platitelj</th>
+            <th style="width: 18%">Referenca</th>
+            <th style="width: 12%">Mollie oznaka</th>
+            <th class="num" style="width: 9%">Iznos</th>
+            <th class="num" style="width: 8%">Naknada Mollie</th>
+            <th class="num" style="width: 9%">Neto</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="l : ${moneyBack}">
+            <td class="nowrap" th:text="${l.at}">05.11.2026. 14:21</td>
+            <td th:text="${l.label}">Povrat kupcu</td>
+            <td>
+                <span th:text="${l.payer}">Ime Prezime</span>
+                <span class="sub" th:if="${l.payerNote}" th:text="${l.payerNote}">e-mail</span>
+            </td>
+            <td>
+                <span th:text="${l.reference}">1441001/2026</span>
+                <span class="sub" th:each="n : ${l.referenceNotes}" th:text="${n}">link za plaćanje</span>
+            </td>
+            <td class="id" th:text="${l.mollieId}">tr_xxx</td>
+            <td class="num" th:text="${l.gross}">-50,00</td>
+            <td class="num" th:text="${l.fee}">-0,25</td>
+            <td class="num" th:text="${l.net}">-50,25</td>
+        </tr>
+        <tr class="total">
+            <td colspan="5">Ukupno</td>
+            <td class="num" th:text="${moneyBackTotals.gross}">0,00</td>
+            <td class="num" th:text="${moneyBackTotals.fee}">0,00</td>
+            <td class="num" th:text="${moneyBackTotals.net}">0,00</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <!-- 3. Payouts -->
+    <h2>3. Isplate na bankovni račun</h2>
+    <p class="lead">
+        Svaka isplata s Mollie računa na bankovni račun u razdoblju i stavke od kojih se sastoji: sve što je Mollie
+        proknjižio od prethodne isplate. Datum uz uplatu ovdje je dan kad ju je Mollie proknjižio na račun; naknade i
+        povrati su s negativnim predznakom.
+    </p>
+    <p class="empty" th:if="${#lists.isEmpty(payouts)}">U razdoblju nema isplata na bankovni račun.</p>
+    <div class="payout" th:each="o : ${payouts}">
+        <p class="payout-head">
+            Isplata <span th:text="${o.at}">06.11.2026. 07:00</span> · <span th:text="${o.amount}">1.234,56</span> EUR
+            <span class="sub" th:if="${o.ids}">Mollie oznaka: <span th:text="${o.ids}">stl_xxx</span></span>
+        </p>
+        <p class="empty" th:if="${#lists.isEmpty(o.rows)}">Za ovu isplatu nema pojedinačnih stavki.</p>
+        <table th:unless="${#lists.isEmpty(o.rows)}">
+            <thead>
+            <tr>
+                <th style="width: 11%">Proknjiženo</th>
+                <th style="width: 13%">Stavka</th>
+                <th style="width: 20%">Platitelj</th>
+                <th style="width: 18%">Referenca</th>
+                <th style="width: 12%">Mollie oznaka</th>
+                <th class="num" style="width: 9%">Iznos</th>
+                <th class="num" style="width: 8%">Naknada Mollie</th>
+                <th class="num" style="width: 9%">Neto</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="l : ${o.rows}">
+                <td class="nowrap" th:text="${l.at}">05.11.2026. 14:21</td>
+                <td th:text="${l.label}">Uplata</td>
+                <td>
+                    <span th:text="${l.payer}">Ime Prezime</span>
+                    <span class="sub" th:if="${l.payerNote}" th:text="${l.payerNote}">e-mail</span>
+                </td>
+                <td>
+                    <span th:text="${l.reference}">1441001/2026</span>
+                    <span class="sub" th:each="n : ${l.referenceNotes}" th:text="${n}">link za plaćanje</span>
+                </td>
+                <td class="id" th:text="${l.mollieId}">tr_xxx</td>
+                <td class="num" th:text="${l.gross}">1.030,00</td>
+                <td class="num" th:text="${l.fee}">-18,54</td>
+                <td class="num" th:text="${l.net}">1.011,46</td>
+            </tr>
+            <tr class="total">
+                <td colspan="5">Ukupno stavke</td>
+                <td class="num" th:text="${o.totals.gross}">0,00</td>
+                <td class="num" th:text="${o.totals.fee}">0,00</td>
+                <td class="num" th:text="${o.totals.net}">0,00</td>
+            </tr>
+            <tr class="diff" th:if="${o.difference}">
+                <td colspan="7">Razlika između isplate i stavki (stanje preneseno od ranije ili djelomična isplata)</td>
+                <td class="num" th:text="${o.difference}">0,00</td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+    <p class="note" th:unless="${#lists.isEmpty(payouts)}">
+        Ukupno isplaćeno na bankovni račun u razdoblju: <b th:text="${payoutsTotal}">0,00</b> EUR.
+    </p>
+    <p class="note" th:unless="${ledgerComplete}">
+        Mollie račun ima više stavki nego što izvještaj čita odjednom, pa sastav najstarije isplate može biti nepotpun.
+    </p>
+
+    <!-- 4. Not paid out yet -->
+    <h2>4. Na Mollie računu, još nije isplaćeno</h2>
+    <p class="lead">
+        Stavke proknjižene do kraja razdoblja koje nisu ušle ni u jednu isplatu. Uplatu koju Mollie još drži na čekanju
+        ovdje ćete vidjeti tek kad je proknjiži.
+    </p>
+    <p class="empty" th:if="${#lists.isEmpty(notPaidOut)}">Nema stavki koje čekaju isplatu.</p>
+    <table th:unless="${#lists.isEmpty(notPaidOut)}">
+        <thead>
+        <tr>
+            <th style="width: 11%">Proknjiženo</th>
+            <th style="width: 13%">Stavka</th>
+            <th style="width: 20%">Platitelj</th>
+            <th style="width: 18%">Referenca</th>
+            <th style="width: 12%">Mollie oznaka</th>
+            <th class="num" style="width: 9%">Iznos</th>
+            <th class="num" style="width: 8%">Naknada Mollie</th>
+            <th class="num" style="width: 9%">Neto</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="l : ${notPaidOut}">
+            <td class="nowrap" th:text="${l.at}">05.11.2026. 14:21</td>
+            <td th:text="${l.label}">Uplata</td>
+            <td>
+                <span th:text="${l.payer}">Ime Prezime</span>
+                <span class="sub" th:if="${l.payerNote}" th:text="${l.payerNote}">e-mail</span>
+            </td>
+            <td>
+                <span th:text="${l.reference}">1441001/2026</span>
+                <span class="sub" th:each="n : ${l.referenceNotes}" th:text="${n}">link za plaćanje</span>
+            </td>
+            <td class="id" th:text="${l.mollieId}">tr_xxx</td>
+            <td class="num" th:text="${l.gross}">1.030,00</td>
+            <td class="num" th:text="${l.fee}">-18,54</td>
+            <td class="num" th:text="${l.net}">1.011,46</td>
+        </tr>
+        <tr class="total">
+            <td colspan="5">Ukupno</td>
+            <td class="num" th:text="${notPaidOutTotals.gross}">0,00</td>
+            <td class="num" th:text="${notPaidOutTotals.fee}">0,00</td>
+            <td class="num" th:text="${notPaidOutTotals.net}">0,00</td>
+        </tr>
+        </tbody>
+    </table>
+
+</div>
+
+</body>
+</html>
