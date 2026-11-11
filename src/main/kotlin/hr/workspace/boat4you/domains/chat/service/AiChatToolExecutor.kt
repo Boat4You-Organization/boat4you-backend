@@ -97,12 +97,23 @@ class AiChatToolExecutor(
         /** Cabins a search may ask for: the search API binds them as a 16-bit number. */
         const val MAX_CABINS = 30
 
-        /** "Or similar": the asked model's length plus and minus this many feet (the search API's length filter is in feet). */
+        /** "Or similar": the asked model's length plus and minus this many feet (converted to metres for the search API). */
         const val SIMILAR_FT = 4.0
 
         /** A boat within this many feet of the asked size counts as that size when the picks are spread (42 ft: 40.5-43.5). */
         const val SAME_SIZE_FT = 1.5
         const val FEET_PER_METRE = 3.28084
+
+        /**
+         * The search API's minLength / maxLength are metres in every language (11.11.2026; they were feet on EN, which
+         * this call relied on by sending no Accept-Language). A lower bound rounds down and an upper bound up, so a
+         * boat right on the edge of the asked band is never lost to the conversion.
+         */
+        fun minLengthMetres(feet: Number): BigDecimal =
+            BigDecimal(feet.toDouble() / FEET_PER_METRE).setScale(2, RoundingMode.FLOOR)
+
+        fun maxLengthMetres(feet: Number): BigDecimal =
+            BigDecimal(feet.toDouble() / FEET_PER_METRE).setScale(2, RoundingMode.CEILING)
 
         /** How long a country's marina list (with coordinates) is kept for the nearby lookup. */
         val MARINAS_TTL: java.time.Duration = java.time.Duration.ofHours(6)
@@ -387,10 +398,12 @@ class AiChatToolExecutor(
                     if (equipmentIds.isNotEmpty()) queryParam("amenities", equipmentIds)
                     when {
                         byModel -> queryParam("mid", *mids.toTypedArray())
-                        band != null -> queryParam("minLength", band.first).queryParam("maxLength", band.second)
+                        band != null ->
+                            queryParam("minLength", minLengthMetres(band.first))
+                                .queryParam("maxLength", maxLengthMetres(band.second))
                         else -> {
-                            minLengthFt?.let { queryParam("minLength", it) }
-                            maxLengthFt?.let { queryParam("maxLength", it) }
+                            minLengthFt?.let { queryParam("minLength", minLengthMetres(it)) }
+                            maxLengthFt?.let { queryParam("maxLength", maxLengthMetres(it)) }
                         }
                     }
                 }

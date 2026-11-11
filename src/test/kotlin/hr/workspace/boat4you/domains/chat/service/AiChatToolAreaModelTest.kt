@@ -74,8 +74,8 @@ class AiChatToolAreaModelTest {
                         }
                         // the boat on its own, for the dates it is free (19.-26.6.2027) or without dates (its size)
                         q.containsKey("yid") && q["startDate"]?.single() !in listOf(null, "2027-06-19") -> """{"content":[],"page":{"totalElements":0}}"""
-                        // a 42 ft request: the 38-46 ft band, cheapest first
-                        q["minLength"]?.single() == "38" -> """{"content":[${SIZES.joinToString(",")}],"page":{"totalElements":${SIZES.size}}}"""
+                        // a 42 ft request: the 38-46 ft band (11.58-14.03 m), cheapest first
+                        q["minLength"]?.single() == "11.58" -> """{"content":[${SIZES.joinToString(",")}],"page":{"totalElements":${SIZES.size}}}"""
                         else -> """{"content":[$BALI_6,$SUNDOWNER],"page":{"totalElements":2}}"""
                     }.toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
@@ -139,8 +139,8 @@ class AiChatToolAreaModelTest {
         val queries = seen.filter { it.startsWith("/public/yachts?") && it.contains("startDate") }.map { params(it.substringAfter('?')) }
         queries.first()["mid"].orEmpty().toSet() shouldBe setOf("4028", "2107", "3001")
         // Lagoon 46 13.99 m and (no Bali 4.2 boat, so the first one) 14.6 m: 45.9 and 47.9 ft, plus and minus 4
-        queries.last()["minLength"] shouldBe listOf("41")
-        queries.last()["maxLength"] shouldBe listOf("52")
+        queries.last()["minLength"] shouldBe listOf("12.49")
+        queries.last()["maxLength"] shouldBe listOf("15.85")
     }
 
     @Test
@@ -193,9 +193,9 @@ class AiChatToolAreaModelTest {
 
         val q = yachtsQuery()
         q.containsKey("mid") shouldBe false
-        // Lagoon 46 Sundowner is 13.99 m = 45.9 ft: 41 to 50 ft (the search API's length filter is in feet)
-        q["minLength"] shouldBe listOf("41")
-        q["maxLength"] shouldBe listOf("50")
+        // Lagoon 46 Sundowner is 13.99 m = 45.9 ft: 41 to 50 ft, sent as metres (12.49 to 15.24)
+        q["minLength"] shouldBe listOf("12.49")
+        q["maxLength"] shouldBe listOf("15.24")
         q["vesselType"].orEmpty() shouldContainAll listOf("CATAMARAN")
         out.path("yachts").map { it.path("yacht").asText() } shouldBe listOf("Lagoon 46 Sundowner", "Bali 4.8 Calypso")
         out.path("yachts")[0].path("match").asText() shouldBe "asked model"
@@ -206,8 +206,8 @@ class AiChatToolAreaModelTest {
     fun `a 42 ft request shows 38 to 46 ft boats, spread over sizes and models, at most 8 (Mario 6_11_2026)`() {
         val out = mapper.readTree(search("""{$june,"lengthFt":42,"limit":8}""").resultForModel)
 
-        yachtsQuery()["minLength"] shouldBe listOf("38")
-        yachtsQuery()["maxLength"] shouldBe listOf("46")
+        yachtsQuery()["minLength"] shouldBe listOf("11.58")
+        yachtsQuery()["maxLength"] shouldBe listOf("14.03")
         val boats = out.path("yachts").map { it.path("yacht").asText() }
         // one at the asked size, one smaller, one bigger, each a model not shown yet; the second Lagoon 42 only at the end
         boats shouldBe

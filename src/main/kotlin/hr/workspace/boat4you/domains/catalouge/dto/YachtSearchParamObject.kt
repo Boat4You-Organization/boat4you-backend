@@ -1,6 +1,5 @@
 package hr.workspace.boat4you.domains.catalouge.dto
 
-import hr.workspace.boat4you.common.services.UnitCalculations.feetToMeters
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.CurrencyEnum
 import hr.workspace.boat4you.domains.catalouge.enums.LanguageEnum
@@ -106,27 +105,12 @@ data class YachtSearchParamObject(
     val sitemapRequest: Boolean
         get() = sitemap || idFrom != null || idTo != null
 
-    fun getMinLengthInMeters(): BigDecimal? {
-        if (minLength == null) {
-            return null
-        }
-        return if (language == LanguageEnum.EN) {
-            feetToMeters(minLength)
-        } else {
-            minLength
-        }
-    }
+    // minLength / maxLength arrive in metres in every language: the search sliders of b4y and all six
+    // sister sites are metre sliders (4–56 m) on every locale. The former EN branch read them as feet,
+    // so on the English sites "up to 20 m" became 20 ft (6.1 m) and returned no boats (11.11.2026).
+    fun getMinLengthInMeters(): BigDecimal? = minLength
 
-    fun getMaxLengthInMeters(): BigDecimal? {
-        if (maxLength == null) {
-            return null
-        }
-        return if (language == LanguageEnum.EN) {
-            feetToMeters(maxLength)
-        } else {
-            maxLength
-        }
-    }
+    fun getMaxLengthInMeters(): BigDecimal? = maxLength
 
     fun getMinPriceInEur(calc: ExchangeRateCalculationService): BigDecimal? {
         return if (minPrice == null) {
