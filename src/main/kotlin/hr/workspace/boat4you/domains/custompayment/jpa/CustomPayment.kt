@@ -100,6 +100,10 @@ open class CustomPayment {
     @Column(name = "charged_back_amount_minor", nullable = false)
     open var chargedBackAmountMinor: Long = 0
 
+    /** Mollie's fee for the payment in cents (hourly fee sync, V9_126); NULL = not known (yet). */
+    @Column(name = "provider_fee_minor")
+    open var providerFeeMinor: Long? = null
+
     /** JSON of `OrderSnapshot` (whitelisted Mollie payment fields). */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "order_snapshot")

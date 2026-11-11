@@ -134,17 +134,21 @@ class MollieClient internal constructor(
                 setReadTimeout(Duration.ofSeconds(READ_TIMEOUT_SECONDS))
             }
 
-        /** Base URL, auth header and the body-free error handling; the request factory is the caller's. */
+        /**
+         * Base URL, auth header and the body-free error handling; the request factory is the caller's. [bearer] = the
+         * credential of this client (the payments API key unless another one is given).
+         */
         internal fun configure(
             builder: RestClient.Builder,
             properties: MollieProperties,
+            bearer: () -> String = { properties.apiKey },
         ): RestClient =
             builder
                 .baseUrl(properties.baseUrl)
                 .defaultHeader(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON_VALUE)
                 .requestInterceptor { request, body, execution ->
                     // Set here, per request; this interceptor never logs anything.
-                    request.headers.setBearerAuth(properties.apiKey)
+                    request.headers.setBearerAuth(bearer())
                     execution.execute(request, body)
                 }.defaultStatusHandler(HttpStatusCode::isError) { request, response ->
                     val status = response.statusCode

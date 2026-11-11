@@ -168,6 +168,28 @@ interface CustomPaymentRepository : JpaRepository<CustomPayment, Long> {
         @Param("completed") completed: CustomPaymentStatus,
     ): Long
 
+    /** Fee sync: `[providerOrderId, createdAt]` of the paid payments without a known Mollie fee, completed after [since]. */
+    @Query(
+        """
+        SELECT p.providerOrderId, p.createdAt FROM CustomPayment p
+        WHERE p.status = :completed AND p.providerFeeMinor IS NULL
+          AND p.providerOrderId IS NOT NULL AND p.completedAt > :since
+        """,
+    )
+    fun findFeeCandidates(
+        @Param("completed") completed: CustomPaymentStatus,
+        @Param("since") since: Instant,
+    ): List<Array<Any?>>
+
+    /** Fee sync: stores Mollie's fee once (never overwrites a stored one). */
+    @Modifying
+    @Transactional
+    @Query("UPDATE CustomPayment p SET p.providerFeeMinor = :fee WHERE p.providerOrderId = :providerOrderId AND p.providerFeeMinor IS NULL")
+    fun storeProviderFee(
+        @Param("providerOrderId") providerOrderId: String,
+        @Param("fee") fee: Long,
+    ): Int
+
     /** GDPR Art. 15/20 export: the payments made with the user's e-mail (custom payments have no user FK). */
     fun findAllByPayerEmailIgnoreCase(payerEmail: String): List<CustomPayment>
 }

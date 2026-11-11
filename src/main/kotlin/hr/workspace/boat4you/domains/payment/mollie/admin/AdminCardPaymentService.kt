@@ -104,6 +104,8 @@ class AdminCardPaymentService(
             reviewReason = order.reviewReason,
             promoteState = order.promoteState,
             lastCheckedAt = order.lastCheckedAt,
+            feeMinor = order.providerFeeMinor,
+            netMinor = order.providerFeeMinor?.let { order.amountMinor - it },
         )
     }
 

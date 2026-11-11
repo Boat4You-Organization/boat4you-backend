@@ -37,6 +37,10 @@ data class AdminCardPaymentDto(
     val reviewReason: String?,
     val promoteState: CardOrderPromoteState?,
     val lastCheckedAt: Instant?,
+    /** Mollie's fee for the payment, cents; null = not known (no organisation token, or not booked by Mollie yet). */
+    val feeMinor: Long? = null,
+    /** Charged minus Mollie's fee, cents (refunds are not subtracted); null while the fee is not known. */
+    val netMinor: Long? = null,
 )
 
 /** Same `content` / `page` shape as the custom payments list + money kept among the filtered rows. */
@@ -49,7 +53,7 @@ data class AdminCardPaymentPageDto(
 
 /**
  * `GET /admin/mollie-payments/{id}`: one Mollie payment as Mollie reports it right now (booking payments and `/pay`
- * payments). Mollie's fee and the net payout are not here: the API key cannot read balances or settlements.
+ * payments). Mollie's fee is not here but on the list rows (`feeMinor`, filled by the hourly fee sync).
  */
 data class AdminMolliePaymentDto(
     val id: String,

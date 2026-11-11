@@ -79,6 +79,8 @@ class CustomPaymentAdminService(
             adminNote = adminNote,
             reservationId = reservationId,
             reservationNumber = reservationId?.let { numbers[it] },
+            feeMinor = providerFeeMinor,
+            netMinor = providerFeeMinor?.let { amountMinor - it },
         )
 
     private companion object {

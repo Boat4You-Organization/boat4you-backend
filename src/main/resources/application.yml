@@ -293,6 +293,9 @@ application:
     base-url: ${MOLLIE_BASE_URL:https://api.mollie.com}
     # live_… on cusma2 (profile "Boat4You - part of Europe Yachts Charter group"); test_… locally. Never logged.
     api-key: ${MOLLIE_API_KEY:}
+    # Organisation access token (access_…, permission balances.read ONLY): Mollie's fee per payment for the admin
+    # "Payments" lists (hourly fee sync on the reconcile node). Blank = fees are not read. Never logged.
+    org-token: ${MOLLIE_ORG_TOKEN:}
     # Public URL Mollie calls with ?id only (https://api.boat4you.com/webhooks/mollie); blank locally = no webhook.
     webhook-url: ${MOLLIE_WEBHOOK_URL:}
     # Reconcile jobs (missed webhooks) — cusma2 only.

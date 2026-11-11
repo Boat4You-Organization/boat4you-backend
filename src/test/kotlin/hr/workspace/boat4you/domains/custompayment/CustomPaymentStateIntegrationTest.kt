@@ -104,6 +104,8 @@ class CustomPaymentStateIntegrationTest {
                 withCopyFileToContainer(MountableFile.forClasspathResource(MIGRATION), "/docker-entrypoint-initdb.d/02_custom_payment.sql")
                 // V9_125: custom_payment.method (Klarna); the entity is validated against both migrations.
                 withCopyFileToContainer(MountableFile.forClasspathResource("db/migration/V9_125__custom_payment_method.sql"), "/docker-entrypoint-initdb.d/03_custom_payment_method.sql")
+                // V9_126: provider_fee_minor (Mollie's fee); its reservation_card_order half is skipped here (no such table).
+                withCopyFileToContainer(MountableFile.forClasspathResource("db/migration/V9_126__provider_fee.sql"), "/docker-entrypoint-initdb.d/04_provider_fee.sql")
             }
     }
 
@@ -729,5 +731,23 @@ class CustomPaymentStateIntegrationTest {
         row(id).chargedBackAmountMinor shouldBe 10_000L
         mailer.alerts.filter { it.first == id } shouldHaveSize 2
         tx.applyChargeback(999_999, 1).shouldBeNull()
+    }
+
+    @Test
+    @Order(17)
+    fun `Mollie fee (V9_126) - only paid rows without a fee wait for it, and the fee is stored once`() {
+        val paid = attached("FEE-PAID", "tr_feepaid")
+        val open = attached("FEE-OPEN", "tr_feeopen")
+        jdbc.update("UPDATE custom_payment SET status = 'COMPLETED', completed_at = now() WHERE id = ?", paid)
+        val since = Instant.now().minus(Duration.ofDays(30))
+
+        fun waiting() = repository.findFeeCandidates(CustomPaymentStatus.COMPLETED, since).map { it[0] as String }
+
+        (("tr_feepaid" in waiting()) to ("tr_feeopen" in waiting())) shouldBe (true to false)
+        repository.storeProviderFee("tr_feepaid", 164) shouldBe 1
+        repository.storeProviderFee("tr_feepaid", 999) shouldBe 0
+        row(paid).providerFeeMinor shouldBe 164L
+        row(open).providerFeeMinor shouldBe null
+        ("tr_feepaid" in waiting()) shouldBe false
     }
 }

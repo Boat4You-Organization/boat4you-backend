@@ -19,6 +19,7 @@ import java.time.Duration
 class MollieProperties(
     @Value("\${application.mollie.base-url:https://api.mollie.com}") baseUrl: String,
     @Value("\${application.mollie.api-key:}") apiKey: String,
+    @Value("\${application.mollie.org-token:}") orgToken: String,
     @Value("\${application.mollie.webhook-url:}") webhookUrl: String,
     @Value("\${application.mollie.reconcile-enabled:false}") val reconcileEnabled: Boolean,
     @Value("\${application.mollie.checkout-origins:https://www.mollie.com,https://pay.klarna.com}") checkoutOrigins: String,
@@ -37,6 +38,12 @@ class MollieProperties(
 
     /** `live_…` / `test_…` API key of the Boat4You website profile. Never logged. */
     val apiKey: String = apiKey.trim()
+
+    /**
+     * Organisation access token (`access_…`, permission `balances.read` only): reads the balance transactions, where
+     * Mollie books its fee per payment. Blank = fees are not read (the admin shows a dash). Never logged.
+     */
+    val orgToken: String = orgToken.trim()
 
     /** Public webhook URL (`https://api.boat4you.com/webhooks/mollie`); blank = no webhook (local). */
     val webhookUrl: String? = webhookUrl.trim().ifEmpty { null }
@@ -72,6 +79,9 @@ class MollieProperties(
 
     val enabled: Boolean = this.apiKey.isNotEmpty() && !testKeyInProd
 
+    /** Mollie's fee per payment can be read (hourly fee sync). */
+    val feesEnabled: Boolean = enabled && this.orgToken.isNotEmpty()
+
     init {
         if (testKeyInProd) log.error("Mollie DISABLED: the prod profile holds a Mollie TEST key")
         if (enabled && environment.acceptsProfiles(Profiles.of("prod"))) {
@@ -79,11 +89,12 @@ class MollieProperties(
             if (!reconcileEnabled) log.error("Mollie is enabled WITHOUT the reconcile job (MOLLIE_RECONCILE_ENABLED=true on the API node): a missed webhook is never caught up")
         }
         log.info(
-            "Mollie: enabled={}, mode={}, webhook={}, reconcile={}, card-max={} EUR",
+            "Mollie: enabled={}, mode={}, webhook={}, reconcile={}, fees={}, card-max={} EUR",
             enabled,
             if (this.apiKey.isEmpty()) "-" else if (testMode) "test" else "live",
             if (this.webhookUrl == null) "none" else "set",
             reconcileEnabled,
+            feesEnabled,
             cardMax(),
         )
     }

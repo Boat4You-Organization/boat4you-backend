@@ -102,6 +102,10 @@ data class AdminCustomPaymentDto(
     val adminNote: String?,
     val reservationId: Long?,
     val reservationNumber: String?,
+    /** Mollie's fee for the payment, cents; null = not known (no organisation token, or not booked by Mollie yet). */
+    val feeMinor: Long? = null,
+    /** Paid minus Mollie's fee, cents (refunds are not subtracted); null while the fee is not known. */
+    val netMinor: Long? = null,
 )
 
 /** Admin list: the page (same `content` / `page` shape as PagedModel) + money received among the filtered rows. */

@@ -17,10 +17,12 @@ internal fun mollieProperties(
     cardMaxAmount: Long = 10_000,
     linkKeys: String = "",
     returnBaseUrl: String = "",
+    orgToken: String = "",
 ): MollieProperties =
     MollieProperties(
         baseUrl = baseUrl,
         apiKey = apiKey,
+        orgToken = orgToken,
         webhookUrl = webhookUrl,
         reconcileEnabled = false,
         checkoutOrigins = checkoutOrigins,

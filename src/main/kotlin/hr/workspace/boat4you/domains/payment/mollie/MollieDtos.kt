@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.payment.mollie
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.databind.JsonNode
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
@@ -178,6 +179,58 @@ data class MollieLinks(
 data class MollieLink(
     val href: String? = null,
 )
+
+/** One page of `GET /v2/balances/{id}/transactions` (newest first). */
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class MollieBalanceTransactionPage(
+    @JsonProperty("_embedded")
+    val embedded: MollieBalanceTransactionsEmbedded? = null,
+    @JsonProperty("_links")
+    val links: MollieBalancePageLinks? = null,
+) {
+    val transactions: List<MollieBalanceTransaction> get() = embedded?.transactions.orEmpty()
+
+    /** Cursor of the next (older) page; `null` on the last page. */
+    val nextFrom: String? get() = MollieBalanceClient.cursorOf(links?.next?.href)
+}
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class MollieBalanceTransactionsEmbedded(
+    @JsonProperty("balance_transactions")
+    val transactions: List<MollieBalanceTransaction>? = null,
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class MollieBalancePageLinks(
+    val next: MollieLink? = null,
+)
+
+/**
+ * A movement on the balance. For a payment: [initialAmount] = the amount paid, [deductions] = Mollie's fee as a
+ * NEGATIVE amount (absent when no fee was deducted on the movement), [resultAmount] = what reached the balance.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class MollieBalanceTransaction(
+    val id: String,
+    /** `payment` | `capture` | `refund` | `chargeback` | `outgoing-transfer` | … (Mollie's list is open-ended). */
+    val type: String? = null,
+    val resultAmount: MollieAmount? = null,
+    val initialAmount: MollieAmount? = null,
+    val deductions: MollieAmount? = null,
+    /** Depends on [type]; a tree on purpose: Mollie sends an object, an empty list or null. */
+    val context: JsonNode? = null,
+    val createdAt: Instant? = null,
+) {
+    /**
+     * The payment (`tr_…`) the movement belongs to, when Mollie names one: `context.paymentId`, or one level down
+     * under the movement's kind (`context.payment.paymentId`) — both shapes appear in Mollie's documentation.
+     */
+    val paymentId: String? get() {
+        val node = context ?: return null
+        val id = node.get("paymentId") ?: node.firstOrNull { it.isObject && it.has("paymentId") }?.get("paymentId")
+        return id?.takeIf { it.isTextual }?.asText()?.takeIf { MollieClient.isValidPaymentId(it) }
+    }
+}
 
 object MolliePaymentStatuses {
     /** Created, no attempt finished yet — the payer is (or was) on the hosted page; a failed card attempt stays open. */

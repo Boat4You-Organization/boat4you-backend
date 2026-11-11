@@ -97,6 +97,10 @@ open class ReservationCardOrder {
     @Column(name = "charged_back_amount_minor", nullable = false)
     open var chargedBackAmountMinor: Long = 0
 
+    /** Mollie's fee for the payment in cents (hourly fee sync, V9_126); NULL = not known (yet). */
+    @Column(name = "provider_fee_minor")
+    open var providerFeeMinor: Long? = null
+
     @Enumerated(EnumType.STRING)
     @Column(name = "promote_state", length = 16)
     open var promoteState: CardOrderPromoteState? = null

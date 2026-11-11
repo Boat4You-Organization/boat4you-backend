@@ -231,6 +231,28 @@ interface ReservationCardOrderRepository : JpaRepository<ReservationCardOrder, L
         @Param("id") id: Long,
     ): List<Array<Any?>>
 
+    /** Fee sync: `[providerOrderId, createdAt]` of the paid payments without a known Mollie fee, completed after [since]. */
+    @Query(
+        """
+        SELECT o.providerOrderId, o.createdAt FROM ReservationCardOrder o
+        WHERE o.status = :completed AND o.providerFeeMinor IS NULL
+          AND o.providerOrderId IS NOT NULL AND o.completedAt > :since
+        """,
+    )
+    fun findFeeCandidates(
+        @Param("completed") completed: ReservationCardOrderStatus,
+        @Param("since") since: Instant,
+    ): List<Array<Any?>>
+
+    /** Fee sync: stores Mollie's fee once (never overwrites a stored one). */
+    @Modifying
+    @Transactional
+    @Query("UPDATE ReservationCardOrder o SET o.providerFeeMinor = :fee WHERE o.providerOrderId = :providerOrderId AND o.providerFeeMinor IS NULL")
+    fun storeProviderFee(
+        @Param("providerOrderId") providerOrderId: String,
+        @Param("fee") fee: Long,
+    ): Int
+
     /** Money kept (COMPLETED: charged minus refunded minus charged back, cents) among the rows the same filters select. */
     @Query(
         """
