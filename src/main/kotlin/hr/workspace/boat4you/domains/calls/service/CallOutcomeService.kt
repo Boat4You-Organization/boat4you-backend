@@ -65,7 +65,8 @@ class CallOutcomeService(
         call.status = CallStatus.DONE
         call.outcome = outcomeOf(data, collected)
         // The client refused recording: a recording that already arrived is not kept (applyAudio refuses a later one).
-        if (call.outcome == CallOutcome.NO_CONSENT_TO_RECORD) {
+        // The refusal itself decides, not the outcome: a client who also said "do not call me" ends as DO_NOT_CALL.
+        if (refusedRecording(collected)) {
             call.audioPath?.let(audio::delete)
             call.audioPath = null
             // ElevenLabs' own copy goes too. We keep the transcript; if the request fails, their 30-day retention removes it.
@@ -128,7 +129,7 @@ class CallOutcomeService(
         row: InquiryCall,
         base64Mp3: String,
     ) {
-        val call = calls.lockFresh(row.id!!)?.takeIf { it.audioPath == null && it.outcome != CallOutcome.NO_CONSENT_TO_RECORD } ?: return
+        val call = calls.lockFresh(row.id!!)?.takeIf { it.audioPath == null && !refusedRecording(it.data) } ?: return
         val conversation = call.elevenlabsConversationId ?: return
         call.audioPath = audio.save(conversation, Base64.getDecoder().decode(base64Mp3), clock.instant())
         calls.save(call)
@@ -162,12 +163,20 @@ class CallOutcomeService(
     companion object {
         val OPEN = setOf(CallStatus.DIALING, CallStatus.IN_PROGRESS)
 
+        private fun yes(
+            collected: Map<String, Any?>?,
+            key: String,
+        ) = collected?.get(key).let { it == true || it?.toString().equals("true", ignoreCase = true) }
+
+        /** The client said the call must not be recorded, whatever else the call ended with. */
+        fun refusedRecording(collected: Map<String, Any?>?): Boolean = yes(collected, "recording_refused")
+
         /** The outcome from the agent's data collection, in priority order (design §6.5, plan Task 7). */
         fun outcomeOf(
             data: ConversationData,
             collected: Map<String, Any?>,
         ): CallOutcome {
-            fun yes(key: String) = collected[key] == true || collected[key]?.toString().equals("true", ignoreCase = true)
+            fun yes(key: String) = yes(collected, key)
             val transferred = data.transcript.any { t -> t.toolCalls.orEmpty().any { (it["tool_name"] ?: it["name"]) == "transfer_to_number" } }
             val callback = !collected["callback_time"]?.toString().isNullOrBlank()
             return when {

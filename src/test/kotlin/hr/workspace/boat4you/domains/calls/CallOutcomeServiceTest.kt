@@ -217,6 +217,21 @@ class CallOutcomeServiceTest : CallsJpaTest() {
     }
 
     @Test
+    fun `a client who refused recording and wants no more calls keeps no recording anywhere`() {
+        val c = dialling()
+        service.applyAudio(c, Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3)))
+        val path = calls.findById(c.id!!).get().audioPath.shouldNotBeNull()
+        service.applyTranscription(c, data(mapOf("recording_refused" to true, "do_not_call" to true)))
+        val saved = calls.findById(c.id!!).get()
+        saved.outcome shouldBe CallOutcome.DO_NOT_CALL
+        saved.audioPath shouldBe null
+        Files.exists(uploadDir.resolve(path)) shouldBe false
+        verify(elevenLabs).deleteConversation(c.elevenlabsConversationId!!)
+        service.applyAudio(c, Base64.getEncoder().encodeToString(byteArrayOf(1, 2, 3)))
+        calls.findById(c.id!!).get().audioPath shouldBe null
+    }
+
+    @Test
     fun `a conversation of a client who did not refuse recording stays at ElevenLabs`() {
         val c = dialling()
         service.applyTranscription(c, data())

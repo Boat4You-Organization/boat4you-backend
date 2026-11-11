@@ -27,7 +27,8 @@ object NikaLanguage {
             listOf("NL").forEach { put(it, "nl") }
             listOf("PL").forEach { put(it, "pl") }
             listOf("PT", "BR").forEach { put(it, "pt") }
-            listOf("ES", "MX", "AR", "CL", "CO", "PE", "UY", "PY", "BO", "EC", "VE", "CR", "PA", "DO", "GT").forEach { put(it, "es") }
+            listOf("ES", "MX", "AR", "CL", "CO", "PE", "UY", "PY", "BO", "EC", "VE", "CR", "PA", "DO", "GT", "HN", "NI", "SV", "CU", "PR")
+                .forEach { put(it, "es") }
         }
 
     /** Countries with several of Nika's languages, the most spoken first: the form language picks, else the first. */
@@ -61,7 +62,8 @@ object NikaLanguage {
 
     private fun country(phoneE164: String?): String? =
         try {
-            phoneE164?.takeIf { it.isNotBlank() }?.let { util.getRegionCodeForNumber(util.parse(it, "ZZ")) }
+            // A non-geographic code (+800, +870, +88x) comes back as region "001": that tells nothing about the language.
+            phoneE164?.takeIf { it.isNotBlank() }?.let { util.getRegionCodeForNumber(util.parse(it, "ZZ")) }?.takeIf { it.length == 2 }
         } catch (e: NumberParseException) {
             null
         }
