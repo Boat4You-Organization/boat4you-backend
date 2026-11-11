@@ -1,5 +1,29 @@
 # Backend deploy notes
 
+## ⚠️ Od 11.11.2026 `main` = ŽIVA LINIJA backenda (Mario: stavka 8)
+
+Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 commita). Od 11.11.2026 12:16 UTC: **ono što je uživo na cusma2 je na `origin/main`**, i svaki sljedeći jar se gradi s `main` ili ga sadrži.
+
+**Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
+
+## 2026-11-11 — ✅ LIVE oba čvora (cusma2 12:15, cusma3 13:01 UTC): Mollie naknada po uplati za admin (V9_126) — jar `07c3a08eda66685b02daf2f1da83f157`, `main` `928cfa03`, tag `live/2026-11-11-mollie-fees`
+
+Mario 11.11.2026 (stavke 6 i 8 preko sesije JIVO CHAT, potvrda „Da, kreni“ u ovoj sesiji).
+
+**Jar** = `release/ai-call-center-p2` `580cf2b1` (bio uživo na cusma2 od 10:29 UTC, jar f936ac01; sadrži sav Mollie/Klarna rad) + `feat/mollie-fees` `928cfa03`. cusma3 je do 13:01 vrtio e20302a4 (Klarna jar od 10.11.), pa je ovim deployem dobio i AI call centar 580cf2b1.
+
+**Što donosi**
+- **V9_126** `provider_fee_minor BIGINT NULL` na `reservation_card_order` i `custom_payment` (primijenjena 12:15:26 UTC, 7 ms; samo dodavanje, stari jar je ignorira).
+- `MollieFeeSyncJob` (svaki sat, samo gdje je `MOLLIE_RECONCILE_ENABLED=true` = cusma2; ShedLock `mollieFeeSync`): za plaćene uplate bez naknade, mlađe od 30 dana, čita `GET /v2/balances/primary/transactions` (najnovije prvo, do najstarije uplate koja čeka) i sprema `|deductions|` kretanja tipa `payment` / `capture`. Povrat i njegov odbitak se ne broje. Jednom spremljena naknada se ne prepisuje.
+- Treba **organizacijski token** `MOLLIE_ORG_TOKEN` (`application.mollie.org-token`, pravo `balances.read`; obični API ključ na Balances API dobiva 403). **Token još NIJE postavljen** → log „fees=false“, job ne radi ništa, admin pokazuje „—“.
+- Admin DTO-i `/admin/card-payments` i `/admin/custom-payments`: `feeMinor`, `netMinor` (= iznos − naknada; povrati se ne oduzimaju), oba null dok naknada nije poznata.
+
+**Uključivanje (kad Mario upiše token u `~/.b4y-mollie.env`, redak `MOLLIE_ORG_TOKEN=access_…`):** `bash infra/deploy-scripts/mollie_env_set.sh` (prenosi i token, samo na cusma2) → restart cusma2 (≥ 20 min od prethodnog; isti md5 = skripta NE restarta, treba ručni restart ili novi jar) → u logu „fees=true“, nakon ~4 min „Mollie fees: N of M waiting payments filled“. Ako piše „0 of M“, a uplate su proknjižene: pogledati oblik `context` u odgovoru (čitamo `context.paymentId` i `context.<tip>.paymentId`) i ima li račun odbitke po transakciji (`deductions`) ili mjesečnu fakturu.
+
+**Provjereno:** 2265 testova (0 padova), ktlint; neovisni Opus pregled bez blokada (dva nalaza popravljena prije builda); Flyway preflight; cusma2 health 200, log „provider=mollie“, „fees=false“; stvarni pozivi prije i poslije oba deploya jednaki: `/public/payments/custom/config` 200 (krivi ključ 404), `/public/payments/card/klarna` 200, `POST /webhooks/mollie` 200, `checkPaymentStatus/<nepoznato>` 404 kod 8105, admin rute bez prijave 403; cusma3 gate OK, „Schema up to date“, servis aktivan. **Nije provjereno:** čitanje naknada iz pravog Mollieja (nema tokena) — prva stvarna provjera je prvi sat nakon uključivanja.
+
+**Rollback:** `webservice.jar.prev` (cusma2 = f936ac01, cusma3 = e20302a4; kopije u `~/.cache/boat4you-deploy/mollie/`); migracija ostaje.
+
 ## 2026-11-10 — ✅ LIVE oba čvora (cusma2 20:05, cusma3 21:08 UTC): Klarna (booking + /pay) UKLJUČENA — jar `e20302a4ca5c336fc01c97c3c245b9c4`, grana `release/mollie-payments` `73ca42cd` (+ `feat/mollie-klarna` 84845573); ✅ cusma3 21:08 UTC isti jar (20:26 gate ABORT zbog mmkAvailabilitySync u 20:40, drugi pokušaj prošao); tag `live/2026-11-10-klarna`
 
 Mario 10.11.2026: „Da, radi Klarnu“ → „Da, deployaj i uključi“. Doplata: na booking +5 % kao kartica (zadano); `/pay` bez doplate (iznos s ugovora već sadrži 5 %).
