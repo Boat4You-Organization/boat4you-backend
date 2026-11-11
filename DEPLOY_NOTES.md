@@ -6,6 +6,29 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-11 — ✅ LIVE cusma2 16:11 UTC (cusma3: čeka prozor od 17:50 UTC): PDF za knjigovodstvo, uplate i isplate (Mollie) — jar `2742e66e0ce0641aa8953db076d0d127`, `main` `43896348`, tag `live/2026-11-11-payments-report`
+
+Mario 11.11.2026: „treba mi mogućnost da izvučem sve uplate i isplate knjigovodstvu u PDF formatu … koji iznos je došao, od koga i reference, datum vrijeme, tako da mogu spajat uplate s ugovorima“; potvrda „Da, kreni“ u ovoj sesiji. **Bez migracije.**
+
+**Što donosi**
+- `GET /admin/payments-report?from=YYYY-MM-DD&to=YYYY-MM-DD` (SYSTEM_ADMIN; hrvatski kalendarski dani, oba uključena; najviše 367 dana, inače 400) → PDF A4 položeno, hrvatski, vrijeme Europe/Zagreb, `Cache-Control: no-store`, ime `boat4you-uplate-<od>-<do>.pdf`.
+- Paket `domains/payment/mollie/report/`: `PaymentsReportService` (podaci), `PaymentsReportAssembler` (sastav isplata, čista funkcija), `PaymentsReportPdf` (Thymeleaf `templates/report/paymentsReport.html` → openhtmltopdf, ugrađen font Inter zbog č/ć/đ, `fonts/inter/`), `AdminPaymentsReportController`.
+- **Odjeljci:** 1. Uplate kupaca (naše knjige: `reservation_card_order` + `custom_payment`, status COMPLETED, po `completedAt`): datum i vrijeme, platitelj, referenca (broj rezervacije), kartica/Klarna, Mollie oznaka, naplaćeno (rata + naknada za karticu), Mollie naknada, neto, vraćeno. 2. Povrati i osporene uplate (Mollie). 3. Isplate na bankovni račun, svaka sa stavkama od kojih se sastoji. 4. Na Mollie računu, još nije isplaćeno.
+- Odjeljci 2 do 4 čitaju `GET /v2/balances/primary/transactions` (organizacijski token `MOLLIE_ORG_TOKEN`, isti kao za naknade), unatrag do zadnje isplate prije početka razdoblja, najviše 40 stranica i 60 s; ako Mollie ne odgovori, PDF ima samo odjeljak 1 i upozorenje.
+- **Pravilo sastava isplate:** sve što je proknjiženo između dvije isplate (`outgoing-transfer`) pripada kasnijoj. Ako se iznos isplate i zbroj stavki ne slažu, PDF ispisuje redak „Razlika“.
+- Uplata preko linka: platitelj = upisani e-mail; ime klijenta samo kad je uplata u adminu vezana uz rezervaciju (bilješka „klijent rezervacije“).
+- Uplata koju je Mollie naplatio, a kod nas je NEEDS_REVIEW (dvostruka uplata, iznos se ne slaže): nije u odjeljku 1, u odjeljcima 3 i 4 nosi oznaku „čeka provjeru u adminu“, a ispod tablice uplata piše koliko ih je.
+
+**Neovisni Opus pregled (11.11.):** bez blokera; upiti i zaštita rute čisti. Popravljeno prije builda (`43896348`): znakovi koje XML ne dopušta (kontrolni znak, pola emojija) rušili bi cijeli PDF → brišu se prije renderiranja; uplate NEEDS_REVIEW označene; `settlementId` / `transferId` / `paymentDescription` čitaju se i jednu razinu niže; vremenski limit čitanja 60 s; točniji tekstovi.
+
+**Provjereno:** 126 testova platnog dijela (0 padova) uključujući dva integracijska na pravom PostgreSQL-u koji izvršavaju nove upite; Flyway preflight „will apply: none“; cusma2 health 200, „Started“ 16:11:46; stvarni pozivi nakon deploya: `/public/payments/custom/config` 200 (krivi ključ 404), `/public/payments/card/klarna` 200, `POST /webhooks/mollie` 200, `checkPaymentStatus/<nepoznato>` 404, admin rute i `/admin/payments-report` bez prijave 403. **S pravom prijavom u produkcijskom adminu (Mariov Chrome, samo čitanje, datoteka nije spremana):** studeni 2026. → 200 `application/pdf` 29 kB za 1 s; listopad → 200; 12 mjeseci → 200 za 0,4 s; „do“ prije „od“ → 400; 680 dana → 400.
+
+**Nije provjereno:** sastav prave isplate na banku. Mollie do 11.11. nije napravio nijednu isplatu (`outgoing-transfer`), oblik je po dokumentaciji. Na prvoj pravoj isplati usporediti PDF s Mollie settlementom (zbroj stavki = iznos isplate; ima li `settlementId`). Sadržaj PDF-a s produkcije nije čitan (osobni podaci), provjereni su samo status, vrsta i veličina.
+
+**Poznata ograničenja:** samo Mollie (kartica + Klarna), bez uplata na žiro račun i starih Stripe uplata; vrijeme uplate je naš `completedAt` (uplata koju uhvati tek reconcile može oko ponoći pasti u susjedni dan); uplata je u odjeljcima 3 i 4 tek kad je Mollie proknjiži na raspoloživo stanje.
+
+**Rollback:** `webservice.jar.prev` (cusma2 = `07c3a08e`, jutrošnji jar s naknadama; kopija u `~/.cache/boat4you-deploy/mollie/boat4you-fees-07c3a08e.jar`). Nema migracije; stari admin bez novog jara dobio bi 404 na gumbu.
+
 ## 2026-11-11 — ✅ LIVE oba čvora (cusma2 12:15, cusma3 13:01 UTC): Mollie naknada po uplati za admin (V9_126) — jar `07c3a08eda66685b02daf2f1da83f157`, `main` `928cfa03`, tag `live/2026-11-11-mollie-fees`
 
 Mario 11.11.2026 (stavke 6 i 8 preko sesije JIVO CHAT, potvrda „Da, kreni“ u ovoj sesiji).
