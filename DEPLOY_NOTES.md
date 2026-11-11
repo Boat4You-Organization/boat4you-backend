@@ -6,6 +6,23 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-11 — ✅ LIVE oba čvora (cusma2 18:41, cusma3 18:41 UTC): filter dužine = METRI na svim jezicima — jar `6858cc2b3213e73547913d2dc206a989` (208 MB), `main` `85bcca9f`, tag `live/2026-11-11-length-metres`
+
+**Greška:** `GET /public/yachts` je `minLength` / `maxLength` na `Accept-Language: en` čitao kao STOPE (`YachtSearchParamObject.get*LengthInMeters`), a klizač dužine na b4y i svih 6 sister stranica radi u metrima (4–56 m) na svim jezicima. Na engleskim stranicama „do 20 m“ = 20 ft = 6,1 m → 0 plovila (b4y `/en` i catamaran-croatia-charter.com potvrđeno uživo), „od 12 m“ je propuštao i plovila od 10,9 m. `distribution` i `relax-suggest` su oduvijek metri, pa se brojevi uz opcije na engleskom nisu slagali s listom.
+
+**Popravak (bez migracije):**
+- `YachtSearchParamObject`: `minLength` / `maxLength` su metri na svim jezicima. **Tko god zove `/public/yachts` s dužinom, šalje METRE.**
+- `AiChatToolExecutor` (Iris): pretragu zove bez `Accept-Language` (= en) i slao je stope; sada pojas u stopama pretvara u metre (`minLengthMetres` zaokružuje dolje, `maxLengthMetres` gore). Alat prema modelu i dalje govori u stopama.
+- boat4you-web `d3ac8d64f` (LIVE 18:13 UTC, prije ovog jara): „Slični brodovi“ više ne šalju dužinu (slali su stope pod `en`).
+
+**Neovisni Opus pregled (11.11.):** backend ispravan; jedini bloker bio je web „Slični brodovi“ (riješeno prije deploya). Nitko drugi u backendu, adminu ni na 6 sistera ne šalje stope; cache ključevi listinga sadrže jezik, TTL 2 min.
+
+**Provjereno:** cijeli test 2296 (0 padova, 3 preskočena) na `dd3fdeba` (merge s `main` dodao samo bilješke); novi `YachtSearchLengthUnitTest` (svi jezici); Flyway preflight „will apply: none“; prije deploya md5 živog jara na cusma2 i cusma3 = `c82b89d6` (jar bez Stripea); cusma2 „Started“ 18:41:21, cusma3 18:41:46 (gate prošao). Uživo: katamarani Hrvatska `maxLength=20` en = hr = de = 793 (prije en 0); „od 12 m, 4 kabine, od 2020.“ en = hr = 306 = `distribution`; b4y `/en/search…&maxLength=20` 793 plovila, CC `/catamarans?maxLength=20` 813 (prije 0); `/public/payments/custom/config` 404 (8002), `/webhooks/mollie` 200, `card-surcharge` 200. **Nije provjereno uživo:** Iris pretraga po veličini (pokriveno testovima `AiChatToolAreaModelTest`).
+
+**Rollback:** `webservice.jar.prev` na oba čvora = `c82b89d6`; stari jar opet čita dužinu na `en` kao stope (web „Slični brodovi“ rade s oba).
+
+**Ostalo za kasnije:** integracijski test `/public/yachts` s dužinom na `en`; `/catalogue/filters` na `en` i dalje vraća granice dužine u stopama (nitko ih ne šalje natrag kao filter).
+
 ## 2026-11-11 — ✅ LIVE oba čvora (cusma2 17:02, cusma3 17:52 UTC): Stripe uklonjen, kartično plaćanje je samo Mollie — jar `c82b89d634c2e98068eae60c13d4a9fc` (208 MB, prije 240 MB), `main` `2a63b6eb`, tag `live/2026-11-11-no-stripe`
 
 Mario 11.11.2026: „ne treba spajat stripe, samo da ga više ne vidim, samo ostavi mollie“ → „Da, ukloni“. **Bez migracije.**
