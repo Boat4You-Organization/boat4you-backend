@@ -13,6 +13,7 @@ import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
 import hr.workspace.boat4you.domains.reservation.service.CardChargeCalculator
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -60,7 +61,8 @@ class PaymentsReportService(
 
     /**
      * Mollie's balance transactions, oldest first, back to (not including) the last transfer made before [start]: what
-     * is older belongs to earlier transfers. The flag is false when [MAX_PAGES] ended the reading first.
+     * is older belongs to earlier transfers. The flag is false when [MAX_PAGES] or [READ_BUDGET] ended the reading
+     * first (the request must not hold a thread of the API node for minutes when Mollie answers slowly).
      */
     private fun readLedger(start: Instant): Pair<List<MollieBalanceTransaction>, Boolean>? {
         if (!properties.feesEnabled) return null
@@ -69,6 +71,7 @@ class PaymentsReportService(
             var cursor: String? = null
             var pages = 0
             var complete = true
+            val started = System.nanoTime()
             while (true) {
                 val page = balances.listTransactions(cursor)
                 pages++
@@ -80,7 +83,7 @@ class PaymentsReportService(
                 }
                 newestFirst += transactions
                 cursor = page.nextFrom.takeIf { transactions.isNotEmpty() } ?: break
-                if (pages >= MAX_PAGES) {
+                if (pages >= MAX_PAGES || System.nanoTime() - started > READ_BUDGET.toNanos()) {
                     complete = false
                     break
                 }
@@ -122,6 +125,7 @@ class PaymentsReportService(
             payerName = fullName(this[NAME] as String?, this[SURNAME] as String?),
             payerEmail = (this[EMAIL] as String?)?.trim()?.ifEmpty { null },
             reference = (this[RESERVATION_NUMBER] as String?)?.trim()?.ifEmpty { null } ?: order.reference,
+            needsReview = order.status == ReservationCardOrderStatus.NEEDS_REVIEW,
         )
     }
 
@@ -148,6 +152,7 @@ class PaymentsReportService(
             payerEmail = payerEmail.trim().ifEmpty { null },
             reference = reference,
             linkedReservation = reservation?.first?.takeIf { !it.equals(reference.trim(), ignoreCase = true) },
+            needsReview = status == CustomPaymentStatus.NEEDS_REVIEW,
         )
     }
 
@@ -173,6 +178,9 @@ class PaymentsReportService(
 
         /** 40 pages of 250 = the last 10 000 movements on the balance. */
         private const val MAX_PAGES = 40
+
+        /** The whole reading of the balance; a page is fetched only while less than this has passed. */
+        private val READ_BUDGET: Duration = Duration.ofSeconds(60)
         private const val IN_CHUNK = 500
         private const val ORDER = 0
         private const val NAME = 1

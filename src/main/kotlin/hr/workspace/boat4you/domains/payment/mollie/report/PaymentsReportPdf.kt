@@ -23,7 +23,9 @@ class PaymentsReportPdf(
     private val templateEngine: SpringTemplateEngine,
 ) {
     fun render(report: PaymentsReport): ByteArray {
-        val html = templateEngine.process(TEMPLATE_NAME, Context(CROATIAN, variables(report)))
+        // The renderer reads the page as strict XML: one control character or half of an emoji in a name, a reference
+        // or Mollie's description would fail the whole report, so they are dropped here, after the escaping.
+        val html = templateEngine.process(TEMPLATE_NAME, Context(CROATIAN, variables(report))).replace(NOT_XML, "")
         ByteArrayOutputStream().use { out ->
             PdfRendererBuilder()
                 .useFastMode()
@@ -49,6 +51,7 @@ class PaymentsReportPdf(
             "paymentsNet" to money(payments.sumOf { it.amountMinor - (it.feeMinor ?: 0) }),
             "paymentsBack" to money(payments.sumOf { it.moneyBackMinor }),
             "feesMissing" to payments.count { it.feeMinor == null },
+            "underReview" to underReview(ledger),
             "ledgerAvailable" to (ledger != null),
             "ledgerComplete" to (ledger?.complete ?: true),
             "moneyBack" to ledger?.moneyBack.orEmpty().map { it.toRow() },
@@ -63,8 +66,8 @@ class PaymentsReportPdf(
     private fun ReportPayment.toRow() =
         PaymentRow(
             at = dateTime(paidAt),
-            payer = party.payerName ?: party.payerEmail ?: DASH,
-            payerNote = party.payerEmail.takeIf { party.payerName != null },
+            payer = party.payer() ?: DASH,
+            payerNote = party.payerNote(),
             reference = party.reference,
             referenceNotes = party.referenceNotes(),
             method = if (method == "KLARNA") "Klarna" else "Kartica",
@@ -81,8 +84,8 @@ class PaymentsReportPdf(
         LedgerRow(
             at = dateTime(at),
             label = TYPE_LABELS[type] ?: "Ostalo ($type)",
-            payer = party?.let { it.payerName ?: it.payerEmail } ?: DASH,
-            payerNote = party?.payerEmail.takeIf { party?.payerName != null },
+            payer = party?.payer() ?: DASH,
+            payerNote = party?.payerNote(),
             reference = party?.reference ?: description ?: DASH,
             referenceNotes = party?.referenceNotes().orEmpty(),
             mollieId = molliePaymentId ?: DASH,
@@ -101,12 +104,38 @@ class PaymentsReportPdf(
             difference = differenceMinor.takeIf { it != 0L }?.let { money(it) },
         )
 
+    /**
+     * Who paid. A booking payment is paid by the client of the booking. On the payment link only the e-mail the payer
+     * typed is known; the client of the reservation the office tied the payment to may be somebody else ([payerNote]).
+     */
+    private fun ReportParty.payer(): String? =
+        when (kind) {
+            ReportPaymentKind.BOOKING -> payerName ?: payerEmail
+            ReportPaymentKind.LINK -> payerEmail ?: payerName
+        }
+
+    private fun ReportParty.payerNote(): String? =
+        when (kind) {
+            ReportPaymentKind.BOOKING -> payerEmail.takeIf { payerName != null }
+            ReportPaymentKind.LINK -> payerName?.takeIf { payerEmail != null }?.let { "klijent rezervacije: $it" }
+        }
+
     /** Small lines under the reference: what kind of payment it is, and the reservation a link payment is tied to. */
     private fun ReportParty.referenceNotes(): List<String> =
         when (kind) {
             ReportPaymentKind.BOOKING -> emptyList()
             ReportPaymentKind.LINK -> listOfNotNull("link za plaćanje", linkedReservation?.let { "rezervacija $it" })
-        }
+        } + listOfNotNull(REVIEW_NOTE.takeIf { needsReview })
+
+    /** Payments Mollie booked on the balance that our ledger still holds for review: charged, yet not in section 1. */
+    private fun underReview(ledger: ReportLedger?): Int =
+        ledger
+            ?.let { it.payouts.flatMap { payout -> payout.lines } + it.notPaidOut }
+            .orEmpty()
+            .filter { it.party?.needsReview == true && it.type in CHARGE_TYPES }
+            .mapNotNull { it.molliePaymentId }
+            .distinct()
+            .size
 
     private fun totals(lines: List<ReportLedgerLine>) =
         LedgerTotals(
@@ -169,6 +198,11 @@ class PaymentsReportPdf(
         private const val WEIGHT_REGULAR = 400
         private const val WEIGHT_SEMIBOLD = 600
         private const val DASH = "—"
+        private const val REVIEW_NOTE = "čeka provjeru u adminu"
+        private val CHARGE_TYPES = setOf("payment", "capture")
+
+        /** Everything XML 1.0 does not allow in a document: control characters, lone surrogates, U+FFFE and U+FFFF. */
+        private val NOT_XML = Regex("[^\\x{9}\\x{A}\\x{D}\\x{20}-\\x{D7FF}\\x{E000}-\\x{FFFD}\\x{10000}-\\x{10FFFF}]")
         private val CROATIAN = Locale.forLanguageTag("hr-HR")
         private val DATE = DateTimeFormatter.ofPattern("dd.MM.yyyy.")
         private val DATE_TIME = DateTimeFormatter.ofPattern("dd.MM.yyyy. HH:mm").withZone(PaymentsReportService.ZONE)

@@ -103,6 +103,9 @@ class PaymentsReportPdfTests {
         text shouldContain "rata 1.000,00 + naknada za karticu 30,00"
         text shouldContain "link za plaćanje"
         text shouldContain "rezervacija 1441007/2026"
+        // on the payment link the payer is the e-mail that was typed; the client of the tied reservation is a note
+        text shouldContain "klijent rezervacije: Ivo Žužić"
+        text shouldNotContain "čeka provjeru"
         text shouldContain "3.509,21"
         text shouldContain "stl_jDk30akdN · trf_a1b2c3"
         text shouldContain "Povrat kupcu"
@@ -125,11 +128,12 @@ class PaymentsReportPdfTests {
 
     @Test
     fun `an empty period renders, and a transfer that does not match its lines shows the difference`() {
-        val empty = PaymentsReport(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), Instant.parse("2026-02-01T08:00:00Z"), emptyList(), ReportLedger(emptyList(), emptyList(), emptyList(), false))
+        val unread = ReportLedger(emptyList(), emptyList(), emptyList(), false)
+        val empty = PaymentsReport(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31), Instant.parse("2026-02-01T08:00:00Z"), emptyList(), unread)
         val emptyText = text(pdf.render(empty))
         emptyText shouldContain "U razdoblju nema zaprimljenih uplata."
         emptyText shouldContain "U razdoblju nema isplata na bankovni račun."
-        emptyText shouldContain "sastav najstarije isplate može biti nepotpun"
+        emptyText shouldContain "Mollie račun nije pročitan do kraja"
 
         val partial =
             empty.copy(
@@ -144,6 +148,36 @@ class PaymentsReportPdfTests {
         val partialText = text(pdf.render(partial))
         partialText shouldContain "Razlika između isplate i stavki"
         partialText shouldContain "-10,00"
+    }
+
+    @Test
+    fun `characters XML does not allow do not fail the report`() {
+        // a vertical tab pasted from a document, a control character, half of an emoji (a cut description), an emoji
+        val hostile = ReportParty(ReportPaymentKind.BOOKING, "Ana" + Char(11) + " <b>Šimić</b> & Co", "ana@example.com", "REF" + Char(1) + "7")
+        val description = "Charter " + Char(0xD83D) + " Split " + String(Character.toChars(0x1F600))
+        val report =
+            sample().copy(
+                payments = listOf(ReportPayment(Instant.parse("2026-11-02T14:21:00Z"), hostile, "CARD", "tr_Hh1", 1_000)),
+                ledger = ReportLedger(emptyList(), emptyList(), listOf(line("2026-11-12T10:00:00Z", "payment", "tr_Hh2", null, 1_000, 0, description)), true),
+            )
+
+        val text = text(pdf.render(report))
+
+        // markup in a name stays text
+        text shouldContain "Ana <b>Šimić</b> & Co"
+        text shouldContain "REF7"
+        text shouldContain "Charter"
+    }
+
+    @Test
+    fun `a payment Mollie charged that our ledger holds for review is marked and counted`() {
+        val held = line("2026-11-12T10:00:00Z", "payment", "tr_Rr1", ana.copy(needsReview = true), 103_000, -1_854)
+        val report = sample().copy(ledger = ReportLedger(emptyList(), emptyList(), listOf(held), true))
+
+        val text = text(pdf.render(report))
+
+        text shouldContain "čeka provjeru u adminu"
+        text shouldContain "u adminu još čekaju provjeru"
     }
 
     @Test

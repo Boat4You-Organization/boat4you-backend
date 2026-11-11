@@ -25,6 +25,11 @@ data class ReportParty(
     val reference: String,
     /** Link payments: number of the reservation the payment is tied to, when it is not the typed reference itself. */
     val linkedReservation: String? = null,
+    /**
+     * Our ledger holds the payment as NEEDS_REVIEW (double payment, amount not matching, …): Mollie may have charged
+     * it, but it is not among the period's payments until the office settles it in the admin.
+     */
+    val needsReview: Boolean = false,
 )
 
 /** One paid payment of the period (section "payments"). */
@@ -84,7 +89,10 @@ data class ReportLedger(
     val payouts: List<ReportPayout>,
     /** Booked up to the end of the period and not part of any transfer yet. */
     val notPaidOut: List<ReportLedgerLine>,
-    /** False when the balance has more transactions than one report reads: the first payout may miss older lines. */
+    /**
+     * False when the reading of the balance stopped early (page or time limit): the oldest payouts and refunds of the
+     * period, or the oldest lines of the first payout, may be missing.
+     */
     val complete: Boolean,
 )
 

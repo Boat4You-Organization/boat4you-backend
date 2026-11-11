@@ -103,4 +103,29 @@ class PaymentsReportAssemblerTests {
         ledger.payouts[0].lines.map { it.molliePaymentId } shouldBe listOf("tr_a")
         ledger.notPaidOut.map { it.molliePaymentId } shouldBe listOf("tr_b")
     }
+
+    @Test
+    fun `Mollie's ids and description are read one level down as well`() {
+        val nestedPayment = """{"payment": {"paymentId": "tr_nested1", "paymentDescription": " Boat4You 1441003/2026 "}}"""
+        val ledger =
+            PaymentsReportAssembler.ledger(
+                listOf(
+                    balanceTransaction("payment", "2026-11-02T10:00:00Z", "97.10", "100.00", "-2.90", nestedPayment),
+                    balanceTransaction("outgoing-transfer", "2026-11-03T05:00:00Z", "-97.10", context = """{"transfer": {"settlementId": "stl_n", "transferId": "trf_n"}}"""),
+                    // not ids: left out rather than printed
+                    balanceTransaction("outgoing-transfer", "2026-11-04T05:00:00Z", "-1.00", context = """{"settlementId": "stl n <b>", "transferId": 7}"""),
+                ),
+                from,
+                to,
+                emptyMap(),
+                complete = true,
+            )
+
+        ledger.payouts[0].settlementId shouldBe "stl_n"
+        ledger.payouts[0].transferId shouldBe "trf_n"
+        ledger.payouts[0].lines[0].molliePaymentId shouldBe "tr_nested1"
+        ledger.payouts[0].lines[0].description shouldBe "Boat4You 1441003/2026"
+        ledger.payouts[1].settlementId shouldBe null
+        ledger.payouts[1].transferId shouldBe null
+    }
 }

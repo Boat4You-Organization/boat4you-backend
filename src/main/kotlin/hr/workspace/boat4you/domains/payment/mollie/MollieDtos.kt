@@ -236,10 +236,16 @@ data class MollieBalanceTransaction(
     val transferId: String? get() = contextToken("transferId")
 
     /** `context.paymentDescription`: the description the payment was created with (free text, shortened). */
-    val paymentDescription: String? get() =
-        context?.get("paymentDescription")?.takeIf { it.isTextual }?.asText()?.trim()?.take(MAX_DESCRIPTION)?.ifEmpty { null }
+    val paymentDescription: String? get() = contextText("paymentDescription")?.trim()?.take(MAX_DESCRIPTION)?.ifEmpty { null }
 
-    private fun contextToken(field: String): String? = context?.get(field)?.takeIf { it.isTextual }?.asText()?.takeIf { CONTEXT_TOKEN.matches(it) }
+    private fun contextToken(field: String): String? = contextText(field)?.takeIf { CONTEXT_TOKEN.matches(it) }
+
+    /** A text field of the context, at the top or one level down under the movement's kind (as [paymentId]). */
+    private fun contextText(field: String): String? {
+        val node = context ?: return null
+        val value = node.get(field) ?: node.firstOrNull { it.isObject && it.has(field) }?.get(field)
+        return value?.takeIf { it.isTextual }?.asText()
+    }
 
     private companion object {
         const val MAX_DESCRIPTION = 120

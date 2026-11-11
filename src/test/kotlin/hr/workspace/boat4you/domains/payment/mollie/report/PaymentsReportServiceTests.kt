@@ -179,4 +179,26 @@ class PaymentsReportServiceTests {
         ledger.moneyBack.map { it.netMinor } shouldBe listOf(-5_025L)
         ledger.notPaidOut.size shouldBe 1
     }
+
+    @Test
+    fun `a payment our ledger holds for review is marked on the balance lines`() {
+        `when`(balances.listTransactions(null)).thenReturn(
+            page(
+                listOf(
+                    balanceTransaction("payment", "2026-11-06T10:00:00Z", "49.11", "50.00", "-0.89", paymentContext("tr_pay1")),
+                    balanceTransaction("payment", "2026-11-05T10:00:00Z", "1011.46", "1030.00", "-18.54", paymentContext("tr_book1")),
+                ),
+            ),
+        )
+        val heldOrder = order("tr_book1", null).apply { status = ReservationCardOrderStatus.NEEDS_REVIEW }
+        val heldLink = linkPayment("tr_pay1", null).apply { status = CustomPaymentStatus.NEEDS_REVIEW }
+        `when`(orders.findReportRowsByProviderOrderIdIn(listOf("tr_book1", "tr_pay1"))).thenReturn(listOf(arrayOf(heldOrder, "Ana", "Šimić", "ana@example.com", "1441001/2026")))
+        `when`(customPayments.findAllByProviderOrderIdIn(listOf("tr_book1", "tr_pay1"))).thenReturn(listOf(heldLink))
+
+        val report = service().build(from, to)
+
+        // charged by Mollie, yet not a paid payment of ours: only on the balance, marked
+        report.payments shouldBe emptyList()
+        report.ledger!!.notPaidOut.map { it.party?.needsReview } shouldBe listOf(true, true)
+    }
 }

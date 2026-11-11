@@ -95,7 +95,7 @@
 <h2>1. Uplate kupaca</h2>
 <p class="lead">
     Uplate karticom i Klarnom zaprimljene u razdoblju, po vremenu uplate. Referenca je broj rezervacije (ugovora);
-    kod uplate preko linka za plaćanje to je referenca koju je upisao platitelj.
+    kod uplate preko linka za plaćanje platitelj je e-mail adresa koju je upisao, a referenca ono što je sam upisao.
 </p>
 <p class="empty" th:if="${#lists.isEmpty(payments)}">U razdoblju nema zaprimljenih uplata.</p>
 <table th:unless="${#lists.isEmpty(payments)}">
@@ -148,6 +148,11 @@
 </p>
 <p class="note" th:unless="${#lists.isEmpty(payments)}">
     „Vraćeno“ je iznos koji je do izrade izvještaja vraćen kupcu ili osporen, bez obzira na datum povrata.
+</p>
+<p class="note" th:if="${underReview > 0}">
+    Uplate koje je Mollie naplatio, a u adminu još čekaju provjeru (na primjer dvostruka uplata ili iznos koji se ne
+    slaže): <span th:text="${underReview}">1</span>. Nisu u ovoj tablici; u odjeljcima 3 i 4 nose oznaku „čeka provjeru
+    u adminu“.
 </p>
 
 <div class="warn" th:unless="${ledgerAvailable}">
@@ -213,7 +218,7 @@
             Isplata <span th:text="${o.at}">06.11.2026. 07:00</span> · <span th:text="${o.amount}">1.234,56</span> EUR
             <span class="sub" th:if="${o.ids}">Mollie oznaka: <span th:text="${o.ids}">stl_xxx</span></span>
         </p>
-        <p class="empty" th:if="${#lists.isEmpty(o.rows)}">Za ovu isplatu nema pojedinačnih stavki.</p>
+        <p class="empty" th:if="${#lists.isEmpty(o.rows)}">Za ovu isplatu nema pojedinačnih stavki: isplaćeno je stanje preneseno od ranije.</p>
         <table th:unless="${#lists.isEmpty(o.rows)}">
             <thead>
             <tr>
@@ -261,14 +266,16 @@
         Ukupno isplaćeno na bankovni račun u razdoblju: <b th:text="${payoutsTotal}">0,00</b> EUR.
     </p>
     <p class="note" th:unless="${ledgerComplete}">
-        Mollie račun ima više stavki nego što izvještaj čita odjednom, pa sastav najstarije isplate može biti nepotpun.
+        Mollie račun nije pročitan do kraja (previše stavki ili spor odgovor), pa najstarije isplate i povrati u
+        razdoblju mogu nedostajati, a sastav najstarije prikazane isplate može biti nepotpun. Izradite izvještaj za
+        kraće razdoblje.
     </p>
 
     <!-- 4. Not paid out yet -->
     <h2>4. Na Mollie računu, još nije isplaćeno</h2>
     <p class="lead">
-        Stavke proknjižene do kraja razdoblja koje nisu ušle ni u jednu isplatu. Uplatu koju Mollie još drži na čekanju
-        ovdje ćete vidjeti tek kad je proknjiži.
+        Stavke proknjižene do kraja razdoblja koje do tada nisu bile isplaćene na bankovni račun. Uplatu koju Mollie
+        još drži na čekanju ovdje ćete vidjeti tek kad je proknjiži.
     </p>
     <p class="empty" th:if="${#lists.isEmpty(notPaidOut)}">Nema stavki koje čekaju isplatu.</p>
     <table th:unless="${#lists.isEmpty(notPaidOut)}">
