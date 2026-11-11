@@ -6,7 +6,31 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
-## 2026-11-11 — ✅ LIVE cusma2 16:11 UTC (cusma3: čeka prozor od 17:50 UTC): PDF za knjigovodstvo, uplate i isplate (Mollie) — jar `2742e66e0ce0641aa8953db076d0d127`, `main` `43896348`, tag `live/2026-11-11-payments-report`
+## 2026-11-11 — ✅ LIVE cusma2 17:02 UTC (cusma3: čeka prozor od 17:50 UTC): Stripe uklonjen, kartično plaćanje je samo Mollie — jar `c82b89d634c2e98068eae60c13d4a9fc` (208 MB, prije 240 MB), `main` `2a63b6eb`, tag `live/2026-11-11-no-stripe`
+
+Mario 11.11.2026: „ne treba spajat stripe, samo da ga više ne vidim, samo ostavi mollie“ → „Da, ukloni“. **Bez migracije.**
+
+**Stanje prije:** u produkcijskoj bazi 0 rata plaćenih preko Stripea i 0 otvorenih Stripe naplata (upit 11.11.); `PAYMENT_CARD_PROVIDER=mollie`; nijedan klijent (web ×7, admin) ne zove Stripe rute.
+
+**Što je uklonjeno**
+- Klase: `StripePaymentService`, `StripeSessionExpirer`, `StripeEventIdempotencyService`, `CardDoublePaymentAlert`, `StripeCardPaymentProvider`, `StripePaymentController`, `PublicStripePaymentController`, `StripeWebhookController`, `ProcessedStripeEvent` (+ repozitorij), `StripeConfig`; biblioteka `com.stripe:stripe-java`.
+- Rute `/secured/payments/stripe/**`, `/public/payments/stripe/**`, `/webhooks/stripe` (više nije u permitAll).
+- Postavke `application.stripe.*` i `application.payment.card-provider`; enum `CardProvider`. `CardPaymentRouter` stoji ispred jedinog `CardPaymentProvider` beana (`MollieBookingPaymentService`); bez Mollie ključa: ERROR pri startu i 503 (8101) po zahtjevu.
+- `ReservationPaymentPhase` više ne mapira `stripe_session_id` / `stripe_payment_intent_id` (stupci i tablica `processed_stripe_events` OSTAJU u bazi); `PaymentPhaseDto` i GDPR izvoz više nemaju `stripePaymentIntentId`.
+
+**⚠️ Rollback i env**
+- **Nema više prekidača natrag na Stripe.** Jedini rollback je `webservice.jar.prev` (cusma2 = `2742e66e`, jar s PDF izvještajem; kopija u `~/.cache/boat4you-deploy/mollie/`).
+- **`PAYMENT_CARD_PROVIDER=mollie` OSTAJE u env datotekama oba čvora**: novi jar ga ne čita, ali stariji jar bez njega pada na Stripe (zadana vrijednost `stripe`). `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` su i dalje u env datotekama, novi jar ih ne čita; maknuti ih kad stari jar više nije rollback. `infra/deploy-scripts/mollie_env_set.sh` više ne prima argument `stripe`.
+- **cusma3 (scheduler) nema Mollie ključ**: pri svakom startu sada ispisuje `ERROR Card payments: Mollie is not configured on this node`. To je očekivano na cusma3 (ne obrađuje web zahtjeve); na cusma2 ta linija znači da kartice ne rade.
+- **Mario u Stripe nadzornoj ploči:** obrisati webhook endpoint `https://api.boat4you.com/webhooks/stripe` (inače Stripe dobiva 403, ponavlja danima i šalje e-mailove o neuspjehu) i po želji opozvati API ključeve. Kasniji povrat ili spor na staroj Stripe uplati rješava se u Stripe nadzornoj ploči.
+
+**Neovisni Opus pregled (11.11.):** bez blokera; pokretanje, ožičenje, izgubljeno ponašanje, API ugovor, web i admin čisti. Po nalazima: `PublicKlarnaConfigController` bez nekorištenog routera, komentar o nemapiranim stupcima, ove napomene o rollbacku.
+
+**Provjereno:** cijeli test 2278 (0 padova, 4 preskočena) uključujući integracijske na pravom PostgreSQL-u (Hibernate validate uz nemapirane stupce); Flyway preflight „will apply: none“; cusma2 „Started“ 17:02:26, log `Card payments: provider=mollie, mollie-enabled=true`, `Mollie: enabled=true, mode=live, … fees=true`; stvarni pozivi nakon deploya: `/public/payments/custom/config` 200 (krivi ključ 404), `/public/payments/card/klarna` 200, `POST /webhooks/mollie` 200, `checkPaymentStatus/<nepoznato>` 404 kod 8105 (i za stari `cs_…` oblik), `create-checkout-session/<nepostojeća rezervacija>` 404, admin rute i `/admin/payments-report` bez prijave 403, `POST /webhooks/stripe` 403. **Nije provjereno:** stvarna kartična naplata rezervacije nakon deploya (značila bi pravu uplatu); put je isti kao prije (Mollie), a pokrivaju ga testovi.
+
+**Usput viđeno (nije dirano):** nepostojeća ruta pod `/public/**` vraća 500 „Unknown error“ umjesto 404 (i prije ovog deploya).
+
+## 2026-11-11 — ✅ LIVE cusma2 16:11 UTC (cusma3 ovaj jar nije dobio: u prozoru od 17:50 UTC ide odmah jar bez Stripea, koji sadrži i ovo): PDF za knjigovodstvo, uplate i isplate (Mollie) — jar `2742e66e0ce0641aa8953db076d0d127`, `main` `43896348`, tag `live/2026-11-11-payments-report`
 
 Mario 11.11.2026: „treba mi mogućnost da izvučem sve uplate i isplate knjigovodstvu u PDF formatu … koji iznos je došao, od koga i reference, datum vrijeme, tako da mogu spajat uplate s ugovorima“; potvrda „Da, kreni“ u ovoj sesiji. **Bez migracije.**
 
@@ -21,7 +45,7 @@ Mario 11.11.2026: „treba mi mogućnost da izvučem sve uplate i isplate knjigo
 
 **Neovisni Opus pregled (11.11.):** bez blokera; upiti i zaštita rute čisti. Popravljeno prije builda (`43896348`): znakovi koje XML ne dopušta (kontrolni znak, pola emojija) rušili bi cijeli PDF → brišu se prije renderiranja; uplate NEEDS_REVIEW označene; `settlementId` / `transferId` / `paymentDescription` čitaju se i jednu razinu niže; vremenski limit čitanja 60 s; točniji tekstovi.
 
-**Provjereno:** 126 testova platnog dijela (0 padova) uključujući dva integracijska na pravom PostgreSQL-u koji izvršavaju nove upite; Flyway preflight „will apply: none“; cusma2 health 200, „Started“ 16:11:46; stvarni pozivi nakon deploya: `/public/payments/custom/config` 200 (krivi ključ 404), `/public/payments/card/klarna` 200, `POST /webhooks/mollie` 200, `checkPaymentStatus/<nepoznato>` 404, admin rute i `/admin/payments-report` bez prijave 403. **S pravom prijavom u produkcijskom adminu (Mariov Chrome, samo čitanje, datoteka nije spremana):** studeni 2026. → 200 `application/pdf` 29 kB za 1 s; listopad → 200; 12 mjeseci → 200 za 0,4 s; „do“ prije „od“ → 400; 680 dana → 400.
+**Provjereno:** 126 testova platnog dijela (0 padova) uključujući dva integracijska na pravom PostgreSQL-u koji izvršavaju nove upite; Flyway preflight „will apply: none“; cusma2 health 200, „Started“ 16:11:46; stvarni pozivi nakon deploya: `/public/payments/custom/config` 200 (krivi ključ 404), `/public/payments/card/klarna` 200, `POST /webhooks/mollie` 200, `checkPaymentStatus/<nepoznato>` 404, admin rute i `/admin/payments-report` bez prijave 403. **S pravom prijavom u produkcijskom adminu (Mariov Chrome, samo čitanje, datoteka nije spremana):** studeni 2026. → 200 `application/pdf` 29 kB za 1 s; listopad → 200; 12 mjeseci → 200 za 0,4 s; „do“ prije „od“ → 400; raspon dulji od 367 dana → 400.
 
 **Nije provjereno:** sastav prave isplate na banku. Mollie do 11.11. nije napravio nijednu isplatu (`outgoing-transfer`), oblik je po dokumentaciji. Na prvoj pravoj isplati usporediti PDF s Mollie settlementom (zbroj stavki = iznos isplate; ima li `settlementId`). Sadržaj PDF-a s produkcije nije čitan (osobni podaci), provjereni su samo status, vrsta i veličina.
 
