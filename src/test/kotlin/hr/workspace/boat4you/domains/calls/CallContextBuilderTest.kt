@@ -86,12 +86,23 @@ class CallContextBuilderTest {
     }
 
     @Test
-    fun `Nika is told the language she will actually speak`() {
-        val slovenian = call().apply { language = "sl" }
-        CallContextBuilder.variables(inquiry(), slovenian, friday, s)["language"] shouldBe "en"
-        val noLanguage = call().apply { language = null }
-        CallContextBuilder.variables(inquiry().apply { locale = "fr-CH" }, noLanguage, friday, s)["language"] shouldBe "fr"
-        CallContextBuilder.variables(inquiry().apply { locale = null }, noLanguage, friday, s)["language"] shouldBe "en"
+    fun `Nika is told the language she will actually speak, by the country of the number`() {
+        val english = call().apply { language = "en" }
+        CallContextBuilder.variables(inquiry(), english, friday, s)["language"] shouldBe "it" // Italian number, English form
+        val kuwait = inquiry().apply { phoneE164 = "+96550012345" }
+        CallContextBuilder.variables(kuwait, call(), friday, s)["language"] shouldBe "en"
+        val swiss = inquiry().apply { phoneE164 = "+41791234567" }
+        CallContextBuilder.variables(swiss, call().apply { language = "fr-CH" }, friday, s)["language"] shouldBe "fr"
+        CallContextBuilder.variables(swiss, call().apply { language = "en" }, friday, s)["language"] shouldBe "de"
+        val noNumber = inquiry().apply { phoneE164 = null }
+        CallContextBuilder.variables(noNumber, call().apply { language = "pl" }, friday, s)["language"] shouldBe "pl"
+        CallContextBuilder.variables(noNumber.apply { locale = null }, call().apply { language = null }, friday, s)["language"] shouldBe "en"
+    }
+
+    @Test
+    fun `Nika gets the e-mail address the inquiry came from, to confirm it`() {
+        CallContextBuilder.variables(inquiry().apply { email = " giulia@example.com " }, call(), friday, s)["client_email"] shouldBe "giulia@example.com"
+        CallContextBuilder.variables(inquiry().apply { email = null }, call(), friday, s)["client_email"] shouldBe ""
     }
 
     @Test

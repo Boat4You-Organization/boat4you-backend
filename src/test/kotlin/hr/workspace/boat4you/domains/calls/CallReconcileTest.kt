@@ -54,13 +54,15 @@ class CallReconcileTest : CallsJpaTest() {
 
         override fun getConversation(conversationId: String) =
             ConversationData(conversationId, status, emptyList(), ConversationMetadata(60, 100, "end_call"), ConversationAnalysis("success", "Sažetak."))
+
+        override fun deleteConversation(conversationId: String) = Unit
     }
 
     private val api = FakeApi()
     private val planner by lazy { CallPlanner(calls, inquiries, settings, jdbc, clock) }
     private val audio by lazy { CallAudioStore(uploadDir.toString()) }
     private val notifier: CallNotifier = mock(CallNotifier::class.java)
-    private val outcomes by lazy { CallOutcomeService(calls, inquiries, planner, notifier, audio, clock) }
+    private val outcomes by lazy { CallOutcomeService(calls, inquiries, planner, notifier, audio, api, clock) }
     private val processor by lazy { CallWebhookProcessor(events, calls, outcomes, txManager, jacksonObjectMapper()) }
     private val reconciler by lazy { CallReconciler(calls, events, processor, outcomes, api) }
     private val retention by lazy { CallRetention(calls, audio, settings, jdbc) }

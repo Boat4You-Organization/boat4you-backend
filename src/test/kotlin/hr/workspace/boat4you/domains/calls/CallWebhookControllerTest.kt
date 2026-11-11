@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.calls
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsApi
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsProperties
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
 import hr.workspace.boat4you.domains.calls.jpa.CallWebhookEventRepository
@@ -34,7 +35,15 @@ class CallWebhookControllerTest : CallsJpaTest() {
     private val clock = Clock.systemUTC()
     private val outcomes by lazy {
         val planner = CallPlanner(calls, inquiries, settings, jdbc, clock)
-        CallOutcomeService(calls, inquiries, planner, mock(CallNotifier::class.java), CallAudioStore(Files.createTempDirectory("w").toString()), clock)
+        CallOutcomeService(
+            calls,
+            inquiries,
+            planner,
+            mock(CallNotifier::class.java),
+            CallAudioStore(Files.createTempDirectory("w").toString()),
+            mock(ElevenLabsApi::class.java),
+            clock,
+        )
     }
     private val processor by lazy { CallWebhookProcessor(events, calls, outcomes, txManager, jacksonObjectMapper()) }
     private val mvc by lazy { MockMvcBuilders.standaloneSetup(CallWebhookController(props, processor, clock)).build() }

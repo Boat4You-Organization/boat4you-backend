@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationData
 import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationMetadata
 import hr.workspace.boat4you.domains.calls.elevenlabs.CriterionResult
 import hr.workspace.boat4you.domains.calls.elevenlabs.DataCollectionResult
+import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsApi
 import hr.workspace.boat4you.domains.calls.elevenlabs.TranscriptTurn
 import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.enums.CallOutcome
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.clearInvocations
+import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.never
 import org.mockito.Mockito.times
@@ -47,7 +49,8 @@ class CallOutcomeServiceTest : CallsJpaTest() {
     private val notifier: CallNotifier = mock(CallNotifier::class.java)
     private val planner by lazy { CallPlanner(calls, inquiries, settings, jdbc, clock) }
     private val audio by lazy { CallAudioStore(uploadDir.toString()) }
-    private val service by lazy { CallOutcomeService(calls, inquiries, planner, notifier, audio, clock) }
+    private val elevenLabs: ElevenLabsApi = mock(ElevenLabsApi::class.java)
+    private val service by lazy { CallOutcomeService(calls, inquiries, planner, notifier, audio, elevenLabs, clock) }
 
     @BeforeEach
     fun resetNotifier() = clearInvocations(notifier)
@@ -204,6 +207,28 @@ class CallOutcomeServiceTest : CallsJpaTest() {
         service.applyTranscription(c, data(mapOf("recording_refused" to true)))
         calls.findById(c.id!!).get().audioPath shouldBe null
         Files.exists(uploadDir.resolve(path)) shouldBe false
+    }
+
+    @Test
+    fun `after the client refuses recording the conversation is deleted at ElevenLabs too`() {
+        val c = dialling()
+        service.applyTranscription(c, data(mapOf("recording_refused" to true)))
+        verify(elevenLabs).deleteConversation(c.elevenlabsConversationId!!)
+    }
+
+    @Test
+    fun `a conversation of a client who did not refuse recording stays at ElevenLabs`() {
+        val c = dialling()
+        service.applyTranscription(c, data())
+        verify(elevenLabs, never()).deleteConversation(c.elevenlabsConversationId!!)
+    }
+
+    @Test
+    fun `ElevenLabs failing to delete does not lose the call result`() {
+        val c = dialling()
+        doThrow(IllegalStateException("down")).`when`(elevenLabs).deleteConversation(c.elevenlabsConversationId!!)
+        service.applyTranscription(c, data(mapOf("recording_refused" to true)))
+        calls.findById(c.id!!).get().outcome shouldBe CallOutcome.NO_CONSENT_TO_RECORD
     }
 
     @Test

@@ -97,7 +97,7 @@ class CallDispatcher(
         calls.saveAndFlush(call)
         val since = LocalDateTime.ofInstant(now.minus(CallEligibility.RECENT), ZoneId.systemDefault())
         val others = inquiries.findOtherRecentByPhone(call.toNumber!!, inquiry.id!!, since)
-        return Step.Dial(id, call.toNumber!!, NikaLanguage.of(call.language ?: inquiry.locale), CallContextBuilder.variables(inquiry, call, now, s, others))
+        return Step.Dial(id, call.toNumber!!, NikaLanguage.forCall(call.toNumber, call.language ?: inquiry.locale), CallContextBuilder.variables(inquiry, call, now, s, others))
     }
 
     private fun dial(d: Step.Dial): Boolean {
