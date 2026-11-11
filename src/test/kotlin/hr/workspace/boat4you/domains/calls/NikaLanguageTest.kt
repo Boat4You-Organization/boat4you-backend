@@ -33,6 +33,8 @@ class NikaLanguageTest {
         NikaLanguage.forCall("+385981234567", "en") shouldBe "hr"
         NikaLanguage.forCall("+4915112345678", null) shouldBe "de"
         NikaLanguage.forCall("+5511912345678", "es") shouldBe "pt"
+        NikaLanguage.forCall("+50499123456", "en") shouldBe "es" // Honduras
+        NikaLanguage.forCall("+17875550100", "en") shouldBe "es" // Puerto Rico
     }
 
     @Test
@@ -55,6 +57,9 @@ class NikaLanguageTest {
         NikaLanguage.forCall(null, "pl") shouldBe "pl"
         NikaLanguage.forCall("not a number", "it") shouldBe "it"
         NikaLanguage.forCall("", "cs") shouldBe "en"
+        NikaLanguage.forCall("385981234567", "pl") shouldBe "pl" // no plus sign
+        NikaLanguage.forCall("+80012345678", "de") shouldBe "de" // international freephone: no country
+        NikaLanguage.forCall("+870773111632", "fr") shouldBe "fr" // satellite
     }
 
     @Test
