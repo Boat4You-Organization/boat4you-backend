@@ -1,5 +1,6 @@
 package hr.workspace.boat4you.domains.gdpr.services
 
+import hr.workspace.boat4you.common.ratelimit.ClientIp
 import hr.workspace.boat4you.domains.gdpr.jpa.GdprAuditLogEntity
 import hr.workspace.boat4you.domains.gdpr.jpa.GdprAuditLogRepository
 import jakarta.servlet.http.HttpServletRequest
@@ -41,13 +42,6 @@ class GdprAuditService(
         return repository.save(entity)
     }
 
-    /**
-     * Walks `X-Forwarded-For` (first hop = original client) and falls back to
-     * the connection-level remote address. Trusted proxy headers only — if
-     * we ever change reverse proxy, revisit. IPv6 fits the 45-char column.
-     */
-    private fun resolveClientIp(request: HttpServletRequest): String? {
-        val xff = request.getHeader("X-Forwarded-For")?.split(",")?.firstOrNull()?.trim()
-        return xff?.takeIf { it.isNotBlank() } ?: request.remoteAddr
-    }
+    /** The requester's address, never a forged `X-Forwarded-For` ([ClientIp], F1-022). IPv6 fits the 45-char column. */
+    private fun resolveClientIp(request: HttpServletRequest): String? = ClientIp.of(request)
 }

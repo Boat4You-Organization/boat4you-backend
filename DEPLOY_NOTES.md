@@ -22,6 +22,22 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-12 — ✅ LIVE cusma2 09:10 UTC (cusma3 čeka prozor 13:00 UTC): lažni `X-Forwarded-For` više ne zaobilazi ograničenja (F1-022) — jar `f45f93c1734650c6a37e9878e4c104c0` (208 MB), `main` `d83aad8f`, tag `live/2026-11-12-ratelimit-forwarders`
+
+**Greška:** `PublicEndpointRateLimiter` je za upite, rezervacije, plaćanja, recenzije i auth uzimao lijevu vrijednost `X-Forwarded-For` od bilo koga. Tko zove API izravno, mijenjao je zaglavlje i dobivao novi budžet za svaki zahtjev. Ista adresa se spremala uz sesiju prijave i u GDPR zapis.
+
+**Popravak (bez migracije):** `common/ratelimit/ClientIp` vraća `X-Real-IP` (nginx ga uvijek prepiše s `$remote_addr`), a lijevi `X-Forwarded-For` uzima samo kad zove naš web server: `91.98.209.180` (cusma1), `91.98.209.185` (cusma5), `192.168.55.1`, `192.168.55.5`. Popis se može promijeniti s `application.rate-limit.trusted-forwarders` (čita ga samo limiter; sesija, GDPR zapis i custom plaćanja koriste ugrađeni popis). Chat i tracker pravila su i dalje na `X-Real-IP`.
+
+**⚠️ Ako se web preseli na drugi server ili adresu:** novu adresu dodati na popis PRIJE preseljenja, inače svi posjetitelji te stranice dijele jedan budžet (5 upita / 5 rezervacija u minuti).
+
+**Provjereno prije deploya:** cijeli test 2304 (0 padova, 4 preskočena); neovisni Opus pregled bez blokada; na cusma2 pročitano: svih 10 `location` blokova postavlja `X-Real-IP $remote_addr`, upiti stižu s `.185` i `.180`, port 8080 sluša samo na `127.0.0.1`; md5 živog jara na oba čvora = `6858cc2b` (zadnji `live/*`). Flyway preflight „will apply: none“.
+
+**Uživo (09:11 UTC):** 7 × `POST /public/inquiries` s neispravnim tijelom i svaki put drugim `X-Forwarded-For` → 400 ×5, zatim 429 ×2 (prije: svih 7 prolazi). API health 200.
+
+**Otvoreno, nije u ovom jaru:** (1) portovi 3001–3008 na cusma1/cusma5: tko zove Next izravno, mimo nginxa, može mu podmetnuti `X-Real-IP`, a web ga prosljeđuje kao pouzdan; zatvara firewall (Pondi). (2) boat4you-web akcije za prijavu, registraciju, reset lozinke, gostinsku rezervaciju i set-password ne prosljeđuju adresu posjetitelja, pa svi www posjetitelji dijele budžet adrese `.180` (staro stanje, popravak u web repou).
+
+**Rollback:** `webservice.jar.prev` na cusma2 = `6858cc2b`.
+
 ## 2026-11-11 — ✅ LIVE oba čvora (cusma2 18:41, cusma3 18:41 UTC): filter dužine = METRI na svim jezicima — jar `6858cc2b3213e73547913d2dc206a989` (208 MB), `main` `85bcca9f`, tag `live/2026-11-11-length-metres`
 
 **Greška:** `GET /public/yachts` je `minLength` / `maxLength` na `Accept-Language: en` čitao kao STOPE (`YachtSearchParamObject.get*LengthInMeters`), a klizač dužine na b4y i svih 6 sister stranica radi u metrima (4–56 m) na svim jezicima. Na engleskim stranicama „do 20 m“ = 20 ft = 6,1 m → 0 plovila (b4y `/en` i catamaran-croatia-charter.com potvrđeno uživo), „od 12 m“ je propuštao i plovila od 10,9 m. `distribution` i `relax-suggest` su oduvijek metri, pa se brojevi uz opcije na engleskom nisu slagali s listom.

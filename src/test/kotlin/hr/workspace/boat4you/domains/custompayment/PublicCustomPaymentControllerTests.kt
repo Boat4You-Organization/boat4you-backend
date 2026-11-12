@@ -125,7 +125,8 @@ class PublicCustomPaymentControllerTests {
     ) = (if (properties == null) mvc() else mvc(properties)).post("/public/payments/custom/orders") {
         contentType = MediaType.APPLICATION_JSON
         this.content = content
-        header("X-Forwarded-For", "203.0.113.9, 10.0.0.1")
+        header("X-Real-IP", "91.98.209.180") // our web server: its X-Forwarded-For names the visitor
+        header("X-Forwarded-For", "203.0.113.9, 91.98.209.180")
     }
 
     @Test
