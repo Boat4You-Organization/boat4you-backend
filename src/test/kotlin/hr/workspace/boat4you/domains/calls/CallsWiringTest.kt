@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsClient
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsProperties
 import hr.workspace.boat4you.domains.calls.service.AdminCallService
 import hr.workspace.boat4you.domains.calls.service.CallAudioStore
+import hr.workspace.boat4you.domains.calls.service.CallBoatFacts
 import hr.workspace.boat4you.domains.calls.service.CallDispatcher
 import hr.workspace.boat4you.domains.calls.service.CallEligibility
 import hr.workspace.boat4you.domains.calls.service.CallNotifier
@@ -16,6 +17,8 @@ import hr.workspace.boat4you.domains.calls.service.CallWebhookProcessor
 import hr.workspace.boat4you.domains.calls.service.CallsSettings
 import hr.workspace.boat4you.domains.calls.web.AdminCallController
 import hr.workspace.boat4you.domains.calls.web.CallWebhookController
+import hr.workspace.boat4you.domains.catalouge.capacity.PartnerTextSanitizer
+import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -38,6 +41,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
     CallAudioStore::class,
     CallWebhookProcessor::class,
     CallDispatcher::class,
+    CallBoatFacts::class,
+    YachtCapacityMapper::class,
+    PartnerTextSanitizer::class,
     CallReconciler::class,
     CallRetention::class,
     AdminCallService::class,
@@ -64,6 +70,7 @@ class CallsWiringTest : CallsJpaTest() {
         listOf(
             CallPlanner::class.java,
             CallDispatcher::class.java,
+            CallBoatFacts::class.java,
             CallOutcomeService::class.java,
             CallReconciler::class.java,
             AdminCallService::class.java,
