@@ -14,7 +14,7 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Provjereno:** `ApiErrorHandlerRoutingTests` (4; prije popravka 3 padaju), postojeći testovi kontrolera prolaze. **Nije provjereno:** cijeli test paket; ponašanje iza Spring Securityja na živom čvoru (adrese izvan `/public/**` bez prijave i dalje su 403 prije MVC-a).
 
-**Tko to primijeti:** nitko od naših klijenata ne čita kod `1000` za nepostojeću rutu; `PrApiController.unknownRoute` (vlastiti 404 za `/api/pr/v1/**`) ostaje kako je.
+**Tko to primijeti:** u `src` boat4you-weba i admina nema grananja po kodu `1000` (grep 12.11.; 6 sistera nije pregledano); `PrApiController.unknownRoute` (vlastiti 404 za `/api/pr/v1/**`) ostaje kako je.
 
 **Deploy:** nije hitno, ide uz idući backend deploy (merge grane u `main` prije builda). Nakon deploya: `curl https://api.boat4you.com/public/nema-toga` → 404.
 
