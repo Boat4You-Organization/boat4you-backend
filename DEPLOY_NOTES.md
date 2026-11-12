@@ -6,6 +6,26 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-12 — ✅ LIVE cusma2 10:55 UTC (cusma3 čeka prozor; pozivi idu s cusma3, pa Nika podatke dobiva tek tada): Nika zna osnovno o brodu (`boat_facts`) — jar `724cf03cb61db14554fffe579ad171e4` (208 MB), `main` `591c1fe8`, tag `live/2026-11-12-nika-boat-facts`
+
+**Povod (Mario 12.11.):** klijenti na pozivu pitaju koliko brod ima kabina i kupaonica, ima li hladnjak, klimu i slično, gdje je brod i koji je najbliži aerodrom. Nika je znala samo ime broda, datume i marinu.
+
+**Promjena (bez migracije, bez env-a):**
+- `calls/service/CallBoatFacts`: nova varijabla poziva `boat_facts` (vrsta, dužina m/ft, godina, kabine/ležajevi/WC, najviše osoba, s posadom ili bez, do 16 stavki opreme po našoj šifri kataloga, matična baza s mjestom i državom, uobičajeno vrijeme ukrcaja). Prazno kad upit nema brod. Čita se u vlastitoj read-only transakciji (`describeById`), pa greška čitanja ne dira transakciju koja poziv označava DIALING.
+- Nikad agencija, vlasnik ni partnerov slobodni tekst; oprema koju partner označi „nema“ se preskače (`isPresent`, kao stranica broda); gulet uvijek s posadom.
+- Tekst o kapacitetu je onaj koji dobiva Iris: `capacityFacts`, `GULET_CHARTER`, `CREWED_CHARTER_TYPES` premješteni iz `AiChatToolExecutor` u `catalouge/capacity/BoatFactsText` (Irisin tekst nepromijenjen).
+- Sadrži `d62c7850` (Iris subota–subota + 404).
+
+**Prompt:** infra grana `nika/boat-facts` (na agentu `71358f7`, update 10:39 UTC; simulacija `h` prolazi). Broj za prebacivanje na agentu je od danas poslovni +385 91 3000 009 (Mario); `calls.transfer.number` u backendu treba postati isti prije testa prebacivanja.
+
+**Provjereno:** cijeli test 2324 (0 padova, 4 preskočena) + ktlint bez nalaza u izmijenjenim datotekama; neovisni Opus pregled bez blokada (popravljeno: odsutna oprema, „Home base“, vlastita transakcija); Flyway preflight „will apply: none“, bez „future“; prije deploya md5 živog jara cusma2 = `fe6cd2ff` (zadnji `live/*`). Uživo 10:55 UTC: `card-surcharge` 200; `/public/nema-toga` 404; `/public/payments/custom/config` 404; `/webhooks/mollie` 200.
+
+**cusma3:** druga sesija ima zakazan `backend_deploy.sh cusma3` s jarom `fe6cd2ff` (13:05 / 18:06 / 21:10 UTC, `/tmp/claude-501/c3_deploy_later.sh`). Ovaj jar ide na cusma3 tek NAKON što ta skripta završi, inače bi ga pregazila starijim.
+
+**Otvoreno:** polazna baza za termin upita (sada samo matična; LODIRE); tablica aerodroma po marini (podatka nema, Nika upućuje na e-mail); `inquiry_summary` i dalje šalje „base:“ s matičnom marinom.
+
+**Rollback:** `webservice.jar.prev` na cusma2 = `fe6cd2ff`.
+
 ## 2026-11-12 — ✅ LIVE cusma2 10:22 UTC (cusma3 čeka prozor, i dalje `6858cc2b`): Iris — charteri samo subota–subota + nepostojeća ruta 404 — jar `fe6cd2ff5c2247c7727e54a194197013` (218 MB), `main` `d62c7850`, tag `live/2026-11-12-iris-saturday`
 
 **Povod (Mario 12.11.):** Allison (Europe Yachts, CC c/85) pitala je „from 9th or 11th“ svibnja; Iris je odgovorila „Sure, let me check those two boats“ i tražila od nedjelje 9.5.
