@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import hr.workspace.boat4you.domains.branding.AiSiteProfile
+import hr.workspace.boat4you.domains.catalouge.capacity.BoatFactsText
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import hr.workspace.boat4you.domains.contactcenter.service.SearchCriteria
@@ -56,14 +57,8 @@ class AiChatToolExecutor(
     )
 
     private companion object {
-        /** Charter types whose listing may state a crew count (capacity contract v1, 7.2). */
-        val CREWED_CHARTER_TYPES = setOf("CREWED", "ALL_INCLUSIVE", "CRUISE")
-
         /** Longest partner capacity note put into the system prompt. */
         const val CHAT_NOTE_MAX = 60
-
-        /** What the model is told about every gulet (GuletRules: a gulet is never bareboat, Mario 9.10.2026). */
-        const val GULET_CHARTER = "crewed - a gulet always sails with its crew, never bareboat or skipper-only"
 
         /** Tool parameters are model-controlled: only these shapes reach our own API (review B8). */
         val COUNTRY_CODE = Regex("^[A-Z]{2}$")
@@ -468,7 +463,7 @@ class AiChatToolExecutor(
                     putPositive("maxPeopleOnBoard", y.path("maxPersons"))
                     put("year", y.path("buildYear").asInt(0))
                     put("base", y.path("location").path("name").asText(""))
-                    if (isGulet(y)) put("charter", GULET_CHARTER)
+                    if (isGulet(y)) put("charter", BoatFactsText.GULET_CHARTER)
                     val amenities = y.path("amenityKeys").mapNotNull { it.asText(null) }
                     if (amenities.isNotEmpty()) put("topAmenities", amenities.joinToString(","))
                     if (site.scoped) {
@@ -1095,7 +1090,7 @@ class AiChatToolExecutor(
             append("\n")
             capacityFacts(y)?.let { append("- $it\n") }
             capacityNotes(y)?.let { append("- $it\n") }
-            if (isGulet(y)) append("- Charter: $GULET_CHARTER\n")
+            if (isGulet(y)) append("- Charter: ${BoatFactsText.GULET_CHARTER}\n")
             y.path("location").path("name").asText("").takeIf { it.isNotBlank() }
                 ?.let { append("- Base: $it\n") }
             if (amenities.isNotEmpty()) append("- Equipment: ${amenities.joinToString(", ")}\n")
@@ -1112,35 +1107,8 @@ class AiChatToolExecutor(
         }
     }
 
-    /**
-     * "Cabins: 6 (crew cabins: 2), berths: 13 (12 + 1 crew), WC: 6, max people on board: 14 (recommended 10), crew: 1"
-     * from the detail JSON's `capacity` block (capacity contract v1, 2.6), unknown parts left out. Berths are berths,
-     * never "sleeps up to {maxPersons}"; crew only when a crewed charter is offered. No crew WC: until the corrected
-     * NauSys sync (cusma3, nightly) has rewritten a boat, its stored crew WC is still its guest WC, and the chat goes
-     * live with cusma2, ahead of that sync - the boat page shows the crew WC once the sync has run.
-     */
-    internal fun capacityFacts(y: JsonNode): String? {
-        val c = y.path("capacity")
-        val parts = mutableListOf<String>()
-        dimText(c.path("cabins"), y.path("cabins"))?.let { cabins ->
-            val crewCabins = positive(c.path("crewCabins"))
-            parts += "Cabins: $cabins" + (crewCabins?.let { " (crew cabins: $it)" } ?: "")
-        }
-        dimText(c.path("berths"), y.path("berths"))?.let { parts += "berths: $it" }
-        dimText(c.path("heads"), y.path("wc"))?.let { parts += "WC: $it" }
-        positive(c.path("showers"))?.let { parts += "showers: $it" }
-        // flat fields only for a payload without the block (an older API answer)
-        val max = positive(c.path("maxPersons")) ?: if (!c.isObject) positive(y.path("maxPersons")) else null
-        val recommended = positive(c.path("recommendedPersons"))
-        when {
-            max != null -> parts += "max people on board: $max" + (recommended?.takeIf { it != max }?.let { " (recommended $it)" } ?: "")
-            recommended != null -> parts += "recommended people: $recommended"
-        }
-        val crewed = y.path("charterType").any { it.asText() in CREWED_CHARTER_TYPES }
-        val crew = positive(c.path("crewNumber")) ?: if (!c.isObject) positive(y.path("crewNumber")) else null
-        if (crewed && crew != null) parts += "crew: $crew"
-        return parts.takeIf { it.isNotEmpty() }?.joinToString(", ")
-    }
+    /** The capacity line of the boat-page facts, see [BoatFactsText.capacityFacts]. */
+    internal fun capacityFacts(y: JsonNode): String? = BoatFactsText.capacityFacts(y)
 
     /**
      * The partner's own capacity notes, already sanitized by the API (never the internal remark), in English. Partner
@@ -1154,25 +1122,6 @@ class AiChatToolExecutor(
                 c.path(key).path("note").asText("").takeIf { it.isNotBlank() && it.length <= CHAT_NOTE_MAX }?.let { "$label \"$it\"" }
             }
         return notes.takeIf { it.isNotEmpty() }?.let { "Partner capacity notes (verbatim): ${it.joinToString("; ")}" }
-    }
-
-    /** "13 (12 + 1 crew)" / "12 (10 in cabins + 2 crew)" / "6", or null when the figure is unknown. */
-    private fun dimText(
-        dim: JsonNode,
-        flat: JsonNode,
-    ): String? {
-        val value = positive(dim.path("value")) ?: if (dim.isMissingNode) positive(flat) else null
-        value ?: return null
-        val split = dim.path("split")
-        val parts =
-            listOfNotNull(
-                positive(split.path("guests"))?.toString(),
-                positive(split.path("inCabins"))?.let { "$it in cabins" },
-                positive(split.path("saloon"))?.let { "$it in the saloon" },
-                positive(split.path("crew"))?.let { "$it crew" },
-                positive(split.path("skipper"))?.let { "$it skipper" },
-            )
-        return if (parts.size >= 2) "$value (${parts.joinToString(" + ")})" else value.toString()
     }
 
     private fun positive(node: JsonNode): Int? = node.takeIf { it.isNumber }?.asInt()?.takeIf { it > 0 }

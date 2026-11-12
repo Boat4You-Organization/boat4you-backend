@@ -35,6 +35,7 @@ class CallDispatcher(
     private val elevenLabs: ElevenLabsApi,
     private val settings: CallsSettings,
     private val notifier: CallNotifier,
+    private val boatFacts: CallBoatFacts,
     txManager: PlatformTransactionManager,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
@@ -97,7 +98,8 @@ class CallDispatcher(
         calls.saveAndFlush(call)
         val since = LocalDateTime.ofInstant(now.minus(CallEligibility.RECENT), ZoneId.systemDefault())
         val others = inquiries.findOtherRecentByPhone(call.toNumber!!, inquiry.id!!, since)
-        return Step.Dial(id, call.toNumber!!, NikaLanguage.forCall(call.toNumber, call.language ?: inquiry.locale), CallContextBuilder.variables(inquiry, call, now, s, others))
+        val variables = CallContextBuilder.variables(inquiry, call, now, s, others, boatFacts.describe(inquiry.yacht))
+        return Step.Dial(id, call.toNumber!!, NikaLanguage.forCall(call.toNumber, call.language ?: inquiry.locale), variables)
     }
 
     private fun dial(d: Step.Dial): Boolean {

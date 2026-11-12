@@ -8,11 +8,14 @@ import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
 import hr.workspace.boat4you.domains.calls.enums.SkipReason
 import hr.workspace.boat4you.domains.calls.service.CallAudioStore
+import hr.workspace.boat4you.domains.calls.service.CallBoatFacts
 import hr.workspace.boat4you.domains.calls.service.CallDispatcher
 import hr.workspace.boat4you.domains.calls.service.CallEligibility
 import hr.workspace.boat4you.domains.calls.service.CallNotifier
 import hr.workspace.boat4you.domains.calls.service.CallOutcomeService
 import hr.workspace.boat4you.domains.calls.service.CallPlanner
+import hr.workspace.boat4you.domains.catalouge.capacity.CapacityFixtures
+import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.junit.jupiter.api.BeforeEach
@@ -64,6 +67,7 @@ class CallDispatcherTest : CallsJpaTest() {
     private val api = FakeElevenLabs()
     private val notifier: CallNotifier = mock(CallNotifier::class.java)
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
+    private val boatFacts = CallBoatFacts(YachtCapacityMapper(CapacityFixtures.sanitizer()), CapacityFixtures.mapper)
     private val dispatcher by lazy {
         val outcomes =
             CallOutcomeService(
@@ -75,7 +79,7 @@ class CallDispatcherTest : CallsJpaTest() {
                 api,
                 clock,
             )
-        CallDispatcher(calls, inquiries, CallEligibility(calls, jdbc), outcomes, api, settings, notifier, txManager)
+        CallDispatcher(calls, inquiries, CallEligibility(calls, jdbc), outcomes, api, settings, notifier, boatFacts, txManager)
     }
 
     @BeforeEach
@@ -105,6 +109,7 @@ class CallDispatcherTest : CallsJpaTest() {
         dispatcher.runOnce(now) shouldBe 0
         api.dialled.single().first shouldBe "+385912345678"
         api.dialled.single().second["client_name"] shouldBe "Ana"
+        api.dialled.single().second["boat_facts"] shouldBe "" // an inquiry without a boat
         val saved = calls.findById(c.id!!).get()
         saved.status shouldBe CallStatus.DIALING
         saved.startedAt shouldBe now

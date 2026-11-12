@@ -10,19 +10,23 @@ import java.time.Instant
 
 /**
  * The dynamic variables Nika gets when the call starts (design §6.5). The boat is described only by manufacturer, model,
- * name and base, so no agency or owner name can ever reach the call. Prices are euro numbers only.
+ * name, base and the facts of [CallBoatFacts], so no agency or owner name can ever reach the call. Prices are euro numbers only.
  */
 object CallContextBuilder {
     private const val MESSAGE_MAX = 500
     private val DETAIL_KEYS = listOf("people", "kids", "cabins", "budgetEur", "boatType", "region", "crew")
 
-    /** [others]: the person's other recent inquiries (same phone), which Nika mentions ("you also asked about …", design §2.2). */
+    /**
+     * [others]: the person's other recent inquiries (same phone), which Nika mentions ("you also asked about …", design §2.2).
+     * [boatFacts]: [CallBoatFacts.describe] of the inquiry's boat, empty for an inquiry without one.
+     */
     fun variables(
         inquiry: Inquiry,
         call: InquiryCall,
         now: Instant,
         s: CallsSettings.Snapshot,
         others: List<Inquiry> = emptyList(),
+        boatFacts: String = "",
     ): Map<String, String> {
         val site = CallSite.fromKey(inquiry.site) ?: CallSite.BOAT4YOU
         val details = inquiry.details.orEmpty()
@@ -34,6 +38,7 @@ object CallContextBuilder {
             "client_email" to inquiry.email.orEmpty().trim(),
             "inquiry_kind" to kind(call.kind),
             "inquiry_summary" to summary(inquiry, details),
+            "boat_facts" to boatFacts,
             "week_price_eur" to (details["weekPriceEur"]?.toString()?.toBigDecimalOrNull()?.toBigInteger()?.toString() ?: ""),
             "offer_summary" to (inquiry.offerNote ?: ""),
             "transfer_allowed" to CallClock.transferAllowed(now, s).toString(),
