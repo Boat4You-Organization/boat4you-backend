@@ -26,6 +26,18 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Rollback:** `webservice.jar.prev` na cusma2 = `fe6cd2ff`.
 
+## 2026-11-12 — ✅ LIVE cusma2 18:12 UTC (cusma3 i dalje `fe6cd2ff`): Iris — plovilo stvarno ponuđeno van subote smije se spomenuti — jar `15f556fa138ef161ba063ea7041ddced` (208 MB), `main` `644ab81c`, tag `live/2026-11-12-iris-offday`
+
+**Povod (Mario 12.11.):** „99 % je uvijek subota–subota, ali neka provjeri: ako se plovilo stvarno nudi van standarda, može ga spomenuti.“
+
+**Promjena (bez migracije, bez env-a):** `search_yachts` s datumima van subote (3–28 noći) pretražuje i zadržava samo brodove čiji je VLASTITI termin (`offerDateFrom/To`) točno traženi; nijedan = odbijenica subota–subota kao dosad (+ `nearestWeeks`, bez „let me check“). Ima li ih, rezultat nosi `offStandardNote` (rijetko, termin potvrđuje tim) i `nearestWeeks`, a `totalAvailable` broji samo njih. `check_boat` potvrđuje termin van subote samo kad je to točno termin tog broda. Slobodni tjedni zauzetog broda opet su njegovi stvarni. Ispod 3 noći: odbijeno bez pretrage. Prompt: alat se zove s datumima posjetitelja bez najave provjere.
+
+**Provjereno:** cijeli test 2328 (0 padova, 4 preskočena) + ktlint; Opus pregled (iznimka je dohvatljiva: `/public/yachts` daje „exact“ red s vlastitim datumima; 3 važna nalaza popravljena: poštena formulacija odbijenice jer se gleda samo prva stranica od 50, „potvrđuje tim“ jer MMK neke nedjeljne termine ne prodaje, `totalAvailable`). Flyway „will apply: none“. Prije deploya: cusma2 = `724cf03c` (Nika, predak ove grane), cusma3 = `fe6cd2ff`. Uživo 18:13 UTC: 404 (4004), `card-surcharge` 200, `/pay` config 8002, Mollie webhook 200, XFF 400 ×5 / 429 ×2. Iris (sesija „Tom“): „Trogir, 4 osobe, ned 9.–ned 16.5.2027.“ → pravilo subota–subota + odmah brodovi za 8.–15.5.
+
+**cusma3:** ostaje `fe6cd2ff` (bez Nika `boat_facts`); ovaj jar sadrži i `boat_facts`, pa smije na cusma3 u prozoru (pozivi idu s cusma3).
+
+**Rollback:** `webservice.jar.prev` na cusma2 = `724cf03c`.
+
 ## 2026-11-12 — ✅ LIVE cusma2 10:22 UTC, cusma3 13:06 UTC: Iris — charteri samo subota–subota + nepostojeća ruta 404 — jar `fe6cd2ff5c2247c7727e54a194197013` (218 MB), `main` `d62c7850`, tag `live/2026-11-12-iris-saturday`
 
 **Povod (Mario 12.11.):** Allison (Europe Yachts, CC c/85) pitala je „from 9th or 11th“ svibnja; Iris je odgovorila „Sure, let me check those two boats“ i tražila od nedjelje 9.5.
