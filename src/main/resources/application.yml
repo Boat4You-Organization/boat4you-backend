@@ -340,6 +340,9 @@ social:
   threads:
     app-id: ${SOCIAL_THREADS_APP_ID:}
     app-secret: ${SOCIAL_THREADS_APP_SECRET:}
+  pinterest:
+    app-id: ${SOCIAL_PINTEREST_APP_ID:}
+    app-secret: ${SOCIAL_PINTEREST_APP_SECRET:}
   tiktok:
     client-key: ${SOCIAL_TIKTOK_CLIENT_KEY:}
     client-secret: ${SOCIAL_TIKTOK_CLIENT_SECRET:}

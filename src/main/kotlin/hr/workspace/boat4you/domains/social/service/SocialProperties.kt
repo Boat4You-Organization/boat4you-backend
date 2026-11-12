@@ -39,6 +39,8 @@ class SocialProperties(
     /** Org posting needs LinkedIn's Community Management API approval; without it only the personal profile works. */
     @Value("\${social.linkedin.scopes:openid profile w_member_social}") val linkedinScopes: String,
     @Value("\${social.linkedin.version:202510}") val linkedinVersion: String,
+    @Value("\${social.pinterest.app-id:}") val pinterestAppId: String,
+    @Value("\${social.pinterest.app-secret:}") val pinterestAppSecret: String,
     @Value("\${social.bluesky.service:https://bsky.social}") val blueskyService: String,
     // AI daily posts: the Anthropic key the site chat already uses; the model is ours to choose.
     @Value("\${chat.anthropic-api-key:}") val anthropicApiKey: String,

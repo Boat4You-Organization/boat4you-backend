@@ -42,7 +42,7 @@ object SocialRules {
             SocialPlatform.X to Rule(280, Counting.X_WEIGHTED, false, false, 4, 1, false, false, 0, null),
             SocialPlatform.TIKTOK to Rule(2200, C, true, false, 35, 1, false, false, 90, null),
             SocialPlatform.YOUTUBE to Rule(5000, C, true, true, 0, 1, false, true, 100, null),
-            SocialPlatform.PINTEREST to Rule(500, C, true, false, 1, 1, false, false, 100, null),
+            SocialPlatform.PINTEREST to Rule(500, C, true, false, 1, 0, false, false, 100, null),
             SocialPlatform.BLUESKY to Rule(300, Counting.GRAPHEMES, false, false, 4, 1, false, false, 0, null),
             SocialPlatform.GOOGLE_BUSINESS to Rule(1500, C, false, false, 1, 0, false, false, 0, null),
         )

@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.social.dto.AccountPatch
 import hr.workspace.boat4you.domains.social.dto.ApiKeyRequest
 import hr.workspace.boat4you.domains.social.dto.ConnectRequest
 import hr.workspace.boat4you.domains.social.dto.CredentialsRequest
+import hr.workspace.boat4you.domains.social.dto.ReelRequest
 import hr.workspace.boat4you.domains.social.dto.SocialAccountDto
 import hr.workspace.boat4you.domains.social.dto.SocialAiOverviewDto
 import hr.workspace.boat4you.domains.social.dto.SocialAiRunDto
@@ -23,6 +24,7 @@ import hr.workspace.boat4you.domains.social.service.SocialApiKeyService
 import hr.workspace.boat4you.domains.social.service.SocialMediaStore
 import hr.workspace.boat4you.domains.social.service.SocialPostFilter
 import hr.workspace.boat4you.domains.social.service.SocialPostService
+import hr.workspace.boat4you.domains.social.service.SocialReelMaker
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.data.web.PagedModel
 import org.springframework.format.annotation.DateTimeFormat
@@ -55,6 +57,7 @@ class AdminSocialController(
     private val keys: SocialApiKeyService,
     private val ai: SocialAiService,
     private val store: SocialMediaStore,
+    private val reels: SocialReelMaker,
 ) {
     // ---- Channels ----
 
@@ -97,6 +100,12 @@ class AdminSocialController(
         request: HttpServletRequest,
         @RequestParam(required = false) fileName: String?,
     ): SocialMediaDto = posts.mediaDto(store.store(request.inputStream, fileName, actor().userId))
+
+    /** A Reel (vertical MP4) made on this server from 2–10 uploaded photos, in the order given. */
+    @PostMapping("/media/reel")
+    fun reel(
+        @RequestBody body: ReelRequest,
+    ): SocialMediaDto = posts.mediaDto(reels.make(posts.mediaInOrder(body.mediaIds), actor().userId))
 
     // ---- Posts ----
 
