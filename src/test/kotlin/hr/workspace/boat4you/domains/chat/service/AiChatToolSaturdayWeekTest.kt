@@ -97,6 +97,8 @@ class AiChatToolSaturdayWeekTest {
         model.path("offStandardNote").asText() shouldContain "Saturday to Saturday"
         model.path("nearestWeeks").map { it.asText() } shouldContainExactly listOf("2027-05-08 to 2027-05-15", "2027-05-15 to 2027-05-22")
         out.dropsRoundText shouldBe false
+        model.path("offStandardNote").asText() shouldContain "confirmed by our team"
+        model.path("totalAvailable").asInt() shouldBe 1
         out.cards!!.single().path("slug").asText() shouldBe "bavaria-34-bimbo"
     }
 

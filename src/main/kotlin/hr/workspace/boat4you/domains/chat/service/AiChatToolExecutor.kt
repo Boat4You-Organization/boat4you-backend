@@ -74,7 +74,7 @@ class AiChatToolExecutor(
         /** With a boat really offered on days other than Saturday to Saturday (rare, Mario 12.11.2026). */
         const val OFF_STANDARD_NOTE =
             "these boats really are offered on exactly the asked days, which is unusual - our charters normally run Saturday to " +
-                "Saturday; mention them as such and you may also offer the nearestWeeks"
+                "Saturday; mention them as such, say such a week is confirmed by our team, and you may also offer the nearestWeeks"
 
         /** A window search covers at most this many Saturday weeks (one API call each) and lists this many boats. */
         const val MAX_WINDOW_WEEKS = 6
@@ -516,7 +516,7 @@ class AiChatToolExecutor(
             // Total matching the server-side filters, BEYOND the boats shown — the model must
             // never claim "these are all there is" from one page (Mario 20.7: "daj mi skuplje"
             // was answered with 'no pricier ones exist' while 24 more existed).
-            put("totalAvailable", totalAvailable)
+            put("totalAvailable", if (offDay != null) taken else totalAvailable) // other days: only the boats offered on them
             put("sortedBy", if (sortByPrice == "desc") "price descending" else "price ascending")
             when {
                 found.isNotEmpty() -> {
@@ -1317,12 +1317,6 @@ class AiChatToolExecutor(
         return tools
     }
 
-    /**
-     * Charters run Saturday to Saturday only, in whole weeks (Mario 12.11.2026: Allison asked "from the 9th or 11th" of May and
-     * IRIS said "Sure, let me check"). Other dates are never searched or checked: null for a Saturday week of 7 to
-     * [MAX_NIGHTS] nights, else the rule and the nearest Saturday weeks of about the asked length (the Saturday on or before
-     * the asked start, and the one after it when the start is not a Saturday), none of them in the past.
-     */
     /** A search row whose OWN offer window is exactly the asked one (a row without offer dates never counts). */
     private fun offeredExactly(
         y: JsonNode,
@@ -1330,6 +1324,12 @@ class AiChatToolExecutor(
         endDate: String,
     ): Boolean = isoDate(y.path("offerDateFrom")) == startDate && isoDate(y.path("offerDateTo")) == endDate
 
+    /**
+     * Charters run Saturday to Saturday only, in whole weeks (Mario 12.11.2026: Allison asked "from the 9th or 11th" of May and
+     * IRIS said "Sure, let me check"); a boat really offered on other days is the rare exception (searchPeriod, checkBoat). Null
+     * for a Saturday week of 7 to [MAX_NIGHTS] nights, else the rule and the nearest Saturday weeks of about the asked length (the Saturday on or before
+     * the asked start, and the one after it when the start is not a Saturday), none of them in the past.
+     */
     internal fun notSaturdayWeek(
         start: LocalDate,
         end: LocalDate,
@@ -1350,7 +1350,7 @@ class AiChatToolExecutor(
                     "error" to "not bookable - our charters run Saturday to Saturday only, in whole weeks (7, 14, 21 or 28 nights)",
                     "askedDates" to "$start (${start.dayOfWeek.name.lowercase()}) to $end (${end.dayOfWeek.name.lowercase()})",
                     "nearestWeeks" to nearest,
-                    "hint" to "no boat is offered on these days; never say you will check these dates. In this reply tell the visitor kindly that " +
+                    "hint" to "not bookable on these exact days; never say you will check these dates. In this reply tell the visitor kindly that " +
                         "charters run Saturday to Saturday only, offer the nearestWeeks and ask which one they want, then search or " +
                         "check that week",
                 ),
