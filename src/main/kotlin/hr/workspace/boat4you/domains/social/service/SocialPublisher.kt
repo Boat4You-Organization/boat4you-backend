@@ -168,6 +168,7 @@ class SocialPublisher(
                                     sizeBytes = m.sizeBytes,
                                     width = m.width,
                                     height = m.height,
+                                    durationSec = m.durationSec,
                                     jpegAtMost = { max -> store.jpegAtMost(m, max) },
                                 )
                             },

@@ -31,6 +31,7 @@ import hr.workspace.boat4you.domains.social.service.SocialConflictException
 import hr.workspace.boat4you.domains.social.service.SocialMediaStore
 import hr.workspace.boat4you.domains.social.service.SocialPostService
 import hr.workspace.boat4you.domains.social.service.SocialProperties
+import hr.workspace.boat4you.domains.social.service.SocialReelMaker
 import hr.workspace.boat4you.domains.social.service.SocialRules
 import hr.workspace.boat4you.domains.social.service.SocialValidationException
 import jakarta.annotation.PreDestroy
@@ -69,6 +70,7 @@ class SocialAiService(
     private val writer: SocialAiWriter,
     private val higgsfield: HiggsfieldClient,
     private val store: SocialMediaStore,
+    private val reels: SocialReelMaker,
     private val postService: SocialPostService,
     private val props: SocialProperties,
     private val tx: TransactionTemplate,
@@ -83,6 +85,7 @@ class SocialAiService(
         return SocialAiOverviewDto(
             aiConfigured = props.aiConfigured,
             higgsfieldConfigured = props.higgsfieldConfigured,
+            reelUnavailable = reels.unavailableReason(),
             settings = SiteIds.ALL.map { site -> settingDto(site, saved[site]) },
             runs = runs.findTop50ByOrderByCreatedAtDesc().map { runDto(it) },
         )
@@ -238,16 +241,115 @@ class SocialAiService(
                 ),
             )
         val day = DayContext(setting, date, boat, photos, draft)
-        val withVideo = setting.useVideo && props.higgsfieldConfigured
-        val photoChannels = channels.filter { !(withVideo && it.platform in VIDEO_PLATFORMS) && it.platform != SocialPlatform.YOUTUBE }
+        return makePosts(day, run, channels)
+    }
+
+    /** The day's photo post and, when the site wants video, its Reel; then the run's outcome. */
+    private fun makePosts(
+        day: DayContext,
+        run: SocialAiRun,
+        channels: List<SocialAccount>,
+    ): SocialAiRun {
+        val boat = day.boat
+        val video = videoPlan(day.setting, day.photos.size)
+        val videoChannels = if (video == VideoPlan.NONE) emptyList() else channels.filter { it.platform in VIDEO_PLATFORMS }
+        // TikTok and YouTube take the video only; Facebook and Instagram get the photo post and, later the same day, the Reel.
+        val photoChannels = channels.filter { it.platform !in VIDEO_ONLY || (it.platform == SocialPlatform.TIKTOK && video == VideoPlan.NONE) }
         val photoPost = if (photoChannels.isEmpty()) null else createPhotoPost(day, photoChannels)
-        val videoQueued = withVideo && queueVideo(day, run, channels.filter { it.platform in VIDEO_PLATFORMS }, photoPost?.id)
+        val reelError =
+            if (video == VideoPlan.OWN_REEL && videoChannels.isNotEmpty()) runCatching { createOwnReelPost(day, videoChannels, photoPost?.id) }.exceptionOrNull() else null
+        val videoQueued = video == VideoPlan.HIGGSFIELD && queueVideo(day, run, videoChannels, photoPost?.id)
         return updateRun(run.id!!) {
             it.status = if (videoQueued) SocialAiRunStatus.WAITING_VIDEO else SocialAiRunStatus.DONE
-            it.topic = "yacht:${boat.id} ${boat.facts["name"] ?: boat.slug}: ${draft.topic}".take(TOPIC_MAX)
+            it.topic = "yacht:${boat.id} ${boat.facts["name"] ?: boat.slug}: ${day.draft.topic}".take(TOPIC_MAX)
             it.postId = photoPost?.id
+            it.error = reelError?.let { e -> "Reel: ${e.message ?: e.javaClass.simpleName}".take(ERROR_MAX) }
         }
     }
+
+    private enum class VideoPlan { NONE, HIGGSFIELD, OWN_REEL }
+
+    /** Video for the day: Higgsfield when its keys are set, otherwise our own Reel from the day's photos (ffmpeg, no outside service). */
+    private fun videoPlan(
+        setting: SocialAiSetting,
+        photoCount: Int,
+    ): VideoPlan =
+        when {
+            !setting.useVideo -> VideoPlan.NONE
+            props.higgsfieldConfigured -> VideoPlan.HIGGSFIELD
+            photoCount >= SocialReelMaker.MIN_PHOTOS && reels.unavailableReason() == null -> VideoPlan.OWN_REEL
+            else -> VideoPlan.NONE
+        }
+
+    /** Our own Reel from the day's photos, as the day's video post. */
+    private fun createOwnReelPost(
+        day: DayContext,
+        videoChannels: List<SocialAccount>,
+        photoPostId: Long?,
+    ) {
+        val video = reels.make(day.photos, null, "reel:yacht:${day.boat.id}:${day.date}")
+        createVideoPost(
+            VideoPostSpec(
+                site = day.setting.site,
+                videoId = video.id!!,
+                link = day.boat.url,
+                note = videoNote(day),
+                targets = videoChannels.map { a -> SocialTargetRequest(a.id!!, videoText(a, day.draft), videoTitle(a, day.draft)) },
+                date = day.date,
+                afterPhotoPost = photoPostId != null,
+            ),
+        )
+    }
+
+    private data class VideoPostSpec(
+        val site: String?,
+        val videoId: Long,
+        val link: String?,
+        val note: String?,
+        val targets: List<SocialTargetRequest>,
+        val date: LocalDate,
+        val afterPhotoPost: Boolean,
+    )
+
+    /** The day's video post (draft, or scheduled per the site's setting; a few hours after the photo post when there is one). */
+    private fun createVideoPost(spec: VideoPostSpec): SocialPostDto {
+        val post =
+            postService.create(
+                SocialPostRequest(
+                    text = spec.targets.firstOrNull()?.text ?: "",
+                    link = spec.link,
+                    mediaIds = listOf(spec.videoId),
+                    targets = spec.targets,
+                    action = SocialPostAction.DRAFT,
+                    note = spec.note,
+                ),
+                AI_ACTOR,
+                spec.site,
+            )
+        val setting = spec.site?.let { settings.findById(it).orElse(null) }
+        if (setting != null && !setting.requireApproval) {
+            runCatching { schedule(post.id, setting, spec.date, if (spec.afterPhotoPost) REEL_AFTER_PHOTO else Duration.ZERO) }
+                .onFailure { log.warn("AI video post {} not scheduled: {}", post.id, it.message) }
+        }
+        return post
+    }
+
+    private fun videoNote(day: DayContext) = "AI ${day.date} video: ${day.boat.facts["name"] ?: day.boat.slug}"
+
+    private fun videoText(
+        a: SocialAccount,
+        d: AiPostDraft,
+    ): String =
+        when (a.platform) {
+            SocialPlatform.YOUTUBE -> d.youtubeDescription
+            SocialPlatform.FACEBOOK, SocialPlatform.INSTAGRAM -> d.instagramCaption
+            else -> d.tiktokCaption
+        }
+
+    private fun videoTitle(
+        a: SocialAccount,
+        d: AiPostDraft,
+    ): String? = if (a.platform == SocialPlatform.YOUTUBE) d.youtubeTitle else null
 
     /** Everything one site's run produced before the posts: the setting, the day, the boat, our photos and the texts. */
     private data class DayContext(
@@ -292,7 +394,7 @@ class SocialAiService(
                             SocialTargetRequest(
                                 a.id!!,
                                 textFor(a, draft),
-                                if (a.platform == SocialPlatform.TIKTOK) draft.topic.take(TIKTOK_TITLE) else null,
+                                if (a.platform == SocialPlatform.TIKTOK || a.platform == SocialPlatform.PINTEREST) draft.topic.take(TIKTOK_TITLE) else null,
                             )
                         },
                     action = SocialPostAction.DRAFT,
@@ -340,13 +442,14 @@ class SocialAiService(
                         "runId" to run.id,
                         "date" to date.toString(),
                         "link" to boat.url,
-                        "note" to "AI $date video: ${boat.facts["name"] ?: boat.slug}",
+                        "note" to videoNote(day),
+                        "afterPhotoPost" to (photoPostId != null),
                         "targets" to
                             videoChannels.map { a ->
                                 mapOf(
                                     "accountId" to a.id,
-                                    "text" to if (a.platform == SocialPlatform.YOUTUBE) draft.youtubeDescription else draft.tiktokCaption,
-                                    "title" to if (a.platform == SocialPlatform.YOUTUBE) draft.youtubeTitle else null,
+                                    "text" to videoText(a, draft),
+                                    "title" to videoTitle(a, draft),
                                 )
                             },
                     )
@@ -397,24 +500,18 @@ class SocialAiService(
         val targets = (g.payload["targets"] as? List<Map<String, Any?>>).orEmpty()
         val site = g.payload["site"] as? String
         val post =
-            postService.create(
-                SocialPostRequest(
-                    text = targets.firstOrNull()?.get("text") as? String ?: "",
+            createVideoPost(
+                VideoPostSpec(
+                    site = site,
+                    videoId = video.id!!,
                     link = g.payload["link"] as? String,
-                    mediaIds = listOf(video.id!!),
-                    targets = targets.map { SocialTargetRequest((it["accountId"] as Number).toLong(), it["text"] as? String, it["title"] as? String) },
-                    action = SocialPostAction.DRAFT,
                     note = g.payload["note"] as? String,
+                    targets = targets.map { SocialTargetRequest((it["accountId"] as Number).toLong(), it["text"] as? String, it["title"] as? String) },
+                    date = LocalDate.parse(g.payload["date"] as String),
+                    afterPhotoPost = g.payload["afterPhotoPost"] == true,
                 ),
-                AI_ACTOR,
-                site,
             )
         g.payload["videoPostId"] = post.id
-        val setting = site?.let { settings.findById(it).orElse(null) }
-        if (setting != null && !setting.requireApproval) {
-            runCatching { schedule(post.id, setting, LocalDate.parse(g.payload["date"] as String)) }
-                .onFailure { log.warn("AI video post {} not scheduled: {}", post.id, it.message) }
-        }
         finishGeneration(g, failed = false, error = null)
     }
 
@@ -439,10 +536,11 @@ class SocialAiService(
         postId: Long,
         setting: SocialAiSetting,
         date: LocalDate,
+        after: Duration = Duration.ZERO,
     ) {
         val post = postService.get(postId)
         val at =
-            ZonedDateTime.of(date, LocalTime.parse(setting.publishTime), ZONE).toInstant().let {
+            ZonedDateTime.of(date, LocalTime.parse(setting.publishTime), ZONE).toInstant().plus(after).let {
                 if (it.isBefore(Instant.now().plusSeconds(MIN_LEAD_S))) Instant.now().plusSeconds(LATE_LEAD_S) else it
             }
         postService.update(
@@ -465,7 +563,7 @@ class SocialAiService(
         d: AiPostDraft,
     ): String =
         when (a.platform) {
-            SocialPlatform.X, SocialPlatform.BLUESKY, SocialPlatform.THREADS -> d.shortText
+            SocialPlatform.X, SocialPlatform.BLUESKY, SocialPlatform.THREADS, SocialPlatform.PINTEREST -> d.shortText
             SocialPlatform.INSTAGRAM -> d.instagramCaption
             SocialPlatform.TIKTOK -> d.tiktokCaption
             SocialPlatform.YOUTUBE -> d.youtubeDescription
@@ -512,7 +610,9 @@ class SocialAiService(
     companion object {
         val ZONE: ZoneId = ZoneId.of("Europe/Zagreb")
         val AI_ACTOR = SocialActor(userId = null, name = "AI", source = SocialPostSource.AI)
-        private val VIDEO_PLATFORMS = setOf(SocialPlatform.TIKTOK, SocialPlatform.YOUTUBE)
+        private val VIDEO_PLATFORMS = setOf(SocialPlatform.FACEBOOK, SocialPlatform.INSTAGRAM, SocialPlatform.TIKTOK, SocialPlatform.YOUTUBE)
+        private val VIDEO_ONLY = setOf(SocialPlatform.TIKTOK, SocialPlatform.YOUTUBE)
+        private val REEL_AFTER_PHOTO: Duration = Duration.ofHours(3)
         private val TIME = Regex("""^([01]\d|2[0-3]):[0-5]\d$""")
         private val LANGUAGES = setOf("en", "hr", "de", "it", "fr", "es", "pl", "nl")
         private val YACHT_REF = Regex("""yacht:(\d+)""")

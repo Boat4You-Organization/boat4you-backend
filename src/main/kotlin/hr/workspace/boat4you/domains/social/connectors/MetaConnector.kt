@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component
  * page's token.
  *
  * Facebook: text/link → `/{page}/feed`; one photo → `/{page}/photos`; several → unpublished photos + `attached_media`;
- * video → `/{page}/videos` with `file_url`. Instagram: container (`image_url` / Reels `video_url` / carousel of
+ * vertical video of 3–90 s → Reel (`/{page}/video_reels`), other video → `/{page}/videos` with `file_url`. Instagram: container (`image_url` / Reels `video_url` / carousel of
  * children) → wait for `status_code = FINISHED` → `media_publish` → `permalink`.
  */
 @Component
@@ -132,6 +132,7 @@ class MetaConnector(
         val video = job.media.firstOrNull { it.kind == SocialMediaKind.VIDEO }
         val photos = job.media.filter { it.kind == SocialMediaKind.IMAGE }
         return when {
+            video != null && isReel(video) -> publishFacebookReel(page, token, video, job)
             video != null -> {
                 val id =
                     pointOfNoReturn(FACEBOOK) {
@@ -176,6 +177,34 @@ class MetaConnector(
                 PublishResult(id, "https://www.facebook.com/$id")
             }
         }
+    }
+
+    /** Facebook Reels take a vertical video of 3–90 s; anything else (or a video we could not measure) is a normal page video. */
+    private fun isReel(video: PublishMedia): Boolean {
+        val (w, h, d) = Triple(video.width, video.height, video.durationSec)
+        return w != null && h != null && d != null && h > w && d in REEL_MIN_S..REEL_MAX_S
+    }
+
+    /** Reels API: start an upload session, hand Facebook our public file URL, then finish with `video_state=PUBLISHED`. */
+    private fun publishFacebookReel(
+        page: String,
+        token: String,
+        video: PublishMedia,
+        job: PublishJob,
+    ): PublishResult {
+        val start = http.postForm("$graph/$page/video_reels", mapOf("upload_phase" to "start", "access_token" to token))
+        val videoId = start.path("video_id").asText("").ifBlank { throw PublishException("Facebook did not start the Reel upload") }
+        val uploadUrl = start.path("upload_url").asText("").ifBlank { "https://rupload.facebook.com/video-upload/${props.metaGraphVersion}/$videoId" }
+        http.postBytes(uploadUrl, ByteArray(0), "application/octet-stream", mapOf("Authorization" to "OAuth $token", "file_url" to video.url))
+        pointOfNoReturn(FACEBOOK) {
+            val done =
+                http.postForm(
+                    "$graph/$page/video_reels",
+                    mapOf("upload_phase" to "finish", "video_id" to videoId, "video_state" to "PUBLISHED", "description" to withLink(job), "access_token" to token),
+                )
+            if (!done.path("success").asBoolean(false)) throw notConfirmed(FACEBOOK, "the Reel was not confirmed")
+        }
+        return PublishResult(videoId, "https://www.facebook.com/reel/$videoId")
     }
 
     /** A photo post has no link preview: the link goes at the end of the text unless it is already there. */
@@ -249,6 +278,8 @@ class MetaConnector(
             "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,business_management"
         const val POLLS = 120
         const val POLL_MS = 5000L
+        const val REEL_MIN_S = 3
+        const val REEL_MAX_S = 90
         const val FACEBOOK = "Facebook"
         const val INSTAGRAM = "Instagram"
     }

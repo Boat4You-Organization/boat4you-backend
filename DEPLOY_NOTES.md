@@ -1,5 +1,21 @@
 # Backend deploy notes
 
+## 2026-11-12 — 🎬 Objave: Reels (vlastiti video od fotki, Facebook Reels, AI dnevni Reel) + Pinterest — ⏳ NIJE DEPLOYANO (grana `claude/blissful-wright-sn6a9f`, bez migracije)
+
+Mario 12.11.2026: „krenimo s reelsima, u međuvremenu ćemo spojiti Pinterest, Threads, Bluesky“; bez plaćanja (mreže su nam dokaz da su brendovi živi + vidljivost za AI/SEO).
+
+- **`SocialReelMaker`** (ffmpeg na našem serveru, bez vanjskog servisa): 2–10 fotki → okomiti MP4 1080×1920, H.264 30 fps + tihi AAC, svaka fotka cijela preko zamućene kopije, polagani zoom, pretapanje; ~3 s po fotki (6–30 s). Sprema se kao svaki video (origin GENERATED). `POST /admin/social/media/reel {mediaIds}` (gumb „Napravi Reel od ovih fotki“ u novoj objavi).
+- **Facebook Reels:** okomiti video 3–90 s ide kroz `/{page}/video_reels` (start → `rupload.facebook.com` s `file_url` → finish `video_state=PUBLISHED`), link `facebook.com/reel/{id}`; ostali video kao do sada `/{page}/videos`. Ista dopuštenja (`pages_manage_posts`). Treba ffprobe (dimenzije i trajanje), bez njega video ostaje običan.
+- **AI dnevni Reel:** „Dnevni Reel (video)“ po sajtu više ne traži Higgsfield: bez ključeva radimo vlastiti Reel od fotki broda; s ključevima ostaje Higgsfield. Video ide na Facebook + Instagram (Reel), TikTok, YouTube (Shorts). Facebook i Instagram zadrže i objavu s fotkama, Reel se zakazuje 3 h kasnije; TikTok i YouTube samo video. Greška Reela piše u runu („Reel: …“), objava s fotkama svejedno izlazi.
+- **Pinterest konektor** (API v5): jedna prijava → svaka ploča (board) = kanal (ploča po sajtu); pin = 1 fotka + naslov + opis + link na brod; token 30 dana, sam se obnavlja. Video pinovi još ne (pravilo: 0 videa). Env `SOCIAL_PINTEREST_APP_ID` / `SOCIAL_PINTEREST_APP_SECRET` na oba čvora; redirect URI u Pinterest aplikaciji: `https://api.boat4you.com/public/social/oauth/pinterest/callback`. ⚠️ Nova Pinterest aplikacija ima trial pristup: pinove vidimo samo mi dok Pinterest ne odobri standard access.
+- **Testovi:** `domains.social.*` 44/44 lokalno (SocialHibernateValidateTest treba Docker, ovdje se ne može pokrenuti; entiteti nisu dirani): FB Reel pozivi i redoslijed, ležeći/dugi/neizmjereni video ostaje običan, Pinterest prijava/pin/refresh, ffmpeg naredba + pravi 1080×1920 video. detekt bez novih nalaza. Nije viđeno protiv pravog Facebooka ni Pinteresta.
+
+Deploy:
+
+- [ ] **ffmpeg + ffprobe na cusma2 i cusma3** (`apt-get install -y ffmpeg`) — bez toga nema Reelsa (admin piše „ffmpeg nije instaliran“), a FB video ne postaje Reel.
+- [ ] Jar na oba čvora (bez migracije), zatim admin.
+- [ ] Pinterest: aplikacija na developers.pinterest.com, env na oba čvora, po jedna ploča za svaki sajt, pa „Spoji“ u adminu.
+
 ## ⚠️ Od 11.11.2026 `main` = ŽIVA LINIJA backenda (Mario: stavka 8)
 
 Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 commita). Od 11.11.2026 12:16 UTC: **ono što je uživo na cusma2 je na `origin/main`**, i svaki sljedeći jar se gradi s `main` ili ga sadrži.

@@ -35,6 +35,8 @@ object TestProps {
         linkedinClientSecret = "",
         linkedinScopes = "openid profile w_member_social",
         linkedinVersion = "202510",
+        pinterestAppId = "pin-app",
+        pinterestAppSecret = "pin-secret",
         blueskyService = "https://bsky.social",
         anthropicApiKey = "",
         anthropicBaseUrl = "https://api.anthropic.com",
