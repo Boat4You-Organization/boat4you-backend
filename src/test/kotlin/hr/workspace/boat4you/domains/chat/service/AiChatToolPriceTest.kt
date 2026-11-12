@@ -133,12 +133,13 @@ class AiChatToolPriceTest {
     }
 
     @Test
-    fun `a stay shorter than a Saturday week is refused before any search, a Saturday week passes`() {
+    fun `a stay shorter than a Saturday week is refused, a Saturday week passes`() {
         search(emptyList(), end = "2027-07-05").model.path("error").asText() shouldContain "Saturday to Saturday"
+        yachtCalls shouldBe 0 // under 3 nights: refused before any search
         search(emptyList(), end = "2027-07-06").model.path("error").asText() shouldContain "Saturday to Saturday"
-        yachtCalls shouldBe 0
+        yachtCalls shouldBe 1 // searched only for a boat really offered on exactly those days; none is
         search(emptyList(), end = "2027-07-10").model.has("error") shouldBe false
-        yachtCalls shouldBe 1
+        yachtCalls shouldBe 2
     }
 
     @Test

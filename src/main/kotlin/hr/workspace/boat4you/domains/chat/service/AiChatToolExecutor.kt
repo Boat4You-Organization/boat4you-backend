@@ -71,6 +71,11 @@ class AiChatToolExecutor(
         const val MIN_NIGHTS = 3
         const val MAX_NIGHTS = 28
 
+        /** With a boat really offered on days other than Saturday to Saturday (rare, Mario 12.11.2026). */
+        const val OFF_STANDARD_NOTE =
+            "these boats really are offered on exactly the asked days, which is unusual - our charters normally run Saturday to " +
+                "Saturday; mention them as such and you may also offer the nearestWeeks"
+
         /** A window search covers at most this many Saturday weeks (one API call each) and lists this many boats. */
         const val MAX_WINDOW_WEEKS = 6
         const val MAX_WINDOW_LIST = 12
@@ -314,9 +319,9 @@ class AiChatToolExecutor(
         if (start != null && end != null && end.isAfter(start) && start.isBefore(today)) {
             return pastDates(start, end, today).copy(search = criteria(null, emptyList(), 0, null))
         }
-        if (start != null && end != null && end.isAfter(start)) {
-            notSaturdayWeek(start, end)?.let { return it.copy(search = criteria(null, emptyList(), 0, null)) }
-        }
+        // Not a Saturday week: searched only to find the rare boat really offered on exactly these days (Mario 12.11.2026).
+        val offDay = if (start != null && end != null && end.isAfter(start)) notSaturdayWeek(start, end) else null
+        if (offDay != null && days !in MIN_NIGHTS..MAX_NIGHTS) return offDay.copy(search = criteria(null, emptyList(), 0, null))
         if (days !in MIN_NIGHTS..MAX_NIGHTS) {
             return ToolOutcome(
                 """{"error":"invalid date range — use YYYY-MM-DD, $MIN_NIGHTS to $MAX_NIGHTS nights"}""",
@@ -439,6 +444,7 @@ class AiChatToolExecutor(
             ordered.mapNotNull { y ->
                 if (!inFleet(site, y)) return@mapNotNull null
                 val offer = pricedOffer(y, days, startDate, endDate) ?: return@mapNotNull null
+                if (offDay != null && !offeredExactly(y, startDate, endDate)) return@mapNotNull null
                 if (maxTotalPriceEur in 1 until offer.total) return@mapNotNull null
                 if (minTotalPriceEur > 0 && offer.total < minTotalPriceEur) return@mapNotNull null
                 y to offer
@@ -551,8 +557,13 @@ class AiChatToolExecutor(
                 put("vesselNote", "$vesselType is not offered on this site; searched ${site.fleetLabel} instead")
             }
             set<JsonNode>("yachts", forModel)
+            if (offDay != null) {
+                put("offStandardNote", OFF_STANDARD_NOTE)
+                set<JsonNode>("nearestWeeks", objectMapper.readTree(offDay.resultForModel).path("nearestWeeks"))
+            }
             if (taken == 0) put("hint", "no results — suggest relaxing filters (dates, budget, cabins, equipment) or a nearby area")
         }
+        if (offDay != null && taken == 0) return offDay.copy(search = criteria(resolved, sentEquipment, 0, totalAvailable))
         return ToolOutcome(
             objectMapper.writeValueAsString(result),
             if (taken > 0) cards else null,
@@ -934,10 +945,10 @@ class AiChatToolExecutor(
         val end = runCatching { LocalDate.parse(endDate) }.getOrNull()
         val nights = if (start != null && end != null) ChronoUnit.DAYS.between(start, end).toInt() else 0
         val today = LocalDate.now(clock)
-        if (start != null && end != null && end.isAfter(start)) {
-            if (start.isBefore(today)) return pastDates(start, end, today)
-            notSaturdayWeek(start, end)?.let { return it }
-        }
+        if (start != null && end != null && end.isAfter(start) && start.isBefore(today)) return pastDates(start, end, today)
+        // Not a Saturday week: confirmed only when the boat really is offered on exactly these days (Mario 12.11.2026).
+        val offDay = if (start != null && end != null && end.isAfter(start)) notSaturdayWeek(start, end) else null
+        if (offDay != null && nights !in MIN_NIGHTS..MAX_NIGHTS) return offDay
         if (start == null || end == null || nights !in MIN_NIGHTS..MAX_NIGHTS) {
             return ToolOutcome("""{"error":"invalid date range — use YYYY-MM-DD, $MIN_NIGHTS to $MAX_NIGHTS nights"}""")
         }
@@ -971,6 +982,7 @@ class AiChatToolExecutor(
             objectMapper.readTree(body).path("content")
                 .firstOrNull { (it.path("id").asLong(0) == id || it.path("slug").asText() == slug) && inFleet(site, it) }
         val offer = row?.let { pricedOffer(it, nights, startDate, endDate) }
+        if (offDay != null && (row == null || offer == null || !offeredExactly(row, startDate, endDate))) return offDay
         if (row == null || offer == null) {
             val result =
                 objectMapper.createObjectNode().apply {
@@ -998,6 +1010,7 @@ class AiChatToolExecutor(
                 put("endDate", offer.to)
                 put("nights", offer.nights)
                 put("dates", offer.dates)
+                if (offDay != null) put("offStandardNote", OFF_STANDARD_NOTE)
                 putPositive("cabins", row.path("cabins"))
                 put("base", row.path("location").path("name").asText("").ifBlank { boat.path("location").path("name").asText("") })
                 if (site.scoped) {
@@ -1048,8 +1061,6 @@ class AiChatToolExecutor(
                 .retrieve().body(String::class.java)
                 .let { objectMapper.readTree(it) }
                 .filter { it.path("status").asText() == "FREE" }
-                // Saturday weeks only (Mario 12.11.2026): a free Sunday week would be offered and then refused by check_boat.
-                .filter { o -> isoDate(o.path("dateFrom"))?.let { LocalDate.parse(it).dayOfWeek == DayOfWeek.SATURDAY } == true }
                 .mapNotNull { o -> isoDate(o.path("dateFrom"))?.let { from -> isoDate(o.path("dateTo"))?.let { to -> "$from to $to" } } }
                 .distinct()
                 .sorted()
@@ -1312,6 +1323,13 @@ class AiChatToolExecutor(
      * [MAX_NIGHTS] nights, else the rule and the nearest Saturday weeks of about the asked length (the Saturday on or before
      * the asked start, and the one after it when the start is not a Saturday), none of them in the past.
      */
+    /** A search row whose OWN offer window is exactly the asked one (a row without offer dates never counts). */
+    private fun offeredExactly(
+        y: JsonNode,
+        startDate: String,
+        endDate: String,
+    ): Boolean = isoDate(y.path("offerDateFrom")) == startDate && isoDate(y.path("offerDateTo")) == endDate
+
     internal fun notSaturdayWeek(
         start: LocalDate,
         end: LocalDate,
@@ -1332,7 +1350,7 @@ class AiChatToolExecutor(
                     "error" to "not bookable - our charters run Saturday to Saturday only, in whole weeks (7, 14, 21 or 28 nights)",
                     "askedDates" to "$start (${start.dayOfWeek.name.lowercase()}) to $end (${end.dayOfWeek.name.lowercase()})",
                     "nearestWeeks" to nearest,
-                    "hint" to "nothing was searched; never say you will check these dates. In this reply tell the visitor kindly that " +
+                    "hint" to "no boat is offered on these days; never say you will check these dates. In this reply tell the visitor kindly that " +
                         "charters run Saturday to Saturday only, offer the nearestWeeks and ask which one they want, then search or " +
                         "check that week",
                 ),
