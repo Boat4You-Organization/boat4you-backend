@@ -24,6 +24,7 @@ enum class ApiErrorCodes(
     OAUTH_EMAIL_MISSING(1016, "We couldn't get an email from that account — please sign up with email instead."),
     REQUEST_NOT_PARSEABLE(1101, "Request JSON not parseable"),
     INVALID_REQUEST_PARAMETERS(1102, "Invalid request parameters"),
+    REQUEST_NOT_SUPPORTED(1103, "Request method or content type not supported"),
     USER_ALREADY_EXISTS(1201, "User already exists"),
     USER_DOES_NOT_EXIST(1202, "User does not exist"),
     USERS_DO_NOT_EXIST(1203, "Users do not exist"),

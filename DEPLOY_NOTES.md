@@ -6,6 +6,18 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-12 — ⏳ NIJE LIVE (grana `fix/unknown-route-404`): nepostojeća ruta = 404, ne 500
+
+**Greška (stara, nije od Mollie/Stripe promjena):** zahtjev koji nijedan kontroler ne poslužuje (nepostojeća adresa pod `/public/**`, kriva metoda, krivi `Content-Type`) padao je u opći `@ExceptionHandler(Exception::class)` u `ApiErrorHandler` → `500 {"code":1000,"message":"Unknown error"}` i `ERROR Unhandled exception` sa stack traceom u logu. Potvrđeno uživo 12.11.: `GET /public/nema-toga` → 500, `DELETE /public/payments/custom/config` → 500.
+
+**Popravak (bez migracije, bez promjene env-a):** `ApiErrorHandler.handleRequestNotServed` hvata `NoHandlerFoundException`, `NoResourceFoundException`, `HttpRequestMethodNotSupportedException` i `HttpMediaTypeException` i vraća Springov status (404 / 405 / 415 / 406) i zaglavlja (`Allow`); tijelo 404 = `4004 Requested resource not found`, ostalo = novi kod `1103 Request method or content type not supported`. Putanja se ne zapisuje u log (krivo upisana adresa može nositi tajni ključ `/pay` linka), samo `debug` s imenom iznimke.
+
+**Provjereno:** `ApiErrorHandlerRoutingTests` (4; prije popravka 3 padaju), postojeći testovi kontrolera prolaze. **Nije provjereno:** cijeli test paket; ponašanje iza Spring Securityja na živom čvoru (adrese izvan `/public/**` bez prijave i dalje su 403 prije MVC-a).
+
+**Tko to primijeti:** nitko od naših klijenata ne čita kod `1000` za nepostojeću rutu; `PrApiController.unknownRoute` (vlastiti 404 za `/api/pr/v1/**`) ostaje kako je.
+
+**Deploy:** nije hitno, ide uz idući backend deploy (merge grane u `main` prije builda). Nakon deploya: `curl https://api.boat4you.com/public/nema-toga` → 404.
+
 ## 2026-11-11 — ✅ LIVE oba čvora (cusma2 18:41, cusma3 18:41 UTC): filter dužine = METRI na svim jezicima — jar `6858cc2b3213e73547913d2dc206a989` (208 MB), `main` `85bcca9f`, tag `live/2026-11-11-length-metres`
 
 **Greška:** `GET /public/yachts` je `minLength` / `maxLength` na `Accept-Language: en` čitao kao STOPE (`YachtSearchParamObject.get*LengthInMeters`), a klizač dužine na b4y i svih 6 sister stranica radi u metrima (4–56 m) na svim jezicima. Na engleskim stranicama „do 20 m“ = 20 ft = 6,1 m → 0 plovila (b4y `/en` i catamaran-croatia-charter.com potvrđeno uživo), „od 12 m“ je propuštao i plovila od 10,9 m. `distribution` i `relax-suggest` su oduvijek metri, pa se brojevi uz opcije na engleskom nisu slagali s listom.
