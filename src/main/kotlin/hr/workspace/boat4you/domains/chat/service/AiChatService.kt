@@ -686,6 +686,7 @@ class AiChatService(
             }
             val contentBlocks = response.path("content")
             val stopReason = response.path("stop_reason").asText()
+            val roundStart = spoken.size
             if (stopReason == "max_tokens" && contentBlocks.any { it.path("type").asText() == "tool_use" }) {
                 // Its text only announces a search that never ran: not sent, a bare "searching now" is worse than an apology.
                 log.warn("chat reply of session {} cut off twice while calling tools: not sent", session.id)
@@ -752,6 +753,8 @@ class AiChatService(
                     return AssistantResult.Lock(DIR_MODEL, ChatSecurityGuard.Hit("MANIPULATION", "SECURITY_HANDOFF"), lastVisitorLine(session))
                 }
                 val outcome = executeTool(session, name, block.path("input"), page)
+                // Refused dates (not a Saturday week, Allison 12.11.2026): "Sure, let me check" next to the call is not sent.
+                if (outcome.dropsRoundText) while (spoken.size > roundStart) spoken.removeAt(spoken.size - 1)
                 TOTAL_IN_RESULT.findAll(outcome.resultForModel).forEach { knownTotals += it.groupValues[1].toInt() }
                 outcome.search?.let(searches::add)
                 if (outcome.cards != null) pendingCards = outcome.cards

@@ -6,6 +6,24 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-12 — ✅ LIVE cusma2 10:22 UTC (cusma3 čeka prozor, i dalje `6858cc2b`): Iris — charteri samo subota–subota + nepostojeća ruta 404 — jar `fe6cd2ff5c2247c7727e54a194197013` (218 MB), `main` `d62c7850`, tag `live/2026-11-12-iris-saturday`
+
+**Povod (Mario 12.11.):** Allison (Europe Yachts, CC c/85) pitala je „from 9th or 11th“ svibnja; Iris je odgovorila „Sure, let me check those two boats“ i tražila od nedjelje 9.5.
+
+**Promjena (bez migracije, bez env-a):**
+- `search_yachts` i `check_boat` odbijaju sve što nije subota + 7/14/21/28 noći PRIJE ikakvog upita; rezultat nosi `nearestWeeks` (subota prije/na i iduća, iste duljine u tjednima).
+- Tekst koji je model napisao uz odbijeni poziv („let me check“) se ne šalje (`ToolOutcome.dropsRoundText`).
+- Slobodni tjedni kod zauzetog broda = samo subotnji; savjet za prošle datume = subotnji tjedan godinu dalje; prompt „FIXED RULE“.
+- Spojen `fix/unknown-route-404` (vidi unos ispod): nepostojeća ruta = 404/405/415 umjesto 500.
+
+**Provjereno:** cijeli test 2316 (0 padova, 4 preskočena) + ktlint; Opus pregled (2 važna nalaza popravljena: „let me check“ uvod, nedjeljni slobodni tjedni); Flyway preflight „will apply: none“; prije deploya md5 živog jara cusma2 = `f45f93c1` (zadnji `live/*`), cusma3 = `6858cc2b`. Uživo 10:23 UTC: `/public/nema-toga` → 404 (4004); `card-surcharge` 200; `/public/payments/custom/config` 404 (8002); `/webhooks/mollie` 200; 7 × lažni `X-Forwarded-For` na `/public/inquiries` → 400 ×5, 429 ×2 (F1-022 zaštita i dalje radi). Iris uživo (sesija „Tom“, boat4you): „Trogir, 4 osobe, 9.–11.5.2027“ → odmah pravilo subota–subota + 8.–15.5., bez „let me check“; nakon izbora tjedna kartice brodova.
+
+**cusma3:** ide izravno s `6858cc2b` na ovaj jar (planirani cusma3 deploy `f45f93c1` u 13:00 otkazan, ovaj jar ga sadrži).
+
+**Otvoreno (Mario):** „nearby“ ponude na karticama mogu imati vlastiti ne-subotnji termin broda (checkinFri/checkinSun, Karibi); `check_boat` bi te datume odbio.
+
+**Rollback:** `webservice.jar.prev` na cusma2 = `f45f93c1`.
+
 ## 2026-11-12 — ✅ LIVE cusma2 09:10 UTC (cusma3 čeka prozor 13:00 UTC): lažni `X-Forwarded-For` više ne zaobilazi ograničenja (F1-022) — jar `f45f93c1734650c6a37e9878e4c104c0` (208 MB), `main` `d83aad8f`, tag `live/2026-11-12-ratelimit-forwarders`
 
 **Greška:** `PublicEndpointRateLimiter` je za upite, rezervacije, plaćanja, recenzije i auth uzimao lijevu vrijednost `X-Forwarded-For` od bilo koga. Tko zove API izravno, mijenjao je zaglavlje i dobivao novi budžet za svaki zahtjev. Ista adresa se spremala uz sesiju prijave i u GDPR zapis.
@@ -21,6 +39,18 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 **Otvoreno, nije u ovom jaru:** (1) portovi 3001–3008 na cusma1/cusma5: tko zove Next izravno, mimo nginxa, može mu podmetnuti `X-Real-IP`, a web ga prosljeđuje kao pouzdan; zatvara firewall (Pondi). (2) boat4you-web akcije za prijavu, registraciju, reset lozinke, gostinsku rezervaciju i set-password ne prosljeđuju adresu posjetitelja, pa svi www posjetitelji dijele budžet adrese `.180` (staro stanje, popravak u web repou).
 
 **Rollback:** `webservice.jar.prev` na cusma2 = `6858cc2b`.
+
+## 2026-11-12 — ✅ LIVE s jarom `fe6cd2ff` (cusma2 10:22 UTC, unos iznad): nepostojeća ruta = 404, ne 500
+
+**Greška (stara, nije od Mollie/Stripe promjena):** zahtjev koji nijedan kontroler ne poslužuje (nepostojeća adresa pod `/public/**`, kriva metoda, krivi `Content-Type`) padao je u opći `@ExceptionHandler(Exception::class)` u `ApiErrorHandler` → `500 {"code":1000,"message":"Unknown error"}` i `ERROR Unhandled exception` sa stack traceom u logu. Potvrđeno uživo 12.11.: `GET /public/nema-toga` → 500, `DELETE /public/payments/custom/config` → 500.
+
+**Popravak (bez migracije, bez promjene env-a):** `ApiErrorHandler.handleRequestNotServed` hvata `NoHandlerFoundException`, `NoResourceFoundException`, `HttpRequestMethodNotSupportedException` i `HttpMediaTypeException` i vraća Springov status (404 / 405 / 415 / 406) i zaglavlja (`Allow`); tijelo 404 = `4004 Requested resource not found`, ostalo = novi kod `1103 Request method or content type not supported`. Putanja se ne zapisuje u log (krivo upisana adresa može nositi tajni ključ `/pay` linka), samo `debug` s imenom iznimke.
+
+**Provjereno:** `ApiErrorHandlerRoutingTests` (4; prije popravka 3 padaju), postojeći testovi kontrolera prolaze. **Nije provjereno:** cijeli test paket; ponašanje iza Spring Securityja na živom čvoru (adrese izvan `/public/**` bez prijave i dalje su 403 prije MVC-a).
+
+**Tko to primijeti:** u `src` boat4you-weba i admina nema grananja po kodu `1000` (grep 12.11.; 6 sistera nije pregledano); `PrApiController.unknownRoute` (vlastiti 404 za `/api/pr/v1/**`) ostaje kako je.
+
+**Deploy:** nije hitno, ide uz idući backend deploy (merge grane u `main` prije builda). Nakon deploya: `curl https://api.boat4you.com/public/nema-toga` → 404.
 
 ## 2026-11-11 — ✅ LIVE oba čvora (cusma2 18:41, cusma3 18:41 UTC): filter dužine = METRI na svim jezicima — jar `6858cc2b3213e73547913d2dc206a989` (208 MB), `main` `85bcca9f`, tag `live/2026-11-11-length-metres`
 

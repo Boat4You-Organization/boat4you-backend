@@ -58,11 +58,16 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.security.access.AccessDeniedException
+import org.springframework.web.ErrorResponse
+import org.springframework.web.HttpMediaTypeException
+import org.springframework.web.HttpRequestMethodNotSupportedException
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.MissingServletRequestParameterException
 import org.springframework.web.bind.annotation.ControllerAdvice
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+import org.springframework.web.servlet.NoHandlerFoundException
+import org.springframework.web.servlet.resource.NoResourceFoundException
 import java.sql.SQLException
 
 @ControllerAdvice
@@ -873,6 +878,28 @@ internal class ApiErrorHandler {
             ),
             HttpStatus.BAD_REQUEST,
         )
+    }
+
+    /**
+     * A request no controller serves: unknown path, a method the path does not take, a content type it does not read
+     * or cannot answer in. The caller's mistake, so it keeps Spring's own status (404, 405, 415, 406) and headers
+     * (`Allow`, `Accept`) instead of falling into the generic 500 below. The path is not logged: a mistyped address
+     * can carry a secret of the caller.
+     */
+    @ExceptionHandler(
+        NoHandlerFoundException::class,
+        NoResourceFoundException::class,
+        HttpRequestMethodNotSupportedException::class,
+        HttpMediaTypeException::class,
+    )
+    fun handleRequestNotServed(e: Exception): ResponseEntity<ErrorSchema> {
+        val status = (e as? ErrorResponse)?.statusCode ?: HttpStatus.NOT_FOUND
+        val error = if (status == HttpStatus.NOT_FOUND) ApiErrorCodes.RESOURCE_NOT_FOUND else ApiErrorCodes.REQUEST_NOT_SUPPORTED
+        logger.debug("{} -> {}", e.javaClass.simpleName, status.value())
+        return ResponseEntity
+            .status(status)
+            .headers((e as? ErrorResponse)?.headers ?: HttpHeaders.EMPTY)
+            .body(ErrorSchema(error.code, error.message))
     }
 
     @ExceptionHandler(Exception::class)

@@ -54,6 +54,8 @@ class AiChatToolExecutor(
         val cards: ArrayNode? = null,
         val blogs: ArrayNode? = null,
         val search: SearchCriteria? = null,
+        /** Dates that are not a Saturday week were refused: the text the model wrote next to the call ("let me check") is not sent. */
+        val dropsRoundText: Boolean = false,
     )
 
     private companion object {
@@ -305,18 +307,21 @@ class AiChatToolExecutor(
         if (countryCode.isBlank() || startDate.isBlank() || endDate.isBlank()) {
             return ToolOutcome("""{"error":"countryCode, startDate and endDate are required"}""", search = criteria(null, emptyList(), 0, null))
         }
-        val days = runCatching {
-            ChronoUnit.DAYS.between(LocalDate.parse(startDate), LocalDate.parse(endDate)).toInt()
-        }.getOrDefault(0)
+        val start = runCatching { LocalDate.parse(startDate) }.getOrNull()
+        val end = runCatching { LocalDate.parse(endDate) }.getOrNull()
+        val days = if (start != null && end != null) ChronoUnit.DAYS.between(start, end).toInt() else 0
+        val today = LocalDate.now(clock)
+        if (start != null && end != null && end.isAfter(start) && start.isBefore(today)) {
+            return pastDates(start, end, today).copy(search = criteria(null, emptyList(), 0, null))
+        }
+        if (start != null && end != null && end.isAfter(start)) {
+            notSaturdayWeek(start, end)?.let { return it.copy(search = criteria(null, emptyList(), 0, null)) }
+        }
         if (days !in MIN_NIGHTS..MAX_NIGHTS) {
             return ToolOutcome(
                 """{"error":"invalid date range — use YYYY-MM-DD, $MIN_NIGHTS to $MAX_NIGHTS nights"}""",
                 search = criteria(null, emptyList(), 0, null),
             )
-        }
-        val today = LocalDate.now(clock)
-        if (LocalDate.parse(startDate).isBefore(today)) {
-            return pastDates(LocalDate.parse(startDate), LocalDate.parse(endDate), today).copy(search = criteria(null, emptyList(), 0, null))
         }
 
         if (site.scoped && countryCode !in site.countryCodes) {
@@ -928,11 +933,14 @@ class AiChatToolExecutor(
         val start = runCatching { LocalDate.parse(startDate) }.getOrNull()
         val end = runCatching { LocalDate.parse(endDate) }.getOrNull()
         val nights = if (start != null && end != null) ChronoUnit.DAYS.between(start, end).toInt() else 0
+        val today = LocalDate.now(clock)
+        if (start != null && end != null && end.isAfter(start)) {
+            if (start.isBefore(today)) return pastDates(start, end, today)
+            notSaturdayWeek(start, end)?.let { return it }
+        }
         if (start == null || end == null || nights !in MIN_NIGHTS..MAX_NIGHTS) {
             return ToolOutcome("""{"error":"invalid date range — use YYYY-MM-DD, $MIN_NIGHTS to $MAX_NIGHTS nights"}""")
         }
-        val today = LocalDate.now(clock)
-        if (start.isBefore(today)) return pastDates(start, end, today)
         val boat =
             try {
                 client.get().uri(UriComponentsBuilder.fromUriString(selfBaseUrl).path("/public/yachts/{slug}").build(slug))
@@ -1040,6 +1048,8 @@ class AiChatToolExecutor(
                 .retrieve().body(String::class.java)
                 .let { objectMapper.readTree(it) }
                 .filter { it.path("status").asText() == "FREE" }
+                // Saturday weeks only (Mario 12.11.2026): a free Sunday week would be offered and then refused by check_boat.
+                .filter { o -> isoDate(o.path("dateFrom"))?.let { LocalDate.parse(it).dayOfWeek == DayOfWeek.SATURDAY } == true }
                 .mapNotNull { o -> isoDate(o.path("dateFrom"))?.let { from -> isoDate(o.path("dateTo"))?.let { to -> "$from to $to" } } }
                 .distinct()
                 .sorted()
@@ -1205,7 +1215,8 @@ class AiChatToolExecutor(
                 )
             it.putObject("minLengthFt").put("type", "integer").put("description", "Optional minimum length in feet")
             it.putObject("maxLengthFt").put("type", "integer").put("description", "Optional maximum length in feet")
-            it.putObject("startDate").put("type", "string").put("description", "YYYY-MM-DD; the charter lasts $MIN_NIGHTS to $MAX_NIGHTS nights")
+            it.putObject("startDate").put("type", "string")
+                .put("description", "YYYY-MM-DD, a Saturday: charters run Saturday to Saturday only, 7, 14, 21 or 28 nights")
             it.putObject("endDate").put("type", "string").put("description", "YYYY-MM-DD")
             it
                 .putObject("windowStart")
@@ -1257,7 +1268,7 @@ class AiChatToolExecutor(
                 "(leave boat out) or one from a card (its slug) - and above all when they say \"yes, check it\".",
         ) {
             it.putObject("boat").put("type", "string").put("description", "The boat's slug from a card or url; leave out for the CURRENT PAGE boat")
-            it.putObject("startDate").put("type", "string").put("description", "YYYY-MM-DD")
+            it.putObject("startDate").put("type", "string").put("description", "YYYY-MM-DD, a Saturday (Saturday to Saturday, whole weeks)")
             it.putObject("endDate").put("type", "string").put("description", "YYYY-MM-DD")
         })
         tools.add(tool(
@@ -1296,6 +1307,40 @@ class AiChatToolExecutor(
     }
 
     /**
+     * Charters run Saturday to Saturday only, in whole weeks (Mario 12.11.2026: Allison asked "from the 9th or 11th" of May and
+     * IRIS said "Sure, let me check"). Other dates are never searched or checked: null for a Saturday week of 7 to
+     * [MAX_NIGHTS] nights, else the rule and the nearest Saturday weeks of about the asked length (the Saturday on or before
+     * the asked start, and the one after it when the start is not a Saturday), none of them in the past.
+     */
+    internal fun notSaturdayWeek(
+        start: LocalDate,
+        end: LocalDate,
+    ): ToolOutcome? {
+        val nights = ChronoUnit.DAYS.between(start, end).toInt()
+        if (start.dayOfWeek == DayOfWeek.SATURDAY && nights % 7 == 0 && nights in 7..MAX_NIGHTS) return null
+        val weeks = ((nights + 3) / 7).coerceIn(1, MAX_NIGHTS / 7)
+        val before = start.with(TemporalAdjusters.previousOrSame(DayOfWeek.SATURDAY))
+        val today = LocalDate.now(clock)
+        val nearest =
+            (if (before == start) listOf(start) else listOf(before, before.plusWeeks(1)))
+                .filter { !it.isBefore(today) }
+                .map { "$it to ${it.plusWeeks(weeks.toLong())}" }
+        return ToolOutcome(
+            dropsRoundText = true,
+            resultForModel = objectMapper.writeValueAsString(
+                mapOf(
+                    "error" to "not bookable - our charters run Saturday to Saturday only, in whole weeks (7, 14, 21 or 28 nights)",
+                    "askedDates" to "$start (${start.dayOfWeek.name.lowercase()}) to $end (${end.dayOfWeek.name.lowercase()})",
+                    "nearestWeeks" to nearest,
+                    "hint" to "nothing was searched; never say you will check these dates. In this reply tell the visitor kindly that " +
+                        "charters run Saturday to Saturday only, offer the nearestWeeks and ask which one they want, then search or " +
+                        "check that week",
+                ),
+            ),
+        )
+    }
+
+    /**
      * Dates before today (Mario 3.11.2026: in November, "middle to end of June" was searched as the June just gone and a visitor
      * was shown a week that had passed): never searched; the model is told the next time the same dates come.
      */
@@ -1305,11 +1350,14 @@ class AiChatToolExecutor(
         today: LocalDate,
     ): ToolOutcome {
         val years = generateSequence(1L) { it + 1 }.first { !from.plusYears(it).isBefore(today) }
+        // The same dates a year on fall on another weekday: the Saturday week(s) nearest to them (Mario 12.11.2026).
+        val weeks = ((ChronoUnit.DAYS.between(from, to).toInt() + 3) / 7).coerceIn(1, MAX_NIGHTS / 7).toLong()
+        val next = from.plusYears(years).let { d -> d.with(TemporalAdjusters.previousOrSame(DayOfWeek.SATURDAY)).takeIf { !it.isBefore(today) } ?: d.with(TemporalAdjusters.next(DayOfWeek.SATURDAY)) }
         return ToolOutcome(
             objectMapper.writeValueAsString(
                 mapOf(
                     "error" to "these dates are in the past (today is $today) - nothing can be booked for them",
-                    "hint" to "a date without a year is the next time it comes: search ${from.plusYears(years)} to ${to.plusYears(years)}, " +
+                    "hint" to "a date without a year is the next time it comes: search the Saturday week $next to ${next.plusWeeks(weeks)}, " +
                         "or ask the visitor which year they mean",
                 ),
             ),

@@ -133,10 +133,11 @@ class AiChatToolPriceTest {
     }
 
     @Test
-    fun `a 2-night request is refused before any search, 3 nights pass`() {
-        search(emptyList(), end = "2027-07-05").model.path("error").asText() shouldContain "3 to 28 nights"
+    fun `a stay shorter than a Saturday week is refused before any search, a Saturday week passes`() {
+        search(emptyList(), end = "2027-07-05").model.path("error").asText() shouldContain "Saturday to Saturday"
+        search(emptyList(), end = "2027-07-06").model.path("error").asText() shouldContain "Saturday to Saturday"
         yachtCalls shouldBe 0
-        search(emptyList(), end = "2027-07-06").model.has("error") shouldBe false
+        search(emptyList(), end = "2027-07-10").model.has("error") shouldBe false
         yachtCalls shouldBe 1
     }
 
