@@ -1,15 +1,11 @@
 package hr.workspace.boat4you.security.services
 
+import hr.workspace.boat4you.common.ratelimit.ClientIp
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.stereotype.Component
 
 @Component
 class ClientIpResolver {
-    fun resolve(request: HttpServletRequest): String {
-        val xff = request.getHeader("X-Forwarded-For")
-        if (!xff.isNullOrBlank()) {
-            return xff.split(",").first().trim().take(64)
-        }
-        return (request.remoteAddr ?: "").take(64)
-    }
+    /** The address stored with a login session: never a forged `X-Forwarded-For` ([ClientIp], F1-022). */
+    fun resolve(request: HttpServletRequest): String = ClientIp.of(request).take(64)
 }

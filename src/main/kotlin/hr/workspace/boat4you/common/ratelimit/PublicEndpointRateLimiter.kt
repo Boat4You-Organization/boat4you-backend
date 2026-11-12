@@ -52,9 +52,11 @@ import java.util.concurrent.ConcurrentHashMap
  *  - `POST /public/cc/v1/visit|beat|handoff` (Contact Center tracker,
  *    26.10.2026): 60 / 600 / 10 per 10 min, keyed on X-Real-IP; own nginx
  *    zone `cc_tracker_zone`.
- *  - Chat rules key on X-Real-IP since 26.10.2026 (BACKEND-22); inquiries,
- *    reviews, reservations and auth keep the left-most X-Forwarded-For, which
- *    boat4you-web server actions fill with the visitor IP.
+ *  - Chat rules key on X-Real-IP since 26.10.2026 (BACKEND-22). Inquiries,
+ *    reviews, reservations, payments and auth key on [ClientIp] since
+ *    12.11.2026 (F1-022): X-Real-IP, or the left-most X-Forwarded-For when the
+ *    caller is one of our web servers, whose server-side calls put the visitor
+ *    IP there.
  *  - `POST /public/payments/custom/orders` (5 / 10 min) and
  *    `GET /public/payments/custom/orders/{token}` (30 / min) — the secret
  *    `/pay/<key>` card payments (13.10.2026): each create opens a Mollie
@@ -79,12 +81,10 @@ import java.util.concurrent.ConcurrentHashMap
  * each VM has its own budget, and a distributed attacker across many
  * IPs bypasses per-IP tracking anyway. Nginx `limit_req` is the real
  * defense; this is cheap insurance until that lands (F1-003 + F1-022
- * are tracked as DEFERRED-Faza7 nginx batch). Trusting X-Forwarded-For
- * blindly is also a known issue (F1-022) — same nginx batch fixes it
- * via `proxy_add_x_forwarded_for`. The chat and tracker rules therefore key
- * on X-Real-IP (BACKEND-22: the browser calls them straight on api, where
- * the left-most XFF entry is client-forgeable); every other rule still
- * reads the left-most XFF.
+ * are tracked as DEFERRED-Faza7 nginx batch). Until 12.11.2026 every other
+ * rule read the left-most X-Forwarded-For from anyone, which a direct caller
+ * forges to get a fresh budget per request (F1-022); [ClientIp] now believes
+ * it from our own web servers only.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
@@ -161,7 +161,12 @@ class PublicEndpointRateLimiter(
     private val cardStatusCapacity: Int,
     @Value("\${application.rate-limit.card-status.window-seconds:60}")
     private val cardStatusWindowSeconds: Long,
+    /** Our own web servers: only their `X-Forwarded-For` names the visitor ([ClientIp]). */
+    @Value("\${application.rate-limit.trusted-forwarders:" + ClientIp.DEFAULT_TRUSTED_FORWARDERS + "}")
+    trustedForwarders: String = ClientIp.DEFAULT_TRUSTED_FORWARDERS,
 ) : OncePerRequestFilter() {
+    private val trustedForwarders = ClientIp.parseForwarders(trustedForwarders)
+
     internal var clock: Clock = Clock.systemUTC()
 
     private val log = LoggerFactory.getLogger(javaClass)
@@ -344,15 +349,8 @@ class PublicEndpointRateLimiter(
         rule: Rule,
     ): String {
         if (rule.realIp) return TrackerClientIp.of(request)
-        // Respect X-Forwarded-For when behind Nginx / CDN. Pick the left-most
-        // entry (original client). Falls back to socket address otherwise.
-        // F1-022: blindly trusting XFF is unsafe under the current nginx
-        // config; the real fix lives in the Faza 7 nginx batch.
-        val xff = request.getHeader("X-Forwarded-For")
-        if (!xff.isNullOrBlank()) return xff.split(",").first().trim()
-        val xri = request.getHeader("X-Real-IP")
-        if (!xri.isNullOrBlank()) return xri.trim()
-        return request.remoteAddr ?: "unknown"
+        // Everyone else: the connecting address, or the visitor address when one of our web servers forwards it (F1-022).
+        return ClientIp.of(request, trustedForwarders)
     }
 
     /**

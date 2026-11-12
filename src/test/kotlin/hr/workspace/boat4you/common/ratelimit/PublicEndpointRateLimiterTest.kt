@@ -10,7 +10,9 @@ import org.springframework.scheduling.annotation.Scheduled
 import java.time.Duration
 
 class PublicEndpointRateLimiterTest {
-    private val limiter =
+    private val limiter = newLimiter()
+
+    private fun newLimiter(trustedForwarders: String = ClientIp.DEFAULT_TRUSTED_FORWARDERS) =
         PublicEndpointRateLimiter(
             reservationCapacity = 5,
             reservationWindowSeconds = 60,
@@ -48,6 +50,7 @@ class PublicEndpointRateLimiterTest {
             cardCheckoutWindowSeconds = 600,
             cardStatusCapacity = 60,
             cardStatusWindowSeconds = 60,
+            trustedForwarders = trustedForwarders,
         )
 
     private fun hit(
@@ -90,7 +93,8 @@ class PublicEndpointRateLimiterTest {
         }
         // Not a numeric id: no rule matches (the controller answers 400/404 itself).
         repeat(30) { hit("/public/payments/card/create-checkout-session/abc").status shouldBe 200 }
-        hit("/public/payments/card/create-checkout-session/37", xff = "2.2.2.2").status shouldBe 200
+        hit("/public/payments/card/create-checkout-session/37", xff = "2.2.2.2").status shouldBe 429 // a stranger's XFF buys nothing
+        hit("/public/payments/card/create-checkout-session/37", xri = "91.98.209.180", xff = "2.2.2.2").status shouldBe 200
         // GET is not a checkout create.
         hit("/public/payments/card/create-checkout-session/37", method = "GET").status shouldBe 200
 
@@ -117,7 +121,71 @@ class PublicEndpointRateLimiterTest {
     }
 
     @Test
-    fun `tracker rules key on X-Real-IP, inquiries keep the left-most X-Forwarded-For`() {
+    fun `a forged X-Forwarded-For buys no budget on the rules a stranger can call directly`() { // F1-022
+        limiter.clock = CcTestClock() // frozen, so no rule refills while the loop runs
+        listOf(
+            "/public/inquiries" to 5,
+            "/public/reservations" to 5,
+            "/public/users/set-password-for-reservation" to 5,
+            "/auth/login" to 10,
+            "/auth/register" to 3,
+            "/auth/requestPasswordReset" to 3,
+            "/auth/register/verifyEmail" to 5,
+            "/public/reviews/request/tok" to 10,
+            "/public/payments/custom/orders" to 5,
+        ).forEach { (uri, budget) ->
+            repeat(budget) { hit(uri, xff = "10.1.0.$it").status shouldBe 200 }
+            hit(uri, xff = "10.9.9.9").status shouldBe 429
+            hit(uri, xff = "91.98.209.180").status shouldBe 429 // naming our server in the header is not being our server
+            hit(uri, xri = "203.0.113.8", xff = "10.9.9.9").status shouldBe 200 // another real address has its own budget
+        }
+    }
+
+    @Test
+    fun `each visitor of our web servers has an own budget, the sister server included`() {
+        limiter.clock = CcTestClock()
+        listOf("91.98.209.180", "91.98.209.185", "192.168.55.5").forEachIndexed { i, server ->
+            val visitor = "198.51.100.$i"
+            repeat(5) { hit("/public/inquiries", xri = server, xff = "$visitor, $server").status shouldBe 200 }
+            hit("/public/inquiries", xri = server, xff = visitor).status shouldBe 429
+            hit("/public/inquiries", xri = server, xff = "198.51.100.77").status shouldBe 200
+        }
+    }
+
+    @Test
+    fun `a web server call without a usable visitor address is keyed on the server`() {
+        limiter.clock = CcTestClock()
+        // nginx alone filled the header, a host name, an empty value: all the same bucket, never a DNS lookup or a free key.
+        listOf("91.98.209.185", "evil.example", "", "91.98.209.180", "not-an-ip, 1.1.1.1").forEach {
+            hit("/public/inquiries", xri = "91.98.209.185", xff = it).status shouldBe 200
+        }
+        hit("/public/inquiries", xri = "91.98.209.185", xff = "garbage").status shouldBe 429
+    }
+
+    @Test
+    fun `the trusted web servers are configurable`() {
+        val custom = newLimiter(" 203.0.113.50 , ").also { it.clock = CcTestClock() }
+
+        fun call(
+            xri: String,
+            xff: String,
+        ) = MockHttpServletResponse()
+            .also {
+                val req =
+                    MockHttpServletRequest("POST", "/public/inquiries").apply {
+                        addHeader("X-Real-IP", xri)
+                        addHeader("X-Forwarded-For", xff)
+                    }
+                custom.doFilter(req, it, MockFilterChain())
+            }.status
+        repeat(5) { call("91.98.209.180", "10.0.0.$it") shouldBe 200 } // no longer trusted: one bucket
+        call("91.98.209.180", "10.0.0.9") shouldBe 429
+        repeat(5) { call("203.0.113.50", "198.51.100.1") shouldBe 200 }
+        call("203.0.113.50", "198.51.100.2") shouldBe 200
+    }
+
+    @Test
+    fun `tracker rules key on X-Real-IP, inquiries take the visitor address from our web server`() {
         repeat(60) { hit("/public/cc/v1/visit", xff = "10.0.0.$it").status shouldBe 200 }
         hit("/public/cc/v1/visit", xff = "10.0.0.99").status shouldBe 429 // a forged XFF does not buy budget
         hit("/public/cc/v1/visit", xri = "203.0.113.8").status shouldBe 200
