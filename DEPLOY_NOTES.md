@@ -6,6 +6,10 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-12 — ✅ cusma3 18:37 UTC: isti jar kao cusma2 (`15f556fa138ef161ba063ea7041ddced`, `main` `644ab81c`) — oba čvora sada vrte Iris iznimku za ne-subotnje termine i Nikin `boat_facts`
+
+cusma3 je do 18:37 vrtio `fe6cd2ff` (bez `boat_facts`); pozive bira cusma3, pa Nika podatke o brodu dobiva tek od ovog restarta. Pokušaj u 13:27 UTC s jarom `724cf03c` zaustavio je gate (mmkFreeOfferReverify za 3 min), bez promjene na serveru. Deployan je isti jar koji je uživo na cusma2 (kopija iz `wt/iris-saturday`, md5 provjeren), ne novi build. Gate: prozor OK, nijedan cron u 15 min, shedlock prazan, 0 sync linija; Flyway „up to date“; start 14 s. Pozivi su i dalje isključeni (`calls.enabled=false`); `calls.transfer.number` još treba postati poslovni broj prije testa prebacivanja. Rollback cusma3: `webservice.jar.prev` = `fe6cd2ff`.
+
 ## 2026-11-12 — ✅ LIVE cusma2 10:55 UTC (cusma3 čeka prozor; pozivi idu s cusma3, pa Nika podatke dobiva tek tada): Nika zna osnovno o brodu (`boat_facts`) — jar `724cf03cb61db14554fffe579ad171e4` (208 MB), `main` `591c1fe8`, tag `live/2026-11-12-nika-boat-facts`
 
 **Povod (Mario 12.11.):** klijenti na pozivu pitaju koliko brod ima kabina i kupaonica, ima li hladnjak, klimu i slično, gdje je brod i koji je najbliži aerodrom. Nika je znala samo ime broda, datume i marinu.
