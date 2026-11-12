@@ -16,6 +16,14 @@ import hr.workspace.boat4you.domains.calls.service.CallOutcomeService
 import hr.workspace.boat4you.domains.calls.service.CallPlanner
 import hr.workspace.boat4you.domains.catalouge.capacity.CapacityFixtures
 import hr.workspace.boat4you.domains.catalouge.capacity.YachtCapacityMapper
+import hr.workspace.boat4you.domains.catalouge.enums.EntryType
+import hr.workspace.boat4you.domains.catalouge.enums.VesselType
+import hr.workspace.boat4you.domains.catalouge.jpa.Manufacturer
+import hr.workspace.boat4you.domains.catalouge.jpa.ManufacturerRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.Model
+import hr.workspace.boat4you.domains.catalouge.jpa.ModelRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.junit.jupiter.api.BeforeEach
@@ -25,6 +33,7 @@ import org.mockito.Mockito.clearInvocations
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.times
 import org.mockito.Mockito.verify
+import org.springframework.beans.factory.annotation.Autowired
 import java.nio.file.Files
 import java.time.Clock
 import java.time.Duration
@@ -64,10 +73,16 @@ class CallDispatcherTest : CallsJpaTest() {
         override fun deleteConversation(conversationId: String) = Unit
     }
 
+    @Autowired private lateinit var yachts: YachtRepository
+
+    @Autowired private lateinit var models: ModelRepository
+
+    @Autowired private lateinit var manufacturers: ManufacturerRepository
+
     private val api = FakeElevenLabs()
     private val notifier: CallNotifier = mock(CallNotifier::class.java)
     private val clock = Clock.fixed(now, ZoneOffset.UTC)
-    private val boatFacts = CallBoatFacts(YachtCapacityMapper(CapacityFixtures.sanitizer()), CapacityFixtures.mapper)
+    private val boatFacts by lazy { CallBoatFacts(YachtCapacityMapper(CapacityFixtures.sanitizer()), CapacityFixtures.mapper, yachts, txManager) }
     private val dispatcher by lazy {
         val outcomes =
             CallOutcomeService(
@@ -91,6 +106,36 @@ class CallDispatcherTest : CallsJpaTest() {
         api.n.set(0)
         clearInvocations(notifier)
         settings.write(mapOf("calls.enabled" to "true"))
+    }
+
+    @Test
+    fun `an inquiry about a stored boat is dialled with its facts, read inside the dispatcher's own transactions`() {
+        // As for inquiry.yacht_id in CallsJpaTest: the test dialect builds these nullable foreign keys as NOT NULL serials.
+        listOf("agency_id", "location_id").forEach { jdbc.execute("ALTER TABLE yacht ALTER COLUMN $it DROP NOT NULL, ALTER COLUMN $it DROP DEFAULT") }
+        val boat =
+            yachts.saveAndFlush(
+                Yacht().apply {
+                    name = "Anthea"
+                    vesselType = VesselType.CATAMARAN
+                    entryType = EntryType.EXTERNAL
+                    sysActive = true
+                    mainImageId = 0
+                    cabins = 4
+                    wc = 4
+                    model =
+                        models.saveAndFlush(
+                            Model().apply {
+                                name = "Lagoon 46"
+                                manufacturer = manufacturers.saveAndFlush(Manufacturer().apply { name = "Lagoon" })
+                            },
+                        )
+                },
+            )
+        val c = call(inquiry { yacht = boat }, scheduledAt = now.minusSeconds(30))
+        dispatcher.runOnce(now) shouldBe 1
+        api.dialled.single().second.getValue("boat_facts") shouldBe "Boat: catamaran\nCabins: 4, WC: 4"
+        api.dialled.single().second.getValue("inquiry_summary") shouldContain "Lagoon 46 Anthea"
+        calls.findById(c.id!!).get().status shouldBe CallStatus.DIALING
     }
 
     @Test

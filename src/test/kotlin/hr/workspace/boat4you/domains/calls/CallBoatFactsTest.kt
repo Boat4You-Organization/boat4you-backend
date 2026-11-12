@@ -19,11 +19,14 @@ import hr.workspace.boat4you.domains.catalouge.jpa.Model
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtCharterType
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtEquipment
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
 import io.kotest.matchers.ints.shouldBeLessThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.mock
+import org.springframework.transaction.PlatformTransactionManager
 import java.math.BigDecimal
 import java.time.Instant
 
@@ -32,7 +35,8 @@ import java.time.Instant
  * and the base. Never the agency or owner, never partner text, a gulet always crewed, nothing for an inquiry without a boat.
  */
 class CallBoatFactsTest {
-    private val facts = CallBoatFacts(YachtCapacityMapper(CapacityFixtures.sanitizer()), CapacityFixtures.mapper)
+    private val capacity = YachtCapacityMapper(CapacityFixtures.sanitizer())
+    private val facts = CallBoatFacts(capacity, CapacityFixtures.mapper, mock(YachtRepository::class.java), mock(PlatformTransactionManager::class.java))
 
     private fun yacht(configure: Yacht.() -> Unit = {}) =
         Yacht().apply {
@@ -94,7 +98,7 @@ class CallBoatFactsTest {
             Cabins: 4, berths: 10 (8 in cabins + 2 in the saloon), WC: 4, max people on board: 10
             Charter: bareboat
             Equipment listed for this boat: fridge, air conditioning, generator, watermaker, dinghy, outboard engine, autopilot, wifi
-            Base: Marina Baotić, Trogir, Croatia
+            Home base: Marina Baotić, Trogir, Croatia
             Usual times: check-in from 17:00, check-out by 09:00
             """.trimIndent()
     }
@@ -145,6 +149,20 @@ class CallBoatFactsTest {
     }
 
     @Test
+    fun `equipment the partner marks as absent is not listed`() {
+        val boat =
+            yacht {
+                equip("fridge", "air-conditioning", "generator", "dinghy")
+                yachtEquipments.first { it.equipment?.labelCode == "air-conditioning" }.comment = "No"
+                yachtEquipments.first { it.equipment?.labelCode == "generator" }.quantity = BigDecimal.ZERO
+                defaultCheckin = "25:99"
+            }
+        val text = facts.describe(boat)
+        text shouldContain "Equipment listed for this boat: fridge, dinghy\n"
+        text shouldNotContain "check-in"
+    }
+
+    @Test
     fun `crewed and mixed boats say so, an untagged boat says nothing about the charter`() {
         facts.describe(yacht { charter(CharterType.CREWED) }) shouldContain "Charter: crewed"
         facts.describe(yacht { charter(CharterType.BAREBOAT, CharterType.ALL_INCLUSIVE) }) shouldContain "Charter: bareboat or crewed"
@@ -162,7 +180,7 @@ class CallBoatFactsTest {
                 defaultCheckout = "see contract of Odisej Ltd"
                 location = Location().apply { name = "Trogir, Marina Trogir" }
             }
-        facts.describe(bare) shouldBe "Boat: sailing yacht\nCabins: 3\nBase: Trogir, Marina Trogir"
+        facts.describe(bare) shouldBe "Boat: sailing yacht\nCabins: 3\nHome base: Trogir, Marina Trogir"
         // The model's length stands in for a boat without its own; a town already in the marina's name is said once.
         val fromModel =
             yacht {
@@ -175,7 +193,7 @@ class CallBoatFactsTest {
                     }
             }
         facts.describe(fromModel) shouldContain "11.9 m (39 ft)"
-        facts.describe(fromModel) shouldContain "Base: Trogir, Marina Trogir\n"
+        facts.describe(fromModel) shouldContain "Home base: Trogir, Marina Trogir\n"
         val everything = yacht { equip(*ALL_CODES) }
         facts.describe(everything).length shouldBeLessThan 700
     }

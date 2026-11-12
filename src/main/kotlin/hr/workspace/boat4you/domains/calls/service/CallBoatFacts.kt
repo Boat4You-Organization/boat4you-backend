@@ -9,9 +9,14 @@ import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.VesselType
 import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
+import hr.workspace.boat4you.domains.catalouge.services.isPresent
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.TransactionDefinition
+import org.springframework.transaction.support.TransactionTemplate
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -22,14 +27,38 @@ import java.math.RoundingMode
  * Only our own columns and our own words reach it: the capacity line is the one IRIS gets ([BoatFactsText], from the
  * public capacity block), equipment is named by our catalogue code and never by the partner's text or comment, and the
  * agency, the owner and the partner's notes are never read. A gulet is always crewed ([GuletRules]). No distances and no
- * airport: the data has none, and a guess is worse than "our booking manager confirms it by e-mail".
+ * airport: the data has none, and a guess is worse than "our booking manager confirms it by e-mail". The base is the
+ * boat's home base: a boat that spends a season elsewhere leaves from the base of that week's offer, which only the
+ * offer knows, so the line says "Home base" and the prompt sends the exact marina to the written offer.
  */
 @Component
 class CallBoatFacts(
     private val capacityMapper: YachtCapacityMapper,
     private val objectMapper: ObjectMapper,
+    private val yachts: YachtRepository,
+    txManager: PlatformTransactionManager,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
+
+    /** Its own read-only transaction: a failed read here must never touch the transaction that marks the call DIALING. */
+    private val readTx =
+        TransactionTemplate(txManager).apply {
+            propagationBehavior = TransactionDefinition.PROPAGATION_REQUIRES_NEW
+            isReadOnly = true
+        }
+
+    /** The facts of the boat with [yachtId], read apart from the caller's transaction; empty when there is none or the read fails. */
+    fun describeById(yachtId: Long?): String {
+        yachtId ?: return ""
+        return try {
+            readTx.execute { describe(yachts.findById(yachtId).orElse(null)) }.orEmpty()
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: RuntimeException,
+        ) {
+            log.warn("boat facts for yacht $yachtId could not be read, the call goes without them: ${e.message}")
+            ""
+        }
+    }
 
     /** Never fails the call: a boat that cannot be described is a call without boat facts. */
     fun describe(yacht: Yacht?): String {
@@ -60,7 +89,7 @@ class CallBoatFacts(
             BoatFactsText.capacityFacts(json),
             charterText(charter, gulet)?.let { "Charter: $it" },
             equipment(yacht).takeIf { it.isNotEmpty() }?.let { "Equipment listed for this boat: ${it.joinToString(", ")}" },
-            base(yacht.location)?.let { "Base: $it" },
+            base(yacht.location)?.let { "Home base: $it" },
             times(yacht),
         )
     }
@@ -72,7 +101,7 @@ class CallBoatFacts(
     ): String? {
         val type = if (gulet) "gulet" else yacht.vesselType?.takeIf { it != VesselType.OTHER }?.name?.lowercase()?.replace('_', ' ')
         val length =
-            (yacht.length ?: yacht.model?.length)?.takeIf { it.signum() > 0 }?.let { m ->
+            (yacht.length?.takeIf { it.signum() > 0 } ?: yacht.model?.length)?.takeIf { it.signum() > 0 }?.let { m ->
                 val feet = m.multiply(FEET_PER_METRE).setScale(0, RoundingMode.HALF_UP)
                 "${m.stripTrailingZeros().toPlainString()} m ($feet ft)"
             }
@@ -95,9 +124,12 @@ class CallBoatFacts(
         }
     }
 
-    /** The things a client asks about on the phone, in [ASKED_ABOUT] order, each said once. */
+    /**
+     * The things a client asks about on the phone, in [ASKED_ABOUT] order, each said once. Only rows the partner marks
+     * present, as on the boat page ([isPresent]: "air conditioning: no" is not air conditioning).
+     */
     private fun equipment(yacht: Yacht): List<String> {
-        val codes = yacht.yachtEquipments.mapNotNull { it.equipment?.labelCode }.toSet()
+        val codes = yacht.yachtEquipments.filter { it.isPresent() }.mapNotNull { it.equipment?.labelCode }.toSet()
         return ASKED_ABOUT.filter { (code, _) -> code in codes }.map { it.second }.distinct().take(EQUIPMENT_MAX)
     }
 
@@ -118,7 +150,7 @@ class CallBoatFacts(
     private companion object {
         val FEET_PER_METRE = BigDecimal("3.28084")
         const val EQUIPMENT_MAX = 16
-        val TIME = Regex("""^\d{1,2}[:.]\d{2}$""")
+        val TIME = Regex("""^([01]?\d|2[0-3])[:.][0-5]\d$""")
 
         /** Catalogue label code to the spoken word; the old alias codes say the same word as the code that replaced them. */
         val ASKED_ABOUT =
@@ -139,7 +171,7 @@ class CallBoatFacts(
                 "bow-thruster-deck" to "bow thruster",
                 "outside-GPS-plotter" to "chart plotter",
                 "electric-winches" to "electric winches",
-                "electric-toilet" to "electric toilets",
+                "electric-toilet" to "electric toilet",
                 "wifi" to "wifi",
                 "bimini" to "bimini",
                 "ice-maker" to "ice maker",
