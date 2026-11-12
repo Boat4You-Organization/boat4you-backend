@@ -26,7 +26,7 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Rollback:** `webservice.jar.prev` na cusma2 = `fe6cd2ff`.
 
-## 2026-11-12 — ✅ LIVE cusma2 10:22 UTC (cusma3 čeka prozor, i dalje `6858cc2b`): Iris — charteri samo subota–subota + nepostojeća ruta 404 — jar `fe6cd2ff5c2247c7727e54a194197013` (218 MB), `main` `d62c7850`, tag `live/2026-11-12-iris-saturday`
+## 2026-11-12 — ✅ LIVE cusma2 10:22 UTC, cusma3 13:06 UTC: Iris — charteri samo subota–subota + nepostojeća ruta 404 — jar `fe6cd2ff5c2247c7727e54a194197013` (218 MB), `main` `d62c7850`, tag `live/2026-11-12-iris-saturday`
 
 **Povod (Mario 12.11.):** Allison (Europe Yachts, CC c/85) pitala je „from 9th or 11th“ svibnja; Iris je odgovorila „Sure, let me check those two boats“ i tražila od nedjelje 9.5.
 
@@ -38,7 +38,9 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Provjereno:** cijeli test 2316 (0 padova, 4 preskočena) + ktlint; Opus pregled (2 važna nalaza popravljena: „let me check“ uvod, nedjeljni slobodni tjedni); Flyway preflight „will apply: none“; prije deploya md5 živog jara cusma2 = `f45f93c1` (zadnji `live/*`), cusma3 = `6858cc2b`. Uživo 10:23 UTC: `/public/nema-toga` → 404 (4004); `card-surcharge` 200; `/public/payments/custom/config` 404 (8002); `/webhooks/mollie` 200; 7 × lažni `X-Forwarded-For` na `/public/inquiries` → 400 ×5, 429 ×2 (F1-022 zaštita i dalje radi). Iris uživo (sesija „Tom“, boat4you): „Trogir, 4 osobe, 9.–11.5.2027“ → odmah pravilo subota–subota + 8.–15.5., bez „let me check“; nakon izbora tjedna kartice brodova.
 
-**cusma3:** ide izravno s `6858cc2b` na ovaj jar (planirani cusma3 deploy `f45f93c1` u 13:00 otkazan, ovaj jar ga sadrži).
+**cusma3:** 13:06 UTC izravno s `6858cc2b` na ovaj jar (planirani cusma3 deploy `f45f93c1` u 13:00 otkazan, ovaj jar ga sadrži). Gate prošao iz prve, „Schema up to date“, „Started“ 13:06:11. Rollback cusma3: `webservice.jar.prev` = `6858cc2b`.
+
+**⚠️ cusma2 od 10:55 UTC vozi Nika jar `724cf03c` (unos iznad), koji SADRŽI ovaj (`d62c7850` je predak `591c1fe8`).** Dok Nika jar ne dođe i na cusma3, cusma3 = `fe6cd2ff` (bez `boat_facts`).
 
 **Otvoreno (Mario):** „nearby“ ponude na karticama mogu imati vlastiti ne-subotnji termin broda (checkinFri/checkinSun, Karibi); `check_boat` bi te datume odbio.
 
