@@ -18,7 +18,7 @@ class CallReconcileJob(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    @Scheduled(cron = "0 */10 * * * *", zone = "UTC")
+    /** Every 10 minutes, called by [CallJobsTimer] on its own thread. */
     @SchedulerLock(name = "callReconcile", lockAtMostFor = "PT9M")
     fun reconcile() {
         runCatching { reconciler.runOnce(Instant.now()) }.onFailure { log.error("AI call reconcile failed", it) }

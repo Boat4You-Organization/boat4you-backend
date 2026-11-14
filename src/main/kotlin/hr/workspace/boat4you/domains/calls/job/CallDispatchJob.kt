@@ -4,11 +4,10 @@ import hr.workspace.boat4you.domains.calls.service.CallDispatcher
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Profile
-import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.Instant
 
-/** Every minute on the scheduler node: dial the due AI calls (nothing while calls.enabled is false). */
+/** The scheduler node dials the due AI calls (nothing while calls.enabled is false); [CallJobsTimer] runs it every minute. */
 @Profile("data-sync")
 @Component
 class CallDispatchJob(
@@ -16,7 +15,7 @@ class CallDispatchJob(
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
-    @Scheduled(cron = "0 * * * * *", zone = "UTC")
+    /** Every minute, called by [CallJobsTimer] on its own thread (not @Scheduled: the sync jobs can hold that whole pool). */
     @SchedulerLock(name = "callDispatch", lockAtMostFor = "PT5M")
     fun run() {
         runCatching { dispatcher.runOnce(Instant.now()) }
