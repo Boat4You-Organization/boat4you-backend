@@ -186,11 +186,13 @@ class AdminCallService(
     fun offerSent(
         inquiryId: Long,
         note: String?,
+        emailText: String? = null,
+        emailSentAt: Instant? = null,
     ) {
         if ((note?.trim()?.length ?: 0) > CallPlanner.OFFER_NOTE_MAX) {
             throw ParameterValidationException(mapOf("note" to "at most ${CallPlanner.OFFER_NOTE_MAX} characters"))
         }
-        planner.onOfferSent(exists(inquiryId), note)
+        planner.onOfferSent(exists(inquiryId), note, emailText, emailSentAt)
     }
 
     @Transactional
@@ -281,6 +283,8 @@ class AdminCallService(
             doNotCall = i.doNotCall,
             offerSentAt = i.offerSentAt,
             offerNote = i.offerNote,
+            offerEmailText = i.offerEmailText,
+            offerEmailSentAt = i.offerEmailSentAt,
             humanTakeoverAt = i.humanTakeoverAt,
         )
 

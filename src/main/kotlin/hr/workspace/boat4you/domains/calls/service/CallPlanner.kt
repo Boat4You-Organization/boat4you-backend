@@ -60,6 +60,8 @@ class CallPlanner(
     fun onOfferSent(
         inquiryId: Long,
         note: String?,
+        emailText: String? = null,
+        emailSentAt: Instant? = null,
     ) {
         val inquiry = inquiries.findById(inquiryId).orElseThrow()
         val text = note?.trim()?.takeIf { it.isNotEmpty() }
@@ -67,6 +69,9 @@ class CallPlanner(
         val now = now()
         inquiry.offerSentAt = now
         inquiry.offerNote = text
+        // A new "Ponuda poslana" replaces the e-mail too: no text = the earlier offer's e-mail must not reach the new call.
+        inquiry.offerEmailText = emailText?.trim()?.takeIf { it.isNotEmpty() }
+        inquiry.offerEmailSentAt = inquiry.offerEmailText?.let { emailSentAt ?: now }
         inquiries.save(inquiry)
         // Conditional updates, never entity saves: the dialler may have just moved the row to DIALING, and that must stand.
         jdbc.update(

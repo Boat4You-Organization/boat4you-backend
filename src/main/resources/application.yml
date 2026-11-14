@@ -379,6 +379,11 @@ calls:
     agent-id: ${ELEVENLABS_AGENT_ID:}
     phone-number-id: ${ELEVENLABS_PHONE_NUMBER_ID:}
     webhook-secret: ${ELEVENLABS_WEBHOOK_SECRET:}
+  # Offer e-mail Nika reads (Mario 14.11.2026): site mailboxes on cPanel IMAP, only in the cusma2 env file
+  # (infra/deploy-scripts/offer_mail_env_set.sh). Empty = off, the admin keeps the one-sentence note.
+  offer-mail:
+    mailboxes: ${CALLS_OFFER_MAILBOXES:}
+    host: ${CALLS_OFFER_MAIL_HOST:}
 
 # Search engine statistics (Contact Center F1, Mario 3.11.2026): SearchImportJob on the scheduler node copies Google Search
 # Console and Bing Webmaster Tools into V9_119. Both are read-only and live only in boat4youscheduler_vars.env on cusma3:

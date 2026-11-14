@@ -31,6 +31,24 @@ class PartnerNameMatcher private constructor(
         return false
     }
 
+    /** Every name the text contains, folded, the longest at each word (the offer e-mail redaction needs the words, not a yes/no). */
+    fun findAll(text: String): Set<String> {
+        if (names.isEmpty()) return emptySet()
+        val words = fold(text).split(' ').filter { it.isNotEmpty() }
+        val found = LinkedHashSet<String>()
+        for (start in words.indices) {
+            var phrase = ""
+            var longest: String? = null
+            for (len in 1..maxWords) {
+                if (start + len > words.size) break
+                phrase = if (len == 1) words[start] else phrase + " " + words[start + len - 1]
+                if (phrase in names) longest = phrase
+            }
+            longest?.let { found += it }
+        }
+        return found
+    }
+
     companion object {
         private val MARKS = Regex("\\p{M}+")
         private val NON_ALNUM = Regex("[^\\p{L}\\p{N}]+")

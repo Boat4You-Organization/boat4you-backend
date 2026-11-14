@@ -39,8 +39,20 @@ class CallRetention(
                 Timestamp.from(now.minus(CallReconciler.EVENT_GIVE_UP)),
             )
         val events = jdbc.update("DELETE FROM call_webhook_event WHERE received_at < ?", Timestamp.from(now.minus(EVENT_RETENTION)))
-        if (deleted > 0 || stripped > 0 || events > 0) {
-            log.info("Call retention: {} recording(s) deleted, {} orphan recording(s) stripped, {} webhook event(s) deleted", deleted, stripped, events)
+        // The offer e-mail Nika read lives as long as a recording: it is needed for the follow-up call only.
+        val offers =
+            jdbc.update(
+                "UPDATE inquiry SET offer_email_text = NULL WHERE offer_email_text IS NOT NULL AND COALESCE(offer_email_sent_at, offer_sent_at) < ?",
+                Timestamp.from(now.minus(Duration.ofDays(days))),
+            )
+        if (deleted > 0 || stripped > 0 || events > 0 || offers > 0) {
+            log.info(
+                "Call retention: {} recording(s) deleted, {} orphan recording(s) stripped, {} webhook event(s) deleted, {} offer e-mail(s) cleared",
+                deleted,
+                stripped,
+                events,
+                offers,
+            )
         }
     }
 

@@ -82,6 +82,7 @@ class CallContextBuilderTest {
         v["language"] shouldBe "it"
         v["inquiry_kind"] shouldBe "follow_up"
         v["offer_summary"] shouldBe "Lagoon 46, 12.–19.6., 11.900 €"
+        v["offer_email"] shouldBe ""
         v["client_timezone"] shouldBe "Europe/Rome"
     }
 

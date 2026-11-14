@@ -3,6 +3,9 @@ package hr.workspace.boat4you.domains.calls
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsClient
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsProperties
+import hr.workspace.boat4you.domains.calls.offermail.OfferMailReader
+import hr.workspace.boat4you.domains.calls.offermail.OfferMailService
+import hr.workspace.boat4you.domains.calls.offermail.OfferMailboxes
 import hr.workspace.boat4you.domains.calls.service.AdminCallService
 import hr.workspace.boat4you.domains.calls.service.CallAudioStore
 import hr.workspace.boat4you.domains.calls.service.CallBoatFacts
@@ -47,6 +50,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
     CallReconciler::class,
     CallRetention::class,
     AdminCallService::class,
+    OfferMailboxes::class,
+    OfferMailReader::class,
+    OfferMailService::class,
     ElevenLabsProperties::class,
     ElevenLabsClient::class,
     CallWebhookController::class,
@@ -76,6 +82,7 @@ class CallsWiringTest : CallsJpaTest() {
             AdminCallService::class.java,
             CallWebhookController::class.java,
             AdminCallController::class.java,
+            OfferMailService::class.java,
         ).forEach { context.getBean(it).shouldNotBeNull() }
         context.getBean(ElevenLabsProperties::class.java).configured shouldBe false // no keys in tests: nothing can be called
     }

@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.calls.dto.OfferSentRequest
 import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.enums.CallOutcome
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
+import hr.workspace.boat4you.domains.calls.offermail.OfferMailService
 import hr.workspace.boat4you.domains.calls.service.AdminCallService
 import hr.workspace.boat4you.domains.calls.service.CallRefusedException
 import org.springframework.core.io.FileSystemResource
@@ -33,6 +34,7 @@ import java.time.Instant
 @PreAuthorize("hasRole('SYSTEM_ADMIN')")
 class AdminCallController(
     private val service: AdminCallService,
+    private val offerMail: OfferMailService,
 ) {
     @GetMapping
     fun list(
@@ -94,7 +96,22 @@ class AdminCallController(
     fun offerSent(
         @PathVariable inquiryId: Long,
         @RequestBody(required = false) body: OfferSentRequest?,
-    ): ResponseEntity<Void> = noContent { service.offerSent(inquiryId, body?.note) }
+    ): ResponseEntity<Void> =
+        noContent {
+            val email = offerMail.sanitize(body?.emailText)
+            service.offerSent(inquiryId, body?.note, email.text, body?.emailSentAt?.takeIf { email.text != null })
+        }
+
+    /** The offer e-mail Mario sent this client, as Nika would get it (read-only look into the site mailboxes). */
+    @GetMapping("/inquiries/{inquiryId}/offer-email")
+    fun offerEmail(
+        @PathVariable inquiryId: Long,
+    ): ResponseEntity<OfferMailService.Preview> =
+        try {
+            ResponseEntity.ok(offerMail.preview(inquiryId))
+        } catch (e: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        }
 
     @PostMapping("/inquiries/{inquiryId}/do-not-call")
     fun doNotCall(

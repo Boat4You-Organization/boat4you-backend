@@ -41,6 +41,8 @@ object CallContextBuilder {
             "boat_facts" to boatFacts,
             "week_price_eur" to (details["weekPriceEur"]?.toString()?.toBigDecimalOrNull()?.toBigInteger()?.toString() ?: ""),
             "offer_summary" to (inquiry.offerNote ?: ""),
+            // The whole offer e-mail Mario sent, cleaned and without partner names (OfferMailService), empty when none.
+            "offer_email" to (inquiry.offerEmailText ?: ""),
             "transfer_allowed" to CallClock.transferAllowed(now, s).toString(),
             "transfer_hours_text" to CallClock.transferHoursText(s),
             "language" to NikaLanguage.forCall(call.toNumber ?: inquiry.phoneE164, call.language ?: inquiry.locale),

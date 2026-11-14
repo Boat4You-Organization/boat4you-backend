@@ -1,6 +1,7 @@
 package hr.workspace.boat4you.domains.calls
 
 import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
+import hr.workspace.boat4you.domains.calls.offermail.OfferMailService
 import hr.workspace.boat4you.domains.calls.service.AdminCallService
 import hr.workspace.boat4you.domains.calls.web.AdminCallController
 import org.junit.jupiter.api.AfterEach
@@ -43,12 +44,20 @@ class AdminCallSecurityTests {
         fun adminCallService(): AdminCallService = mock(AdminCallService::class.java)
 
         @Bean
-        fun adminCallController(service: AdminCallService) = AdminCallController(service)
+        fun offerMailService(): OfferMailService = mock(OfferMailService::class.java)
+
+        @Bean
+        fun adminCallController(
+            service: AdminCallService,
+            offerMail: OfferMailService,
+        ) = AdminCallController(service, offerMail)
     }
 
     @Autowired private lateinit var controller: AdminCallController
 
     @Autowired private lateinit var service: AdminCallService
+
+    @Autowired private lateinit var offerMail: OfferMailService
 
     private val mvc: MockMvc by lazy {
         MockMvcBuilders
@@ -60,7 +69,7 @@ class AdminCallSecurityTests {
     }
 
     @BeforeEach
-    fun resetMocks() = reset(service)
+    fun resetMocks() = reset(service, offerMail)
 
     @AfterEach
     fun clear() = SecurityContextHolder.clearContext()
@@ -85,6 +94,7 @@ class AdminCallSecurityTests {
             mvc.post("/admin/calls/inquiries/1/call-now", dsl = json("""{"confirmOutsideWindow":false}""")),
             mvc.post("/admin/calls/inquiries/1/human-takeover"),
             mvc.post("/admin/calls/inquiries/1/offer-sent", dsl = json("""{"note":"x"}""")),
+            mvc.get("/admin/calls/inquiries/1/offer-email"),
             mvc.post("/admin/calls/inquiries/1/do-not-call"),
             mvc.post("/admin/calls/1/resolve"),
             mvc.get("/admin/calls/settings"),
@@ -95,7 +105,7 @@ class AdminCallSecurityTests {
     fun `a non-admin user gets 403 on every endpoint`() {
         signIn("USER", "MANAGER")
         every().forEach { it.andExpect { status { isForbidden() } } }
-        verifyNoInteractions(service)
+        verifyNoInteractions(service, offerMail)
     }
 
     @Test
@@ -103,7 +113,7 @@ class AdminCallSecurityTests {
         SecurityContextHolder.getContext().authentication =
             AnonymousAuthenticationToken("key", "anonymousUser", listOf(SimpleGrantedAuthority("ROLE_ANONYMOUS")))
         every().forEach { it.andExpect { status { isForbidden() } } }
-        verifyNoInteractions(service)
+        verifyNoInteractions(service, offerMail)
     }
 
     @Test

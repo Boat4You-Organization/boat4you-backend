@@ -110,6 +110,8 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
+    // Offer e-mail reader (Nika, 14.11.2026): a real IMAP server in the test JVM, no network.
+    testImplementation("com.icegreen:greenmail-junit5:2.1.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5")
     testImplementation("io.kotest:kotest-assertions-core:$koTestVersion")
     testImplementation("io.kotest:kotest-runner-junit5:$koTestVersion")

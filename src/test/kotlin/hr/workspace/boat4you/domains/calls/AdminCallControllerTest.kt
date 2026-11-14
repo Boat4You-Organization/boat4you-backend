@@ -4,13 +4,21 @@ import hr.workspace.boat4you.common.errorhandling.ApiErrorHandler
 import hr.workspace.boat4you.domains.calls.enums.CallKind
 import hr.workspace.boat4you.domains.calls.enums.CallOutcome
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
+import hr.workspace.boat4you.domains.calls.offermail.OfferMailReader
+import hr.workspace.boat4you.domains.calls.offermail.OfferMailService
+import hr.workspace.boat4you.domains.calls.offermail.OfferMailboxes
 import hr.workspace.boat4you.domains.calls.service.AdminCallService
 import hr.workspace.boat4you.domains.calls.service.CallAudioStore
 import hr.workspace.boat4you.domains.calls.service.CallEligibility
 import hr.workspace.boat4you.domains.calls.service.CallPlanner
 import hr.workspace.boat4you.domains.calls.web.AdminCallController
+import hr.workspace.boat4you.domains.catalouge.capacity.PartnerTextSanitizer
+import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.Manufacturer
+import hr.workspace.boat4you.domains.catalouge.jpa.ManufacturerRepository
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
@@ -29,8 +37,17 @@ class AdminCallControllerTest : CallsJpaTest() {
     private val service by lazy {
         AdminCallService(calls, inquiries, jdbc, CallPlanner(calls, inquiries, settings, jdbc, clock), CallEligibility(calls, jdbc), settings, audio, clock)
     }
+    @Autowired private lateinit var agencies: AgencyRepository
+
+    @Autowired private lateinit var manufacturers: ManufacturerRepository
+
+    private val offerMail by lazy {
+        val sanitizer = PartnerTextSanitizer(agencies).apply { refreshExecutor = java.util.concurrent.Executor { it.run() } }
+        sanitizer.loadAgencyNames()
+        OfferMailService(OfferMailReader(OfferMailboxes("", "")), inquiries, sanitizer, manufacturers)
+    }
     private val mvc by lazy {
-        MockMvcBuilders.standaloneSetup(AdminCallController(service)).setControllerAdvice(ApiErrorHandler()).setMessageConverters(*CallsTestJson.converters()).build()
+        MockMvcBuilders.standaloneSetup(AdminCallController(service, offerMail)).setControllerAdvice(ApiErrorHandler()).setMessageConverters(*CallsTestJson.converters()).build()
     }
 
     private fun json(b: String): org.springframework.test.web.servlet.MockHttpServletRequestDsl.() -> Unit =
@@ -97,6 +114,32 @@ class AdminCallControllerTest : CallsJpaTest() {
         mvc.post("/admin/calls/inquiries/${i.id}/offer-sent", dsl = json("""{"note":"${"x".repeat(301)}"}""")).andExpect { status { isBadRequest() } }
         mvc.post("/admin/calls/inquiries/${i.id}/offer-sent", dsl = json("""{"note":"Lagoon 46, 11.900 €"}""")).andExpect { status { isNoContent() } }
         calls.findByInquiryIdOrderByCreatedAtDesc(i.id!!).single().kind shouldBe CallKind.FOLLOW_UP
+    }
+
+    @Test
+    fun `offer sent stores the e-mail text without charter company names, builders stay`() {
+        manufacturers.saveAndFlush(Manufacturer().apply { name = "Lagoon" })
+        val i = inquiry()
+        val body = """{"note":null,"emailText":"Dear Anna,\nLagoon 42 from the Sunsail base in Split, 7.850 EUR.","emailSentAt":"2026-11-03T08:00:00Z"}"""
+        mvc.post("/admin/calls/inquiries/${i.id}/offer-sent", dsl = json(body)).andExpect { status { isNoContent() } }
+        val saved = inquiries.findById(i.id!!).get()
+        saved.offerEmailText shouldBe "Dear Anna,\nLagoon 42 from the [charter company] base in Split, 7.850 EUR."
+        saved.offerEmailSentAt shouldBe Instant.parse("2026-11-03T08:00:00Z")
+
+        // A later "Ponuda poslana" without an e-mail must not leave the old text for the new call.
+        mvc.post("/admin/calls/inquiries/${i.id}/offer-sent", dsl = json("""{"note":"Bali 4.6"}""")).andExpect { status { isNoContent() } }
+        inquiries.findById(i.id!!).get().offerEmailText shouldBe null
+    }
+
+    @Test
+    fun `offer e-mail preview says when no mailboxes are configured`() {
+        val i = inquiry()
+        mvc.get("/admin/calls/inquiries/${i.id}/offer-email").andExpect {
+            status { isOk() }
+            jsonPath("$.configured") { value(false) }
+            jsonPath("$.found") { value(false) }
+        }
+        mvc.get("/admin/calls/inquiries/999999/offer-email").andExpect { status { isNotFound() } }
     }
 
     @Test

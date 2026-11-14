@@ -13,4 +13,7 @@ interface ManufacturerRepository : JpaRepository<Manufacturer, Long> {
         pageable: Pageable,
     ): Page<Manufacturer>
 
+    /** Every manufacturer name: a builder ("Lagoon", "Bali") is never redacted as a charter company in an offer e-mail. */
+    @Query("SELECT m.name FROM Manufacturer m WHERE m.name IS NOT NULL")
+    fun findAllNames(): List<String>
 }

@@ -62,6 +62,9 @@ class PartnerTextSanitizer(
         yachtNames: Collection<String?>,
     ): String? = CapacityNoteRules.capacityNote(text, dim, yachtNames) { matcher().matches(it) }
 
+    /** Every operator / agency name in a free text, folded (the offer e-mail Nika reads; Mario 14.11.2026). */
+    fun partnerNames(text: String): Set<String> = matcher().findAll(text)
+
     /** Startup (bean init, before the API serves): the first agency-name read, outside any request transaction. */
     @PostConstruct
     fun loadAgencyNames() = refreshAgencyNames()

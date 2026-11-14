@@ -110,6 +110,13 @@ open class Inquiry {
     @Column(name = "offer_note", length = 300)
     open var offerNote: String? = null
 
+    /** The offer e-mail Mario sent, cleaned (OfferMailText); Nika reads it in the follow-up call. Cleared after 30 days. */
+    @Column(name = "offer_email_text", columnDefinition = "TEXT")
+    open var offerEmailText: String? = null
+
+    @Column(name = "offer_email_sent_at")
+    open var offerEmailSentAt: Instant? = null
+
     /** Mario's "Nazvat ću sam": no more AI calls for this inquiry. */
     @Column(name = "human_takeover_at")
     open var humanTakeoverAt: Instant? = null

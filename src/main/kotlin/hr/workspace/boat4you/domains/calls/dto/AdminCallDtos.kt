@@ -46,6 +46,8 @@ data class CallInquiryDto(
     val doNotCall: Boolean,
     val offerSentAt: Instant?,
     val offerNote: String?,
+    val offerEmailText: String?,
+    val offerEmailSentAt: Instant?,
     val humanTakeoverAt: Instant?,
 )
 
@@ -73,4 +75,7 @@ data class CallInquiryListItemDto(
 
 data class OfferSentRequest(
     val note: String? = null,
+    /** The offer e-mail text from the preview, as Mario left it (OfferMailService sanitizes it again). */
+    val emailText: String? = null,
+    val emailSentAt: Instant? = null,
 )
