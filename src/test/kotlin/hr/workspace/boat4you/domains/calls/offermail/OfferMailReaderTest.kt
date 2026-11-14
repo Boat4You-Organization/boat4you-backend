@@ -76,7 +76,11 @@ class OfferMailReaderTest {
         val since = Instant.parse("2026-11-10T00:00:00Z")
         putSent("offers@boat4you.com", "pw,with:colon", "anna@example.com", Instant.parse("2026-11-11T09:00:00Z")) { it.setText("older offer") }
         putSent("info@europe-yachts.com", "pw2", "Anna@Example.com", Instant.parse("2026-11-12T09:00:00Z")) { m ->
-            val pdf = MimeBodyPart().apply { setContent(byteArrayOf(1, 2), "application/pdf"); fileName = "offer.pdf" }
+            val pdf =
+                MimeBodyPart().apply {
+                    setContent(byteArrayOf(1, 2), "application/pdf")
+                    fileName = "offer.pdf"
+                }
             m.setContent(MimeMultipart("mixed", MimeBodyPart().apply { setText("Lagoon 42 7.850 EUR") }, pdf, MimeBodyPart().apply { setText("See you!") }))
         }
         putSent("offers@boat4you.com", "pw,with:colon", "other@example.com", Instant.parse("2026-11-13T09:00:00Z")) { it.setText("not Anna") }

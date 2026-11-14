@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.sql.Timestamp
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -71,7 +72,13 @@ class CallPlanner(
         inquiry.offerNote = text
         // A new "Ponuda poslana" replaces the e-mail too: no text = the earlier offer's e-mail must not reach the new call.
         inquiry.offerEmailText = emailText?.trim()?.takeIf { it.isNotEmpty() }
-        inquiry.offerEmailSentAt = inquiry.offerEmailText?.let { emailSentAt ?: now }
+        // The mail's own date, kept between the inquiry and now: a wrong Date header must not stretch or cut the 30 days.
+        val earliest = inquiry.createdAt?.atZone(CallClock.ZAGREB)?.toInstant()?.minus(Duration.ofDays(1))?.coerceAtMost(now)
+        inquiry.offerEmailSentAt =
+            inquiry.offerEmailText?.let {
+                val at = (emailSentAt ?: now).coerceAtMost(now)
+                if (earliest != null && at.isBefore(earliest)) earliest else at
+            }
         inquiries.save(inquiry)
         // Conditional updates, never entity saves: the dialler may have just moved the row to DIALING, and that must stand.
         jdbc.update(

@@ -39,12 +39,19 @@ class CallRetention(
                 Timestamp.from(now.minus(CallReconciler.EVENT_GIVE_UP)),
             )
         val events = jdbc.update("DELETE FROM call_webhook_event WHERE received_at < ?", Timestamp.from(now.minus(EVENT_RETENTION)))
-        // The offer e-mail Nika read lives as long as a recording: it is needed for the follow-up call only.
+        // The offer e-mail Nika read lives 30 days: it is needed for the follow-up call only. ElevenLabs echoes the dynamic
+        // variables in its webhooks, so the copy in the stored events goes after the same 30 days.
+        val offerCutoff = Timestamp.from(now.minus(OFFER_EMAIL_RETENTION))
         val offers =
             jdbc.update(
                 "UPDATE inquiry SET offer_email_text = NULL WHERE offer_email_text IS NOT NULL AND COALESCE(offer_email_sent_at, offer_sent_at) < ?",
-                Timestamp.from(now.minus(Duration.ofDays(days))),
-            )
+                offerCutoff,
+            ) +
+                jdbc.update(
+                    "UPDATE call_webhook_event SET payload = payload #- '{data,conversation_initiation_client_data,dynamic_variables,offer_email}' " +
+                        "WHERE received_at < ? AND payload #> '{data,conversation_initiation_client_data,dynamic_variables,offer_email}' IS NOT NULL",
+                    offerCutoff,
+                )
         if (deleted > 0 || stripped > 0 || events > 0 || offers > 0) {
             log.info(
                 "Call retention: {} recording(s) deleted, {} orphan recording(s) stripped, {} webhook event(s) deleted, {} offer e-mail(s) cleared",
@@ -58,5 +65,6 @@ class CallRetention(
 
     companion object {
         val EVENT_RETENTION: Duration = Duration.ofDays(90)
+        val OFFER_EMAIL_RETENTION: Duration = Duration.ofDays(30)
     }
 }

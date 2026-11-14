@@ -16,6 +16,7 @@ import hr.workspace.boat4you.domains.catalouge.capacity.PartnerTextSanitizer
 import hr.workspace.boat4you.domains.catalouge.jpa.AgencyRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Manufacturer
 import hr.workspace.boat4you.domains.catalouge.jpa.ManufacturerRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.ModelRepository
 import io.kotest.matchers.shouldBe
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -37,14 +38,17 @@ class AdminCallControllerTest : CallsJpaTest() {
     private val service by lazy {
         AdminCallService(calls, inquiries, jdbc, CallPlanner(calls, inquiries, settings, jdbc, clock), CallEligibility(calls, jdbc), settings, audio, clock)
     }
+
     @Autowired private lateinit var agencies: AgencyRepository
 
     @Autowired private lateinit var manufacturers: ManufacturerRepository
 
+    @Autowired private lateinit var models: ModelRepository
+
     private val offerMail by lazy {
         val sanitizer = PartnerTextSanitizer(agencies).apply { refreshExecutor = java.util.concurrent.Executor { it.run() } }
         sanitizer.loadAgencyNames()
-        OfferMailService(OfferMailReader(OfferMailboxes("", "")), inquiries, sanitizer, manufacturers)
+        OfferMailService(OfferMailReader(OfferMailboxes("", "")), inquiries, sanitizer, manufacturers, models)
     }
     private val mvc by lazy {
         MockMvcBuilders.standaloneSetup(AdminCallController(service, offerMail)).setControllerAdvice(ApiErrorHandler()).setMessageConverters(*CallsTestJson.converters()).build()
@@ -120,6 +124,7 @@ class AdminCallControllerTest : CallsJpaTest() {
     fun `offer sent stores the e-mail text without charter company names, builders stay`() {
         manufacturers.saveAndFlush(Manufacturer().apply { name = "Lagoon" })
         val i = inquiry()
+        jdbc.update("UPDATE inquiry SET created_at = '2026-11-02 10:00:00' WHERE id = ?", i.id)
         val body = """{"note":null,"emailText":"Dear Anna,\nLagoon 42 from the Sunsail base in Split, 7.850 EUR.","emailSentAt":"2026-11-03T08:00:00Z"}"""
         mvc.post("/admin/calls/inquiries/${i.id}/offer-sent", dsl = json(body)).andExpect { status { isNoContent() } }
         val saved = inquiries.findById(i.id!!).get()

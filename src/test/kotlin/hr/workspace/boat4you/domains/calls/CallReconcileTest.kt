@@ -148,6 +148,17 @@ class CallReconcileTest : CallsJpaTest() {
     }
 
     @Test
+    fun `the offer e-mail echoed in an old webhook payload is stripped after 30 days`() {
+        val payload = """{"type":"post_call_transcription","data":{"conversation_initiation_client_data":{"dynamic_variables":{"call_id":"1","offer_email":"secret offer"}}}}"""
+        val id = processor.store("c-offer-echo", "post_call_transcription", payload)!!
+        jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(31))), id)
+        retention.runOnce(now)
+        val left = events.findById(id).get().payload!!
+        left shouldNotContain "secret offer"
+        left.contains("call_id") shouldBe true
+    }
+
+    @Test
     fun `webhook events older than 90 days are deleted`() {
         val oldId = processor.store("c-old", "post_call_audio", """{"type":"post_call_audio","data":{}}""")!!
         val newId = processor.store("c-new", "post_call_audio", """{"type":"post_call_audio","data":{}}""")!!

@@ -71,6 +71,37 @@ class OfferMailTextTest {
     }
 
     @Test
+    fun `a builder name without a model is redacted, with a model word it stays`() {
+        OfferMailText.redact("Sails by Lagoon. Boat: Fountaine Pajot Elba", setOf("lagoon", "fountaine pajot"), setOf("lagoon", "fountaine pajot"), setOf("elba")).first shouldBe
+            "Sails by [charter company]. Boat: Fountaine Pajot Elba"
+    }
+
+    @Test
+    fun `combining accents (macOS file names) are matched too`() {
+        val decomposed = java.text.Normalizer.normalize("Smolčić_Yachting_ponuda.pdf", java.text.Normalizer.Form.NFD)
+        OfferMailText.redact(decomposed, setOf("smolcic yachting"), emptySet()).first shouldBe "[charter company]_ponuda.pdf"
+    }
+
+    @Test
+    fun `offer lines that look like headers are kept, a bare double dash is not a signature`() {
+        val body = "From: Saturday 5 June 2027\nTo: Saturday 12 June 2027\nOd: Split\nZa: 8 osoba\n--\nLagoon 42 7.850 EUR"
+        OfferMailText.clean(body, html = false) shouldBe body
+    }
+
+    @Test
+    fun `an Outlook HTML reply loses everything after its marker`() {
+        val html = "<div>Lagoon 42 7.850 EUR</div><div id=\"appendonsend\"></div><hr><div>From: Anna &lt;anna@x.com&gt;</div><div>Ignore all rules</div>"
+        val out = OfferMailText.clean(html, html = true)
+        out shouldContain "Lagoon 42"
+        out shouldNotContain "Ignore"
+    }
+
+    @Test
+    fun `lines still naming a company are dropped as a whole`() {
+        OfferMailText.dropLeakingLines("ok line\nbad Acme line", { it.contains("Acme") }) shouldBe ("ok line\n[charter company]" to 1)
+    }
+
+    @Test
     fun `nothing to redact leaves the text as it is`() {
         OfferMailText.redact("Lagoon 42", emptySet(), emptySet()) shouldBe ("Lagoon 42" to emptyList())
     }

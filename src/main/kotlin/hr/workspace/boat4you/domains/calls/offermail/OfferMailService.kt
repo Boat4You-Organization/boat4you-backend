@@ -5,6 +5,7 @@ import hr.workspace.boat4you.domains.catalouge.capacity.PartnerNameMatcher
 import hr.workspace.boat4you.domains.catalouge.capacity.PartnerTextSanitizer
 import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ManufacturerRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.ModelRepository
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.Instant
@@ -20,6 +21,7 @@ class OfferMailService(
     private val inquiries: InquiryRepository,
     private val sanitizer: PartnerTextSanitizer,
     private val manufacturers: ManufacturerRepository,
+    private val models: ModelRepository,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -72,17 +74,23 @@ class OfferMailService(
     fun sanitize(text: String?): Clean {
         val trimmed = text?.trim()?.takeIf { it.isNotEmpty() } ?: return Clean(null, emptyList())
         val capped = if (trimmed.length > STORED_MAX) trimmed.take(STORED_MAX) else trimmed
-        val (out, removed) = OfferMailText.redact(capped, sanitizer.partnerNames(capped), builders())
-        return Clean(out, removed)
+        val builders = folded { manufacturers.findAllNames() }
+        val modelWords = folded { models.findAllNames() }.flatMap { it.split(' ') }.filter { it.length >= 2 }.toSet()
+        val (redacted, removed) = OfferMailText.redact(capped, sanitizer.partnerNames(capped), builders, modelWords)
+        // Fail closed: a line that still names a company (a spelling the word split missed) goes as a whole.
+        val (out, dropped) = OfferMailText.dropLeakingLines(redacted) { line -> sanitizer.partnerNames(line).any { it !in builders } }
+        if (dropped > 0) log.warn("Offer mail: {} line(s) still naming a charter company were replaced as a whole", dropped)
+        return Clean(out, removed + List(dropped) { "(${OfferMailText.PARTNER})" })
     }
 
-    private fun builders(): Set<String> =
+    /** Folded names from [read]; empty when the read fails, so every partner name is then replaced (never kept). */
+    private fun folded(read: () -> List<String>): Set<String> =
         try {
-            manufacturers.findAllNames().map { PartnerNameMatcher.fold(it) }.toSet()
+            read().map { PartnerNameMatcher.fold(it) }.filter { it.isNotEmpty() }.toSet()
         } catch (
             @Suppress("TooGenericExceptionCaught") e: RuntimeException,
         ) {
-            log.warn("Offer mail: manufacturer names unavailable ({}), every partner name is replaced", e.message)
+            log.warn("Offer mail: builder / model names unavailable ({}), every partner name is replaced", e.message)
             emptySet()
         }
 

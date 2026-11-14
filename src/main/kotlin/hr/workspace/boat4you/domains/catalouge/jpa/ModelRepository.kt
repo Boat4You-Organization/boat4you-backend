@@ -66,4 +66,8 @@ interface ModelRepository : JpaRepository<Model, Long> {
     """,
     )
     fun findModelsWithDuplicateNames(): List<Model>
+
+    /** Every model name: in an offer e-mail a builder name followed by one of these words is a boat, not a company. */
+    @Query("SELECT m.name FROM Model m WHERE m.name IS NOT NULL")
+    fun findAllNames(): List<String>
 }

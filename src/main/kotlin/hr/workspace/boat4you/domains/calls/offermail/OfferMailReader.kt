@@ -7,6 +7,7 @@ import jakarta.mail.Part
 import jakarta.mail.Session
 import jakarta.mail.Store
 import jakarta.mail.internet.InternetAddress
+import jakarta.mail.internet.MimeUtility
 import jakarta.mail.search.AndTerm
 import jakarta.mail.search.OrTerm
 import jakarta.mail.search.RecipientStringTerm
@@ -64,17 +65,18 @@ class OfferMailReader(
         if (boxes.isEmpty()) return Search(null, emptyList(), 0)
         val pool = Executors.newFixedThreadPool(boxes.size.coerceAtMost(MAX_PARALLEL)) { r -> Thread(r, "offer-mail").apply { isDaemon = true } }
         try {
-            val futures = boxes.map { box -> box to pool.submit(Callable { search(box, client.trim().lowercase(), since) }) }
+            // One deadline for all mailboxes together: the admin request never waits longer than this.
+            val tasks = boxes.map { box -> Callable { search(box, client.trim().lowercase(), since) } }
+            val futures = boxes.zip(pool.invokeAll(tasks, TOTAL_TIMEOUT_SECONDS, TimeUnit.SECONDS))
             val failed = mutableListOf<String>()
             val found =
                 futures.mapNotNull { (box, future) ->
                     try {
-                        future.get(TOTAL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                        future.get()
                     } catch (
                         @Suppress("TooGenericExceptionCaught") e: Exception,
                     ) {
-                        future.cancel(true)
-                        log.warn("Offer mail: mailbox {} not read ({})", box.address, e.javaClass.simpleName)
+                        log.warn("Offer mail: mailbox {} not read ({})", box.address, (e.cause ?: e).javaClass.simpleName)
                         failed += box.address
                         null
                     }
@@ -94,38 +96,48 @@ class OfferMailReader(
         val store: Store = session.getStore(protocol)
         store.connect(box.host, port, box.address, box.password)
         try {
-            val folder = sentFolder(store) ?: return null.also { log.warn("Offer mail: no Sent folder in {}", box.address) }
-            folder.open(Folder.READ_ONLY)
-            try {
-                val term =
-                    AndTerm(
-                        OrTerm(RecipientStringTerm(Message.RecipientType.TO, client), RecipientStringTerm(Message.RecipientType.CC, client)),
-                        SentDateTerm(SentDateTerm.GE, Date.from(since)),
-                    )
-                val message =
-                    folder
-                        .search(term)
-                        .filter { m -> m.sentDate != null && !m.sentDate.toInstant().isBefore(since) && addressedTo(m, client) }
-                        .maxByOrNull { it.sentDate } ?: return null
-                (message as? IMAPMessage)?.peek = true
-                val parts = mutableListOf<String>()
-                val attachments = mutableListOf<String>()
-                collect(message, parts, attachments)
-                return Sent(box.address, message.subject, message.sentDate.toInstant(), parts.joinToString("\n\n"), attachments)
-            } finally {
-                folder.close(false)
-            }
+            val folders = sentFolders(store)
+            if (folders.isEmpty()) log.warn("Offer mail: no Sent folder in {}", box.address)
+            return folders.mapNotNull { newestIn(it, box, client, since) }.maxByOrNull { it.sentAt }
         } finally {
             store.close()
         }
     }
 
-    /** The folder flagged \Sent (RFC 6154), else the usual names (cPanel Dovecot: INBOX.Sent). */
-    private fun sentFolder(store: Store): Folder? {
-        val all = store.defaultFolder.list("*")
-        all.firstOrNull { f -> (f as? IMAPFolder)?.attributes?.any { it.equals("\\Sent", ignoreCase = true) } == true }?.let { return it }
-        return SENT_NAMES.firstNotNullOfOrNull { name -> all.firstOrNull { it.fullName.equals(name, ignoreCase = true) } }
+    private fun newestIn(
+        folder: Folder,
+        box: OfferMailboxes.Mailbox,
+        client: String,
+        since: Instant,
+    ): Sent? {
+        folder.open(Folder.READ_ONLY)
+        try {
+            val term =
+                AndTerm(
+                    OrTerm(RecipientStringTerm(Message.RecipientType.TO, client), RecipientStringTerm(Message.RecipientType.CC, client)),
+                    SentDateTerm(SentDateTerm.GE, Date.from(since)),
+                )
+            val message =
+                folder
+                    .search(term)
+                    .filter { m -> m.sentDate != null && !m.sentDate.toInstant().isBefore(since) && addressedTo(m, client) }
+                    .maxByOrNull { it.sentDate } ?: return null
+            (message as? IMAPMessage)?.peek = true
+            val parts = mutableListOf<String>()
+            val attachments = mutableListOf<String>()
+            collect(message, parts, attachments, related = false)
+            return Sent(box.address, message.subject, message.sentDate.toInstant(), parts.joinToString("\n\n"), attachments.distinct())
+        } finally {
+            folder.close(false)
+        }
     }
+
+    /** Every folder flagged \Sent (RFC 6154) or with a usual Sent name (cPanel Dovecot: INBOX.Sent; Apple: Sent Messages). */
+    private fun sentFolders(store: Store): List<Folder> =
+        store.defaultFolder.list("*").filter { f ->
+            (f as? IMAPFolder)?.attributes?.any { it.equals("\\Sent", ignoreCase = true) } == true ||
+                SENT_NAMES.any { it.equals(f.fullName, ignoreCase = true) }
+        }
 
     private fun addressedTo(
         m: Message,
@@ -135,26 +147,35 @@ class OfferMailReader(
             m.getRecipients(type).orEmpty().any { (it as? InternetAddress)?.address?.trim()?.lowercase() == client }
         }
 
-    /** Text parts in order; in an alternative the plain part wins. Attachments only by file name. */
+    /**
+     * Text parts in order; in an alternative the plain part wins, and attachments anywhere (also inside the HTML branch) are
+     * listed by file name. Images inside a multipart/related (signature logos) are not attachments.
+     */
     private fun collect(
         part: Part,
         texts: MutableList<String>,
         attachments: MutableList<String>,
+        related: Boolean,
     ) {
-        val attachment = Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) || (part.fileName != null && !part.isMimeType("text/*"))
+        val named = part.fileName != null && !part.isMimeType("text/*")
+        val attachment = Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) || named
         when {
-            attachment -> part.fileName?.let { attachments += it }
+            attachment && related && part.isMimeType("image/*") && !Part.ATTACHMENT.equals(part.disposition, ignoreCase = true) -> Unit
+            attachment -> part.fileName?.let { attachments += runCatching { MimeUtility.decodeText(it) }.getOrDefault(it) }
             part.isMimeType("text/plain") -> texts += OfferMailText.plain(part.content as String, html = false)
             part.isMimeType("text/html") -> texts += OfferMailText.plain(part.content as String, html = true)
             part.isMimeType("multipart/alternative") -> {
                 val mp = part.content as Multipart
                 val children = (0 until mp.count).map { mp.getBodyPart(it) }
                 val chosen = children.firstOrNull { it.isMimeType("text/plain") } ?: children.firstOrNull { it.isMimeType("text/html") } ?: children.lastOrNull()
-                chosen?.let { collect(it, texts, attachments) }
+                chosen?.let { collect(it, texts, attachments, related) }
+                // Apple Mail may put a PDF inside the HTML branch: list it even when the plain part was read.
+                children.filter { it !== chosen }.forEach { collect(it, mutableListOf(), attachments, related) }
             }
             part.isMimeType("multipart/*") -> {
                 val mp = part.content as Multipart
-                for (i in 0 until mp.count) collect(mp.getBodyPart(i), texts, attachments)
+                val inRelated = related || part.isMimeType("multipart/related")
+                for (i in 0 until mp.count) collect(mp.getBodyPart(i), texts, attachments, inRelated)
             }
         }
     }

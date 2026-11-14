@@ -5,6 +5,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.parser.Parser
 import org.jsoup.safety.Safelist
+import java.text.Normalizer
 
 /**
  * The offer e-mail as Nika may read it (Mario 14.11.2026: "ona mora znat sve napisano"): the whole text Mario wrote, without
@@ -28,10 +29,12 @@ object OfferMailText {
             Regex("""^Begin forwarded message:\s*$""", RegexOption.IGNORE_CASE),
             Regex("""^-{2,}\s*Forwarded message\s*-{2,}\s*$""", RegexOption.IGNORE_CASE),
         )
-    private val OUTLOOK_FROM = Regex("""^(From|Von|De|Od|Da):\s+\S.*$""", RegexOption.IGNORE_CASE)
+    /** An Outlook-style quoted header: a From line with an address, followed by a Sent/Date line ("To:" alone is not enough). */
+    private val OUTLOOK_FROM = Regex("""^(From|Von|De|Od|Da):\s+.*(@|<).*$""", RegexOption.IGNORE_CASE)
     private val OUTLOOK_NEXT =
-        Regex("""^(Sent|Date|Gesendet|Envoyé|Poslano|Datum|Inviato|Enviado|To|An|À|Za):\s+.*$""", RegexOption.IGNORE_CASE)
-    private val WORD = Regex("""[\p{L}\p{N}]+|&""")
+        Regex("""^(Sent|Date|Gesendet|Envoyé|Poslano|Datum|Inviato|Enviado|Data):\s+.*$""", RegexOption.IGNORE_CASE)
+    private val WORD = Regex("""[\p{L}\p{M}\p{N}]+|&""")
+    private val DIGIT = Regex("""\d""")
     private val BLANK_LINE = Regex("""\n[ \t]+\n""")
     private val MANY_NEWLINES = Regex("""\n{3,}""")
 
@@ -40,12 +43,12 @@ object OfferMailText {
         body: String,
         html: Boolean,
     ): String {
-        val lines = plain(body, html).replace("\r\n", "\n").replace('\r', '\n').lines()
+        val lines = nfc(plain(body, html)).replace("\r\n", "\n").replace('\r', '\n').lines()
         val kept = mutableListOf<String>()
         for ((i, raw) in lines.withIndex()) {
             val line = raw.trimEnd().replace('\u00A0', ' ')
             val trimmed = line.trim()
-            if (line == "-- " || line == "--") break
+            if (raw == "-- ") break // the signature separator only; a bare "--" may be Mario's own divider
             if (QUOTE_HEADER.any { it.matches(trimmed) }) break
             if (OUTLOOK_FROM.matches(trimmed) && lines.drop(i + 1).take(3).any { OUTLOOK_NEXT.matches(it.trim()) }) break
             if (line.trimStart().startsWith(">")) continue
@@ -63,16 +66,19 @@ object OfferMailText {
     }
 
     /**
-     * [text] with every name of [names] (folded, as [PartnerNameMatcher.findAll] gives them) replaced by [PARTNER], except a
-     * name that is a boat builder ([builders], folded): "Lagoon 42" stays, "Lagoon Charter" goes. Returns the text and the
-     * names as they were written.
+     * [text] with every name of [names] (folded, as [PartnerNameMatcher.findAll] gives them) replaced by [PARTNER]. A boat
+     * builder's name ([builders], folded) stays only where a model follows it: a word with a digit or a model word
+     * ([modelWords], folded): "Lagoon 42" and "Fountaine Pajot Elba" stay, "Lagoon Charter" and a bare "Lagoon" go. Returns
+     * the text (NFC) and the names as they were written.
      */
     fun redact(
-        text: String,
+        input: String,
         names: Set<String>,
         builders: Set<String>,
+        modelWords: Set<String> = emptySet(),
     ): Pair<String, List<String>> {
-        val targets = names.filter { it !in builders }.map { it.split(' ') }.sortedByDescending { it.size }
+        val text = nfc(input)
+        val targets = names.map { it.split(' ') }.sortedByDescending { it.size }
         if (targets.isEmpty()) return text to emptyList()
         val tokens = WORD.findAll(text).map { m -> Token(m.range.first, m.range.last + 1, fold(m.value)) }.toList()
         val spans = mutableListOf<IntRange>()
@@ -82,6 +88,11 @@ object OfferMailText {
             val hit = targets.firstOrNull { words -> words.indices.all { k -> tokens.getOrNull(i + k)?.folded == words[k] } }
             if (hit == null) {
                 i++
+                continue
+            }
+            val next = tokens.getOrNull(i + hit.size)?.folded
+            if (hit.joinToString(" ") in builders && next != null && (DIGIT.containsMatchIn(next) || next in modelWords)) {
+                i += hit.size
                 continue
             }
             val end = tokens[i + hit.size - 1].end
@@ -100,6 +111,29 @@ object OfferMailText {
         val folded: String,
     )
 
+    /**
+     * Fail-closed pass after [redact]: every line in which [leaks] still finds a name is replaced by [PARTNER] as a whole
+     * (a spelling the word split did not catch). Returns the text and how many lines were replaced.
+     */
+    fun dropLeakingLines(
+        text: String,
+        leaks: (String) -> Boolean,
+    ): Pair<String, Int> {
+        var dropped = 0
+        val out =
+            text.lines().joinToString("\n") { line ->
+                if (line.isNotBlank() && leaks(line)) {
+                    dropped++
+                    PARTNER
+                } else {
+                    line
+                }
+            }
+        return out to dropped
+    }
+
+    private fun nfc(s: String) = Normalizer.normalize(s, Normalizer.Form.NFC)
+
     private fun fold(word: String) = if (word == "&") "and" else PartnerNameMatcher.fold(word).replace(" ", "")
 
     /** A body part as plain text: an HTML part loses its quoted mails and tags, keeping its line breaks. */
@@ -110,7 +144,12 @@ object OfferMailText {
 
     private fun htmlToText(html: String): String {
         val doc = Jsoup.parse(html)
-        doc.select("blockquote, .gmail_quote, #appendonsend, div[id^=divRplyFwdMsg], style, script").remove()
+        // Outlook: the quoted mail starts at its marker and runs to the end, so the marker goes with everything after it.
+        doc.select("#appendonsend, div[id^=divRplyFwdMsg], #divRplyFwdMsg, hr#stopSpelling").forEach { marker ->
+            generateSequence(marker.nextElementSibling()) { it.nextElementSibling() }.toList().forEach { it.remove() }
+            marker.remove()
+        }
+        doc.select("blockquote, .gmail_quote, style, script").remove()
         doc.outputSettings(Document.OutputSettings().prettyPrint(false))
         doc.select("br").after(NL)
         doc.select("p, div, tr, li, h1, h2, h3, h4, table").before(NL)
