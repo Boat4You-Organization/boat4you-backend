@@ -6,6 +6,19 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-14 — ✅ LIVE oba čvora: Nika čita ponudu iz poslanog e-maila + pozivi na vlastitoj niti — jar `1f32bd8ac6a7a83ae65ce4e438b7b89c`, `main` `15842097`, tag `live/2026-11-14-nika-offer-email`; cusma2 11:23 UTC (`9652ac9c`) pa 11:45 UTC (`1f32bd8a`), cusma3 13:05 UTC
+
+**Povod (Mario 14.11.):** „ona mora znat sve napisano“: Nika prije poziva treba znati cijelu ponudu koju je klijent dobio e-mailom (Apple Mail, 7 cPanel sandučića), s cijenama.
+
+**Promjena:**
+- `calls/offermail/*`: admin „Ponuda poslana“ → `GET /admin/calls/inquiries/{id}/offer-email` traži zadnji e-mail klijentu (TO ili CC, od `createdAt − 1 dan`) u svim Sent mapama sandučića iz `CALLS_OFFER_MAILBOXES` (samo cusma2 env, `adresa:base64(lozinka)`; IMAP `mail.<domena>:993`, samo čitanje). Citati i potpis van; imena agencija → „[charter company]“, proizvođač ispred modela i nazivi mjesta ostaju; redak koji i dalje sadrži ime agencije se izbacuje. Cijene ostaju.
+- V9_127: `inquiry.offer_email_text`, `offer_email_sent_at`; varijabla poziva `{{offer_email}}`; brisanje nakon 30 dana (i iz webhook payloada).
+- `CallJobsTimer`: dispečer i reconcile na vlastitoj niti „nika-calls“ (data-sync profil), ne na zajedničkom @Scheduled poolu. Povod: 14.11. MMK 503 od ~08:39 UTC držao je sve 3 b4y-sched niti, pa je poziv u 11:00 krenuo tek 11:15. ShedLock i dalje vrijedi (poziv kroz proxy).
+
+**Provjereno:** testovi (GreenMail IMAP, OfferMailText, CallJobsTimer…) + ktlint; neovisni pregled (12 nalaza riješeno); Flyway preflight; prvi pravi pregled e-maila (Vanessa, info@boat4you.com) nakon popravka mjesta. cusma3 13:05 UTC: gate OK (prozor, 0 cronova u 15 min, shedlock prazan, 0 sync linija), „Schema up to date“, start 14 s, md5 `1f32bd8a`, u journalu „Nika call clock started on its own thread“, 0 grešaka ticka. Rollback cusma3: `webservice.jar.prev` = `15f556fa`. Kopija env datoteke `boat4you_vars.env.bak-20261114T111134-offermail` na cusma2 obrisana.
+
+**Otvoreno:** PDF privitci se ne čitaju (samo ime); ElevenLabs granica ~9000 znakova nije provjerena pravim pozivom.
+
 ## 2026-11-12 — ✅ cusma3 18:37 UTC: isti jar kao cusma2 (`15f556fa138ef161ba063ea7041ddced`, `main` `644ab81c`) — oba čvora sada vrte Iris iznimku za ne-subotnje termine i Nikin `boat_facts`
 
 cusma3 je do 18:37 vrtio `fe6cd2ff` (bez `boat_facts`); pozive bira cusma3, pa Nika podatke o brodu dobiva tek od ovog restarta. Pokušaj u 13:27 UTC s jarom `724cf03c` zaustavio je gate (mmkFreeOfferReverify za 3 min), bez promjene na serveru. Deployan je isti jar koji je uživo na cusma2 (kopija iz `wt/iris-saturday`, md5 provjeren), ne novi build. Gate: prozor OK, nijedan cron u 15 min, shedlock prazan, 0 sync linija; Flyway „up to date“; start 14 s. Pozivi su i dalje isključeni (`calls.enabled=false`); `calls.transfer.number` još treba postati poslovni broj prije testa prebacivanja. Rollback cusma3: `webservice.jar.prev` = `fe6cd2ff`.
