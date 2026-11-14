@@ -7,6 +7,7 @@ import hr.workspace.boat4you.domains.catalouge.jpa.InquiryRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ManufacturerRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.ModelRepository
 import org.slf4j.LoggerFactory
+import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Service
 import java.time.Instant
 
@@ -22,6 +23,7 @@ class OfferMailService(
     private val sanitizer: PartnerTextSanitizer,
     private val manufacturers: ManufacturerRepository,
     private val models: ModelRepository,
+    private val jdbc: JdbcTemplate,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
 
@@ -76,11 +78,28 @@ class OfferMailService(
         val capped = if (trimmed.length > STORED_MAX) trimmed.take(STORED_MAX) else trimmed
         val builders = folded { manufacturers.findAllNames() }
         val modelWords = folded { models.findAllNames() }.flatMap { it.split(' ') }.filter { it.length >= 2 }.toSet()
-        val (redacted, removed) = OfferMailText.redact(capped, sanitizer.partnerNames(capped), builders, modelWords)
+        val places = places()
+        val (redacted, removed) = OfferMailText.redact(capped, sanitizer.partnerNames(capped), builders, modelWords, places)
         // Fail closed: a line that still names a company (a spelling the word split missed) goes as a whole.
-        val (out, dropped) = OfferMailText.dropLeakingLines(redacted) { line -> sanitizer.partnerNames(line).any { it !in builders } }
+        val (out, dropped) =
+            OfferMailText.dropLeakingLines(redacted) { line ->
+                sanitizer.partnerNames(line).any { it !in builders && it !in places }
+            }
         if (dropped > 0) log.warn("Offer mail: {} line(s) still naming a charter company were replaced as a whole", dropped)
         return Clean(out, removed + List(dropped) { "(${OfferMailText.PARTNER})" })
+    }
+
+    /** Every marina, town, region and country name and each of their words, folded, plus the words an offer uses for a base. */
+    private fun places(): Set<String> {
+        val names =
+            folded {
+                jdbc.queryForList(
+                    "SELECT name FROM location WHERE name IS NOT NULL UNION SELECT city FROM location WHERE city IS NOT NULL " +
+                        "UNION SELECT name FROM country WHERE name IS NOT NULL UNION SELECT name FROM region WHERE name IS NOT NULL",
+                    String::class.java,
+                )
+            }
+        return names + names.flatMap { it.split(' ') }.filter { it.length >= 3 } + BASE_WORDS
     }
 
     /** Folded names from [read]; empty when the read fails, so every partner name is then replaced (never kept). */
@@ -97,6 +116,7 @@ class OfferMailService(
     companion object {
         /** The cleaned body ([OfferMailText.MAX]) plus the attachment line and Mario's edits. */
         const val STORED_MAX = 9000
+        private val BASE_WORDS = setOf("marina", "aci", "port", "harbour", "harbor", "luka", "base", "porto", "puerto")
         private val SINCE_MARGIN = java.time.Duration.ofDays(1)
     }
 }

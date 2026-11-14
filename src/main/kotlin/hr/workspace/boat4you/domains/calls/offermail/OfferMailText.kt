@@ -76,9 +76,12 @@ object OfferMailText {
         names: Set<String>,
         builders: Set<String>,
         modelWords: Set<String> = emptySet(),
+        places: Set<String> = emptySet(),
     ): Pair<String, List<String>> {
         val text = nfc(input)
-        val targets = names.map { it.split(' ') }.sortedByDescending { it.size }
+        // A place (marina, town, region, country) is never a company here: agencies named after their base ("Split",
+        // "Baotić") would otherwise blank out the base the offer names (14.11.2026, first real offer).
+        val targets = names.filter { it !in places }.map { it.split(' ') }.sortedByDescending { it.size }
         if (targets.isEmpty()) return text to emptyList()
         val tokens = WORD.findAll(text).map { m -> Token(m.range.first, m.range.last + 1, fold(m.value)) }.toList()
         val spans = mutableListOf<IntRange>()

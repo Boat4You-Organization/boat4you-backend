@@ -48,7 +48,7 @@ class AdminCallControllerTest : CallsJpaTest() {
     private val offerMail by lazy {
         val sanitizer = PartnerTextSanitizer(agencies).apply { refreshExecutor = java.util.concurrent.Executor { it.run() } }
         sanitizer.loadAgencyNames()
-        OfferMailService(OfferMailReader(OfferMailboxes("", "")), inquiries, sanitizer, manufacturers, models)
+        OfferMailService(OfferMailReader(OfferMailboxes("", "")), inquiries, sanitizer, manufacturers, models, jdbc)
     }
     private val mvc by lazy {
         MockMvcBuilders.standaloneSetup(AdminCallController(service, offerMail)).setControllerAdvice(ApiErrorHandler()).setMessageConverters(*CallsTestJson.converters()).build()

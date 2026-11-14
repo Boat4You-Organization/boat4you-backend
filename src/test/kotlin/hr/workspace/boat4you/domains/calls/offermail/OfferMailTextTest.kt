@@ -102,6 +102,19 @@ class OfferMailTextTest {
     }
 
     @Test
+    fun `places stay even when an agency is named after them`() {
+        val (out, removed) =
+            OfferMailText.redact(
+                "Marina Baotić in Split, Croatia; operated by Split Charter",
+                setOf("baotic", "split", "marina", "croatia", "split charter"),
+                emptySet(),
+                places = setOf("marina baotic", "baotic", "marina", "split", "croatia"),
+            )
+        out shouldBe "Marina Baotić in Split, Croatia; operated by [charter company]"
+        removed shouldBe listOf("Split Charter")
+    }
+
+    @Test
     fun `nothing to redact leaves the text as it is`() {
         OfferMailText.redact("Lagoon 42", emptySet(), emptySet()) shouldBe ("Lagoon 42" to emptyList())
     }
