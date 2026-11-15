@@ -72,7 +72,7 @@ class UserAuthService(
         password: String,
         httpRequest: HttpServletRequest,
     ): TokenResponse {
-        val dbUser = userRepository.findByEmail(email) ?: throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, email)
+        val dbUser = findForSignIn(email) ?: throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, email)
 
         if (dbUser.registrationStatus != UserRegistrationStatusEnum.REGISTERED) {
             throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, email)
@@ -275,7 +275,7 @@ class UserAuthService(
         val dbUser =
             if (context == null) {
                 // Anonymous user requesting password reset
-                userRepository.findByEmail(requestPasswordResetBody.email!!)
+                findForSignIn(requestPasswordResetBody.email!!)
             } else {
                 // Manager or System admin requesting password reset for someone else
                 userRepository.findById(requestPasswordResetBody.userId!!).getOrNull()
@@ -329,6 +329,16 @@ class UserAuthService(
             locale = locale,
         )
     }
+
+    /**
+     * The account a person signs in to or resets the password of: the exact address first, else the one account whose
+     * address differs only in letter case (15.11.2026). Bookings store the address as typed ("Ana.Horvat@Gmail.com"),
+     * so someone typing it in lower case later got "bad credentials" or, on Forgot password, silently no e-mail. Two
+     * accounts differing only in case stay ambiguous: none is picked. The reset link always goes to the stored address.
+     */
+    private fun findForSignIn(email: String): UserEntity? =
+        userRepository.findByEmail(email)
+            ?: userRepository.findAllActiveByEmailIgnoreCase(email.trim()).singleOrNull()
 
     private fun generateRandomBytes(length: Int = 64): ByteArray {
         val randomBytes = ByteArray(length)

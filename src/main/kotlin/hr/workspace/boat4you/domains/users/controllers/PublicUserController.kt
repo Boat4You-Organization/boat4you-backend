@@ -1,27 +1,16 @@
 package hr.workspace.boat4you.domains.users.controllers
 
-import hr.workspace.boat4you.domains.reservation.exceptions.ReservationNotExistException
-import hr.workspace.boat4you.domains.reservation.jpa.ReservationRepository
-import hr.workspace.boat4you.domains.users.jpa.UserInviteStatusEnum
-import hr.workspace.boat4you.domains.users.jpa.UserRegistrationStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
-import hr.workspace.boat4you.security.services.PasswordPolicy
-import hr.workspace.boat4you.security.services.PasswordService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.tags.Tag
-import jakarta.validation.Valid
-import jakarta.validation.constraints.Email
-import jakarta.validation.constraints.NotBlank
-import jakarta.validation.constraints.NotNull
+import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.stereotype.Controller
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
-import kotlin.jvm.optionals.getOrElse
 
 // Public user actions that don't need a Bearer token. Mounted under /public/**
 // so Security allow-lists them automatically. Everything here must defend
@@ -31,53 +20,18 @@ import kotlin.jvm.optionals.getOrElse
 @Controller
 @RequestMapping("/public/users")
 class PublicUserController(
-    private val passwordService: PasswordService,
     private val userRepository: UserRepository,
-    private val reservationRepository: ReservationRepository,
 ) {
-    // Guest password setup — replaces the invite-code flow when the user just
-    // finished a guest booking. The reservation id + email pair is the proof
-    // of ownership (the email match must be strict, case-insensitive).
-    @Operation(summary = "Set password for a guest user via their reservation id + email")
+    // Guest password setup by reservation id + e-mail is CLOSED (15.11.2026, security audit API-1, HIGH).
+    // The pair proved nothing: anyone can make a guest booking under someone else's e-mail (the booking then
+    // attaches to that person's account), so an attacker could set the password of an existing guest account
+    // (their reservations, crew lists with passport data, invoices, GDPR export) or pre-claim an unused e-mail.
+    // A guest now sets the password only through the invite link e-mailed to them (UserInviteService:
+    // /signup?inviteCode=…), which proves they own the address; a repeat guest booking re-sends that link
+    // (ReservationFlowMutationService). The route stays as 410 Gone so an old front end gets a clear answer.
+    @Operation(summary = "Closed: guests set their password through the e-mailed invite link")
     @PostMapping("/set-password-for-reservation")
-    @Transactional
-    fun setPasswordForReservation(
-        @RequestBody @Valid request: SetPasswordForReservationRequest,
-    ): ResponseEntity<Unit> {
-        val reservation =
-            reservationRepository
-                .findById(request.reservationId)
-                .getOrElse { throw ReservationNotExistException() }
-
-        val user =
-            reservation.reservationFlow?.user
-                ?: throw IllegalStateException("Reservation has no associated user")
-
-        if (!user.email.equals(request.email, ignoreCase = true)) {
-            // Intentionally vague so we don't leak whether the reservation id
-            // exists vs. whether the email matches.
-            throw IllegalArgumentException("Reservation and email do not match")
-        }
-
-        if (user.registrationStatus == UserRegistrationStatusEnum.REGISTERED) {
-            // Account already active — do nothing. The user should sign in
-            // through the normal login flow (or reset password if forgotten).
-            throw IllegalStateException("Account already registered")
-        }
-
-        PasswordPolicy.validate(request.password)
-
-        user.apply {
-            password = passwordService.encodePassword(request.password)
-            registrationStatus = UserRegistrationStatusEnum.REGISTERED
-            inviteStatus = UserInviteStatusEnum.ACCEPTED
-            inviteTime = null
-            inviteCode = null
-        }
-        userRepository.save(user)
-
-        return ResponseEntity.ok().build()
-    }
+    fun setPasswordForReservation(): ResponseEntity<Unit> = ResponseEntity.status(HttpStatus.GONE).build()
 
     // One-click email unsubscribe (audit B2). The token is the proof of intent;
     // we set marketing_opt_out=true for the matching user so the birthday cron
@@ -98,9 +52,3 @@ class PublicUserController(
         return ResponseEntity.ok().build()
     }
 }
-
-data class SetPasswordForReservationRequest(
-    @field:NotNull val reservationId: Long,
-    @field:NotBlank @field:Email val email: String,
-    @field:NotBlank val password: String,
-)

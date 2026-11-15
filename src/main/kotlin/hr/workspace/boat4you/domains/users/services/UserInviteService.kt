@@ -16,6 +16,7 @@ import org.openapitools.model.SetUserPasswordBody
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.MessageSource
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.net.URLEncoder
 import java.security.SecureRandom
@@ -56,7 +57,11 @@ class UserInviteService(
      *     internal/team operational comms and don't depend on guest UX.
      */
     @Transactional(readOnly = false)
-    fun inviteUsers(userIds: List<Long>, forceEnglish: Boolean = false) {
+    fun inviteUsers(
+        userIds: List<Long>,
+        forceEnglish: Boolean = false,
+        keepValidCode: Boolean = false,
+    ) {
         val dbUsers = userRepository.findByIdIn(userIds)
         val missingUserIds = userIds - dbUsers.map { it.id!! }
         if (missingUserIds.isNotEmpty()) {
@@ -69,8 +74,17 @@ class UserInviteService(
         }
 
         dbUsers.forEach { dbUser ->
-            dbUser.inviteCode = Base64.toBase64String(generateRandomBytes())
-            dbUser.inviteTime = Instant.now()
+            // keepValidCode (a repeat guest booking): re-send the link the guest may already be opening instead of
+            // invalidating it, so a stranger booking under their e-mail cannot keep breaking it. Expiry unchanged.
+            val stillValid =
+                keepValidCode &&
+                    dbUser.inviteStatus == UserInviteStatusEnum.INVITED &&
+                    dbUser.inviteCode != null &&
+                    dbUser.inviteTime?.plus(inviteDuration)?.isAfter(Instant.now()) == true
+            if (!stillValid) {
+                dbUser.inviteCode = Base64.toBase64String(generateRandomBytes())
+                dbUser.inviteTime = Instant.now()
+            }
             dbUser.inviteStatus = UserInviteStatusEnum.INVITED
 
             // Template uses fullName ("Welcome aboard, {fullName}").
@@ -110,6 +124,21 @@ class UserInviteService(
                 locale = locale,
             )
         }
+    }
+
+    /**
+     * Re-send the invite link to a guest whose account has no password yet (a repeat guest booking under the same
+     * e-mail, 15.11.2026). Called after the booking commits, so it runs in its OWN transaction: code called from
+     * afterCommit would otherwise join the already committed one and the new invite code would never be saved.
+     * A registered account or an accepted invite is left alone (the customer signs in or resets the password). A link
+     * that is still valid is re-sent as it is, so a booking made by someone else never breaks the one being opened.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun reinviteGuestWithoutPassword(userId: Long) {
+        val user = userRepository.findById(userId).orElse(null) ?: return
+        if (user.registrationStatus == UserRegistrationStatusEnum.REGISTERED) return
+        if (user.inviteStatus == UserInviteStatusEnum.ACCEPTED) return
+        inviteUsers(listOf(userId), keepValidCode = true)
     }
 
     fun checkInvitationValidity(inviteCode: String): UserEntity {

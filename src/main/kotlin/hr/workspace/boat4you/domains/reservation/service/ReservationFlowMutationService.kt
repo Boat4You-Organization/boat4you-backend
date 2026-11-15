@@ -35,6 +35,7 @@ import hr.workspace.boat4you.domains.reservation.mapper.ReservationMappers
 import hr.workspace.boat4you.domains.reservation.model.ReservationResponseWrapper
 import hr.workspace.boat4you.domains.users.exceptions.UserDoesNotExistException
 import hr.workspace.boat4you.domains.users.jpa.UserEntity
+import hr.workspace.boat4you.domains.users.jpa.UserInviteStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRegistrationStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
 import hr.workspace.boat4you.domains.users.services.UserInviteService
@@ -48,6 +49,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.security.core.context.SecurityContextHolder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Instant
 import java.time.LocalDateTime
 
@@ -144,7 +147,8 @@ class ReservationFlowMutationService(
                 loggedUser = loggedUser,
                 createdByUser = createdByUser,
                 createReservationDto = createReservationDto,
-            ) ?: createUser(createReservationDto)
+            )?.also { existing -> if (loggedUser == null) reinviteGuestWithoutPassword(existing) }
+                ?: createUser(createReservationDto)
 
         // The booking form is the only place most customers ever type a phone
         // number, and it used to land on the flow alone — the profile stayed
@@ -327,6 +331,34 @@ class ReservationFlowMutationService(
         }
     }
 
+    /**
+     * A guest booking under an e-mail whose account has no password yet: the e-mailed invite link is the only way to
+     * set one (15.11.2026, guest-takeover fix — /public/users/set-password-for-reservation is closed), so send a fresh
+     * link to that address. After commit, so a booking that rolls back mails nothing, and a mail failure can never
+     * roll back the booking (UserInviteService runs it in its own transaction and skips registered accounts).
+     */
+    private fun reinviteGuestWithoutPassword(user: UserEntity) {
+        if (user.registrationStatus == UserRegistrationStatusEnum.REGISTERED) return
+        if (user.inviteStatus == UserInviteStatusEnum.ACCEPTED) return
+        val userId = user.id ?: return
+
+        val send = {
+            runCatching { inviteService.reinviteGuestWithoutPassword(userId) }
+                .onFailure { log.warn("Guest re-invite failed for user {}", userId, it) }
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(
+                object : TransactionSynchronization {
+                    override fun afterCommit() {
+                        send()
+                    }
+                },
+            )
+        } else {
+            send()
+        }
+    }
+
     private fun createUser(createReservationDto: CreateReservationDto): UserEntity {
         val newUser =
             User(
@@ -339,9 +371,9 @@ class ReservationFlowMutationService(
 
         // `User.toJpaUserEntity()` forces `registrationStatus = REGISTERED` for
         // every new user — that's fine for admin-created users, but for a guest
-        // it blocks `/public/users/set-password-for-reservation` (which rejects
-        // if already REGISTERED). Flip this guest back to STARTED so they can
-        // set their own password after payment.
+        // it would let the guest sign in without ever proving the e-mail is
+        // theirs. Flip this guest back to STARTED: the account stays closed
+        // until they set a password through the e-mailed invite link.
         val guestUser =
             userRepository
                 .findById(newUserEntity.id!!)

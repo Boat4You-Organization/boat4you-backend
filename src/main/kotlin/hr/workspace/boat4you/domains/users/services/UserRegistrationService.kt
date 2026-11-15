@@ -98,7 +98,7 @@ class UserRegistrationService(
     fun resendEmailVerificationCode(email: String) {
         val dbUser =
             userRepository.findByEmail(email)
-                ?.takeIf { it.registrationStatus == UserRegistrationStatusEnum.STARTED }
+                ?.takeIf { it.awaitsSelfRegistrationCode() }
                 ?: return
 
         if (dbUser.verificationCodeIssuedAt?.plusSeconds(60)?.isAfter(Instant.now()) == true) {
@@ -127,6 +127,18 @@ class UserRegistrationService(
         reissueVerificationCode(dbUser)
     }
 
+    /**
+     * Only a self-registered account (registerUser: own password, inviteStatus = ACCEPTED) still waiting for its
+     * e-mail code may get or use one. A guest account from a booking is STARTED too but has no password: a verified
+     * code logs the caller straight in (issueTokenAtRegistration), so a guessed code would hand over the guest's
+     * bookings. A guest activates only through the e-mailed invite link or a password reset (security audit
+     * 15.11.2026).
+     */
+    private fun UserEntity.awaitsSelfRegistrationCode(): Boolean {
+        val selfRegistered = inviteStatus == UserInviteStatusEnum.ACCEPTED
+        return registrationStatus == UserRegistrationStatusEnum.STARTED && selfRegistered
+    }
+
     private fun reissueVerificationCode(dbUser: UserEntity) {
         dbUser.apply {
             emailVerificationCode = getRandomNumericalString(6)
@@ -148,7 +160,7 @@ class UserRegistrationService(
         // verification leaks neither account existence nor registration state.
         val dbUser =
             userRepository.findByEmail(input.email)
-                ?.takeIf { it.registrationStatus == UserRegistrationStatusEnum.STARTED }
+                ?.takeIf { it.awaitsSelfRegistrationCode() }
                 ?: throw UserRegistrationException(UserRegistrationExceptionReason.VERIFICATION_CODE_DOES_NOT_MATCH)
 
         if (dbUser.verificationAttempts >= MAX_VERIFICATION_ATTEMPTS) {

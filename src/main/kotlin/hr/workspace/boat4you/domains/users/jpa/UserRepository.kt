@@ -26,6 +26,16 @@ interface UserRepository :
     )
     fun findByEmail(email: String): UserEntity?
 
+    /** Active accounts whose address equals [email] ignoring letter case (sign-in and password reset fallback). */
+    @Query(
+        """
+        SELECT DISTINCT u FROM UserEntity u
+        LEFT JOIN FETCH u.roleAssignments
+        WHERE LOWER(u.email) = LOWER(:email) AND u.entityStatus = 'ACTIVE'
+        """,
+    )
+    fun findAllActiveByEmailIgnoreCase(email: String): List<UserEntity>
+
     fun findByPasswordResetCode(passwordResetCode: String): UserEntity?
 
     fun existsByEmailIgnoreCase(email: String): Boolean
