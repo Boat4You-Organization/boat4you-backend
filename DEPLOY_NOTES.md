@@ -6,6 +6,24 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-16 — ✅ LIVE cusma2 (faza 1): prijava u dva koraka za admin, passkey (Face ID / Touch ID) + Authenticator + rezervni kodovi — jar `4b8db0f6e45c912045951857c2e1b9fa`, `main` `70b91e8a`, tag `live/2026-11-16-admin-mfa`; V9_128 primijenjena 12:17 UTC; cusma3 NIJE dirana
+
+**Povod:** audit 15.11. (MEDIUM: admin javan bez 2FA). Mario 16.11.: passkey s Face ID-om, Google Authenticator kao rezerva, „da ne moram svaki dan“. Nova biblioteka uz Marijevo „da“: `com.webauthn4j:webauthn4j-core` 0.30.3 (Maven Central, Apache 2.0, 563 KB; 0.30.x je zadnja linija na Jacksonu 2).
+
+**Promjena:**
+- V9_128: `user_passkey`, `user_totp`, `user_recovery_code`, `user_trusted_device` (samo nove tablice).
+- `/auth/mfa/login` (admin): lozinka → kratki „mfa“ token (5 min) → passkey / TOTP / rezervni kod. „Zapamti uređaj“ vrijedi 30 dana.
+- `/users/me/mfa`: samo SYSTEM_ADMIN / MANAGER; izmjene samo 15 min nakon prijave.
+- `/auth/login` (web, sestre) i Google/Facebook odbijaju račun s 2FA (1017).
+- **Faza 1 (sada):** 2FA vrijedi samo za račune koji ga postave. **Faza 2:** `MFA_REQUIRED_FOR_ADMIN=true` (env cusma2) tek kad SVI admini imaju postavljen faktor; admin bez faktora se tada odbija.
+- Nalazi neovisnog pregleda (8): rate limit `/auth/mfa/*`, zaključavanje retka korisnika, strogo stanje faze 2, svježa prijava za izmjene, samo admin uloge, reset lozinke briše zapamćene uređaje, OAuth odbija prije povezivanja, deaktivirani račun odbijen.
+
+**Provjereno:**
+- Testovi: `MfaCodesTest` (RFC 6238), `MfaServiceTest` (8), `MfaSchemaIntegrationTest` (PG18: migracija + Hibernate validate + bytea + cascade). Suite 2383, 1 nevezani pad.
+- Uživo: `/auth/mfa/login` s krivim podacima → 403 1011; step bez valjanog tokena → 403; `/users/me/mfa` bez tokena → 403; CORS za admin.boat4you.com OK. Prvi pokušaj deploya 11:57 pao je na SSH odbijanju cusma3; drugi, nakon 20 min, prošao.
+
+**Rollback:** `webservice.jar.prev` = 9b151642. V9_128 tablice smiju ostati (stari jar ih ne koristi).
+
 ## 2026-11-16 — ✅ LIVE cusma2: access i refresh token više ne mogu jedan umjesto drugoga — jar `9b151642b7a98f74261551778f760b25`, `main` `62ebd84a`, tag `live/2026-11-16-refresh-token-type`; cusma3 NIJE dirana (scheduler, ne poslužuje prijave)
 
 **Povod:** sigurnosni audit 15.11. (MEDIUM). `/auth/refreshToken` je obnavljao i access token, pa ukradeni access token nikad nije istjecao. Filter je pak refresh token (3 dana) prihvaćao kao Bearer za bilo koji API poziv.
