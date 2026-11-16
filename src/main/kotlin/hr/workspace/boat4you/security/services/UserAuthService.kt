@@ -21,6 +21,7 @@ import hr.workspace.boat4you.security.getContextRequired
 import hr.workspace.boat4you.security.jpa.TokenEntity
 import hr.workspace.boat4you.security.jpa.TokenRepository
 import hr.workspace.boat4you.security.jpa.TokenService
+import io.jsonwebtoken.JwtException
 import jakarta.servlet.http.HttpServletRequest
 import org.bouncycastle.util.encoders.Base64
 import org.openapitools.model.RequestPasswordResetBody
@@ -229,11 +230,20 @@ class UserAuthService(
             throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, "unknown email")
         }
 
-        // TODO Catch all exceptions possibly thrown by this method and handle them
-        val userEmail: String = jwtService.extractEmail(token)
+        // The endpoint is public (16.11.2026): an expired, malformed or foreign token is a plain bad-credentials answer,
+        // not a 500 with a stack trace (expired refresh cookies hit this daily).
+        val claims =
+            try {
+                jwtService.extractAllClaims(token)
+            } catch (e: JwtException) {
+                throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, "unknown email")
+            } catch (e: IllegalArgumentException) {
+                throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, "unknown email")
+            }
+        val userEmail: String = claims.subject ?: throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, "unknown email")
         // Only a refresh token renews (security audit 15.11.2026): an access token renewed itself forever, so a
         // stolen one never expired.
-        if (!jwtService.isRefreshToken(jwtService.extractAllClaims(token))) {
+        if (!jwtService.isRefreshToken(claims)) {
             throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, userEmail)
         }
 

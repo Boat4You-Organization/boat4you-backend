@@ -65,7 +65,10 @@ class JwtAuthenticationFilter(
         // Only an access token authenticates an API call (security audit 15.11.2026): a refresh token (3 days) was
         // accepted as a Bearer too. /auth/refreshToken is public and checks its own token.
         if (!jwtService.isAccessToken(claims)) {
-            log.warn("Non-access token presented as Bearer for URL: ${httpRequest.requestURI}")
+            // The renewal call itself carries the refresh token: expected, not worth a warning.
+            if (httpRequest.requestURI != "/auth/refreshToken") {
+                log.warn("Non-access token presented as Bearer for URL: ${httpRequest.requestURI}")
+            }
             return
         }
         val userEmail = claims[ClaimsConstants.USER_EMAIL] as String?
@@ -103,9 +106,11 @@ class JwtAuthenticationFilter(
                 storedToken.lastUsedAt = Instant.now()
                 tokenRepository.save(storedToken)
             }
-        }
 
-        val userContext = requestContextFactory.buildRequestContext(userDomainEntity)
-        httpRequest.setAttribute(WebRequestContext.CONTEXT_ATTRIBUTE, userContext)
+            // Only for a valid token (review 16.11.2026): a revoked or logged-out admin token set the request context
+            // too, and requestPasswordReset trusts it.
+            val userContext = requestContextFactory.buildRequestContext(userDomainEntity)
+            httpRequest.setAttribute(WebRequestContext.CONTEXT_ATTRIBUTE, userContext)
+        }
     }
 }

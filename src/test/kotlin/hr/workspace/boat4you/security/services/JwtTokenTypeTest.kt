@@ -77,28 +77,36 @@ class JwtTokenTypeTest {
         jwt.isRefreshToken(legacyRefresh) shouldBe true
     }
 
-    @Test
-    fun `refreshToken refuses an access token`() {
+    private fun auth(): UserAuthService {
         val users = mock(UserRepository::class.java)
         `when`(users.findByEmail(user.email)).thenReturn(dbUser)
-        val auth =
-            UserAuthService(
-                users,
-                mock(TokenRepository::class.java),
-                jwt,
-                mock(PasswordService::class.java),
-                mock(TokenService::class.java),
-                mock(RequestContextFactory::class.java),
-                mock(ClientIpResolver::class.java),
-                mock(EmailService::class.java),
-                StaticMessageSource(),
-                "https://www.boat4you.com",
-                false,
-                Duration.ofMinutes(60),
-            )
-        val request = mock(HttpServletRequest::class.java)
-        `when`(request.getHeader("Authorization")).thenReturn("Bearer " + jwt.generateToken(user).first)
+        return UserAuthService(
+            users,
+            mock(TokenRepository::class.java),
+            jwt,
+            mock(PasswordService::class.java),
+            mock(TokenService::class.java),
+            mock(RequestContextFactory::class.java),
+            mock(ClientIpResolver::class.java),
+            mock(EmailService::class.java),
+            StaticMessageSource(),
+            "https://www.boat4you.com",
+            false,
+            Duration.ofMinutes(60),
+        )
+    }
 
-        assertThrows<InternalLoginException> { auth.refreshToken(request) }
+    private fun bearer(token: String) = mock(HttpServletRequest::class.java).also { `when`(it.getHeader("Authorization")).thenReturn("Bearer $token") }
+
+    @Test
+    fun `refreshToken refuses an access token`() {
+        assertThrows<InternalLoginException> { auth().refreshToken(bearer(jwt.generateToken(user).first)) }
+    }
+
+    @Test
+    fun `a malformed or expired token is bad credentials, not a 500 (review 16-11)`() {
+        assertThrows<InternalLoginException> { auth().refreshToken(bearer("not-a-jwt")) }
+        ReflectionTestUtils.setField(jwt, "refreshExpiration", -1_000L)
+        assertThrows<InternalLoginException> { auth().refreshToken(bearer(jwt.generateRefreshToken(user).first)) }
     }
 }
