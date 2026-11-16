@@ -9,6 +9,7 @@ import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import hr.workspace.boat4you.domains.users.jpa.UserInviteStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRegistrationStatusEnum
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
+import hr.workspace.boat4you.domains.users.mfa.MfaPolicy
 import hr.workspace.boat4you.domains.users.services.RequestContextFactory
 import hr.workspace.boat4you.domains.users.services.toDomainUser
 import hr.workspace.boat4you.domains.users.services.toUserModel
@@ -64,6 +65,7 @@ class UserAuthService(
     private val allowUninvitedLogin: Boolean,
     @Value("\${application.password-reset.expiration:60m}")
     private val passwordResetExpiration: Duration,
+    private val mfaPolicy: MfaPolicy,
 ) {
     private val secureRandom = SecureRandom.getInstance("SHA1PRNG")
 
@@ -73,6 +75,23 @@ class UserAuthService(
         password: String,
         httpRequest: HttpServletRequest,
     ): TokenResponse {
+        val dbUser = checkPassword(email, password)
+        // Two-step sign-in (16.11.2026): such an account gets its tokens only through /auth/mfa/login (the admin).
+        if (mfaPolicy.isRequired(dbUser)) {
+            throw InternalLoginException(InternalLoginException.Type.MFA_REQUIRED, email)
+        }
+        return completeLogin(dbUser, httpRequest)
+    }
+
+    /**
+     * The password step of a sign-in: the account, its registration and invite, the lockout window and the password.
+     * A failure counts against the lockout (the exception does not roll back). Shared by [login] and MfaService.
+     */
+    @Transactional(readOnly = false)
+    fun checkPassword(
+        email: String,
+        password: String,
+    ): UserEntity {
         val dbUser = findForSignIn(email) ?: throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, email)
 
         if (dbUser.registrationStatus != UserRegistrationStatusEnum.REGISTERED) {
@@ -83,12 +102,23 @@ class UserAuthService(
             throw InternalLoginException(InternalLoginException.Type.USER_INVITE_NOT_ACCEPTED, email)
         }
 
+        assertNotLockedOut(dbUser)
+
+        if (passwordService.doesMatch(password, dbUser.password).not()) {
+            recordFailedSignIn(dbUser)
+            throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, email) // Will not cause rollback, not a RuntimeException
+        }
+        return dbUser
+    }
+
+    /** Throws while the account is locked after too many failed attempts (password or second step alike). */
+    fun assertNotLockedOut(dbUser: UserEntity) {
         if (dbUser.loginAttempts >= MAX_LOGIN_ATTEMPTS_COUNT &&
             dbUser.lastUnsuccessfulLogin?.plusSeconds(MAX_LOGIN_ATTEMPTS_LOCK_PERIOD)?.isAfter(Instant.now()) == true
         ) {
             dbUser.loginAttempts++
             dbUser.lastUnsuccessfulLogin = Instant.now()
-            throw InternalLoginException(InternalLoginException.Type.MAX_ATTEMPTS_EXCEEDED, email)
+            throw InternalLoginException(InternalLoginException.Type.MAX_ATTEMPTS_EXCEEDED, dbUser.email)
         }
 
         dbUser.lastUnsuccessfulLogin?.let {
@@ -97,13 +127,19 @@ class UserAuthService(
                 dbUser.lastUnsuccessfulLogin = null
             }
         }
+    }
 
-        if (passwordService.doesMatch(password, dbUser.password).not()) {
-            dbUser.loginAttempts++
-            dbUser.lastUnsuccessfulLogin = Instant.now()
-            throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, email) // Will not cause rollback, not a RuntimeException
-        }
+    fun recordFailedSignIn(dbUser: UserEntity) {
+        dbUser.loginAttempts++
+        dbUser.lastUnsuccessfulLogin = Instant.now()
+    }
 
+    /** Issues the token pair of a sign-in whose every step passed. */
+    @Transactional(readOnly = false)
+    fun completeLogin(
+        dbUser: UserEntity,
+        httpRequest: HttpServletRequest,
+    ): TokenResponse {
         // Reset failed-login counters on success + record login moment.
         // `lastLoginAt` is surfaced on /my-profile so the customer can spot
         // unfamiliar sessions; resetting attempts/timestamp keeps the lockout
@@ -135,6 +171,10 @@ class UserAuthService(
         dbUser: UserEntity,
         httpRequest: HttpServletRequest,
     ): TokenResponse {
+        // Google / Facebook sign-in must not skip the second step of an admin account (16.11.2026).
+        if (mfaPolicy.isRequired(dbUser)) {
+            throw InternalLoginException(InternalLoginException.Type.MFA_REQUIRED, dbUser.email)
+        }
         val userDomainEntity = dbUser.toDomainUser()
         val userContext = requestContextFactory.buildRequestContext(userDomainEntity)
         httpRequest.setAttribute(WebRequestContext.CONTEXT_ATTRIBUTE, userContext)

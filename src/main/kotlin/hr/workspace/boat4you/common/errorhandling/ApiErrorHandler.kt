@@ -508,6 +508,7 @@ internal class ApiErrorHandler {
             when (e.type) {
                 InternalLoginException.Type.BAD_CREDENTIALS -> ApiErrorCodes.BAD_CREDENTIALS
                 InternalLoginException.Type.USER_INVITE_NOT_ACCEPTED -> ApiErrorCodes.USERS_INVITE_NOT_ACCEPTED
+                InternalLoginException.Type.MFA_REQUIRED -> ApiErrorCodes.MFA_REQUIRED
                 else -> ApiErrorCodes.LOGIN_ATTEMPTS_EXCEEDED
             }
 

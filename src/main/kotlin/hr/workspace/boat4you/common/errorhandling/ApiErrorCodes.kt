@@ -21,6 +21,8 @@ enum class ApiErrorCodes(
     // email. Our account model is email-keyed, so we cannot find-or-create an
     // account — actionable user-facing message, NOT the generic BAD_CREDENTIALS
     // mask (this is not an auth failure to hide).
+    // Two-step sign-in (16.11.2026): the account signs in at the admin, not through the plain /auth/login.
+    MFA_REQUIRED(1017, "This account uses two-step sign-in: please sign in at admin.boat4you.com"),
     OAUTH_EMAIL_MISSING(1016, "We couldn't get an email from that account — please sign up with email instead."),
     REQUEST_NOT_PARSEABLE(1101, "Request JSON not parseable"),
     INVALID_REQUEST_PARAMETERS(1102, "Invalid request parameters"),

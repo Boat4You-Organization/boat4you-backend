@@ -264,6 +264,14 @@ application:
     # ReviewInvitationService). Off by default (also in prod until the web review page is live).
     # Kill switch without a redeploy: REVIEWS_ENABLED=false in the env file + restart.
     enabled: ${REVIEWS_ENABLED:false}
+  # Two-step admin sign-in (16.11.2026): passkeys (WebAuthn) on the registrable domain, so they work on every
+  # *.boat4you.com page; the admin origin is the only one accepted. required-for-admin = phase 2 (see MfaPolicy).
+  mfa:
+    required-for-admin: ${MFA_REQUIRED_FOR_ADMIN:false}
+    rp-id: ${MFA_RP_ID:boat4you.com}
+    rp-name: ${MFA_RP_NAME:Boat4You Admin}
+    origins: ${MFA_ORIGINS:https://admin.boat4you.com}
+    trusted-device-days: ${MFA_TRUSTED_DEVICE_DAYS:30}
   invites:
     user:
       expiration: 7d

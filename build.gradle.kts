@@ -64,6 +64,9 @@ dependencies {
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:$springDocVersion")
     implementation("org.bouncycastle:bcprov-jdk18on:$bouncyCastleVersion")
     implementation("io.jsonwebtoken:jjwt-api:$jjwtVersion")
+    // Admin passkeys (WebAuthn, Face ID / Touch ID), Mario 16.11.2026: Maven Central, Apache 2.0. 0.30.x is the last
+    // line on Jackson 2 (0.31+ moves to Jackson 3).
+    implementation("com.webauthn4j:webauthn4j-core:0.30.3.RELEASE")
     implementation("commons-validator:commons-validator:$apacheCommonsValidatorVersion") {
         exclude("commons-logging", "commons-logging")
         exclude("commons-collections", "commons-collections")

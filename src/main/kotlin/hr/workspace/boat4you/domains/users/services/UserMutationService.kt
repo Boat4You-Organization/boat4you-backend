@@ -35,6 +35,7 @@ class UserMutationService(
     private val tokenService: TokenService,
     private val inquiryRepository: InquiryRepository,
     private val reviewDao: ReviewDao,
+    private val mfaPolicy: hr.workspace.boat4you.domains.users.mfa.MfaPolicy,
 ) {
     private val logger: Logger = LoggerFactory.getLogger(this::class.java.name)
 
@@ -254,6 +255,9 @@ class UserMutationService(
         user.deletedAt = Instant.now()
 
         userRepository.save(user)
+
+        // Two-step sign-in data (passkeys, authenticator secret, recovery codes, remembered devices) goes too.
+        mfaPolicy.forgetUser(id)
 
         // GDPR Art. 17 — also erase the user's inquiry leads (name/email/phone/
         // message). Unlike reservations, inquiries carry no accounting/partner

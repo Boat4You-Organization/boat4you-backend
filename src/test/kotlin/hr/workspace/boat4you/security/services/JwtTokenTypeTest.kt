@@ -93,6 +93,7 @@ class JwtTokenTypeTest {
             "https://www.boat4you.com",
             false,
             Duration.ofMinutes(60),
+            mock(hr.workspace.boat4you.domains.users.mfa.MfaPolicy::class.java),
         )
     }
 

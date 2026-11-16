@@ -9,5 +9,8 @@ class InternalLoginException(
         MAX_ATTEMPTS_EXCEEDED,
         USER_DOES_NOT_EXIST,
         USER_INVITE_NOT_ACCEPTED,
+
+        /** Two-step sign-in is on for this account: only the admin sign-in (/auth/mfa/login) issues its tokens. */
+        MFA_REQUIRED,
     }
 }

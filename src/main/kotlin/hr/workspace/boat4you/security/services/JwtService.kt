@@ -122,6 +122,52 @@ class JwtService {
             .compact()
     }
 
+    /**
+     * A short-lived token for one step of the two-step admin sign-in (16.11.2026): "mfa" after the password, a WebAuthn
+     * challenge ("webauthn-get" / "webauthn-create"). It carries neither the roles nor the user e-mail claim, so it is
+     * never an access token nor a refresh token (isAccessToken / isRefreshToken), and it is not stored.
+     */
+    fun generatePurposeToken(
+        type: String,
+        userId: Long,
+        email: String,
+        extraClaims: Map<String, Any>,
+        ttlMillis: Long,
+    ): String =
+        Jwts
+            .builder()
+            .claims()
+            .add(extraClaims)
+            .add(ClaimsConstants.TOKEN_TYPE, type)
+            .add(ClaimsConstants.USER_ID, userId.toString())
+            .subject(email)
+            .issuer(issuer)
+            .audience()
+            .add(audience)
+            .and()
+            .issuedAt(Date())
+            .expiration(Date(System.currentTimeMillis() + ttlMillis))
+            .and()
+            .signWith(signingKey)
+            .compact()
+
+    /** The claims of a valid, unexpired purpose token of [type]; null for anything else (bad, expired, other type). */
+    fun parsePurposeToken(
+        token: String?,
+        type: String,
+    ): Claims? {
+        if (token.isNullOrBlank()) return null
+        val claims =
+            try {
+                extractAllClaims(token)
+            } catch (e: io.jsonwebtoken.JwtException) {
+                return null
+            } catch (e: IllegalArgumentException) {
+                return null
+            }
+        return claims.takeIf { it[ClaimsConstants.TOKEN_TYPE] == type && it[ClaimsConstants.USER_ID] != null }
+    }
+
     /** The Bearer of an API call: a token marked "access", or one from before the mark that carries the roles. */
     fun isAccessToken(claims: Claims): Boolean =
         when (claims[ClaimsConstants.TOKEN_TYPE]) {
