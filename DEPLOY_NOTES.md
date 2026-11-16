@@ -6,6 +6,27 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-16 — ✅ LIVE cusma2: zatvoreno preuzimanje računa gosta + obnova lozinke u bilo kojim slovima — jar `923939cd8f79cd4381e275cdfb4b49e4`, `main` `5d2fb65a`, tag `live/2026-11-16-guest-setpw`; cusma2 06:13 UTC; **cusma3 NIJE dirana**
+
+**Povod:** sigurnosni audit 15.11. (HIGH). `POST /public/users/set-password-for-reservation` je postavljao lozinku gosta samo uz broj rezervacije i e-mail. Rezervacija pod tuđim e-mailom veže se na taj račun, pa je napadač mogao preuzeti račun gosta (rezervacije, crew lista s putovnicama, računi). Mario 15.11.: „napravi se rezervacija, on dobiva email da napravi lozinku … on je zatvoren dok se ne napravi lozinka“; 16.11.: obnova lozinke mora raditi besprijekorno.
+
+**Promjena:**
+- Stari endpoint → **410 Gone**. Gost lozinku postavlja samo linkom iz pozivnice (`/signup?inviteCode=…`). Do tada je račun zatvoren (login traži REGISTERED).
+- Ponovna gostujuća rezervacija za račun bez lozinke šalje pozivnicu nakon commita (`UserInviteService.reinviteGuestWithoutPassword`, REQUIRES_NEW, `runCatching`). Link koji još vrijedi šalje se isti.
+- Nalaz neovisnog pregleda: 6-znamenkasti kod za potvrdu e-maila (`/auth/register/resendVerificationCode` + `verifyEmail`, koji odmah izdaje token) prihvaćao je i goste (STARTED). Sada vrijedi samo za samoregistrirane (`inviteStatus = ACCEPTED`).
+- Login i „Forgot password“: točna adresa, inače jedini račun koji se razlikuje samo po velikim/malim slovima (`findAllActiveByEmailIgnoreCase`). Dvoznačno = ništa. Link za obnovu uvijek ide na spremljenu adresu.
+
+**Provjereno:**
+- Testovi: `GuestPasswordSetupTest` (6), `PasswordResetTest` (3). Cijeli suite 2358, 1 pad nevezan uz ovo (`PartnerTextSanitizerTest`: `operators.txt` ≠ infra kopija). ktlint čist na promijenjenim redcima.
+- Neovisni pregled (Opus): 4 nalaza, riješena.
+- Flyway preflight: nema migracija. cusma2: start 14 s, health 200.
+- Uživo:
+  - stari endpoint vraća 410;
+  - `requestPasswordReset` za `MKuzmani@Gmail.com` (spremljeno malim slovima) izdao je kod za obnovu u 06:14:47 UTC;
+  - nginx logovi cusma2 (14 dana) imaju samo jedan uspješan poziv starog endpointa, 9.11. 19:38 s cusma1: rezervacija #45 u 19:36 i prijava u 19:38, dakle normalan gost.
+
+**cusma3:** i dalje stari jar. Promjena je samo u API-ju (cusma2), a 06:13 UTC je izvan cusma3 prozora. Sljedeći backend deploy na `both` donosi i ovo.
+
 ## 2026-11-14 — ✅ LIVE oba čvora: Nika čita ponudu iz poslanog e-maila + pozivi na vlastitoj niti — jar `1f32bd8ac6a7a83ae65ce4e438b7b89c`, `main` `15842097`, tag `live/2026-11-14-nika-offer-email`; cusma2 11:23 UTC (`9652ac9c`) pa 11:45 UTC (`1f32bd8a`), cusma3 13:05 UTC
 
 **Povod (Mario 14.11.):** „ona mora znat sve napisano“: Nika prije poziva treba znati cijelu ponudu koju je klijent dobio e-mailom (Apple Mail, 7 cPanel sandučića), s cijenama.
