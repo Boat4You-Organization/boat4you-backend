@@ -6,6 +6,26 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-16 — ✅ LIVE cusma2: access i refresh token više ne mogu jedan umjesto drugoga — jar `9b151642b7a98f74261551778f760b25`, `main` `62ebd84a`, tag `live/2026-11-16-refresh-token-type`; cusma3 NIJE dirana (scheduler, ne poslužuje prijave)
+
+**Povod:** sigurnosni audit 15.11. (MEDIUM). `/auth/refreshToken` je obnavljao i access token, pa ukradeni access token nikad nije istjecao. Filter je pak refresh token (3 dana) prihvaćao kao Bearer za bilo koji API poziv.
+
+**Promjena:**
+- Tokeni nose claim `tokenType` (access/refresh). Stari tokeni razlikuju se po `userRoles`, koje ima samo access token, pa deploy nikoga ne izlogira.
+- Filter prihvaća samo access token. `/auth/refreshToken` prima samo refresh token i sada je javna ruta (provjerava token sam: potpis, issuer/audience, istek, u bazi i nije opozvan, vrsta).
+- Nalazi neovisnog pregleda:
+  - neispravan ili istekao token više ne daje 500 sa stack traceom, nego 403 „Bad credentials“ (web refresh kolačić živi duže od JWT-a, pa bi se to događalo svaki dan);
+  - nema WARN-a za sam refresh poziv;
+  - kontekst zahtjeva (koji čita `requestPasswordReset`) postavlja se samo za valjan token.
+
+**Provjereno:**
+- Testovi: `JwtTokenTypeTest` (4). Cijeli suite 2371, 1 pad nevezan uz ovo.
+- Neovisni pregled (Opus): nijedan frontend (b4y, admin, sestre) ne šalje refresh token nigdje osim na refresh.
+- Uživo:
+  - smeće i istekao token na refresh → 403 (prije 500);
+  - bez headera → 403;
+  - `/users/me` bez tokena → 403.
+
 ## 2026-11-16 — ✅ LIVE cusma2: `oneWayFees` u detaljima broda (informativno) — jar `531b32aaccf79b8b5f49f2ac3f42addd`, `main` `f781077b`, tag `live/2026-11-16-oneway-fee-info`; cusma2 ~08:51 UTC; cusma3 NIJE dirana
 
 **Promjena:**
