@@ -6,6 +6,16 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-16 — ✅ LIVE cusma2: `oneWayFees` u detaljima broda (informativno) — jar `531b32aaccf79b8b5f49f2ac3f42addd`, `main` `f781077b`, tag `live/2026-11-16-oneway-fee-info`; cusma2 ~08:51 UTC; cusma3 NIJE dirana
+
+**Promjena:**
+- `YachtDetailsDto.oneWayFees`: one-way naknade broda s `obligatory = false`. `services` ih i dalje nikad ne sadrži.
+- b4y ih prikazuje pod „Optional services“ bez kvačice (Mario 16.11.). Frontendi koji polje ne poznaju (sestre) ne prikazuju ništa.
+
+**Provjereno:**
+- `YachtMapperOneWayFeesTest`;
+- uživo 18077: `services` bez one-way naknada, `oneWayFees` sadrži 4 retka, sva neobavezna.
+
 ## 2026-11-16 — ✅ LIVE cusma2: one-way naknade više nisu obavezne na povratnom najmu — jar `b7209b06f6a8244f4d297043d30a7a2c`, `main` `f1a3b25c`, tag `live/2026-11-16-oneway-fee`; cusma2 08:25 UTC; **cusma3 NIJE dirana** (charter facts dio čeka cusma3)
 
 **Povod (Mario 16.11.):** Prestige M48 „Diamond Si“ (18077), najam Rogoznica → Rogoznica. Popis usluga i živi izračun cijene navodili su pod „plaća se u bazi“ četiri one-way naknade: Tivat, Dubrovnik, Split i Zadar → Rogoznica, ukupno 7.850 €. Mario: „ne smiju biti ovi one way kao obligatory“. Partneri naknadu za svaku relaciju stavljaju kao obaveznu uslugu broda, bez baze i relacije: 2.844 retka na ~905 brodova, plus 2.067 obaveznih redaka na povratnim ponudama. Nijedna dosadašnja rezervacija takvu naknadu nema.
