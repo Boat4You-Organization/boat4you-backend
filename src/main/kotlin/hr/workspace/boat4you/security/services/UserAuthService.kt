@@ -445,6 +445,8 @@ class UserAuthService(
                 inviteTime = null
             }
         }
+        // Remembered admin browsers ask for the second step again (review 16.11.2026).
+        dbUser.id?.let { mfaPolicy.forgetTrustedDevices(it) }
     }
 
     @Transactional(readOnly = true)

@@ -39,6 +39,7 @@ class OAuthService(
     private val userRepository: UserRepository,
     private val userMutationService: UserMutationService,
     private val userAuthService: UserAuthService,
+    private val mfaPolicy: hr.workspace.boat4you.domains.users.mfa.MfaPolicy,
 ) {
     private val secureRandom = SecureRandom.getInstance("SHA1PRNG")
 
@@ -111,6 +112,10 @@ class OAuthService(
         }
 
         val existing = userRepository.findByEmailIgnoreCaseWithRoles(identity.email)
+        // An account with two-step sign-in is refused before the provider is linked to it (review 16.11.2026).
+        if (existing != null && mfaPolicy.isRequired(existing)) {
+            throw InternalLoginException(InternalLoginException.Type.MFA_REQUIRED, identity.email)
+        }
         val user =
             if (existing != null) {
                 linkExistingAccount(existing, identity)

@@ -17,6 +17,7 @@ import com.webauthn4j.data.client.challenge.DefaultChallenge
 import com.webauthn4j.server.ServerProperty
 import hr.workspace.boat4you.common.exceptions.ParameterValidationException
 import hr.workspace.boat4you.common.models.ClaimsConstants
+import hr.workspace.boat4you.common.jpa.EntityStatusEnum
 import hr.workspace.boat4you.domains.users.exceptions.UserDoesNotExistException
 import hr.workspace.boat4you.domains.users.jpa.UserEntity
 import hr.workspace.boat4you.domains.users.jpa.UserRepository
@@ -85,8 +86,9 @@ class MfaService(
         val user = userAuthService.checkPassword(request.email, request.password)
         val userId = user.id!!
         if (!policy.isRequired(user)) return signedIn(user, http, remember = false)
-        // Phase 2 and nothing set up yet: signed in, sent to set it up.
-        if (!policy.isEnrolled(userId)) return signedIn(user, http, remember = false, setupRequired = true)
+        // Phase 2 (review 16.11.2026): an admin with nothing set up is refused, not signed in with the password alone.
+        // Every admin sets it up in phase 1, before MFA_REQUIRED_FOR_ADMIN is turned on.
+        if (!policy.isEnrolled(userId)) throw InternalLoginException(InternalLoginException.Type.MFA_REQUIRED, user.email)
         if (isTrustedDevice(userId, request.deviceToken)) return signedIn(user, http, remember = false)
 
         val mfaToken = jwtService.generatePurposeToken(TYPE_MFA, userId, user.email, emptyMap(), STEP_TTL.toMillis())
@@ -200,6 +202,7 @@ class MfaService(
 
     fun passkeyCreationOptions(userId: Long): PasskeyCreationOptions {
         val user = userRepository.findById(userId).orElseThrow { UserDoesNotExistException() }
+        requireRecentSignIn(user)
         val challenge = MfaCodes.randomBytes(32)
         return PasskeyCreationOptions(
             challenge = MfaCodes.base64Url(challenge),
@@ -223,6 +226,7 @@ class MfaService(
         request: PasskeyRegistration,
     ): PasskeyInfo {
         val user = userRepository.findById(userId).orElseThrow { UserDoesNotExistException() }
+        requireRecentSignIn(user)
         val challenge = takeChallenge(request.challengeToken, TYPE_WEBAUTHN_CREATE, user) ?: invalid("challengeToken")
         val data =
             try {
@@ -255,6 +259,7 @@ class MfaService(
                     label = request.label?.trim()?.take(100)?.ifBlank { null }
                 },
             )
+        factorsChanged(userId)
         return PasskeyInfo(passkey.id!!, passkey.label, passkey.createdAt, passkey.lastUsedAt)
     }
 
@@ -263,13 +268,18 @@ class MfaService(
         userId: Long,
         passkeyId: Long,
     ) {
+        val user = userRepository.findById(userId).orElseThrow { UserDoesNotExistException() }
+        requireRecentSignIn(user)
         val passkey = passkeys.findById(passkeyId).orElse(null)?.takeIf { it.userId == userId } ?: invalid("passkeyId")
+        if (passkeys.findAllByUserId(userId).size == 1 && !policy.hasTotp(userId)) keepOneFactor(user)
         passkeys.delete(passkey)
+        factorsChanged(userId)
     }
 
     @Transactional
     fun totpSetup(userId: Long): TotpSetup {
         val user = userRepository.findById(userId).orElseThrow { UserDoesNotExistException() }
+        requireRecentSignIn(user)
         val totp = totps.findById(userId).orElse(null) ?: UserTotp().apply { this.userId = userId }
         val secret = MfaCodes.newTotpSecret()
         totp.pendingSecret = secret
@@ -282,6 +292,7 @@ class MfaService(
         userId: Long,
         code: String,
     ) {
+        requireRecentSignIn(userRepository.findById(userId).orElseThrow { UserDoesNotExistException() })
         val totp = totps.findById(userId).orElse(null)?.takeIf { it.pendingSecret != null } ?: invalid("setup")
         val step = MfaCodes.matchTotp(totp.pendingSecret!!, code, null) ?: invalid("code")
         totp.secret = totp.pendingSecret
@@ -289,16 +300,22 @@ class MfaService(
         totp.enabledAt = Instant.now()
         totp.lastStep = step
         totps.save(totp)
+        factorsChanged(userId)
     }
 
     @Transactional
     fun totpDisable(userId: Long) {
+        val user = userRepository.findById(userId).orElseThrow { UserDoesNotExistException() }
+        requireRecentSignIn(user)
+        if (!policy.hasPasskey(userId)) keepOneFactor(user)
         totps.findById(userId).orElse(null)?.let { totps.delete(it) }
+        factorsChanged(userId)
     }
 
     /** Ten new one-time codes, shown once; the old ones stop working. */
     @Transactional
     fun newRecoveryCodes(userId: Long): List<String> {
+        requireRecentSignIn(userRepository.findById(userId).orElseThrow { UserDoesNotExistException() })
         recoveryCodes.deleteAllByUserId(userId)
         val codes = (1..RECOVERY_CODE_COUNT).map { MfaCodes.newRecoveryCode() }
         recoveryCodes.saveAll(
@@ -318,6 +335,26 @@ class MfaService(
     }
 
     // ------------------------------------------------------------------ internals
+
+    /**
+     * Second-step settings change only within [RECENT_SIGN_IN] of a full sign-in (review 16.11.2026): a stolen access
+     * token (24 h) must not mint recovery codes, swap the authenticator or drop the factors. `lastLoginAt` is set by a
+     * completed sign-in only, never by a token refresh.
+     */
+    private fun requireRecentSignIn(user: UserEntity) {
+        val signedInAt = user.lastLoginAt
+        if (signedInAt == null || signedInAt.isBefore(Instant.now().minus(RECENT_SIGN_IN))) invalid("signIn")
+    }
+
+    /** Phase 2: an admin keeps at least one factor (passkey or authenticator app). */
+    private fun keepOneFactor(user: UserEntity) {
+        if (policy.requiredForAdmin && policy.isAdmin(user)) invalid("lastFactor")
+    }
+
+    /** A factor added or removed: remembered browsers sign in with the second step again. */
+    private fun factorsChanged(userId: Long) {
+        trustedDevices.deleteAllByUserId(userId)
+    }
 
     private fun methods(userId: Long): List<String> =
         listOfNotNull(
@@ -392,10 +429,14 @@ class MfaService(
 
     private fun serverProperty(challenge: ByteArray) = ServerProperty(allowedOrigins, rpId, DefaultChallenge(challenge))
 
+    /**
+     * The user of a step token, its row locked for the transaction (review 16.11.2026: parallel guesses each read the
+     * lockout counter before any of them wrote it). An account deactivated or deleted since the password step is refused.
+     */
     private fun userOf(claims: Claims?): UserEntity {
         val id = (claims?.get(ClaimsConstants.USER_ID) as? String)?.toLongOrNull()
-        val user = id?.let { userRepository.findById(it).orElse(null) }
-        if (user == null || user.email != claims.subject) {
+        val user = id?.let { userRepository.findByIdForUpdate(it) }
+        if (user == null || user.email != claims.subject || user.entityStatus != EntityStatusEnum.ACTIVE || user.deletedAt != null) {
             throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, "unknown email")
         }
         return user
@@ -418,6 +459,7 @@ class MfaService(
         const val STATUS_MFA_REQUIRED = "MFA_REQUIRED"
         const val RECOVERY_CODE_COUNT = 10
         const val CEREMONY_TIMEOUT_MS = 120_000L
+        val RECENT_SIGN_IN: Duration = Duration.ofMinutes(15)
         val STEP_TTL: Duration = Duration.ofMinutes(5)
         val SUPPORTED_ALGORITHMS = listOf(COSEAlgorithmIdentifier.ES256, COSEAlgorithmIdentifier.EdDSA, COSEAlgorithmIdentifier.RS256)
     }

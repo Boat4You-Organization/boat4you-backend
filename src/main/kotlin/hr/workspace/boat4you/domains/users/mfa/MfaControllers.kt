@@ -151,7 +151,8 @@ class MfaAuthController(
 /** The signed-in user's own second-step settings. */
 @RestController
 @RequestMapping("/users/me/mfa")
-@PreAuthorize("isAuthenticated()")
+// Admin roles only (review 16.11.2026): a customer who turned it on could no longer sign in on the sites.
+@PreAuthorize("hasAnyAuthority('SYSTEM_ADMIN', 'MANAGER')")
 class MfaSettingsController(
     private val mfa: MfaService,
 ) {

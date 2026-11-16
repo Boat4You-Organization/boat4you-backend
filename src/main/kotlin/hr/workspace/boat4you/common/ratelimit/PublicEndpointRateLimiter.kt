@@ -195,6 +195,11 @@ class PublicEndpointRateLimiter(
             Rule("POST", "/public/inquiries", capacity = inquiryCapacity, windowSeconds = inquiryWindowSeconds, label = "inquiries"),
             Rule("POST", "/public/users/set-password-for-reservation", capacity = setPasswordCapacity, windowSeconds = setPasswordWindowSeconds, label = "set-password"),
             Rule("POST", "/auth/login", capacity = loginCapacity, windowSeconds = loginWindowSeconds, label = "login"),
+            // Two-step admin sign-in (16.11.2026, review): the password check of /auth/mfa/login must not escape the
+            // /auth/login budget (password spraying), and the code checks get the same per-IP budget on top of the
+            // per-account lockout. Browser calls straight to api: X-Real-IP.
+            Rule("POST", "/auth/mfa/login", capacity = loginCapacity, windowSeconds = loginWindowSeconds, label = "mfa-login", realIp = true),
+            Rule("POST", "/auth/mfa/", prefix = true, capacity = loginCapacity, windowSeconds = loginWindowSeconds, label = "mfa-step", realIp = true),
             Rule("POST", "/auth/register/verifyEmail", capacity = verifyEmailCapacity, windowSeconds = verifyEmailWindowSeconds, label = "verify-email"),
             Rule("POST", "/auth/register/resendVerificationCode/", prefix = true, capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "resend-verification"),
             Rule("POST", "/auth/register", capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "register"),

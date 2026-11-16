@@ -58,6 +58,7 @@ class MfaServiceTest {
         `when`(auth.checkPassword("mario@example.com", "right")).thenReturn(user)
         `when`(auth.completeLogin(user, http)).thenReturn(TokenResponse("access", "refresh", 7))
         `when`(users.findById(7)).thenReturn(Optional.of(user))
+        `when`(users.findByIdForUpdate(7)).thenReturn(user)
         `when`(passkeys.findAllByUserId(7)).thenReturn(emptyList())
         `when`(recovery.findAllByUserIdAndUsedAtIsNull(7)).thenReturn(emptyList())
         `when`(totps.findById(7)).thenReturn(Optional.empty())
@@ -157,7 +158,7 @@ class MfaServiceTest {
     }
 
     @Test
-    fun `phase 2 - an admin with nothing set up signs in with the password and is sent to set it up`() {
+    fun `phase 2 - an admin with nothing set up is refused, a customer is not affected`() {
         val admin =
             UserEntity().apply {
                 id = 7
@@ -170,14 +171,20 @@ class MfaServiceTest {
             },
         )
         `when`(auth.checkPassword("mario@example.com", "right")).thenReturn(admin)
-        `when`(auth.completeLogin(admin, http)).thenReturn(TokenResponse("access", "refresh", 7))
         val strictPolicy = MfaPolicy(passkeys, totps, recovery, devices, requiredForAdmin = true)
         val strict = MfaService(strictPolicy, auth, users, jwt, passkeys, totps, recovery, devices, "boat4you.com", "Boat4You Admin", "https://admin.boat4you.com", 30)
 
         strictPolicy.isRequired(admin) shouldBe true
         strictPolicy.isRequired(user) shouldBe false
-        val response = strict.login(MfaLoginRequest("mario@example.com", "right"), http)
-        response.status shouldBe "OK"
-        response.setupRequired shouldBe true
+        assertThrows<InternalLoginException> { strict.login(MfaLoginRequest("mario@example.com", "right"), http) }
+    }
+
+    @Test
+    fun `settings change only right after a full sign-in`() {
+        user.lastLoginAt = Instant.now().minusSeconds(3600)
+        assertThrows<hr.workspace.boat4you.common.exceptions.ParameterValidationException> { mfa.newRecoveryCodes(7) }
+
+        user.lastLoginAt = Instant.now()
+        mfa.newRecoveryCodes(7).size shouldBe 10
     }
 }

@@ -26,6 +26,11 @@ interface UserRepository :
     )
     fun findByEmail(email: String): UserEntity?
 
+    /** The row locked for the rest of the transaction: concurrent second-step tries count one after another (16.11.2026). */
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM UserEntity u WHERE u.id = :id")
+    fun findByIdForUpdate(id: Long): UserEntity?
+
     /** Active accounts whose address equals [email] ignoring letter case (sign-in and password reset fallback). */
     @Query(
         """
