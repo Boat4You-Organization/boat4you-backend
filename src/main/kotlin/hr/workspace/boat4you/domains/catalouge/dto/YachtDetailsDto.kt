@@ -31,6 +31,12 @@ data class YachtDetailsDto(
     val custom: Boolean = false,
     val amenities: List<YachtEquipmentDto> = emptyList(),
     val services: List<YachtExtrasDto> = emptyList(),
+    /**
+     * The boat's one-way fees, for information only (Mario 16.11.2026): never in [services] (never obligatory, not
+     * selectable), shown under "Optional services" as "only for a one-way charter". A one-way offer charges its own.
+     * Frontends that do not know this field show nothing, as before.
+     */
+    val oneWayFees: List<YachtExtrasDto> = emptyList(),
     val offers: List<OfferDto>? = null,
     val modelName: String? = null,
     val manufacturerName: String? = null,

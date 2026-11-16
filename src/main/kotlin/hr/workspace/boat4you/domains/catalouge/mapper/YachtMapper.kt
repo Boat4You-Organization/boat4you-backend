@@ -239,12 +239,14 @@ class YachtMapper(
                 periodLocation ?: result.location?.toDto() ?: offerDtos?.firstOrNull()?.locationFrom
             }
 
-        val extras =
+        // One-way fees are not services of the boat itself (OneWayFeeRules, 16.11.2026): never in `services`, listed
+        // apart for information ("only for a one-way charter"); an offer that really ends in another marina lists its own.
+        val (oneWayRows, serviceRows) =
             yachtExtras
-                // One-way fees are not services of the boat itself (OneWayFeeRules, 16.11.2026): an offer that really
-                // ends in another marina lists its own.
-                .filter { it.shouldDisplay() && !OneWayFeeRules.isOneWayFee(it.name) }
-                .map { yachtExtrasMapper.toDto(it, currency, partnerCopy) }
+                .filter { it.shouldDisplay() }
+                .partition { OneWayFeeRules.isOneWayFee(it.name) }
+        val extras = serviceRows.map { yachtExtrasMapper.toDto(it, currency, partnerCopy) }
+        val oneWayFees = oneWayRows.map { yachtExtrasMapper.toDto(it, currency, partnerCopy).copy(obligatory = false) }
 
         val capacityColumns = CapacityColumns.of(result)
         val customDetails =
@@ -297,6 +299,7 @@ class YachtMapper(
             // admin rows collapse by name.
             amenities = amenities(result.yachtEquipments, partnerCopy),
             services = extras,
+            oneWayFees = oneWayFees,
             description = description,
             highlights = highlights,
             custom = result.entryType == EntryType.CUSTOM,
