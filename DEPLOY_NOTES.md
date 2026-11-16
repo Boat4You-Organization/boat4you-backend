@@ -6,6 +6,12 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-16 — ✅ LIVE cusma2 12:36 UTC: passkey prijava je padala s 500 — `main` `954d6796`, tag `live/2026-11-16-admin-mfa-fix`
+
+**Uzrok:** ispravak iz pregleda (70b91e8a) zaključava redak korisnika (`findByIdForUpdate`, PESSIMISTIC_WRITE) u `userOf`. `passkeyRequestOptions` je jedini pozivatelj bez `@Transactional`, pa je svaki `POST /auth/mfa/passkey/options` od 12:17 vraćao 500 i Touch ID / Face ID se nije ni otvorio (Mario 12:26–12:33). Kodovi iz Authenticatora su radili.
+
+**Ispravak:** `@Transactional` na `passkeyRequestOptions`. Test `MfaTransactionsTest` provjerava da su sva 4 koraka koja zaključavaju redak u transakciji. Jedinični testovi s lažnim repozitorijem ovo nisu mogli uhvatiti.
+
 ## 2026-11-16 — ✅ LIVE cusma2 (faza 1): prijava u dva koraka za admin, passkey (Face ID / Touch ID) + Authenticator + rezervni kodovi — jar `4b8db0f6e45c912045951857c2e1b9fa`, `main` `70b91e8a`, tag `live/2026-11-16-admin-mfa`; V9_128 primijenjena 12:17 UTC; cusma3 NIJE dirana
 
 **Povod:** audit 15.11. (MEDIUM: admin javan bez 2FA). Mario 16.11.: passkey s Face ID-om, Google Authenticator kao rezerva, „da ne moram svaki dan“. Nova biblioteka uz Marijevo „da“: `com.webauthn4j:webauthn4j-core` 0.30.3 (Maven Central, Apache 2.0, 563 KB; 0.30.x je zadnja linija na Jacksonu 2).
