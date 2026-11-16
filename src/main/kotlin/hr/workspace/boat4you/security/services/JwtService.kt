@@ -74,6 +74,7 @@ class JwtService {
                 ClaimsConstants.USER_ROLES to user.authorities.map { it.toString() },
                 ClaimsConstants.USER_ID to user.userId.toString(),
                 ClaimsConstants.USER_EMAIL to user.email,
+                ClaimsConstants.TOKEN_TYPE to ClaimsConstants.TOKEN_TYPE_ACCESS,
             )
 
         return generateToken(claims, user)
@@ -93,6 +94,7 @@ class JwtService {
             mapOf(
                 ClaimsConstants.USER_ID to user.userId.toString(),
                 ClaimsConstants.USER_EMAIL to user.email,
+                ClaimsConstants.TOKEN_TYPE to ClaimsConstants.TOKEN_TYPE_REFRESH,
             )
         val expiryDate = Date(System.currentTimeMillis() + refreshExpiration)
         val token = buildToken(claims, user, expiryDate)
@@ -119,6 +121,22 @@ class JwtService {
             .signWith(signingKey)
             .compact()
     }
+
+    /** The Bearer of an API call: a token marked "access", or one from before the mark that carries the roles. */
+    fun isAccessToken(claims: Claims): Boolean =
+        when (claims[ClaimsConstants.TOKEN_TYPE]) {
+            ClaimsConstants.TOKEN_TYPE_ACCESS -> true
+            null -> claims.containsKey(ClaimsConstants.USER_ROLES)
+            else -> false
+        }
+
+    /** Renews an access token at /auth/refreshToken: marked "refresh", or from before the mark without the roles. */
+    fun isRefreshToken(claims: Claims): Boolean =
+        when (claims[ClaimsConstants.TOKEN_TYPE]) {
+            ClaimsConstants.TOKEN_TYPE_REFRESH -> true
+            null -> !claims.containsKey(ClaimsConstants.USER_ROLES) && claims.containsKey(ClaimsConstants.USER_EMAIL)
+            else -> false
+        }
 
     fun isTokenValid(
         token: String,

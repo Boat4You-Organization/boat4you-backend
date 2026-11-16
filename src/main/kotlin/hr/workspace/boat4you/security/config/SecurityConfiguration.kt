@@ -38,6 +38,9 @@ class SecurityConfiguration(
                     .requestMatchers(
                         OrRequestMatcher(
                             pathMatcher.matcher("/auth/login"),
+                            // Public since 16.11.2026: the refresh token is no longer a Bearer for the filter; the endpoint
+                            // checks it itself (signature, expiry, stored and not revoked, type "refresh").
+                            pathMatcher.matcher("/auth/refreshToken"),
                             pathMatcher.matcher("/auth/requestPasswordReset"),
                             pathMatcher.matcher("/auth/resetPassword"),
                             pathMatcher.matcher("/auth/register/**"),

@@ -62,6 +62,12 @@ class JwtAuthenticationFilter(
         token: String,
     ) {
         val claims = jwtService.extractAllClaims(token)
+        // Only an access token authenticates an API call (security audit 15.11.2026): a refresh token (3 days) was
+        // accepted as a Bearer too. /auth/refreshToken is public and checks its own token.
+        if (!jwtService.isAccessToken(claims)) {
+            log.warn("Non-access token presented as Bearer for URL: ${httpRequest.requestURI}")
+            return
+        }
         val userEmail = claims[ClaimsConstants.USER_EMAIL] as String?
 
         if (userEmail == null) {

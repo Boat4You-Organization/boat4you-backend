@@ -231,6 +231,11 @@ class UserAuthService(
 
         // TODO Catch all exceptions possibly thrown by this method and handle them
         val userEmail: String = jwtService.extractEmail(token)
+        // Only a refresh token renews (security audit 15.11.2026): an access token renewed itself forever, so a
+        // stolen one never expired.
+        if (!jwtService.isRefreshToken(jwtService.extractAllClaims(token))) {
+            throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, userEmail)
+        }
 
         val dbUser = userRepository.findByEmail(userEmail) ?: throw InternalLoginException(InternalLoginException.Type.BAD_CREDENTIALS, userEmail)
         val userDomainEntity = dbUser.toDomainUser()
