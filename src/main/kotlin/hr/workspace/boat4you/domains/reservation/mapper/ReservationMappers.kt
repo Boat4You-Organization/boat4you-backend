@@ -16,6 +16,7 @@ import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.services.toPublicDtos
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
+import hr.workspace.boat4you.domains.catalouge.utils.OneWayFeeRules
 import hr.workspace.boat4you.domains.catalouge.utils.ReservationCharterRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import hr.workspace.boat4you.domains.external.enums.ExternalSystemEnum
@@ -235,6 +236,8 @@ class ReservationMappers(
             services =
                 yacht.yachtExtras
                     .filter { it.shouldDisplay() }
+                    // One-way fees are not services of the boat (OneWayFeeRules, 16.11.2026).
+                    .filter { !OneWayFeeRules.isOneWayFee(it.name) }
                     // Wrong-period siblings of an obligatory row the booking
                     // actually carries ("Comfort Pack 2/3 weeks" on a one-week
                     // charter) never surface — the price calc no longer charges
@@ -413,6 +416,8 @@ class ReservationMappers(
             services =
                 yacht.yachtExtras
                     .filter { it.shouldDisplay() }
+                    // One-way fees are not services of the boat (OneWayFeeRules, 16.11.2026).
+                    .filter { !OneWayFeeRules.isOneWayFee(it.name) }
                     // Wrong-period siblings of an obligatory row the booking
                     // actually carries ("Comfort Pack 2/3 weeks" on a one-week
                     // charter) never surface — the price calc no longer charges

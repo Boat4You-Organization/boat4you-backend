@@ -12,10 +12,12 @@ import hr.workspace.boat4you.domains.catalouge.enums.ExtrasUnitType
 import hr.workspace.boat4you.domains.catalouge.jpa.ExternalBaseRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Offer
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
+import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtra
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtExtraRepository
 import hr.workspace.boat4you.domains.catalouge.mapper.YachtExtrasMapper
 import hr.workspace.boat4you.domains.catalouge.utils.ExtraNameNormalizer
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
+import hr.workspace.boat4you.domains.catalouge.utils.OneWayFeeRules
 import hr.workspace.boat4you.domains.external.nausys.service.NauSysObligatoryExtrasService
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
@@ -64,7 +66,11 @@ class PriceCalculationService(
         // Wrong-period siblings of an obligatory row the partner attached to THIS
         // offer ("Comfort Pack 2/3 weeks" on a one-week charter) — never listed,
         // never charged. See ExtrasVariantResolver.
-        val supersededYachtExtraKeys = ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, yachtExtras)
+        val supersededYachtExtraKeys = ExtrasVariantResolver.supersededYachtExtraKeys(offer.chargeableOfferExtras(), yachtExtras)
+        // One-way fees (OneWayFeeRules, 16.11.2026): the offer's own only when it really ends in another marina
+        // (chargeableOfferExtras); the boat's only for a one-way offer without a fee of its own, and only the fee of
+        // that route.
+        val boatOneWayFees = boatOneWayFeesFor(offer, yacht, yachtExtras)
 
         // 1. calc take all yacht extras that are obligatory or selected extras
         val allYachtExtras =
@@ -88,7 +94,8 @@ class PriceCalculationService(
                     // 22.10.2026: "Luxury Pack 2weeks" (8-14 days, 10,400 €) was listed and summed next to the
                     // weekly "Luxury Pack Bali 5.4" (0-7 days, 5,200 €) on a one-week booking.
                     it.appliesToNights(offer.numberOfDays())
-                }.filter { it.obligatory == true || selectedExtras.contains(it.extrasKey()) }
+                }.filter { !OneWayFeeRules.isOneWayFee(it.name) || it in boatOneWayFees }
+                .filter { it.obligatory == true || selectedExtras.contains(it.extrasKey()) }
                 .filter { it.extrasKey() !in supersededYachtExtraKeys }
                 .map { yachtExtrasMapper.toInternalCalc(it) }
 
@@ -255,7 +262,7 @@ class PriceCalculationService(
         // Wrong-period siblings dropped from the base calc must not sneak back in
         // through the partner re-quote (their keys are no longer in the base
         // buckets, so alreadyCounted alone would let them through).
-        alreadyCounted += ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, allYachtExtras)
+        alreadyCounted += ExtrasVariantResolver.supersededYachtExtraKeys(offer.chargeableOfferExtras(), allYachtExtras)
 
         // The re-quote names a service through ExtraNameNormalizer, but a row the NauSys
         // sync inserted before a rule existed keeps the raw partner name (it writes the
@@ -272,8 +279,11 @@ class PriceCalculationService(
         val namesCounted =
             (base.selectedExtrasInPrice + base.selectedExtrasAtBase).mapTo(HashSet()) { sameName(it.name) }
 
+        val roundTrip = offer.isRoundTrip()
         val promoted =
             obligatory.mapNotNull { o ->
+                // One-way fees (OneWayFeeRules): never on a round trip, also not through the re-quote.
+                if (roundTrip && OneWayFeeRules.isOneWayFee(o.name)) return@mapNotNull null
                 val ye = yachtExtrasByName[o.name]
                 val key = ye?.extrasKey() ?: o.name
                 if (sameName(o.name) in namesCounted) return@mapNotNull null
@@ -312,6 +322,26 @@ class PriceCalculationService(
             totalPriceEur = newTotal,
             totalPriceInfo = exchangeRateCalculationService.calculatePriceInfo(newTotal, currency),
         )
+    }
+
+    /**
+     * One-way offer whose partner rows carry no one-way fee (725 offers on 16.11.2026): the boat's fee for that route
+     * (OneWayFeeRules.forRoute, matched on the marina at the far end). Round trips and offers with their own fee: none.
+     */
+    private fun boatOneWayFeesFor(
+        offer: Offer,
+        yacht: Yacht,
+        yachtExtras: List<YachtExtra>,
+    ): Set<YachtExtra> {
+        if (offer.isRoundTrip() || offer.chargeableOfferExtras().any { OneWayFeeRules.isOneWayFee(it.name) }) return emptySet()
+        val farEnd =
+            when (yacht.location?.id) {
+                offer.locationFrom?.id -> listOf(offer.locationTo)
+                offer.locationTo?.id -> listOf(offer.locationFrom)
+                else -> listOf(offer.locationFrom, offer.locationTo)
+            }.flatMap { listOf(it?.name, it?.city) }
+        val fees = yachtExtras.filter { it.obligatory == true && OneWayFeeRules.isOneWayFee(it.name) }
+        return OneWayFeeRules.forRoute(fees, { it.name }, farEnd).toSet()
     }
 }
 

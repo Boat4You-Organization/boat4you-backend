@@ -554,6 +554,11 @@ class CharterFactsComputeService(
                       AND ye.price >= 0
                       AND $m IS NOT NULL
                       AND ye.name !~* '$DEPOSIT_LIKE'
+                      -- one-way fees are never obligatory on the boat itself (OneWayFeeRules, 16.11.2026)
+                      AND NOT (
+                          (ye.name ~* '$ONE_WAY_START' AND (ye.name ~* '$ONE_WAY_FEE_WORDS' OR ye.name !~* '$ONE_WAY_SERVICE_WORDS'))
+                          OR (ye.name ~* '$ONE_WAY_BRACKET' AND ye.name ~* '$ONE_WAY_FEE_WORDS')
+                      )
                       AND $validInWindow
                     ORDER BY ye.yacht_id, lower(btrim(ye.name)), $validToday DESC, ye.valid_from ASC NULLS FIRST, ye.id
                 ),
@@ -614,6 +619,12 @@ class CharterFactsComputeService(
 
         /** Deposit-like obligatory items: not a charter cost (refundable) or a deposit substitute. */
         const val DEPOSIT_LIKE = "deposit|caution|kaution|waiver|insurance"
+
+        /** OneWayFeeRules.isOneWayFee in PostgreSQL regex form (\y = word boundary): never a boat's obligatory cost. */
+        const val ONE_WAY_START = """^\s*one\s*[-–‑]?\s*way\y"""
+        const val ONE_WAY_BRACKET = """\(\s*one\s*[-–‑]?\s*way\s*\)"""
+        const val ONE_WAY_FEE_WORDS = "fee|charge|supplement|delivery|charter"
+        const val ONE_WAY_SERVICE_WORDS = """transfer|pick\s*-?\s*up|shuttle|taxi"""
 
         private val COUNTRY_CODE = Regex("^[A-Z]{2}$")
 

@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.catalouge.services.CharterAgreementService
 import hr.workspace.boat4you.domains.catalouge.services.EmailService
 import hr.workspace.boat4you.domains.catalouge.utils.ExtrasVariantResolver
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
+import hr.workspace.boat4you.domains.catalouge.utils.OneWayFeeRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtLabel
 import hr.workspace.boat4you.domains.reservation.dto.ReservationDto
 import hr.workspace.boat4you.domains.reservation.enums.PaymentType
@@ -229,6 +230,8 @@ class ReservationEmailService(
         // marina catalogue too. See ExtrasVariantResolver.
         val supersededKeys = ExtrasVariantResolver.supersededByReservation(resvExtras, yacht.yachtExtras)
         val availableAtMarina: List<Map<String, Any?>> = yacht.yachtExtras
+            // One-way fees are not services of the boat (OneWayFeeRules, 16.11.2026); a one-way booking carries its own.
+            .filter { !OneWayFeeRules.isOneWayFee(it.name) }
             .filter { it.extras?.id !in addedExtraIds }
             .filter { it.externalId == null || it.externalId !in addedExternalIds }
             .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }
@@ -457,6 +460,8 @@ class ReservationEmailService(
         // marina catalogue too. See ExtrasVariantResolver.
         val supersededKeys = ExtrasVariantResolver.supersededByReservation(resvExtras, yacht.yachtExtras)
         val availableAtMarina: List<Map<String, Any?>> = yacht.yachtExtras
+            // One-way fees are not services of the boat (OneWayFeeRules, 16.11.2026); a one-way booking carries its own.
+            .filter { !OneWayFeeRules.isOneWayFee(it.name) }
             .filter { it.extras?.id !in addedExtraIds }
             .filter { it.externalId == null || it.externalId !in addedExternalIds }
             .filter { it.name.isNullOrBlank() || it.extrasKey() !in supersededKeys }

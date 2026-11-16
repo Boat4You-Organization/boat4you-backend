@@ -60,12 +60,13 @@ class OfferMapper(
                     }
                 } ?: ExternalReservationStatus.FREE,
             obligatoryExtrasKeys =
-                offer.offerExtras
+                offer
+                    .chargeableOfferExtras()
                     .filter { it.obligatory == true }
                     .map { it.extrasKey() }
                     .toSet(),
             supersededExtrasKeys =
-                ExtrasVariantResolver.supersededYachtExtraKeys(offer.offerExtras, offer.yacht?.yachtExtras.orEmpty()) +
+                ExtrasVariantResolver.supersededYachtExtraKeys(offer.chargeableOfferExtras(), offer.yacht?.yachtExtras.orEmpty()) +
                     ExtrasVariantResolver.outOfDurationYachtExtraKeys(offer.yacht?.yachtExtras.orEmpty(), offer.numberOfDays()),
             extras =
                 filteredOfferExtras

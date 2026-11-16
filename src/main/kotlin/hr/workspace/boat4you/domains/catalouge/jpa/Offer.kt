@@ -3,6 +3,7 @@ package hr.workspace.boat4you.domains.catalouge.jpa
 import hr.workspace.boat4you.domains.catalouge.enums.CharterType
 import hr.workspace.boat4you.domains.catalouge.enums.OfferStatus
 import hr.workspace.boat4you.domains.catalouge.enums.OfferType
+import hr.workspace.boat4you.domains.catalouge.utils.OneWayFeeRules
 import jakarta.persistence.CascadeType
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
@@ -171,6 +172,16 @@ open class Offer {
         return clientPrice!!.divide(numberOfDays().toBigDecimal(), 2, RoundingMode.HALF_UP)
     }
 
+    /** Starts and ends in the same marina (a one-way charter ends elsewhere). */
+    fun isRoundTrip(): Boolean = locationFrom?.id != null && locationFrom?.id == locationTo?.id
+
+    /**
+     * The partner's rows this offer may list and charge: everything except a one-way fee on a round trip
+     * (OneWayFeeRules, 16.11.2026). Every reader of the offer's rows (price, obligatory keys, superseded boat rows)
+     * goes through this, so a dropped "Marina Fee (One-Way)" row can no longer hide the boat's own "Marina Fee".
+     */
+    fun chargeableOfferExtras(): List<OfferExtra> = if (isRoundTrip()) offerExtras.filter { !OneWayFeeRules.isOneWayFee(it.name) } else offerExtras
+
     /**
      * One entry per charge the client can meet on this offer, paired with "has
      * dearer options" (only ever true for optional rows).
@@ -197,7 +208,7 @@ open class Offer {
         // Stable order: offerExtras has no @OrderBy, and which row survived a
         // collapse used to depend on load order.
         val (obligatoryRows, optionalRows) =
-            offerExtras.sortedBy { it.id ?: Long.MAX_VALUE }.partition { it.obligatory == true }
+            chargeableOfferExtras().sortedBy { it.id ?: Long.MAX_VALUE }.partition { it.obligatory == true }
 
         val obligatory =
             obligatoryRows

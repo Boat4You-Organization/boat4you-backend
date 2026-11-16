@@ -38,6 +38,7 @@ import hr.workspace.boat4you.domains.catalouge.services.toDto
 import hr.workspace.boat4you.domains.catalouge.services.toPublicDtos
 import hr.workspace.boat4you.domains.catalouge.services.withCoordinates
 import hr.workspace.boat4you.domains.catalouge.utils.GuletRules
+import hr.workspace.boat4you.domains.catalouge.utils.OneWayFeeRules
 import hr.workspace.boat4you.domains.catalouge.utils.YachtPublicSlug
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.core.context.SecurityContextHolder
@@ -240,7 +241,9 @@ class YachtMapper(
 
         val extras =
             yachtExtras
-                .filter { it.shouldDisplay() }
+                // One-way fees are not services of the boat itself (OneWayFeeRules, 16.11.2026): an offer that really
+                // ends in another marina lists its own.
+                .filter { it.shouldDisplay() && !OneWayFeeRules.isOneWayFee(it.name) }
                 .map { yachtExtrasMapper.toDto(it, currency, partnerCopy) }
 
         val capacityColumns = CapacityColumns.of(result)
