@@ -6,6 +6,31 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-16 — ✅ LIVE cusma2: one-way naknade više nisu obavezne na povratnom najmu — jar `b7209b06f6a8244f4d297043d30a7a2c`, `main` `f1a3b25c`, tag `live/2026-11-16-oneway-fee`; cusma2 08:25 UTC; **cusma3 NIJE dirana** (charter facts dio čeka cusma3)
+
+**Povod (Mario 16.11.):** Prestige M48 „Diamond Si“ (18077), najam Rogoznica → Rogoznica. Popis usluga i živi izračun cijene navodili su pod „plaća se u bazi“ četiri one-way naknade: Tivat, Dubrovnik, Split i Zadar → Rogoznica, ukupno 7.850 €. Mario: „ne smiju biti ovi one way kao obligatory“. Partneri naknadu za svaku relaciju stavljaju kao obaveznu uslugu broda, bez baze i relacije: 2.844 retka na ~905 brodova, plus 2.067 obaveznih redaka na povratnim ponudama. Nijedna dosadašnja rezervacija takvu naknadu nema.
+
+**Promjena:**
+- `OneWayFeeRules`: ime počinje s „One way“ / „One-Way“ / „Oneway“ (bilo koja crtica) i nije transfer, taxi ni shuttle bez riječi fee/charge/delivery/charter; ili ime ima „(One-Way)“ i riječ naknade.
+- `Offer.chargeableOfferExtras()`: na povratnom najmu bez one-way naknada. Koriste ga izračun, `filterDuplicateExtras`, `obligatoryExtrasKeys` i zamjenske stavke broda (nalaz pregleda: izbačeni „X (One-Way)“ više ne skriva običnu naknadu „X“ broda).
+- Izračun cijene: one-way naknade s broda uzimaju se samo za one-way ponudu bez vlastite naknade, i to samo ona koja imenuje marinu na drugom kraju; inače jedina postojeća, inače nijedna (725 takvih ponuda). NauSys ponovni izračun ih na povratnom najmu preskače.
+- Bez one-way naknada s broda: stranica broda (×7 sajtova), e-mailovi rezervacija („available at marina“), my-bookings i charter facts (PG kopija pravila, radi samo na cusma3).
+
+**Provjereno:**
+- Testovi: `PriceCalculationOneWayFeeTest` (8). Cijeli suite 2366, 1 pad nevezan uz ovo (`PartnerTextSanitizerTest`: `operators.txt` ≠ infra kopija).
+- Neovisni pregled (Opus): 5 nalaza, provjereno na živim podacima.
+  - Popravljena 3.
+  - Jedan ne postoji: nijedna one-way ponuda nema više od jedne naknade.
+  - `offer.total_price` ostaje otvoren; za 18077 je jednak cijeni najma.
+- PG izraz isproban na cusma4: 2.839 redaka.
+- Uživo:
+  - 18077, tjedan 21.–28.11.: u bazi se plaćaju samo Charter pack 680 € i pristojba 18,90 €; stranica ima 0 one-way naknada;
+  - prava one-way ponuda 291968 (Portimão → Lisabon) i dalje naplaćuje „One Way - Portimão - Lisbon“ 600 €.
+
+**Otvoreno:**
+- cusma3 (charter facts) pri sljedećem deployu na `both`;
+- `offer.total_price` sa sync-a može sadržavati one-way naknade (kalendar bez valute i skip-external-system rezervacije).
+
 ## 2026-11-16 — ✅ LIVE cusma2: zatvoreno preuzimanje računa gosta + obnova lozinke u bilo kojim slovima — jar `923939cd8f79cd4381e275cdfb4b49e4`, `main` `5d2fb65a`, tag `live/2026-11-16-guest-setpw`; cusma2 06:13 UTC; **cusma3 NIJE dirana**
 
 **Povod:** sigurnosni audit 15.11. (HIGH). `POST /public/users/set-password-for-reservation` je postavljao lozinku gosta samo uz broj rezervacije i e-mail. Rezervacija pod tuđim e-mailom veže se na taj račun, pa je napadač mogao preuzeti račun gosta (rezervacije, crew lista s putovnicama, računi). Mario 15.11.: „napravi se rezervacija, on dobiva email da napravi lozinku … on je zatvoren dok se ne napravi lozinka“; 16.11.: obnova lozinke mora raditi besprijekorno.
