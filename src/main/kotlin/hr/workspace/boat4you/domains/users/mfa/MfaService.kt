@@ -95,6 +95,9 @@ class MfaService(
         return MfaLoginResponse(status = STATUS_MFA_REQUIRED, mfaToken = mfaToken, methods = methods(userId))
     }
 
+    // In a transaction: userOf locks the user row (findByIdForUpdate), which needs one (16.11.2026: without it every
+    // passkey sign-in failed with 500 at this first step).
+    @Transactional
     fun passkeyRequestOptions(mfaToken: String?): PasskeyRequestOptions {
         val user = userOf(jwtService.parsePurposeToken(mfaToken, TYPE_MFA))
         val challenge = MfaCodes.randomBytes(32)

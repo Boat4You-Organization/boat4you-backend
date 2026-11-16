@@ -41,3 +41,17 @@ class MfaCodesTest {
             "otpauth://totp/Boat4You%20Admin:ana%40example.com?secret=ABC&issuer=Boat4You%20Admin&algorithm=SHA1&digits=6&period=30"
     }
 }
+
+/**
+ * 16.11.2026: passkeyRequestOptions locked the user row (findByIdForUpdate) outside a transaction, so every passkey
+ * sign-in answered 500 at its first step. Every step that reads the user of a step token must run in one.
+ */
+class MfaTransactionsTest {
+    @org.junit.jupiter.api.Test
+    fun `every step that locks the user row is transactional`() {
+        listOf("passkeyRequestOptions", "verifyPasskey", "verifyTotp", "verifyRecoveryCode").forEach { name ->
+            val method = MfaService::class.java.methods.first { it.name == name }
+            (method.getAnnotation(org.springframework.transaction.annotation.Transactional::class.java) != null) shouldBe true
+        }
+    }
+}
