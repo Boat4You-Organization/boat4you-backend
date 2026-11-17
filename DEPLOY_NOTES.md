@@ -6,6 +6,21 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-17 — ✅ LIVE cusma2: limit registracije i ponovnog slanja koda radi + token obrisanog korisnika = 401, ne 500 — `main` `183bc2e3`, tag `live/2026-11-17-auth-ratelimit`; cusma3 NIJE dirana
+
+**Povod:** Fable sigurnosni pregled 17.11. (nalaz 5) i neovisni pregled popravka.
+
+**Promjena:**
+- `JwtAuthenticationFilter` hvata i `InternalLoginException`. Token obrisanog ili deaktiviranog korisnika ostavlja zahtjev neprijavljenim (401/403), umjesto 500 sa stack traceom.
+- `PublicEndpointRateLimiter`: dva pravila se nikad nisu primjenjivala, pa ih je svatko mogao zvati bez ograničenja.
+  - `Rule("POST", "/auth/register")` → `PUT` (ruta je PUT).
+  - `resendVerificationCode/` s prefiksom → točna putanja (e-mail je u tijelu zahtjeva).
+- Oba limita: 3 u minuti po posjetitelju. b4y web šalje IP posjetitelja (ab99d0f04).
+
+**Provjereno:**
+- Testovi: `JwtFilterUnknownUserTest`, novi test u `PublicEndpointRateLimiterTest`.
+- Uživo: `PUT /auth/register` 400, 400, 400, **429**; `resendVerificationCode` 200, 200, 200, **429**.
+
 ## 2026-11-16 — ✅ LIVE cusma2 12:36 UTC: passkey prijava je padala s 500 — `main` `954d6796`, tag `live/2026-11-16-admin-mfa-fix`
 
 **Uzrok:** ispravak iz pregleda (70b91e8a) zaključava redak korisnika (`findByIdForUpdate`, PESSIMISTIC_WRITE) u `userOf`. `passkeyRequestOptions` je jedini pozivatelj bez `@Transactional`, pa je svaki `POST /auth/mfa/passkey/options` od 12:17 vraćao 500 i Touch ID / Face ID se nije ni otvorio (Mario 12:26–12:33). Kodovi iz Authenticatora su radili.
