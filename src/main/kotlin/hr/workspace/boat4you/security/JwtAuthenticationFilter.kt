@@ -50,6 +50,11 @@ class JwtAuthenticationFilter(
                     authorize(request, token)
                 } catch (e: JwtException) {
                     log.warn("JWT Error: ${e.message} for URL: ${request.requestURI}")
+                } catch (e: InternalLoginException) {
+                    // A valid token of a user deleted or deactivated since (findByEmail sees active users only): the
+                    // request goes on unauthenticated and gets the security chain's 401/403, not a 500 from the filter
+                    // (security review 17.11.2026).
+                    log.warn("Token of an unknown user ({}) for URL: {}", e.type, request.requestURI)
                 }
             }
         }
