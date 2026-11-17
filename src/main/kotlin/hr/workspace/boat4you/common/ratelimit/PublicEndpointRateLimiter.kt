@@ -201,8 +201,10 @@ class PublicEndpointRateLimiter(
             Rule("POST", "/auth/mfa/login", capacity = loginCapacity, windowSeconds = loginWindowSeconds, label = "mfa-login", realIp = true),
             Rule("POST", "/auth/mfa/", prefix = true, capacity = loginCapacity, windowSeconds = loginWindowSeconds, label = "mfa-step", realIp = true),
             Rule("POST", "/auth/register/verifyEmail", capacity = verifyEmailCapacity, windowSeconds = verifyEmailWindowSeconds, label = "verify-email"),
-            Rule("POST", "/auth/register/resendVerificationCode/", prefix = true, capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "resend-verification"),
-            Rule("POST", "/auth/register", capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "register"),
+            // Review 17.11.2026: both rules never matched - the e-mail travels in the body (no path suffix), and registration
+            // is a PUT (AuthController.registerUser). The web sends the visitor's IP with both (auth.actions.ts).
+            Rule("POST", "/auth/register/resendVerificationCode", capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "resend-verification"),
+            Rule("PUT", "/auth/register", capacity = registerCapacity, windowSeconds = registerWindowSeconds, label = "register"),
             Rule("POST", "/auth/requestPasswordReset", capacity = passwordResetCapacity, windowSeconds = passwordResetWindowSeconds, label = "password-reset"),
             Rule("POST", "/public/reviews/request/", prefix = true, capacity = reviewCapacity, windowSeconds = reviewWindowSeconds, label = "review-submit"),
             Rule("POST", "/public/chat/sessions", capacity = chatSessionCapacity, windowSeconds = chatSessionWindowSeconds, label = "chat-session", realIp = true),

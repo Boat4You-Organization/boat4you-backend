@@ -128,7 +128,6 @@ class PublicEndpointRateLimiterTest {
             "/public/reservations" to 5,
             "/public/users/set-password-for-reservation" to 5,
             "/auth/login" to 10,
-            "/auth/register" to 3,
             "/auth/requestPasswordReset" to 3,
             "/auth/register/verifyEmail" to 5,
             "/public/reviews/request/tok" to 10,
@@ -138,6 +137,16 @@ class PublicEndpointRateLimiterTest {
             hit(uri, xff = "10.9.9.9").status shouldBe 429
             hit(uri, xff = "91.98.209.180").status shouldBe 429 // naming our server in the header is not being our server
             hit(uri, xri = "203.0.113.8", xff = "10.9.9.9").status shouldBe 200 // another real address has its own budget
+        }
+    }
+
+    @Test
+    fun `registration (PUT) and resending the code are limited per visitor (review 17-11)`() {
+        limiter.clock = CcTestClock()
+        listOf("PUT" to "/auth/register", "POST" to "/auth/register/resendVerificationCode").forEach { (method, uri) ->
+            repeat(3) { hit(uri, method = method).status shouldBe 200 }
+            hit(uri, method = method).status shouldBe 429
+            hit(uri, xri = "203.0.113.8", method = method).status shouldBe 200
         }
     }
 
