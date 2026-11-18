@@ -4,6 +4,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationAnalysis
 import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationData
 import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationMetadata
+import hr.workspace.boat4you.domains.calls.elevenlabs.DataCollectionResult
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsApi
 import hr.workspace.boat4you.domains.calls.elevenlabs.OutboundCallResult
 import hr.workspace.boat4you.domains.calls.elevenlabs.TranscriptTurn
@@ -59,7 +60,7 @@ class CallReconcileTest : CallsJpaTest() {
                 status,
                 listOf(TranscriptTurn("agent", "Dobar dan", 0), TranscriptTurn("user", "Da, izvolite.", 3)),
                 ConversationMetadata(60, 100, "end_call"),
-                ConversationAnalysis("success", "Sažetak."),
+                ConversationAnalysis("success", "Sažetak.", mapOf("dates_confirmed" to DataCollectionResult(true))),
             )
 
         override fun deleteConversation(conversationId: String) = Unit

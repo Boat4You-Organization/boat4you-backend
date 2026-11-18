@@ -56,12 +56,13 @@ class CallOutcomeService(
                     "tools" to t.toolCalls.orEmpty().mapNotNull { it["tool_name"] ?: it["name"] },
                 )
             }
-        // Not reached: voicemail, or a client who never said a word (hung up during the greeting). ElevenLabs' call_successful
-        // cannot tell, since every quality criterion counts "did not come up" as success (call 72, 18.11.2026).
+        // Not reached: voicemail, or a client who never said a word (hung up during the greeting; noise or silence comes as
+        // "..."). ElevenLabs' call_successful cannot tell, since every quality criterion counts "did not come up" as success
+        // (calls 72 and 32, 18.11.2026).
         val notReached =
             when {
                 call.terminationReason?.contains("voicemail", ignoreCase = true) == true -> CallStatus.VOICEMAIL
-                data.transcript.none { it.role == "user" && !it.message.isNullOrBlank() } -> CallStatus.NO_ANSWER
+                data.transcript.none { it.role == "user" && it.message.orEmpty().any(Char::isLetterOrDigit) } -> CallStatus.NO_ANSWER
                 else -> null
             }
         if (notReached != null) {
@@ -196,6 +197,17 @@ class CallOutcomeService(
             key: String,
         ) = collected?.get(key).let { it == true || it?.toString().equals("true", ignoreCase = true) }
 
+        /** At least one thing the client gave or confirmed in the call: a true flag, a number or a non-empty text. */
+        private fun clientGaveSomething(collected: Map<String, Any?>): Boolean =
+            collected.values.any {
+                when (it) {
+                    is Boolean -> it
+                    is Number -> true
+                    is String -> it.isNotBlank() && !it.equals("false", ignoreCase = true)
+                    else -> false
+                }
+            }
+
         /** The client said the call must not be recorded, whatever else the call ended with. */
         fun refusedRecording(collected: Map<String, Any?>?): Boolean = yes(collected, "recording_refused")
 
@@ -217,7 +229,8 @@ class CallOutcomeService(
                 yes("booked_elsewhere") -> CallOutcome.BOOKED_ELSEWHERE
                 yes("not_interested") -> CallOutcome.NOT_INTERESTED
                 yes("wants_changes") -> CallOutcome.WANTS_CHANGES
-                data.analysis?.callSuccessful == "success" -> CallOutcome.CONFIRMED
+                // call_successful only says Nika broke no quality rule: a confirmation also needs something from the client.
+                data.analysis?.callSuccessful == "success" && clientGaveSomething(collected) -> CallOutcome.CONFIRMED
                 else -> CallOutcome.UNCLEAR
             }
         }

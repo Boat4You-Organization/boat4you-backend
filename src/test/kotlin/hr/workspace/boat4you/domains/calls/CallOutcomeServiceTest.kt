@@ -121,7 +121,7 @@ class CallOutcomeServiceTest : CallsJpaTest() {
         outcomeOf(data(mapOf("booked_elsewhere" to true))) shouldBe CallOutcome.BOOKED_ELSEWHERE
         outcomeOf(data(mapOf("not_interested" to true))) shouldBe CallOutcome.NOT_INTERESTED
         outcomeOf(data(mapOf("wants_changes" to true))) shouldBe CallOutcome.WANTS_CHANGES
-        outcomeOf(data()) shouldBe CallOutcome.CONFIRMED
+        outcomeOf(data(mapOf("dates_confirmed" to true))) shouldBe CallOutcome.CONFIRMED
         outcomeOf(data(success = "failure")) shouldBe CallOutcome.UNCLEAR
     }
 
@@ -189,6 +189,32 @@ class CallOutcomeServiceTest : CallsJpaTest() {
         val retry = calls.findByInquiryIdOrderByCreatedAtDesc(c.inquiryId!!).single { it.status == CallStatus.SCHEDULED }
         retry.attempt shouldBe 3
         verify(notifier, never()).outcome(any(InquiryCall::class.java) ?: InquiryCall(), any() ?: inquiries.findAll().first())
+    }
+
+    /** Calls 31, 32 and 52 (inquiry 65): ElevenLabs wrote the client's only turn as "..." (noise or silence), Nika asked "Allô ?". */
+    @Test
+    fun `a client turn of only dots is no word, so the client was not reached`() {
+        val c = dialling()
+        val noise =
+            data(termination = "Ending conversation after 30 seconds of silence").copy(
+                transcript = listOf(TranscriptTurn("agent", "Bonjour, ici Nika.", 0), TranscriptTurn("user", "...", 4), TranscriptTurn("agent", "Allô ?", 9)),
+            )
+        service.applyTranscription(c, noise)
+        val saved = calls.findById(c.id!!).get()
+        saved.status shouldBe CallStatus.NO_ANSWER
+        saved.outcome shouldBe null
+    }
+
+    /** call_successful only says Nika broke no quality rule; CONFIRMED needs at least one thing the client gave or confirmed. */
+    @Test
+    fun `a client who only said hello and hung up is not confirmed`() {
+        val hello =
+            data(collected = mapOf("dates_confirmed" to false, "email_confirmed" to false, "people" to null, "boat_type" to ""))
+                .copy(transcript = listOf(TranscriptTurn("agent", "Good afternoon, this is Nika.", 0), TranscriptTurn("user", "Hello?", 2)))
+        outcomeOf(hello) shouldBe CallOutcome.UNCLEAR
+        outcomeOf(data(mapOf("dates_confirmed" to true))) shouldBe CallOutcome.CONFIRMED
+        outcomeOf(data(mapOf("people" to 6))) shouldBe CallOutcome.CONFIRMED
+        outcomeOf(data(mapOf("boat_type" to "catamaran"))) shouldBe CallOutcome.CONFIRMED
     }
 
     @Test
@@ -298,7 +324,7 @@ class CallOutcomeServiceTest : CallsJpaTest() {
 
     @Test
     fun `a confirmed call notifies nobody`() {
-        service.applyTranscription(dialling(), data())
+        service.applyTranscription(dialling(), data(mapOf("dates_confirmed" to true)))
         verify(notifier, never()).outcome(any(InquiryCall::class.java) ?: InquiryCall(), any() ?: inquiries.findAll().first())
     }
 
