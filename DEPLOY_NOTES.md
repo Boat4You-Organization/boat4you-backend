@@ -6,6 +6,19 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-18 — ✅ LIVE oba čvora (cusma2 18:38, cusma3 18:38 UTC): broj koji operater odbije kao nevažeći tako se i prikaže i više se ne zove — jar `da7880c9c923e6b605b92c90362d1bdc`, tag `live/2026-11-18-nika-invalid-number`
+
+Povod: upit 66 (Catamaran Charter Croatia), četiri poziva 14.–18.11., svaki put Twilio 13224 „invalid phone number“; Mario je dobio „tehnička greška: unknown“, a follow-up je svejedno zakazan na isti broj. Mario 18.11.: „Da, popravi“.
+
+- **Razlog:** ElevenLabs u `call_initiation_failure` za takav slučaj šalje `failure_reason = unknown`; pravi razlog je u `metadata.body` (Twilio `ErrorCode` / `ErrorMessage`). `CallWebhookProcessor.failureReason` ga sada čita; 13224 / 21211 / 21217 → `invalid phone number (Twilio N)`, ostale šifre → poruka + šifra.
+- **Bez ponavljanja:** takav poziv završava FAILED bez novog pokušaja; jedna obavijest po upitu („nevažeći broj“), nikad „tehnička greška“.
+- **Preskakanje:** `CallEligibility` 30 dana preskače broj s takvim odbijanjem (`INVALID_PHONE`), i za „Nazovi sad“. Novi upit s ispravljenim brojem zove se normalno.
+- Pregled: 1 neovisni agent (Opus), bez blokirajućih nalaza. Cijeli `./gradlew test` prolazi (novo: `CallFailureReasonTest`, dodaci u `CallOutcomeServiceTest`, `CallEligibilityTest`).
+- ⚠️ Prije deploya `main` je dobio tuđi jar (`live/2026-11-18-nika-hangup-no-answer`, V9_129); grana je prebačena na novi `main` i ponovno izgrađena. Bez provjere `merge-base` moj jar bi pregazio taj popravak.
+- **Provjereno uživo:** Flyway bez novih migracija, api health 200, `/public/payments/custom/config` 404 code 8002, `/webhooks/mollie` 200. **Nije provjereno:** stvarni odbijeni poziv nakon deploya.
+- **Otvoreno (iz pregleda):** 21211/21217 vjerojatno stižu kao greška pri stvaranju poziva (`applyNotStarted`), a taj put još ne čita šifru; četiri stara reda upita 66 imaju `error = unknown`, pa taj broj nije u 30-dnevnom preskakanju.
+- Rollback: `webservice.jar.prev` (jar `1049cbdc…`).
+
 ## 2026-11-18 — ✅ LIVE oba čvora (cusma2 18:27, cusma3 18:28 UTC): Nika — poziv u kojem klijent ne kaže ni riječ više nije „Confirmed“ nego NO_ANSWER s ponovnim pokušajima + V9_129 — jar `1049cbdc6f164650b192f51dd469c768`, `main` `fe64ee84`, tag `live/2026-11-18-nika-hangup-no-answer`
 
 Mario 18.11.: klijentica upita 84 (poziv 72) spustila je na Nikinom pozdravu nakon 7 s, a admin je pokazao „Confirmed“ i Nika je više nije zvala. „Da, deployaj“ (popravak + ispravak pogođenih poziva).
