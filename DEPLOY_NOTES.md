@@ -6,6 +6,21 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-18 — ✅ LIVE oba čvora (cusma2 13:00, cusma3 13:01 UTC): Nika zove samo kad zakon države dopušta + sve od poziva briše se nakon 20 dana — jar `1eeda9d49a8d6face723a0c86ebe8869`, `main` `4de7e785`, tag `live/2026-11-18-nika-country-hours`
+
+Pravna provjera 18.11. (`infra/docs/nika-pravna-provjera-2026-11-18.md`), Mario: „ne želim gasit, stavi kada smije zvat“, „briši sve nakon 20 dana od Nike“.
+
+- **Dani i sati po državi broja** (`CallRules.kt`, samo sužavaju `calls.window.*`): Francuska i prekomorski departmani pon–pet 10–13 i 14–20, bez praznika (i Veliki petak, 26.12.); Australija radnim danom 9–20, subotom 9–17, nedjeljom i državnim praznikom nikad; Kanada vikendom 10–18; SAD nikad nedjeljom. Poziv mora stati prije granice: zadnji početak 13 min prije nje. Ostale države kao do sada.
+- **Brisanje** (`CallRetention.kt`): `calls.audio.retentionDays` (zadano 20, najmanje 7; u `settings` nema reda) nakon kraja poziva briše snimku, transkript, sažetak, podatke i ocjene; sirovi događaji i tekst ponude idu nakon istog broja dana. Red poziva (ishod, vrijeme, „ne zovi“) ostaje. Prvo stvarno brisanje 30.11. (najstariji poziv 10.11.).
+- ElevenLabs agent: `retention_days` 30 → 20 ciljanim PATCH-om 13:03 UTC (ostatak konfiguracije nepromijenjen, provjereno hashom).
+- `operators.txt` usklađen s infra kopijom (allow-list 14.11.), inače pada `PartnerTextSanitizerTest`.
+
+**Provjereno:** cijeli test 2392 (jedini pad = operators.txt, popravljen pa ponovljen s testovima poziva) + ktlint; neovisni Opus pregled (bez prepreka; 3 nalaza popravljena: rezerva prije granice, Francuska prekomorje/Alsace, donja granica postavke); Flyway preflight „will apply: none“; cusma3 gate prošao iz prve. `detekt` lokalno puca („26“), nije izvršen.
+
+**cusma3** je s `1f32bd8a` (14.11.) skočio na ovaj jar, pa sada ima i sve izmjene 16.–17.11. Rollback: `webservice.jar.prev` na oba čvora (cusma2 `e5f0e6df`, cusma3 `1f32bd8a`).
+
+**Otvoreno:** admin polje se i dalje zove „Čuvanje snimki (dana)“; praznici SAD/Kanada i pravila saveznih država nisu u pravilu; stranice (privola v2, politika 20 dana) idu nakon ovoga.
+
 ## 2026-11-17 — ✅ LIVE cusma2: limit registracije i ponovnog slanja koda radi + token obrisanog korisnika = 401, ne 500 — `main` `183bc2e3`, tag `live/2026-11-17-auth-ratelimit`; cusma3 NIJE dirana
 
 **Povod:** Fable sigurnosni pregled 17.11. (nalaz 5) i neovisni pregled popravka.
