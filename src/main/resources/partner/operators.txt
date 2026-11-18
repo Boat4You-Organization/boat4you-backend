@@ -80,6 +80,9 @@ Gamma Charter
 !Pure Sailing
 !Bordada
 !Cyclades Sailing
+# 14.11.2026: ordinary blog phrases ("Conditions to Sail in Greece", "How to Enjoy Sailing") flagged by T6 on GR/IT
+!Sail in Greece
+!Enjoy Sailing
 !Trata
 !Dolin
 !Signature Sailing
