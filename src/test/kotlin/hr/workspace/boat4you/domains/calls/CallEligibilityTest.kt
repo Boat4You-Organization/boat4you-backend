@@ -44,6 +44,25 @@ class CallEligibilityTest : CallsJpaTest() {
     }
 
     @Test
+    fun `skips INVALID_PHONE for a number the carrier rejected as invalid in the last 30 days, on any inquiry`() {
+        val rejected = inquiry(phone = "+18315550100")
+        call(rejected, status = CallStatus.FAILED) { error = "invalid phone number (Twilio 13224)" }
+        check(rejected, kind = CallKind.FOLLOW_UP) shouldBe SkipReason.INVALID_PHONE
+        check(inquiry(phone = "+18315550100", email = "other@example.com")) shouldBe SkipReason.INVALID_PHONE
+
+        // another technical failure does not block the number, and neither does a rejection older than 30 days
+        val failed = inquiry(phone = "+18315550101")
+        call(failed, status = CallStatus.FAILED) { error = "unknown" }
+        check(failed).shouldBeNull()
+        val old = inquiry(phone = "+18315550102")
+        call(old, status = CallStatus.FAILED) {
+            error = "invalid phone number (Twilio 13224)"
+            createdAt = now.minus(Duration.ofDays(31))
+        }
+        check(old).shouldBeNull()
+    }
+
+    @Test
     fun `skips DO_NOT_CALL`() {
         check(inquiry { doNotCall = true }) shouldBe SkipReason.DO_NOT_CALL
     }

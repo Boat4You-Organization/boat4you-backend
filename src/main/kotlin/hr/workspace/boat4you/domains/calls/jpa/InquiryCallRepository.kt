@@ -81,6 +81,17 @@ interface InquiryCallRepository :
         @Param("phone") phoneE164: String,
     ): Boolean
 
+    /** The carrier rejected this number as invalid since [since] (the error text starts with CallWebhookProcessor.INVALID_NUMBER). */
+    @Query(
+        value =
+            "SELECT EXISTS (SELECT 1 FROM inquiry_call WHERE to_number = :phone AND error LIKE 'invalid phone number%' AND created_at >= :since)",
+        nativeQuery = true,
+    )
+    fun numberRejectedAsInvalidSince(
+        @Param("phone") phoneE164: String,
+        @Param("since") since: Instant,
+    ): Boolean
+
     /** Calls still dialling or in progress that started before [before] (lost webhook, deploy gap). */
     @Query(
         "SELECT c FROM InquiryCall c WHERE c.status IN :statuses AND c.startedAt < :before ORDER BY c.startedAt",

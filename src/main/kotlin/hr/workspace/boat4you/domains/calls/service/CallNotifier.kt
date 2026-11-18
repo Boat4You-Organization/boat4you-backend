@@ -41,6 +41,16 @@ class CallNotifier(
         inquiry: Inquiry,
     ) = mail(call, inquiry, "tehnička greška", "Poziv nije uspio ni u drugom pokušaju: ${call.error ?: "nepoznato"}")
 
+    fun invalidNumber(
+        call: InquiryCall,
+        inquiry: Inquiry,
+    ) = mail(
+        call,
+        inquiry,
+        "nevažeći broj",
+        "Operater odbija broj kao nevažeći (${call.error ?: "nepoznato"}). Nika ga više neće zvati; klijentu se može javiti samo e-mailom.",
+    )
+
     fun lost(
         call: InquiryCall,
         inquiry: Inquiry,

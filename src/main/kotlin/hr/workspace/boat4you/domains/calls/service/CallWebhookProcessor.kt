@@ -57,7 +57,7 @@ class CallWebhookProcessor(
                         // The recording lives in its file (with its own retention), never in this table.
                         event.payload = withoutAudio(event.payload!!)
                     }
-                    INITIATION_FAILURE -> outcomes.applyInitiationFailure(call, data.path("failure_reason").asText("unknown"))
+                    INITIATION_FAILURE -> outcomes.applyInitiationFailure(call, failureReason(data))
                 }
                 event.processedAt = Instant.now()
                 event.error = null
@@ -101,5 +101,30 @@ class CallWebhookProcessor(
         const val AUDIO = "post_call_audio"
         const val INITIATION_FAILURE = "call_initiation_failure"
         val TYPES = setOf(TRANSCRIPTION, AUDIO, INITIATION_FAILURE)
+
+        /** Start of [InquiryCall.error] when the carrier rejected the number itself: such a number is never dialled again. */
+        const val INVALID_NUMBER = "invalid phone number"
+
+        // Twilio: 13224 "invalid phone number" on dial, 21211 invalid 'To' number, 21217 number does not appear to be valid.
+        private val INVALID_NUMBER_CODES = setOf("13224", "21211", "21217")
+
+        /**
+         * Why the call never started. ElevenLabs says only "busy", "no-answer" or "unknown"; for "unknown" the carrier's own
+         * answer (Twilio `ErrorCode` / `ErrorMessage` in `metadata.body`) is the reason worth showing (18.11.2026: four
+         * calls to a number Twilio rejected as invalid were reported as "tehnička greška: unknown" and dialled again).
+         */
+        fun failureReason(data: JsonNode): String {
+            val reason = data.path("failure_reason").asText("").trim().ifEmpty { "unknown" }
+            if (reason.lowercase() != "unknown") return reason
+            val body = data.path("metadata").path("body")
+            val code = body.path("ErrorCode").asText("").trim()
+            val message = body.path("ErrorMessage").asText("").trim()
+            return when {
+                code in INVALID_NUMBER_CODES -> "$INVALID_NUMBER (Twilio $code)"
+                code.isNotEmpty() -> "${message.ifEmpty { reason }} (Twilio $code)"
+                message.isNotEmpty() -> message
+                else -> reason
+            }
+        }
     }
 }

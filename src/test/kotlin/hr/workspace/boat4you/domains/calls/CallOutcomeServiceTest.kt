@@ -340,4 +340,23 @@ class CallOutcomeServiceTest : CallsJpaTest() {
         service.applyInitiationFailure(second, "unknown")
         verify(notifier, times(1)).technicalFailure(any() ?: second, any() ?: i)
     }
+
+    @Test
+    fun `a number the carrier rejects as invalid is not retried and Mario is told once, as an invalid number`() {
+        val i = inquiry { name = "Doug" }
+        val first = call(i, status = CallStatus.DIALING) { startedAt = now.minusSeconds(30) }
+        service.applyInitiationFailure(first, "invalid phone number (Twilio 13224)")
+
+        val saved = calls.findById(first.id!!).get()
+        saved.status shouldBe CallStatus.FAILED
+        saved.error shouldBe "invalid phone number (Twilio 13224)"
+        calls.findByInquiryIdOrderByCreatedAtDesc(i.id!!).filter { it.status == CallStatus.SCHEDULED }.shouldBeEmpty()
+        verify(notifier, times(1)).invalidNumber(any() ?: first, any() ?: i)
+
+        // a later call of the same inquiry that is rejected the same way: no second mail, never "tehnicka greska"
+        val second = call(i, kind = CallKind.FOLLOW_UP, status = CallStatus.DIALING) { startedAt = now.minusSeconds(10) }
+        service.applyInitiationFailure(second, "invalid phone number (Twilio 13224)")
+        verify(notifier, times(1)).invalidNumber(any() ?: first, any() ?: i)
+        verify(notifier, never()).technicalFailure(any() ?: first, any() ?: i)
+    }
 }

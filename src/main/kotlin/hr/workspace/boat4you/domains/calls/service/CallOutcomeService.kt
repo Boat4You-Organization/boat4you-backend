@@ -111,7 +111,27 @@ class CallOutcomeService(
                 "no-answer" -> CallStatus.NO_ANSWER
                 else -> CallStatus.FAILED
             }
-        end(row, status, reason)
+        if (reason.startsWith(CallWebhookProcessor.INVALID_NUMBER)) endInvalidNumber(row, reason) else end(row, status, reason)
+    }
+
+    /**
+     * The carrier rejected the number itself: no retry (it would fail the same way) and Mario is told once per inquiry,
+     * so the client can be reached by e-mail. [CallEligibility] skips the calls still scheduled to this number.
+     */
+    private fun endInvalidNumber(
+        row: InquiryCall,
+        reason: String,
+    ) {
+        val call = calls.lockFresh(row.id!!)?.takeIf { it.status in OPEN } ?: return
+        val toldBefore =
+            calls
+                .findByInquiryIdOrderByCreatedAtDesc(call.inquiryId!!)
+                .any { it.id != call.id && it.error?.startsWith(CallWebhookProcessor.INVALID_NUMBER) == true }
+        call.status = CallStatus.FAILED
+        call.endedAt = clock.instant()
+        call.error = reason.take(500)
+        calls.save(call)
+        if (!toldBefore) inquiries.findById(call.inquiryId!!).ifPresent { notifier.invalidNumber(call, it) }
     }
 
     /** ElevenLabs certainly did not place the call (refused, rejected, unreachable): FAILED and one retry. */

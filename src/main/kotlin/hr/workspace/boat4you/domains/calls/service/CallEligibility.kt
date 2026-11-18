@@ -36,6 +36,7 @@ class CallEligibility(
             !inquiry.contactConsent -> SkipReason.NO_CONSENT
             phone == null -> SkipReason.INVALID_PHONE
             inquiry.doNotCall || calls.numberSaidDoNotCall(phone) -> SkipReason.DO_NOT_CALL
+            calls.numberRejectedAsInvalidSince(phone, now.minus(INVALID_NUMBER_MEMORY)) -> SkipReason.INVALID_PHONE
             kind != CallKind.MANUAL && inquiry.humanTakeoverAt != null -> SkipReason.HUMAN_TAKEOVER
             inquiry.status == InquiryStatus.ARCHIVED -> SkipReason.ARCHIVED
             s.testNumbers.isNotEmpty() && phone !in s.testNumbers -> SkipReason.NOT_ON_TEST_LIST
@@ -101,6 +102,9 @@ class CallEligibility(
     companion object {
         val STALE_AFTER: Duration = Duration.ofHours(24)
         val RECENT: Duration = Duration.ofDays(7)
+
+        /** How long a carrier's "invalid number" answer keeps the number from being dialled (a wrong rejection heals itself). */
+        val INVALID_NUMBER_MEMORY: Duration = Duration.ofDays(30)
         private val STOP_OUTCOMES = setOf(CallOutcome.NOT_INTERESTED, CallOutcome.DO_NOT_CALL, CallOutcome.BOOKED_ELSEWHERE)
     }
 }
