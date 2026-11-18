@@ -6,6 +6,17 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-18 — ✅ LIVE oba čvora (cusma2 18:27, cusma3 18:28 UTC): Nika — poziv u kojem klijent ne kaže ni riječ više nije „Confirmed“ nego NO_ANSWER s ponovnim pokušajima + V9_129 — jar `1049cbdc6f164650b192f51dd469c768`, `main` `fe64ee84`, tag `live/2026-11-18-nika-hangup-no-answer`
+
+Mario 18.11.: klijentica upita 84 (poziv 72) spustila je na Nikinom pozdravu nakon 7 s, a admin je pokazao „Confirmed“ i Nika je više nije zvala. „Da, deployaj“ (popravak + ispravak pogođenih poziva).
+
+- **Uzrok:** `CallOutcomeService.outcomeOf` je CONFIRMED izvodio iz ElevenLabsova `call_successful`, a to je samo zbroj 7 kriterija kvalitete; svaki kriterij računa „nije se dogodilo / klijent spustio“ kao success. DONE je usto 7 dana blokirao potvrdne pozive drugih upita s istog broja (`existsDoneConfirmationForPhoneSince`).
+- **Sada:** transkript bez ijedne replike klijenta (`role = user` s tekstom) ide kao govorna pošta: status NO_ANSWER, bez ishoda, uobičajeni retry (`CallClock.retryAt`: 1. → +2 h, 2. → sutra, najviše 3). Klijent koji kaže samo „Halo?“ i spusti i dalje može postati CONFIRMED (otvoreno, Mariova odluka; isto pozivi 32 i 52, upit 65).
+- **V9_129:** pozivi 58, 62, 72, 77 (DONE, CONFIRMED/UNCLEAR, bez riječi klijenta) → NO_ANSWER, ishod NULL, bez novog poziva. Primijenjena 18:27:33 na cusma2, provjereno u bazi. Sesija „Nika: podaci o brodu“ je 58 i 72 u 18:05 ručno stavila na UNCLEAR; migracija hvata i to.
+- Pregled: 1 neovisni agent (Opus), bez prepreka; preporuka oba čvora (reconcile radi samo na cusma3) ispoštovana. Testovi paketa calls 198/198 + ktlint; migracija isprobana na lokalnom PG18. `detekt` lokalno puca („26“).
+- **Provjereno uživo:** Flyway preflight „will apply: 9.129“, api health 200, `/public/payments/custom/config` 404 code 8002, `/webhooks/mollie` 200, cusma3 gate iz prve. **Nije provjereno:** stvarni poziv sa spuštanjem (vidjet će se na sljedećem).
+- Rollback: `webservice.jar.prev` na oba čvora (jar `21c2c99d…`); V9_129 je samo promjena oznaka, stari jar s njom radi.
+
 ## 2026-11-18 — ✅ LIVE oba čvora (cusma2 18:06, cusma3 18:06 UTC): e-mailovi više ne nose neiskorištene slike (logo, omotnica, telefon) — jar `21c2c99d1af35910e9c7399d89c5f4c1`, tag `live/2026-11-18-email-inline-images`
 
 Mario 18.11. (slika s mobitela, obavijest „Nika: tehnička greška“): ispod kartice veliki logo, omotnica i telefon, „kriminal, vidi footer“; „Da, deploy“.
