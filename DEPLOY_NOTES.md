@@ -6,6 +6,19 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-18 — ✅ LIVE oba čvora (cusma2 17:51, cusma3 17:52 UTC): pretraga po regiji više ne briše obvezne stavke, plan plaćanja ni depozit NauSys ponude; depozit ponude u OfferDto — jar `ed8d489198ee04eb26c09826f2478f9e`, `main` `46584cb0`, tag `live/2026-11-18-offer-extras-search-wipe`
+
+Povod: ponuda za Hannu (yacht 884, offer 10472103, 14 noći) poslana 16.11. s Transit logom 430 € „payable separately“ i depozitom 3.000 € umjesto 480 € uz charter i 3.500 €. Dijagnoza: `_offer-email-audit-2026-11-18/hanna-884-ponuda-dijagnoza.md`. Mario 18.11.: „Da, pregled i deploy“.
+
+- **Uzrok:** pretraga po regiji/lokaciji (`NauSysYachtOfferIntegrationServiceAsync`) pita NauSys bez `extendedDataSet`, pa red nema obvezne stavke, extrase ni plan plaćanja; `updateOffer` je to čitao kao „nema ih“, brisao spremljeno i stavljao `obligatoryExtrasPrice = 0`. Admin je tada obvezne stavke uzeo iz kataloga broda.
+- **Sada:** `syncOffersForAsync(rows, extendedData)`; pretraga šalje `false` → spremljeni extrasi, `obligatoryExtrasPrice`, plan plaćanja i depozit ostaju, `totalPrice = clientPrice + spremljene obvezne`. Ostali pozivatelji (per-yacht, reverify, noćni sync) pitaju s extended podacima i ponašaju se kao prije.
+- **`OfferDto.securityDeposit` / `insuredSecurityDeposit`** = depozit ponude za to razdoblje (javni API; depozit broda je već bio javan). Valuta = `depositCurrency` broda.
+- **Što deploy NE popravlja:** ponude koje je stari kod već ispraznio ostaju bez stavki dok ih ne dotakne poziv s extended podacima (otvaranje broda s datumima, reverify, noćni sync). Stanje 18.11.: 11.231 ponuda dulja od 7 noći na 1.251 brodu.
+- MMK nije pogođen: pretraga i pojedini brod koriste isti poziv (zaključak iz koda).
+- Pregled: 1 neovisni agent (Opus), bez blokirajućih nalaza na backendu; njegov prijedlog za depozit ugrađen. Testovi: cijeli `./gradlew test` prolazi, 3 nova testa (`NauSysD3ModeTests`, `OfferMapperStaleOptionTest`).
+- **Provjereno uživo:** Flyway bez novih migracija; api health 200; `/public/payments/custom/config` 404 code 8002; `/webhooks/mollie` 200; `/public/yachts/884/standard-offers` vraća `securityDeposit` 3500.
+- Rollback: `webservice.jar.prev` na oba čvora (jar `1eeda9d4…`).
+
 ## 2026-11-18 — ✅ LIVE oba čvora (cusma2 13:00, cusma3 13:01 UTC): Nika zove samo kad zakon države dopušta + sve od poziva briše se nakon 20 dana — jar `1eeda9d49a8d6face723a0c86ebe8869`, `main` `4de7e785`, tag `live/2026-11-18-nika-country-hours`
 
 Pravna provjera 18.11. (`infra/docs/nika-pravna-provjera-2026-11-18.md`), Mario: „ne želim gasit, stavi kada smije zvat“, „briši sve nakon 20 dana od Nike“.
