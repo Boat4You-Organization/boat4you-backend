@@ -239,14 +239,19 @@ class EmailService(
         helper.setSubject(subject)
         helper.setText(content, isHtml)
 
+        // A shared image is attached only when the rendered mail references it. An unreferenced inline image is shown
+        // by Gmail as a full-width picture under the message (18.11.2026: the Nika notification arrived with the logo,
+        // an envelope and a phone under its card; ten templates outside the two lists below had the same).
         if (templateName !in templatesWithoutSharedFooter) {
-            helper.addInline("boat4youLogoFull", boat4youLogoFull, INLINE_IMAGE_MIMETYPE)
+            if ("cid:boat4youLogoFull" in content) {
+                helper.addInline("boat4youLogoFull", boat4youLogoFull, INLINE_IMAGE_MIMETYPE)
+            }
             // Only legacy templates render phone/email PNG icons. Redesigned
             // templates use Unicode glyphs and would otherwise surface the
             // PNGs as orphan attachment thumbnails in Gmail.
             if (templateName !in redesignedHeaderTemplates) {
-                helper.addInline("emailIcon", emailIcon, INLINE_IMAGE_MIMETYPE)
-                helper.addInline("phoneIcon", phoneIcon, INLINE_IMAGE_MIMETYPE)
+                if ("cid:emailIcon" in content) helper.addInline("emailIcon", emailIcon, INLINE_IMAGE_MIMETYPE)
+                if ("cid:phoneIcon" in content) helper.addInline("phoneIcon", phoneIcon, INLINE_IMAGE_MIMETYPE)
             }
         }
         if (templateName in templatesWithBookingVector) {
