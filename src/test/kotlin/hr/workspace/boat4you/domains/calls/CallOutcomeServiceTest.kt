@@ -217,6 +217,28 @@ class CallOutcomeServiceTest : CallsJpaTest() {
         outcomeOf(data(mapOf("boat_type" to "catamaran"))) shouldBe CallOutcome.CONFIRMED
     }
 
+    /** A follow-up asks no dates and no e-mail: "it arrived, we are thinking" collects nothing, but it was a real talk. */
+    @Test
+    fun `a follow-up talk without collected data is still confirmed`() {
+        val talk =
+            data(collected = mapOf("dates_confirmed" to false, "email_confirmed" to false, "objections" to null)).copy(
+                transcript =
+                    listOf(
+                        TranscriptTurn("agent", "Did the offer arrive?", 0),
+                        TranscriptTurn("user", "Yes, it did.", 3),
+                        TranscriptTurn("agent", "How do you like it?", 5),
+                        TranscriptTurn("user", "It looks good, we are still thinking.", 8),
+                        TranscriptTurn("agent", "Anything else we can do?", 12),
+                        TranscriptTurn("user", "No, thank you.", 14),
+                    ),
+            )
+        outcomeOf(talk) shouldBe CallOutcome.CONFIRMED
+        val ellipsis = talk.copy(transcript = listOf(TranscriptTurn("agent", "Bonjour", 0), TranscriptTurn("user", " … ", 3)))
+        val c = dialling()
+        service.applyTranscription(c, ellipsis)
+        calls.findById(c.id!!).get().status shouldBe CallStatus.NO_ANSWER
+    }
+
     @Test
     fun `a busy initiation failure schedules a retry 30 minutes later`() {
         val c = dialling()

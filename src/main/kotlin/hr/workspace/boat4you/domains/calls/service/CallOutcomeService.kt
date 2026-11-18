@@ -2,6 +2,7 @@ package hr.workspace.boat4you.domains.calls.service
 
 import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationData
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsApi
+import hr.workspace.boat4you.domains.calls.elevenlabs.TranscriptTurn
 import hr.workspace.boat4you.domains.calls.enums.CallOutcome
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
 import hr.workspace.boat4you.domains.calls.jpa.InquiryCall
@@ -62,7 +63,7 @@ class CallOutcomeService(
         val notReached =
             when {
                 call.terminationReason?.contains("voicemail", ignoreCase = true) == true -> CallStatus.VOICEMAIL
-                data.transcript.none { it.role == "user" && it.message.orEmpty().any(Char::isLetterOrDigit) } -> CallStatus.NO_ANSWER
+                data.transcript.none(::clientSpoke) -> CallStatus.NO_ANSWER
                 else -> null
             }
         if (notReached != null) {
@@ -197,6 +198,12 @@ class CallOutcomeService(
             key: String,
         ) = collected?.get(key).let { it == true || it?.toString().equals("true", ignoreCase = true) }
 
+        /** A client turn with at least one letter or digit; ElevenLabs writes noise or silence as "...". */
+        private fun clientSpoke(turn: TranscriptTurn): Boolean = turn.role == "user" && turn.message.orEmpty().codePoints().anyMatch(Character::isLetterOrDigit)
+
+        /** Client turns that make a real talk without collected data (a follow-up: "it arrived, we are still thinking"). */
+        private const val TALK_TURNS = 3
+
         /** At least one thing the client gave or confirmed in the call: a true flag, a number or a non-empty text. */
         private fun clientGaveSomething(collected: Map<String, Any?>): Boolean =
             collected.values.any {
@@ -229,8 +236,10 @@ class CallOutcomeService(
                 yes("booked_elsewhere") -> CallOutcome.BOOKED_ELSEWHERE
                 yes("not_interested") -> CallOutcome.NOT_INTERESTED
                 yes("wants_changes") -> CallOutcome.WANTS_CHANGES
-                // call_successful only says Nika broke no quality rule: a confirmation also needs something from the client.
-                data.analysis?.callSuccessful == "success" && clientGaveSomething(collected) -> CallOutcome.CONFIRMED
+                // call_successful only says Nika broke no quality rule: a confirmation also needs something from the client,
+                // collected data or a real talk ("Hello?" and hanging up is neither).
+                data.analysis?.callSuccessful == "success" &&
+                    (clientGaveSomething(collected) || data.transcript.count(::clientSpoke) >= TALK_TURNS) -> CallOutcome.CONFIRMED
                 else -> CallOutcome.UNCLEAR
             }
         }
