@@ -6,6 +6,16 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-18 — ✅ LIVE oba čvora (cusma2 18:06, cusma3 18:06 UTC): e-mailovi više ne nose neiskorištene slike (logo, omotnica, telefon) — jar `21c2c99d1af35910e9c7399d89c5f4c1`, tag `live/2026-11-18-email-inline-images`
+
+Mario 18.11. (slika s mobitela, obavijest „Nika: tehnička greška“): ispod kartice veliki logo, omotnica i telefon, „kriminal, vidi footer“; „Da, deploy“.
+
+- **Uzrok:** `EmailService.sendEmail` je `boat4youLogoFull`, `emailIcon` i `phoneIcon` prilagao svakom predlošku koji nije na jednom od dva popisa. Predložak koji ih ne koristi (npr. `callsNotification`, `accountAlreadyExists`, `emailChange`, `adminReverifyDigest`, `ccBreakerNotification`) stizao je u Gmail s te tri slike u punoj širini ispod poruke.
+- **Sada:** slika se prilaže samo kad je prikazani HTML stvarno koristi (`cid:` u `content`); oba popisa ostaju. Slike po pozivu (`extraInlineImages`) nisu dirane.
+- Pregled: 1 neovisni agent (Opus), bez nalaza; prošao svih 34 predloška, nijedan ne gubi sliku koju prikazuje. Cijeli `./gradlew test` prolazi; testa koji provjerava priložene slike nema.
+- **Provjereno uživo:** Flyway bez migracija, api health 200, `/public/payments/custom/config` 404 code 8002, `/webhooks/mollie` 200. **Nije provjereno:** stvarna poruka u sandučiću (vidjet će se na sljedećoj Nikinoj obavijesti).
+- Rollback: `webservice.jar.prev` (jar `ed8d4891…`).
+
 ## 2026-11-18 — ✅ LIVE oba čvora (cusma2 17:51, cusma3 17:52 UTC): pretraga po regiji više ne briše obvezne stavke, plan plaćanja ni depozit NauSys ponude; depozit ponude u OfferDto — jar `ed8d489198ee04eb26c09826f2478f9e`, `main` `46584cb0`, tag `live/2026-11-18-offer-extras-search-wipe`
 
 Povod: ponuda za Hannu (yacht 884, offer 10472103, 14 noći) poslana 16.11. s Transit logom 430 € „payable separately“ i depozitom 3.000 € umjesto 480 € uz charter i 3.500 €. Dijagnoza: `_offer-email-audit-2026-11-18/hanna-884-ponuda-dijagnoza.md`. Mario 18.11.: „Da, pregled i deploy“.
