@@ -176,7 +176,9 @@ class CallsSettings(
             TRANSFER_DAYS -> if (days(value) != null) null else "must be days like MON,TUE,WED"
             TRANSFER_NUMBER -> if (value.isEmpty() || PhoneNormalizer.toE164(value) == value) null else "must be an E.164 number"
             DAILY_LIMIT, MONTHLY_LIMIT -> range(value, 1, 10_000)
-            AUDIO_RETENTION_DAYS -> range(value, 0, 365)
+            // Not below a week: the same number of days also ends the webhook events (retried for 2 days) and the offer text
+            // the follow-up call reads (48 h after the offer, plus retries).
+            AUDIO_RETENTION_DAYS -> range(value, 7, 365)
             else -> "unknown setting"
         }
 

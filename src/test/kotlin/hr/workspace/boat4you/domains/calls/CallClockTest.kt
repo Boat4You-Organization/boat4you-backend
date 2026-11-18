@@ -87,8 +87,13 @@ class CallClockTest {
         CallClock.nextSlot(z("2026-11-07T09:00:00Z"), fr, s) shouldBe z("2026-11-09T09:30:00Z")
         // Tuesday 09:10: France opens at 10 -> 10:30
         CallClock.nextSlot(z("2026-11-03T08:10:00Z"), fr, s) shouldBe z("2026-11-03T09:30:00Z")
-        // Tuesday 12:55: the call would run into the 13-14 break -> 14:30
-        CallClock.nextSlot(z("2026-11-03T11:55:00Z"), fr, s) shouldBe z("2026-11-03T13:30:00Z")
+        // Tuesday: 12:46 still ends before the 13-14 break (8 min call + 5 min margin), 12:47 does not -> 14:30
+        CallClock.nextSlot(z("2026-11-03T11:46:00Z"), fr, s) shouldBe z("2026-11-03T11:46:00Z")
+        CallClock.nextSlot(z("2026-11-03T11:47:00Z"), fr, s) shouldBe z("2026-11-03T13:30:00Z")
+        // Good Friday 26.3.2027 (a holiday in Alsace-Moselle) and Easter Monday are closed -> Tuesday 30.3.
+        CallClock.nextSlot(z("2027-03-26T10:00:00Z"), fr, s) shouldBe z("2027-03-30T08:30:00Z")
+        // +262 (Réunion UTC+4, Mayotte UTC+3) follows the French rule: Saturday -> Monday 10:30 Mayotte time
+        CallClock.nextSlot(z("2026-11-07T07:00:00Z"), "+262692123456", s) shouldBe z("2026-11-09T07:30:00Z")
         // Tuesday 11:00 is fine as it is
         CallClock.nextSlot(z("2026-11-03T10:00:00Z"), fr, s) shouldBe z("2026-11-03T10:00:00Z")
         // Tuesday 10.11. evening -> Wednesday 11.11. is Armistice Day -> Thursday 10:30
@@ -99,15 +104,29 @@ class CallClockTest {
 
     @Test
     fun `an Australian number is never called on Sunday or a national holiday, on Saturday only until 17_00`() {
-        val perth = "+61892345678" // a Perth landline: one zone, UTC+8
+        // One zone on purpose (Perth, UTC+8): a number's own zones are covered by the tests above.
+        val perth = listOf(ZoneId.of("Australia/Perth"))
+        val au = CallRules.forNumber("+61412345678")
+
+        fun slot(t: String) = CallClock.nextSlot(z(t), perth, s, au)
         // Sunday 8.11. 11:00 Perth -> Monday 09:30
-        CallClock.nextSlot(z("2026-11-08T03:00:00Z"), perth, s) shouldBe z("2026-11-09T01:30:00Z")
-        // Saturday 7.11. 16:55 Perth: would not end by 17:00 -> Monday 09:30
-        CallClock.nextSlot(z("2026-11-07T08:55:00Z"), perth, s) shouldBe z("2026-11-09T01:30:00Z")
-        // Saturday 7.11. 11:00 Perth is fine
-        CallClock.nextSlot(z("2026-11-07T03:00:00Z"), perth, s) shouldBe z("2026-11-07T03:00:00Z")
+        slot("2026-11-08T03:00:00Z") shouldBe z("2026-11-09T01:30:00Z")
+        // Saturday 7.11.: 16:46 still ends before 17:00 (8 min call + 5 min margin), 16:47 does not -> Monday 09:30
+        slot("2026-11-07T08:46:00Z") shouldBe z("2026-11-07T08:46:00Z")
+        slot("2026-11-07T08:47:00Z") shouldBe z("2026-11-09T01:30:00Z")
         // Christmas 2026 is a Friday, Boxing Day a Saturday (observed on Monday 28.12.) -> Tuesday 29.12. 09:30
-        CallClock.nextSlot(z("2026-12-25T03:00:00Z"), perth, s) shouldBe z("2026-12-29T01:30:00Z")
+        slot("2026-12-25T03:00:00Z") shouldBe z("2026-12-29T01:30:00Z")
+        // Christmas 2027 is a Saturday, Boxing Day a Sunday: Monday 27. and Tuesday 28.12. are observed -> Wednesday 09:30
+        slot("2027-12-27T03:00:00Z") shouldBe z("2027-12-29T01:30:00Z")
+    }
+
+    @Test
+    fun `a number with several zones keeps its country rule in every one of them`() {
+        // Australian mobile, Christmas Island (UTC+7) to Sydney (UTC+11). Saturday 7.11. 16:40 Sydney suits every zone;
+        // 16:50 Sydney is past Saturday's last start there -> Monday, 09:30 Christmas Island (13:30 Sydney)
+        val mobile = "+61412345678"
+        CallClock.nextSlot(z("2026-11-07T05:40:00Z"), mobile, s) shouldBe z("2026-11-07T05:40:00Z")
+        CallClock.nextSlot(z("2026-11-07T05:50:00Z"), mobile, s) shouldBe z("2026-11-09T02:30:00Z")
     }
 
     @Test

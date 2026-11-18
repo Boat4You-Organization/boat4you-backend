@@ -24,6 +24,12 @@ object CallClock {
     private val CALL_FIT: Duration = Duration.ofMinutes(8)
     private val AFTER_START: Duration = Duration.ofMinutes(30)
 
+    /**
+     * A legal limit of a country ([CallRule]) is a hard one: on top of [CALL_FIT] leave room for the dialler's batch (the
+     * fifth call of a tick starts up to a few minutes late) and for the ringing, so the talk ends before the limit.
+     */
+    private val RULE_MARGIN: Duration = Duration.ofMinutes(5)
+
     /** How far ahead an opening is looked for: a long weekend with public holidays on both sides fits in a week. */
     private const val LOOK_AHEAD_DAYS = 7L
     private val util = PhoneNumberUtil.getInstance()
@@ -165,7 +171,7 @@ object CallClock {
         val local = t.atZone(zone)
         val time = local.toLocalTime()
         if (time.isBefore(s.windowStart) || !time.isBefore(s.windowEnd.minus(CALL_FIT))) return false
-        return rule == null || rule.hoursOn(local.toLocalDate()).any { !time.isBefore(it.start) && time.isBefore(it.endInclusive.minus(CALL_FIT)) }
+        return rule == null || rule.hoursOn(local.toLocalDate()).any { !time.isBefore(it.start) && time.isBefore(it.endInclusive.minus(CALL_FIT).minus(RULE_MARGIN)) }
     }
 
     fun transferAllowed(

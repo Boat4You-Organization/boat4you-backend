@@ -140,8 +140,8 @@ class CallReconcileTest : CallsJpaTest() {
     fun `the offer e-mail text is cleared with the call contents, a fresh one stays`() {
         val old = inquiry()
         val fresh = inquiry()
-        jdbc.update("UPDATE inquiry SET offer_email_text = 'old offer', offer_email_sent_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(31))), old.id)
-        jdbc.update("UPDATE inquiry SET offer_email_text = 'new offer', offer_email_sent_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(3))), fresh.id)
+        jdbc.update("UPDATE inquiry SET offer_email_text = 'old offer', offer_email_sent_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(21))), old.id)
+        jdbc.update("UPDATE inquiry SET offer_email_text = 'new offer', offer_email_sent_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(19))), fresh.id)
         retention.runOnce(now)
         inquiries.findById(old.id!!).get().offerEmailText.shouldBeNull()
         inquiries.findById(fresh.id!!).get().offerEmailText shouldBe "new offer"
@@ -160,7 +160,9 @@ class CallReconcileTest : CallsJpaTest() {
             }
         val old = talked(21)
         val fresh = talked(19)
+        val running = call(inquiry(), status = CallStatus.DIALING) { summary = "u tijeku" }
         retention.runOnce(now)
+        calls.findById(running.id!!).get().summary shouldBe "u tijeku"
         val emptied = calls.findById(old.id!!).get()
         emptied.transcript.shouldBeNull()
         emptied.summary.shouldBeNull()
@@ -177,8 +179,8 @@ class CallReconcileTest : CallsJpaTest() {
     fun `webhook events older than the retention are deleted`() {
         val oldId = processor.store("c-old", "post_call_audio", """{"type":"post_call_audio","data":{}}""")!!
         val newId = processor.store("c-new", "post_call_audio", """{"type":"post_call_audio","data":{}}""")!!
-        jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(91))), oldId)
-        jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(10))), newId)
+        jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(21))), oldId)
+        jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(19))), newId)
         retention.runOnce(now)
         events.findById(oldId).isPresent shouldBe false
         events.findById(newId).isPresent shouldBe true

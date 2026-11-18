@@ -39,10 +39,20 @@ object CallRules {
         vararg ranges: ClosedRange<LocalTime>,
     ) = days.associateWith { ranges.toList() }
 
+    private val FRANCE = CallRule(days(WEEKDAYS, t(10)..t(13), t(14)..t(20)), ::frenchHoliday)
+
     private val RULES: Map<String, CallRule> =
         mapOf(
             // France (Code de la consommation L. 223-1 as of 11.8.2026): Monday-Friday 10-13 and 14-20, never on public holidays.
-            "FR" to CallRule(days(WEEKDAYS, t(10)..t(13), t(14)..t(20)), ::frenchHoliday),
+            "FR" to FRANCE,
+            // The overseas departments have their own country codes and the same consumer code.
+            "GP" to FRANCE,
+            "BL" to FRANCE,
+            "MF" to FRANCE,
+            "MQ" to FRANCE,
+            "GF" to FRANCE,
+            "RE" to FRANCE,
+            "YT" to FRANCE,
             // Australia (Telemarketing and Research Calls Industry Standard 2017): weekdays 9-20, Saturday 9-17, never on
             // Sunday or a national public holiday.
             "AU" to CallRule(days(WEEKDAYS, t(9)..t(20)) + days(listOf(SATURDAY), t(9)..t(17)), ::australianHoliday),
@@ -84,12 +94,16 @@ object CallRules {
             MonthDay.of(11, 1),
             MonthDay.of(11, 11),
             MonthDay.of(12, 25),
+            MonthDay.of(12, 26),
         )
 
-    /** Easter Monday, Ascension Thursday and Whit Monday move with Easter. */
+    /**
+     * Easter Monday, Ascension Thursday and Whit Monday move with Easter. Good Friday and 26.12. are holidays in
+     * Alsace-Moselle only; a mobile number does not say where its owner lives, so they are closed for every French number.
+     */
     private fun frenchHoliday(day: LocalDate): Boolean {
         val easter = easter(day.year)
-        return MonthDay.from(day) in FRENCH_FIXED || day in setOf(easter.plusDays(1), easter.plusDays(39), easter.plusDays(50))
+        return MonthDay.from(day) in FRENCH_FIXED || day in setOf(easter.minusDays(2), easter.plusDays(1), easter.plusDays(39), easter.plusDays(50))
     }
 
     private val AUSTRALIAN_FIXED =

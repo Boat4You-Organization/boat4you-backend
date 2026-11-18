@@ -47,11 +47,12 @@ class CallRetention(
                 Timestamp.from(now.minus(CallReconciler.EVENT_GIVE_UP)),
             )
         val events = jdbc.update("DELETE FROM call_webhook_event WHERE received_at < ?", Timestamp.from(cutoff))
-        // The offer e-mail Nika read is needed for the follow-up call only (48 h after the offer).
+        // The offer e-mail Nika read is needed for the follow-up call only (48 h after the offer is marked as sent, which may
+        // be later than the e-mail's own date: the later of the two counts).
         val offerCutoff = Timestamp.from(cutoff)
         val offers =
             jdbc.update(
-                "UPDATE inquiry SET offer_email_text = NULL WHERE offer_email_text IS NOT NULL AND COALESCE(offer_email_sent_at, offer_sent_at) < ?",
+                "UPDATE inquiry SET offer_email_text = NULL WHERE offer_email_text IS NOT NULL AND GREATEST(offer_email_sent_at, offer_sent_at) < ?",
                 offerCutoff,
             )
         if (deleted > 0 || contents > 0 || stripped > 0 || events > 0 || offers > 0) {
