@@ -2,12 +2,14 @@ package hr.workspace.boat4you.domains.calls
 
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
 import hr.workspace.boat4you.domains.calls.service.CallClock
+import hr.workspace.boat4you.domains.calls.service.CallRules
 import hr.workspace.boat4you.domains.calls.service.CallsSettings
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import org.junit.jupiter.api.Test
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 
 /** Design §2.2 / §2.4 / §6.4. 3.11.2026 is a Tuesday; Zagreb is UTC+1 in November and UTC+2 in June. */
@@ -74,6 +76,67 @@ class CallClockTest {
     @Test
     fun `a Russian mobile spans too many time zones for one window, so it is never called automatically`() {
         CallClock.nextSlot(z("2026-11-03T09:00:00Z"), CallClock.clientZones("+79161234567"), s).shouldBeNull()
+    }
+
+    @Test
+    fun `a French number is called on weekdays only, 10-13 and 14-20, never on a public holiday`() {
+        val fr = "+33612345678" // November: Paris UTC+1
+        // Friday 6.11. 18:55 Paris: too late for the 19:00 settings window -> Monday 10:30
+        CallClock.nextSlot(z("2026-11-06T17:55:00Z"), fr, s) shouldBe z("2026-11-09T09:30:00Z")
+        // Saturday morning -> Monday 10:30
+        CallClock.nextSlot(z("2026-11-07T09:00:00Z"), fr, s) shouldBe z("2026-11-09T09:30:00Z")
+        // Tuesday 09:10: France opens at 10 -> 10:30
+        CallClock.nextSlot(z("2026-11-03T08:10:00Z"), fr, s) shouldBe z("2026-11-03T09:30:00Z")
+        // Tuesday 12:55: the call would run into the 13-14 break -> 14:30
+        CallClock.nextSlot(z("2026-11-03T11:55:00Z"), fr, s) shouldBe z("2026-11-03T13:30:00Z")
+        // Tuesday 11:00 is fine as it is
+        CallClock.nextSlot(z("2026-11-03T10:00:00Z"), fr, s) shouldBe z("2026-11-03T10:00:00Z")
+        // Tuesday 10.11. evening -> Wednesday 11.11. is Armistice Day -> Thursday 10:30
+        CallClock.nextSlot(z("2026-11-10T19:00:00Z"), fr, s) shouldBe z("2026-11-12T09:30:00Z")
+        // Easter Monday 29.3.2027 (Paris UTC+2 from 28.3.) -> Tuesday 10:30
+        CallClock.nextSlot(z("2027-03-29T09:00:00Z"), fr, s) shouldBe z("2027-03-30T08:30:00Z")
+    }
+
+    @Test
+    fun `an Australian number is never called on Sunday or a national holiday, on Saturday only until 17_00`() {
+        val perth = "+61892345678" // a Perth landline: one zone, UTC+8
+        // Sunday 8.11. 11:00 Perth -> Monday 09:30
+        CallClock.nextSlot(z("2026-11-08T03:00:00Z"), perth, s) shouldBe z("2026-11-09T01:30:00Z")
+        // Saturday 7.11. 16:55 Perth: would not end by 17:00 -> Monday 09:30
+        CallClock.nextSlot(z("2026-11-07T08:55:00Z"), perth, s) shouldBe z("2026-11-09T01:30:00Z")
+        // Saturday 7.11. 11:00 Perth is fine
+        CallClock.nextSlot(z("2026-11-07T03:00:00Z"), perth, s) shouldBe z("2026-11-07T03:00:00Z")
+        // Christmas 2026 is a Friday, Boxing Day a Saturday (observed on Monday 28.12.) -> Tuesday 29.12. 09:30
+        CallClock.nextSlot(z("2026-12-25T03:00:00Z"), perth, s) shouldBe z("2026-12-29T01:30:00Z")
+    }
+
+    @Test
+    fun `a US number is not called on Sunday, a Canadian one on weekends only from 10_00`() {
+        val us = "+12125550100" // New York, November UTC-5
+        val ca = "+14165550100" // Toronto, same zone
+        // Sunday 8.11. 12:00 New York -> Monday 09:30
+        CallClock.nextSlot(z("2026-11-08T17:00:00Z"), us, s) shouldBe z("2026-11-09T14:30:00Z")
+        // Saturday 7.11. 12:00 New York is fine
+        CallClock.nextSlot(z("2026-11-07T17:00:00Z"), us, s) shouldBe z("2026-11-07T17:00:00Z")
+        // Sunday 8.11. 09:10 Toronto: weekends open at 10 -> 10:30
+        CallClock.nextSlot(z("2026-11-08T14:10:00Z"), ca, s) shouldBe z("2026-11-08T15:30:00Z")
+        // Sunday 8.11. 17:55 Toronto: would not end by 18:00 -> Monday 09:30
+        CallClock.nextSlot(z("2026-11-08T22:55:00Z"), ca, s) shouldBe z("2026-11-09T14:30:00Z")
+    }
+
+    @Test
+    fun `a country without a rule keeps the settings window on all seven days, and retries follow the country rule`() {
+        // Sunday 8.11. 11:00 Zagreb
+        CallClock.nextSlot(z("2026-11-08T10:00:00Z"), "+385912345678", s) shouldBe z("2026-11-08T10:00:00Z")
+        // France, no answer on Friday 6.11. at 17:30 Paris: +2 h is past the window -> Monday 10:30, not Saturday
+        CallClock.retryAt(CallStatus.NO_ANSWER, 1, z("2026-11-06T16:30:00Z"), "+33612345678", s) shouldBe z("2026-11-09T09:30:00Z")
+    }
+
+    @Test
+    fun `Easter is where the calendar says`() {
+        CallRules.easter(2026) shouldBe LocalDate.of(2026, 4, 5)
+        CallRules.easter(2027) shouldBe LocalDate.of(2027, 3, 28)
+        CallRules.easter(2028) shouldBe LocalDate.of(2028, 4, 16)
     }
 
     @Test

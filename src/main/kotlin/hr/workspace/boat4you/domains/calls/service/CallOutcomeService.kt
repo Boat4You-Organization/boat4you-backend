@@ -69,7 +69,7 @@ class CallOutcomeService(
         if (refusedRecording(collected)) {
             call.audioPath?.let(audio::delete)
             call.audioPath = null
-            // ElevenLabs' own copy goes too. We keep the transcript; if the request fails, their 30-day retention removes it.
+            // ElevenLabs' own copy goes too. We keep the transcript; if the request fails, their own retention removes it.
             call.elevenlabsConversationId?.let { conversation ->
                 runCatching { elevenLabs.deleteConversation(conversation) }
                     .onFailure { log.warn("call {}: ElevenLabs did not delete the refused recording: {}", call.id, it.message) }

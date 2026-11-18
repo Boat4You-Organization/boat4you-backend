@@ -39,7 +39,7 @@ class CallEligibility(
             kind != CallKind.MANUAL && inquiry.humanTakeoverAt != null -> SkipReason.HUMAN_TAKEOVER
             inquiry.status == InquiryStatus.ARCHIVED -> SkipReason.ARCHIVED
             s.testNumbers.isNotEmpty() && phone !in s.testNumbers -> SkipReason.NOT_ON_TEST_LIST
-            CallClock.nextSlot(now, CallClock.clientZones(phone), s) == null -> SkipReason.TIMEZONE_UNCLEAR
+            CallClock.nextSlot(now, phone, s) == null -> SkipReason.TIMEZONE_UNCLEAR
             Duration.between(call.scheduledAt, now) > STALE_AFTER -> SkipReason.STALE
             call.attempt > s.maxAttempts -> SkipReason.MAX_ATTEMPTS
             kind == CallKind.CONFIRMATION -> confirmationRule(call, inquiry, phone, now)

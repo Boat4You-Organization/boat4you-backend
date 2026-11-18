@@ -86,11 +86,11 @@ class CallDispatcher(
         val call = calls.lockFresh(id)?.takeIf { it.status == CallStatus.SCHEDULED } ?: return Step.Handled
         val inquiry = inquiries.findById(call.inquiryId!!).orElse(null) ?: return Step.Handled
         eligibility.check(call, inquiry, now, s)?.let { return skip(call, it) }
-        val zones = CallClock.clientZones(call.toNumber!!)
-        val slot = CallClock.nextSlot(now, zones, s) ?: return skip(call, SkipReason.TIMEZONE_UNCLEAR)
+        val number = call.toNumber!!
+        val slot = CallClock.nextSlot(now, number, s) ?: return skip(call, SkipReason.TIMEZONE_UNCLEAR)
         if (slot != now) return reschedule(call, slot)
         if (eligibility.anotherCallActive(call)) {
-            return reschedule(call, CallClock.nextSlot(now.plus(WAIT_FOR_OTHER_CALL), zones, s) ?: return skip(call, SkipReason.TIMEZONE_UNCLEAR))
+            return reschedule(call, CallClock.nextSlot(now.plus(WAIT_FOR_OTHER_CALL), number, s) ?: return skip(call, SkipReason.TIMEZONE_UNCLEAR))
         }
         if (eligibility.limitReached(now, s)) return Step.LimitReached
         call.status = CallStatus.DIALING

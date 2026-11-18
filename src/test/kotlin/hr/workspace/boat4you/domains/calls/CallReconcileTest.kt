@@ -124,7 +124,7 @@ class CallReconcileTest : CallsJpaTest() {
 
     @Test
     fun `audio older than the retention is deleted and the path cleared`() {
-        val old = call(inquiry(), status = CallStatus.DONE) { endedAt = now.minus(Duration.ofDays(31)) }
+        val old = call(inquiry(), status = CallStatus.DONE) { endedAt = now.minus(Duration.ofDays(21)) }
         old.audioPath = audio.save("conv-old", byteArrayOf(1), now)
         calls.save(old)
         val fresh = call(inquiry(), status = CallStatus.DONE) { endedAt = now.minus(Duration.ofDays(2)) }
@@ -137,7 +137,7 @@ class CallReconcileTest : CallsJpaTest() {
     }
 
     @Test
-    fun `the offer e-mail text is cleared 30 days after it was sent, a fresh one stays`() {
+    fun `the offer e-mail text is cleared with the call contents, a fresh one stays`() {
         val old = inquiry()
         val fresh = inquiry()
         jdbc.update("UPDATE inquiry SET offer_email_text = 'old offer', offer_email_sent_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(31))), old.id)
@@ -148,18 +148,33 @@ class CallReconcileTest : CallsJpaTest() {
     }
 
     @Test
-    fun `the offer e-mail echoed in an old webhook payload is stripped after 30 days`() {
-        val payload = """{"type":"post_call_transcription","data":{"conversation_initiation_client_data":{"dynamic_variables":{"call_id":"1","offer_email":"secret offer"}}}}"""
-        val id = processor.store("c-offer-echo", "post_call_transcription", payload)!!
-        jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(31))), id)
+    fun `transcript, summary, data and quality of a call are deleted after the retention, the row and its outcome stay`() {
+        fun talked(endedDaysAgo: Long) =
+            call(inquiry(), status = CallStatus.DONE) {
+                endedAt = now.minus(Duration.ofDays(endedDaysAgo))
+                outcome = CallOutcome.CONFIRMED
+                summary = "Klijent potvrdio upit."
+                data = mapOf("guests" to 6)
+                quality = mapOf("polite" to mapOf("result" to "success"))
+                transcript = listOf(mapOf("role" to "user", "message" to "Da, šest osoba."))
+            }
+        val old = talked(21)
+        val fresh = talked(19)
         retention.runOnce(now)
-        val left = events.findById(id).get().payload!!
-        left shouldNotContain "secret offer"
-        left.contains("call_id") shouldBe true
+        val emptied = calls.findById(old.id!!).get()
+        emptied.transcript.shouldBeNull()
+        emptied.summary.shouldBeNull()
+        emptied.data.shouldBeNull()
+        emptied.quality.shouldBeNull()
+        emptied.outcome shouldBe CallOutcome.CONFIRMED
+        emptied.endedAt.shouldNotBeNull()
+        val kept = calls.findById(fresh.id!!).get()
+        kept.summary shouldBe "Klijent potvrdio upit."
+        kept.transcript.shouldNotBeNull()
     }
 
     @Test
-    fun `webhook events older than 90 days are deleted`() {
+    fun `webhook events older than the retention are deleted`() {
         val oldId = processor.store("c-old", "post_call_audio", """{"type":"post_call_audio","data":{}}""")!!
         val newId = processor.store("c-new", "post_call_audio", """{"type":"post_call_audio","data":{}}""")!!
         jdbc.update("UPDATE call_webhook_event SET received_at = ? WHERE id = ?", Timestamp.from(now.minus(Duration.ofDays(91))), oldId)

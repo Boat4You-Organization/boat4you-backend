@@ -23,6 +23,9 @@ object CallClock {
     /** The longest call (design §2.2: hard stop after 8 min) must fit inside the window. */
     private val CALL_FIT: Duration = Duration.ofMinutes(8)
     private val AFTER_START: Duration = Duration.ofMinutes(30)
+
+    /** How far ahead an opening is looked for: a long weekend with public holidays on both sides fits in a week. */
+    private const val LOOK_AHEAD_DAYS = 7L
     private val util = PhoneNumberUtil.getInstance()
     private val zones = PhoneNumberToTimeZonesMapper.getInstance()
 
@@ -70,21 +73,35 @@ object CallClock {
      * The first moment at or after [earliest] that is inside the window in every one of [zones] (a Spanish mobile may be on the
      * Canaries, so it must suit both); when [earliest] is not, window start + 30 min of the zone that opens last. Null when the
      * zones are too far apart to share a window (a Russian mobile): such a number is never called automatically.
+     * [rule] narrows the window to the days and hours the client's country allows ([CallRules]); production code passes the
+     * number (the overload below), so the rule cannot be forgotten.
      */
     fun nextSlot(
         earliest: Instant,
         zones: List<ZoneId>,
         s: CallsSettings.Snapshot,
+        rule: CallRule? = null,
     ): Instant? {
         val openings =
             zones.asSequence().flatMap { zone ->
-                val day = earliest.atZone(zone).toLocalDate()
-                (0L..2L).asSequence().map { ZonedDateTime.of(day.plusDays(it), s.windowStart.plus(AFTER_START), zone).toInstant() }
+                val first = earliest.atZone(zone).toLocalDate()
+                (0L..LOOK_AHEAD_DAYS).asSequence().flatMap { offset ->
+                    val day = first.plusDays(offset)
+                    val starts = rule?.hoursOn(day)?.map { maxOf(it.start, s.windowStart) } ?: listOf(s.windowStart)
+                    starts.asSequence().map { ZonedDateTime.of(day, it.plus(AFTER_START), zone).toInstant() }
+                }
             }
         return (sequenceOf(earliest) + openings)
-            .filter { !it.isBefore(earliest) && zones.all { zone -> inWindow(it, zone, s) } }
+            .filter { !it.isBefore(earliest) && zones.all { zone -> inWindow(it, zone, s, rule) } }
             .minOrNull()
     }
+
+    /** The slot for the number [e164]: every zone it may be in and its country's rule. */
+    fun nextSlot(
+        earliest: Instant,
+        e164: String,
+        s: CallsSettings.Snapshot,
+    ): Instant? = nextSlot(earliest, clientZones(e164), s, CallRules.forNumber(e164))
 
     fun nextSlot(
         earliest: Instant,
@@ -104,20 +121,31 @@ object CallClock {
         zones: List<ZoneId>,
         s: CallsSettings.Snapshot,
         previousFailed: Boolean = false,
+        rule: CallRule? = null,
     ): Instant? {
         if (attempt >= s.maxAttempts) return null
         return when (status) {
             CallStatus.NO_ANSWER, CallStatus.VOICEMAIL ->
                 if (attempt == 1) {
-                    nextSlot(now.plus(Duration.ofHours(2)), zones, s)
+                    nextSlot(now.plus(Duration.ofHours(2)), zones, s, rule)
                 } else {
-                    nextSlot(now.atZone(zones.first()).toLocalDate().plusDays(1).atStartOfDay(zones.first()).toInstant(), zones, s)
+                    nextSlot(now.atZone(zones.first()).toLocalDate().plusDays(1).atStartOfDay(zones.first()).toInstant(), zones, s, rule)
                 }
-            CallStatus.BUSY -> nextSlot(now.plus(Duration.ofMinutes(30)), zones, s)
-            CallStatus.FAILED -> if (previousFailed) null else nextSlot(now.plus(Duration.ofMinutes(15)), zones, s)
+            CallStatus.BUSY -> nextSlot(now.plus(Duration.ofMinutes(30)), zones, s, rule)
+            CallStatus.FAILED -> if (previousFailed) null else nextSlot(now.plus(Duration.ofMinutes(15)), zones, s, rule)
             else -> null
         }
     }
+
+    /** The retry for the number [e164]: every zone it may be in and its country's rule. */
+    fun retryAt(
+        status: CallStatus,
+        attempt: Int,
+        now: Instant,
+        e164: String,
+        s: CallsSettings.Snapshot,
+        previousFailed: Boolean = false,
+    ): Instant? = retryAt(status, attempt, now, clientZones(e164), s, previousFailed, CallRules.forNumber(e164))
 
     fun retryAt(
         status: CallStatus,
@@ -132,9 +160,12 @@ object CallClock {
         t: Instant,
         zone: ZoneId,
         s: CallsSettings.Snapshot,
+        rule: CallRule?,
     ): Boolean {
-        val time = t.atZone(zone).toLocalTime()
-        return !time.isBefore(s.windowStart) && time.isBefore(s.windowEnd.minus(CALL_FIT))
+        val local = t.atZone(zone)
+        val time = local.toLocalTime()
+        if (time.isBefore(s.windowStart) || !time.isBefore(s.windowEnd.minus(CALL_FIT))) return false
+        return rule == null || rule.hoursOn(local.toLocalDate()).any { !time.isBefore(it.start) && time.isBefore(it.endInclusive.minus(CALL_FIT)) }
     }
 
     fun transferAllowed(

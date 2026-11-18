@@ -110,7 +110,7 @@ open class Inquiry {
     @Column(name = "offer_note", length = 300)
     open var offerNote: String? = null
 
-    /** The offer e-mail Mario sent, cleaned (OfferMailText); Nika reads it in the follow-up call. Cleared after 30 days. */
+    /** The offer e-mail Mario sent, cleaned (OfferMailText); Nika reads it in the follow-up call. Cleared with the call contents (CallRetention). */
     @Column(name = "offer_email_text", columnDefinition = "TEXT")
     open var offerEmailText: String? = null
 

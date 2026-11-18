@@ -39,7 +39,7 @@ class CallsSettingsTest {
         s.transferNumber.shouldBeNull()
         s.dailyLimit shouldBe 40
         s.monthlyLimit shouldBe 400
-        s.audioRetentionDays shouldBe 30
+        s.audioRetentionDays shouldBe 20
     }
 
     @Test

@@ -46,7 +46,7 @@ class CallPlanner(
         }
         val s = settings.snapshot()
         val now = now()
-        val at = CallClock.nextSlot(now.plus(s.firstDelay), CallClock.clientZones(phone), s)
+        val at = CallClock.nextSlot(now.plus(s.firstDelay), phone, s)
         val skip =
             when {
                 at == null -> SkipReason.TIMEZONE_UNCLEAR
@@ -87,7 +87,7 @@ class CallPlanner(
         )
         val phone = inquiry.phoneE164 ?: return
         val s = settings.snapshot()
-        val at = CallClock.nextSlot(now.plus(s.followUpDelay), CallClock.clientZones(phone), s)
+        val at = CallClock.nextSlot(now.plus(s.followUpDelay), phone, s)
         if (at == null) {
             calls.save(newCall(inquiryId, CallKind.FOLLOW_UP, phone, inquiry.locale, now).skipped(SkipReason.TIMEZONE_UNCLEAR))
             return
@@ -133,7 +133,7 @@ class CallPlanner(
     ): InquiryCall {
         val inquiry = inquiries.findById(inquiryId).orElseThrow()
         val phone = inquiry.phoneE164 ?: throw IllegalStateException("inquiry $inquiryId has no callable phone")
-        val at = checkNotNull(CallClock.nextSlot(now, CallClock.clientZones(phone), settings.snapshot())) { "no calling window for inquiry $inquiryId" }
+        val at = checkNotNull(CallClock.nextSlot(now, phone, settings.snapshot())) { "no calling window for inquiry $inquiryId" }
         return calls.save(newCall(inquiryId, CallKind.MANUAL, phone, inquiry.locale, at))
     }
 
@@ -145,7 +145,7 @@ class CallPlanner(
         now: Instant,
     ) {
         val phone = previous.toNumber ?: return
-        val at = CallClock.retryAt(status, previous.attempt, now, CallClock.clientZones(phone), settings.snapshot(), earlierAttemptFailed(previous)) ?: return
+        val at = CallClock.retryAt(status, previous.attempt, now, phone, settings.snapshot(), earlierAttemptFailed(previous)) ?: return
         calls.save(
             newCall(previous.inquiryId!!, previous.kind!!, phone, previous.language, at).apply { attempt = previous.attempt + 1 },
         )

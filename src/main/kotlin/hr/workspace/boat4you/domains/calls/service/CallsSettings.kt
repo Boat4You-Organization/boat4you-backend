@@ -50,7 +50,7 @@ class CallsSettings(
         val transferNumber: String? = null,
         val dailyLimit: Int = 40,
         val monthlyLimit: Int = 400,
-        val audioRetentionDays: Int = 30,
+        val audioRetentionDays: Int = 20,
     )
 
     fun snapshot(): Snapshot {
