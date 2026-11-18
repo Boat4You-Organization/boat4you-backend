@@ -48,7 +48,7 @@ class CallNotifier(
         call,
         inquiry,
         "nevažeći broj",
-        "Operater odbija broj kao nevažeći (${call.error ?: "nepoznato"}). Nika ga više neće zvati; klijentu se može javiti samo e-mailom.",
+        "Operater odbija broj kao nevažeći (${call.error ?: "nepoznato"}). Nika ga 30 dana neće zvati, ni na „Nazovi sad“; klijentu se može javiti samo e-mailom.",
     )
 
     fun lost(
