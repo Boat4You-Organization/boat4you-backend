@@ -528,6 +528,7 @@ class NauSysD3ModeTests {
     private fun offerWithStoredExtras() =
         offer(1, yacht = 55).apply {
             obligatoryExtrasPrice = BigDecimal("480.00")
+            deposit = BigDecimal("3500")
             offerExtras.add(OfferExtra().also { it.id = 1 })
             offerPaymentPlans.add(OfferPaymentPlan())
         }
@@ -541,6 +542,7 @@ class NauSysD3ModeTests {
         stored.offerExtras.size shouldBe 1
         stored.offerPaymentPlans.size shouldBe 1
         stored.obligatoryExtrasPrice shouldBe BigDecimal("480.00")
+        stored.deposit shouldBe BigDecimal("3500")
         stored.totalPrice shouldBe stored.clientPrice!! + BigDecimal("480.00")
     }
 
@@ -553,6 +555,7 @@ class NauSysD3ModeTests {
         stored.offerExtras.shouldBeEmpty()
         stored.offerPaymentPlans.shouldBeEmpty()
         stored.obligatoryExtrasPrice shouldBe BigDecimal.ZERO
+        stored.deposit.shouldBeNull()
         stored.totalPrice shouldBe stored.clientPrice
     }
 

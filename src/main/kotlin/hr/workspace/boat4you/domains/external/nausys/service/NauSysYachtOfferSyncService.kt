@@ -804,9 +804,11 @@ class NauSysYachtOfferSyncService(
         offer.checkout = nausysOffer.checkOut ?: yacht.defaultCheckout ?: "Contact for details"
         offer.type = OfferType.getFromDates(offer.dateFrom!!, offer.dateTo!!)
 
-        offer.deposit = nausysOffer.price!!.depositAmount?.toBigDecimal()
-        offer.depositInsured =
-            nausysOffer.price!!.depositWhenInsuredAmount?.toBigDecimal()
+        // A search row (no extendedDataSet) that carries no deposit must not blank the one a per-yacht call stored.
+        val quotedDeposit = nausysOffer.price!!.depositAmount?.toBigDecimal()
+        val quotedDepositInsured = nausysOffer.price!!.depositWhenInsuredAmount?.toBigDecimal()
+        offer.deposit = if (extendedData) quotedDeposit else quotedDeposit ?: offer.deposit
+        offer.depositInsured = if (extendedData) quotedDepositInsured else quotedDepositInsured ?: offer.depositInsured
 
         val discounts = nausysOffer.price!!.discounts?.map { it.amount?.toBigDecimal() ?: BigDecimal.ZERO }
         offer.extTotalDiscount = if (!discounts.isNullOrEmpty()) discounts.sumOf { it } else null
