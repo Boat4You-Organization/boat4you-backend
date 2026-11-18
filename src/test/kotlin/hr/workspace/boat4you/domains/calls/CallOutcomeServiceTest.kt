@@ -72,7 +72,11 @@ class CallOutcomeServiceTest : CallsJpaTest() {
     ) = ConversationData(
         conversationId = "x",
         status = "done",
-        transcript = listOf(TranscriptTurn("agent", "Dobar dan", 0, tools.map { mapOf("tool_name" to it) })),
+        transcript =
+            listOf(
+                TranscriptTurn("agent", "Dobar dan", 0, tools.map { mapOf("tool_name" to it) }),
+                TranscriptTurn("user", "Dobar dan, izvolite.", 3),
+            ),
         metadata = ConversationMetadata(184, 512, termination),
         analysis =
             ConversationAnalysis(
@@ -148,6 +152,43 @@ class CallOutcomeServiceTest : CallsJpaTest() {
         calls.findById(c.id!!).get().status shouldBe CallStatus.VOICEMAIL
         calls.findByInquiryIdOrderByCreatedAtDesc(c.inquiryId!!).first { it.status == CallStatus.SCHEDULED }.scheduledAt shouldBe
             Instant.parse("2026-11-03T11:00:00Z")
+    }
+
+    /**
+     * Call 72 (18.11.2026): the client picked up, heard Nika's greeting and hung up after 7 s. Every quality criterion counts
+     * "did not come up" as success, so ElevenLabs said call_successful = success, and the call was stored as CONFIRMED and
+     * never dialled again. A client who said nothing was not reached: the no-answer retry applies.
+     */
+    @Test
+    fun `a client who hung up without saying a word was not reached and is called again`() {
+        val c = dialling()
+        c.attempt = 2
+        calls.save(c)
+        val hungUp =
+            ConversationData(
+                conversationId = c.elevenlabsConversationId,
+                status = "done",
+                transcript = listOf(TranscriptTurn("agent", "Goedendag, u spreekt met Nika, AI-assistente van de Boat4You-groep.", 0)),
+                metadata = ConversationMetadata(7, 60, "Call ended by remote party"),
+                analysis =
+                    ConversationAnalysis(
+                        callSuccessful = "success",
+                        transcriptSummary = "Klijentica je prekinula poziv odmah nakon pozdrava.",
+                        dataCollectionResults =
+                            mapOf("dates_confirmed" to false, "email_confirmed" to false, "do_not_call" to false, "people" to null)
+                                .mapValues { DataCollectionResult(it.value) },
+                        evaluationCriteriaResults = mapOf("recording_notice" to CriterionResult("success", "Hung up during the greeting.")),
+                    ),
+            )
+        service.applyTranscription(c, hungUp)
+        val saved = calls.findById(c.id!!).get()
+        saved.status shouldBe CallStatus.NO_ANSWER
+        saved.outcome shouldBe null
+        saved.durationSecs shouldBe 7
+        saved.terminationReason shouldBe "Call ended by remote party"
+        val retry = calls.findByInquiryIdOrderByCreatedAtDesc(c.inquiryId!!).single { it.status == CallStatus.SCHEDULED }
+        retry.attempt shouldBe 3
+        verify(notifier, never()).outcome(any(InquiryCall::class.java) ?: InquiryCall(), any() ?: inquiries.findAll().first())
     }
 
     @Test

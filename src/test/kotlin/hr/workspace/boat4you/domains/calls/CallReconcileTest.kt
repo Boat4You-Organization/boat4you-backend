@@ -6,6 +6,7 @@ import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationData
 import hr.workspace.boat4you.domains.calls.elevenlabs.ConversationMetadata
 import hr.workspace.boat4you.domains.calls.elevenlabs.ElevenLabsApi
 import hr.workspace.boat4you.domains.calls.elevenlabs.OutboundCallResult
+import hr.workspace.boat4you.domains.calls.elevenlabs.TranscriptTurn
 import hr.workspace.boat4you.domains.calls.enums.CallOutcome
 import hr.workspace.boat4you.domains.calls.enums.CallStatus
 import hr.workspace.boat4you.domains.calls.jpa.CallWebhookEventRepository
@@ -53,7 +54,13 @@ class CallReconcileTest : CallsJpaTest() {
         ) = OutboundCallResult(null, null)
 
         override fun getConversation(conversationId: String) =
-            ConversationData(conversationId, status, emptyList(), ConversationMetadata(60, 100, "end_call"), ConversationAnalysis("success", "Sažetak."))
+            ConversationData(
+                conversationId,
+                status,
+                listOf(TranscriptTurn("agent", "Dobar dan", 0), TranscriptTurn("user", "Da, izvolite.", 3)),
+                ConversationMetadata(60, 100, "end_call"),
+                ConversationAnalysis("success", "Sažetak."),
+            )
 
         override fun deleteConversation(conversationId: String) = Unit
     }
@@ -190,7 +197,7 @@ class CallReconcileTest : CallsJpaTest() {
     fun `a webhook for a call whose start was unclear is matched by the call id it carries`() {
         val c = stuck(Duration.ofMinutes(1), conversation = null)
         val body =
-            """{"type":"post_call_transcription","data":{"conversation_id":"conv-unclear","status":"done","transcript":[],""" +
+            """{"type":"post_call_transcription","data":{"conversation_id":"conv-unclear","status":"done","transcript":[{"role":"user","message":"Da, izvolite."}],""" +
                 """"metadata":{"call_duration_secs":60},"analysis":{"call_successful":"success"},""" +
                 """"conversation_initiation_client_data":{"dynamic_variables":{"call_id":"${c.id}"}}}}"""
         val id = processor.store("conv-unclear", "post_call_transcription", body)!!

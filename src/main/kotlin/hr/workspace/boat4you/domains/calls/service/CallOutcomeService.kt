@@ -56,10 +56,18 @@ class CallOutcomeService(
                     "tools" to t.toolCalls.orEmpty().mapNotNull { it["tool_name"] ?: it["name"] },
                 )
             }
-        if (call.terminationReason?.contains("voicemail", ignoreCase = true) == true) {
-            call.status = CallStatus.VOICEMAIL
+        // Not reached: voicemail, or a client who never said a word (hung up during the greeting). ElevenLabs' call_successful
+        // cannot tell, since every quality criterion counts "did not come up" as success (call 72, 18.11.2026).
+        val notReached =
+            when {
+                call.terminationReason?.contains("voicemail", ignoreCase = true) == true -> CallStatus.VOICEMAIL
+                data.transcript.none { it.role == "user" && !it.message.isNullOrBlank() } -> CallStatus.NO_ANSWER
+                else -> null
+            }
+        if (notReached != null) {
+            call.status = notReached
             calls.save(call)
-            planner.scheduleRetry(call, CallStatus.VOICEMAIL, now)
+            planner.scheduleRetry(call, notReached, now)
             return
         }
         call.status = CallStatus.DONE
