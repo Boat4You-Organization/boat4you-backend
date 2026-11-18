@@ -37,6 +37,21 @@ class OfferMapperStaleOptionTest {
     ) = mapper.toDto(offer(status), CurrencyEnum.EUR, hasLiveOption).status
 
     @Test
+    fun `the offer's own deposit is sent, so a client need not fall back to the yacht-level figure`() {
+        val dto =
+            mapper.toDto(
+                offer(OfferStatus.FREE).apply {
+                    deposit = java.math.BigDecimal("3500")
+                    depositInsured = java.math.BigDecimal("1200")
+                },
+                CurrencyEnum.EUR,
+            )
+
+        assertEquals(java.math.BigDecimal("3500"), dto.securityDeposit)
+        assertEquals(java.math.BigDecimal("1200"), dto.insuredSecurityDeposit)
+    }
+
+    @Test
     fun `default - a stale option reads FREE, a live one OPTION (today)`() {
         assertEquals(ExternalReservationStatus.FREE, statusOf(OfferStatus.OPTION, hasLiveOption = false))
         assertEquals(ExternalReservationStatus.FREE, statusOf(OfferStatus.OPTION_WAITING, hasLiveOption = false))

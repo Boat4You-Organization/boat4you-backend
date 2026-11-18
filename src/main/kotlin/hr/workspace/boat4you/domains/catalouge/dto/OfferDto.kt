@@ -42,4 +42,10 @@ data class OfferDto(
     @field:JsonSerialize(using = TwoDecimalSerializer::class)
     val listPriceEur: BigDecimal? = null,
     val listPriceInfo: PriceInfoDto? = null,
+    // The partner's security deposit for THIS period (it can differ from the yacht-level figure, e.g. two weeks vs one).
+    // Same currency as the yacht's `depositCurrency`. Null when the partner sent none on the offer.
+    @field:JsonSerialize(using = TwoDecimalSerializer::class)
+    val securityDeposit: BigDecimal? = null,
+    @field:JsonSerialize(using = TwoDecimalSerializer::class)
+    val insuredSecurityDeposit: BigDecimal? = null,
 )

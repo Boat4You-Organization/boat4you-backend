@@ -80,7 +80,7 @@ class NauSysYachtOfferIntegrationServiceAsyncTests {
         `when`(client.getFreeYachtsSearchForAsync(any())).thenThrow(NauSysRateLimitedException("/freeYachtsSearch", 6))
 
         assertFailsWith<NauSysRateLimitedException> { service.syncOffersForDateRangeBlocking(from, to, listOf(115L), null, null) }
-        verify(syncService, never()).syncOffersForAsync(any())
+        verify(syncService, never()).syncOffersForAsync(any(), ArgumentMatchers.anyBoolean())
     }
 
     @Test
@@ -90,7 +90,8 @@ class NauSysYachtOfferIntegrationServiceAsyncTests {
 
         service.syncOffersForDateRangeBlocking(from, to, listOf(115L), null, null)
 
-        verify(syncService).syncOffersForAsync(listOf(yacht))
+        // no extendedDataSet on this request, so the rows must not wipe stored extras
+        verify(syncService).syncOffersForAsync(listOf(yacht), false)
     }
 
     @Test

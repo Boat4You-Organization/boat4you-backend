@@ -73,6 +73,8 @@ class OfferMapper(
                     .filter { it.first.shouldDisplay() }
                     .map { yachtExtrasMapper.toBasicDto(it.first, currency, it.second, partnerCopy) }
                     .toSet(), // TODO remove this?
+            securityDeposit = offer.deposit,
+            insuredSecurityDeposit = offer.depositInsured,
             locationFrom = offer.locationFrom?.toDto(),
             locationTo = offer.locationTo?.toDto(),
             checkin = offer.checkin,

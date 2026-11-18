@@ -88,7 +88,8 @@ class NauSysYachtOfferIntegrationServiceAsync(
             // No outer transaction on purpose: syncOffersForAsync opens its own
             // short per-yacht transactions (advisory-locked) — a suspended outer
             // tx would just pin a second Hikari connection for the whole batch.
-            nauSysYachtOfferSyncService.syncOffersForAsync(response.freeYachtsInPeriod!!)
+            // this request carries no extendedDataSet: the rows must not wipe stored extras / payment plans
+            nauSysYachtOfferSyncService.syncOffersForAsync(response.freeYachtsInPeriod!!, extendedData = false)
         }
     }
 

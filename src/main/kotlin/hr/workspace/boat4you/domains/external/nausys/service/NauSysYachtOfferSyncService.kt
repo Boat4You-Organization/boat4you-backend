@@ -610,7 +610,11 @@ class NauSysYachtOfferSyncService(
      * Outside the default switches (`NAUSYS_REVERIFY` not OFF or `NAUSYS_D3_MODE` not LEGACY) a period the partner
      * quotes again here closes its open strike and hide record, exactly like [syncOffers] (one batch per call).
      */
-    fun syncOffersForAsync(nausysAllOffers: List<RestFreeYacht>) {
+    fun syncOffersForAsync(
+        nausysAllOffers: List<RestFreeYacht>,
+        // false only for rows fetched WITHOUT extendedDataSet (the region / location search): see [updateOffer].
+        extendedData: Boolean = true,
+    ) {
         val yachtExternalIds = nausysAllOffers.map { it.yachtId!! }.toList()
         if (yachtExternalIds.isEmpty()) {
             log.warn("No yacht external IDs found in Nausys offers, skipping sync.")
@@ -655,9 +659,9 @@ class NauSysYachtOfferSyncService(
                             val existingOffer = asyncRoutePair(existingYachtOffers, nausysOffer, allLocationMappings)
                             val result =
                                 if (existingOffer == null) {
-                                    updateOffer(Offer(), yacht, nausysOffer, allLocationMappings, optionalOnSite)
+                                    updateOffer(Offer(), yacht, nausysOffer, allLocationMappings, optionalOnSite, extendedData)
                                 } else {
-                                    updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings, optionalOnSite)
+                                    updateOffer(existingOffer, yacht, nausysOffer, allLocationMappings, optionalOnSite, extendedData)
                                 }
                             if (result != OfferUpdateResult.UPDATED) skippedCount++
                             noteQuote(existingOffer, nausysOffer, result, refreshedIds, quotedPeriods)
@@ -741,6 +745,11 @@ class NauSysYachtOfferSyncService(
         nausysOffer: RestFreeYacht,
         allLocationMappings: List<ExternalMapping>,
         optionalOnSite: Boolean,
+        // false = the row comes from the region / location search, which asks NauSys WITHOUT extendedDataSet: it carries
+        // no obligatory services, extras or payment plan. Their absence there says nothing, so what a per-yacht call
+        // stored earlier is kept (18.11.2026: the search used to wipe them, and a multi-week offer then showed EUR 0
+        // of obligatory items on the web and sent the admin to the yacht catalogue for them).
+        extendedData: Boolean = true,
     ): OfferUpdateResult {
         // A bookable (FREE) offer must carry a real price. NauSys occasionally returns a
         // free yacht with clientPrice null/0 — no price-list entry for that period, or a
@@ -822,14 +831,20 @@ class NauSysYachtOfferSyncService(
         offer.brokerCommission = nausysOffer.price!!.agencyCommission?.toBigDecimal()
 
         val obligatoryExtrasPrice =
-            nausysOffer.obligatoryExtras
-                ?.filter { it.calculationType?.value != "SEPARATE_PAYMENT" }
-                ?.sumOf { it.totalPrice?.toBigDecimal() ?: BigDecimal.ZERO }
-                ?: BigDecimal.ZERO
+            if (extendedData) {
+                nausysOffer.obligatoryExtras
+                    ?.filter { it.calculationType?.value != "SEPARATE_PAYMENT" }
+                    ?.sumOf { it.totalPrice?.toBigDecimal() ?: BigDecimal.ZERO }
+                    ?: BigDecimal.ZERO
+            } else {
+                offer.obligatoryExtrasPrice ?: BigDecimal.ZERO
+            }
         offer.totalPrice = clientPrice + obligatoryExtrasPrice
         offer.obligatoryExtrasPrice = obligatoryExtrasPrice
 
         offerRepository.save(offer)
+
+        if (!extendedData) return OfferUpdateResult.UPDATED
 
         handleExtras(offer, nausysOffer, optionalOnSite)
 

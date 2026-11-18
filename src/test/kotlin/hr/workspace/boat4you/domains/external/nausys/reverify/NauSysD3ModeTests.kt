@@ -10,7 +10,9 @@ import hr.workspace.boat4you.domains.catalouge.jpa.ExternalSystem
 import hr.workspace.boat4you.domains.catalouge.jpa.ExtraRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Location
 import hr.workspace.boat4you.domains.catalouge.jpa.Offer
+import hr.workspace.boat4you.domains.catalouge.jpa.OfferExtra
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferExtraRepository
+import hr.workspace.boat4you.domains.catalouge.jpa.OfferPaymentPlan
 import hr.workspace.boat4you.domains.catalouge.jpa.OfferRepository
 import hr.workspace.boat4you.domains.catalouge.jpa.Yacht
 import hr.workspace.boat4you.domains.catalouge.jpa.YachtRepository
@@ -43,6 +45,7 @@ import org.mockito.Mockito.`when`
 import org.openapitools.client.nausys.model.RestFreeYacht
 import org.openapitools.client.nausys.model.RestFreeYachtList
 import org.openapitools.client.nausys.model.RestYachtReservationPriceInfo
+import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
@@ -518,6 +521,39 @@ class NauSysD3ModeTests {
         reverifySwitch = NauSysReverifyMode.WRITE
         service.syncOffersForAsync(listOf(row(55)))
         closed.single() shouldBe PeriodKey(55, from, to)
+    }
+
+    // ---- rows fetched without extendedDataSet (region / location search) keep what a per-yacht call stored
+
+    private fun offerWithStoredExtras() =
+        offer(1, yacht = 55).apply {
+            obligatoryExtrasPrice = BigDecimal("480.00")
+            offerExtras.add(OfferExtra().also { it.id = 1 })
+            offerPaymentPlans.add(OfferPaymentPlan())
+        }
+
+    @Test
+    fun `a search row without extended data keeps the stored extras, obligatory total and payment plan`() {
+        val stored = offerWithStoredExtras()
+
+        service.syncOffersForAsync(listOf(row(55)), extendedData = false)
+
+        stored.offerExtras.size shouldBe 1
+        stored.offerPaymentPlans.size shouldBe 1
+        stored.obligatoryExtrasPrice shouldBe BigDecimal("480.00")
+        stored.totalPrice shouldBe stored.clientPrice!! + BigDecimal("480.00")
+    }
+
+    @Test
+    fun `a row fetched with extended data that carries no extras still clears them`() {
+        val stored = offerWithStoredExtras()
+
+        service.syncOffersForAsync(listOf(row(55)))
+
+        stored.offerExtras.shouldBeEmpty()
+        stored.offerPaymentPlans.shouldBeEmpty()
+        stored.obligatoryExtrasPrice shouldBe BigDecimal.ZERO
+        stored.totalPrice shouldBe stored.clientPrice
     }
 
     // ---- per-row reason
