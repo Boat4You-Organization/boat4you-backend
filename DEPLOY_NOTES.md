@@ -6,6 +6,11 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-19 — ✅ LIVE oba čvora (cusma2 11:48, cusma3 13:05 UTC): e-mail nakon upita bez privitaka u Gmailu — jar `fc1a9e2de87707325d7901506ea67945`, `main` `e3cc2ec9`, tag `live/2026-11-19-email-inline-images`
+
+Mario 19.11.: „sredi to obavezno“ — „Inquiry received“ (INQ-26-087) imao je „Broj privitaka: 2“: nekorišteni `brandLogoMark` i drugi `boat4youLogoFull` s istim Content-ID-jem. `EmailService` sada dodaje inline sliku samo kad HTML sadrži `cid:<ime>` i samo jednom; obavijest o upitu više ne šalje `brandLogoMark` (spominje se samo u komentaru predloška). Izgled i tekst nisu dirani. Migracija nema. Provjereno: /pay config 404/8002, Mollie webhook 200; Mario potvrdio u Gmailu.
+- Rollback: `webservice.jar.prev` (jar `da7880c9…`).
+
 ## 2026-11-18 — ✅ LIVE oba čvora (cusma2 18:38, cusma3 18:38 UTC): broj koji operater odbije kao nevažeći tako se i prikaže i više se ne zove — jar `da7880c9c923e6b605b92c90362d1bdc`, tag `live/2026-11-18-nika-invalid-number`
 
 Povod: upit 66 (Catamaran Charter Croatia), četiri poziva 14.–18.11., svaki put Twilio 13224 „invalid phone number“; Mario je dobio „tehnička greška: unknown“, a follow-up je svejedno zakazan na isti broj. Mario 18.11.: „Da, popravi“.
