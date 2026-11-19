@@ -242,25 +242,32 @@ class EmailService(
         // A shared image is attached only when the rendered mail references it. An unreferenced inline image is shown
         // by Gmail as a full-width picture under the message (18.11.2026: the Nika notification arrived with the logo,
         // an envelope and a phone under its card; ten templates outside the two lists below had the same).
+        // Each Content-ID is attached once: a duplicate part is listed by Gmail as an attachment.
+        val inlineCids = mutableSetOf<String>()
+        fun addInlineOnce(cid: String, resource: Resource) {
+            if (inlineCids.add(cid)) helper.addInline(cid, resource, INLINE_IMAGE_MIMETYPE)
+        }
         if (templateName !in templatesWithoutSharedFooter) {
             if ("cid:boat4youLogoFull" in content) {
-                helper.addInline("boat4youLogoFull", boat4youLogoFull, INLINE_IMAGE_MIMETYPE)
+                addInlineOnce("boat4youLogoFull", boat4youLogoFull)
             }
             // Only legacy templates render phone/email PNG icons. Redesigned
             // templates use Unicode glyphs and would otherwise surface the
             // PNGs as orphan attachment thumbnails in Gmail.
             if (templateName !in redesignedHeaderTemplates) {
-                if ("cid:emailIcon" in content) helper.addInline("emailIcon", emailIcon, INLINE_IMAGE_MIMETYPE)
-                if ("cid:phoneIcon" in content) helper.addInline("phoneIcon", phoneIcon, INLINE_IMAGE_MIMETYPE)
+                if ("cid:emailIcon" in content) addInlineOnce("emailIcon", emailIcon)
+                if ("cid:phoneIcon" in content) addInlineOnce("phoneIcon", phoneIcon)
             }
         }
         if (templateName in templatesWithBookingVector) {
-            helper.addInline("bookingVector", bookingVectorIcon, INLINE_IMAGE_MIMETYPE)
+            addInlineOnce("bookingVector", bookingVectorIcon)
         }
         // Per-call inline images, e.g. brand-specific logo for inquiry
-        // notifications. Loaded as `cid:{key}` from the template.
+        // notifications. Loaded as `cid:{key}` from the template. Same rule as the shared images: attached only when
+        // referenced (19.11.2026: the inquiry acknowledgement showed 2 attachments in Gmail, the unused brandLogoMark
+        // and a second boat4youLogoFull already attached above).
         extraInlineImages.forEach { (cid, resource) ->
-            helper.addInline(cid, resource, INLINE_IMAGE_MIMETYPE)
+            if ("cid:$cid" in content) addInlineOnce(cid, resource)
         }
         if (templateName in templatesWithTermsAndConditions) {
             helper.addAttachment("terms-and-conditions-boat4you.pdf", termsAndConditionsDocument)
