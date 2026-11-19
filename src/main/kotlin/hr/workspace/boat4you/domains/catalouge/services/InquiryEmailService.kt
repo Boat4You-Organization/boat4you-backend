@@ -105,13 +105,11 @@ class InquiryEmailService(
             // inbox drafts straight to the customer, no copy-paste.
             replyTo = inquiry.email,
             force = force,
-            // brandLogoMark = per-brand header mark; boat4youLogoFull = the
-            // footer wordmark the template references via cid:boat4youLogoFull.
-            // EmailService only auto-attaches the shared logo when no
-            // extraInlineImages are supplied, so we MUST include it here or the
-            // footer badge renders empty (the bug Mario saw on INQ-26-007).
+            // boat4youLogoFull = the footer wordmark the template references via cid:boat4youLogoFull. This template is
+            // outside EmailService's shared-image block, so it MUST be passed here or the footer badge renders empty (the
+            // bug Mario saw on INQ-26-007). The header mark is an inline SVG; brandLogoMark is only named in a comment
+            // there and attaching it showed up as an attachment in Gmail (19.11.2026).
             extraInlineImages = mapOf(
-                BRAND_LOGO_CID to loadBrandLogo(resolvedBrand),
                 "boat4youLogoFull" to ClassPathResource(BOAT4YOU_LOGO_FULL_CLASSPATH),
             ),
             fromOverride = "${resolvedBrand.displayName} <${resolvedBrand.fromAddress}>",
