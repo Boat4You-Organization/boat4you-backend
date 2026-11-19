@@ -6,6 +6,17 @@ Do 11.11. živi jar se gradio s `release/*` grana, a `main` je zaostajao (78 com
 
 **Prije svakog builda:** `git fetch origin` → `git merge-base --is-ancestor origin/main HEAD` (mora proći) → usporedi md5 živog jara na cusma2 s jarom zadnjeg `live/*` taga (živo stanje se utvrđuje sa servera, ne iz bilješki). **Nakon deploya na cusma2:** `git push origin <commit>:main` (fast-forward, nikad force) + tag `live/<datum>-<tema>`. Dokumentacijski commit iznad jar commita je u redu.
 
+## 2026-11-19 — ✅ LIVE oba čvora (cusma2 18:18, cusma3 18:19 UTC): Nika — klijentova replika „...“ (šum/tišina) nije riječ, a „Confirmed“ traži nešto od klijenta + V9_130 — jar `934181059682f8ae2b5cb06f743fae05`, `main` `e684fa77`, tag `live/2026-11-19-nika-noise-no-answer`
+
+Mario 18.11. (nakon 18.11. Nika hang-up): „Da, popravi i to“ za „Halo?“ pa spuštanje; 19.11. „Da, deployaj“. Prvi pokušaj 18.11. 18:59 UTC pao na skoku cusma3 → cusma2 (3× Permission denied, ništa zamijenjeno); 19.11. iz prve.
+
+- **Nalaz:** u pozivima 31, 32, 52 (upit 65) klijentova jedina replika je „...“ (tako ElevenLabs piše šum ili tišinu); Nika je pitala „Allô ?“ i poziv je završio nakon 30 s tišine. Prvi popravak ju je brojao kao riječ, pa su ostali DONE (UNCLEAR, CONFIRMED, CONFIRMED).
+- **Sada:** replika klijenta vrijedi samo sa slovom ili brojkom (po code pointu) → inače NO_ANSWER + retry. CONFIRMED = `call_successful` + (barem jedan podatak od klijenta: true, broj ili tekst — ILI barem 3 replike s riječima); „Halo?“ pa spuštanje = UNCLEAR, a razgovor nakon ponude bez podataka („stigla je, razmišljam“) ostaje CONFIRMED. U bazi su prazni brojevi null, ne 0 (provjereno).
+- **V9_130:** 31, 32, 52 → NO_ANSWER, ishod NULL, bez novog poziva; primijenjena 18:18:27 na cusma2, provjereno u bazi.
+- Pregled: 1 neovisni agent (Opus): bez prepreka u kodu; nalazi riješeni (rebase na invalid-number, pravilo za razgovor nakon ponude, code point). Testovi calls + EmailServiceInlineImagesTest 208/208 nakon rebasea na `10f7bc96`; ktlint čist; migracija isprobana na lokalnom PG18.
+- **Provjereno uživo:** preflight „will apply: 9.130“, api health 200, `/public/payments/custom/config` 404 code 8002, `/webhooks/mollie` 200, cusma3 gate iz prve.
+- Rollback: `webservice.jar.prev` na oba čvora (jar `fc1a9e2d…`); V9_130 je samo promjena oznaka.
+
 ## 2026-11-19 — ✅ LIVE oba čvora (cusma2 11:48, cusma3 13:05 UTC): e-mail nakon upita bez privitaka u Gmailu — jar `fc1a9e2de87707325d7901506ea67945`, `main` `e3cc2ec9`, tag `live/2026-11-19-email-inline-images`
 
 Mario 19.11.: „sredi to obavezno“ — „Inquiry received“ (INQ-26-087) imao je „Broj privitaka: 2“: nekorišteni `brandLogoMark` i drugi `boat4youLogoFull` s istim Content-ID-jem. `EmailService` sada dodaje inline sliku samo kad HTML sadrži `cid:<ime>` i samo jednom; obavijest o upitu više ne šalje `brandLogoMark` (spominje se samo u komentaru predloška). Izgled i tekst nisu dirani. Migracija nema. Provjereno: /pay config 404/8002, Mollie webhook 200; Mario potvrdio u Gmailu.
