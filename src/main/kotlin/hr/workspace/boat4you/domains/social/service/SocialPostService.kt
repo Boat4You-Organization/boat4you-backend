@@ -310,6 +310,10 @@ class SocialPostService(
                 generatingIds?.contains(p.id) ?: generations.findAllByPostId(p.id!!).any { it.status in OPEN_GENERATION },
         )
 
+    /** The stored media of these ids, in the order given. */
+    fun mediaInOrder(ids: List<Long>): List<SocialMedia> =
+        ids.distinct().map { id -> mediaRepo.findById(id).orElseThrow { SocialValidationException("Unknown media $id") } }
+
     fun mediaDto(m: SocialMedia): SocialMediaDto =
         SocialMediaDto(
             id = m.id!!,

@@ -152,6 +152,8 @@ data class SocialAiOverviewDto(
     /** Anthropic key present (the site chat's ANTHROPIC_API_KEY). */
     val aiConfigured: Boolean,
     val higgsfieldConfigured: Boolean,
+    /** Why this server cannot make its own Reel from photos (no ffmpeg), or null when it can. */
+    val reelUnavailable: String? = null,
     val settings: List<SocialAiSettingDto>,
     val runs: List<SocialAiRunDto>,
 )
@@ -174,6 +176,11 @@ data class AutomationPostRequest(
         val title: String? = null,
     )
 }
+
+/** Photos (media ids, in order) to turn into a Reel. */
+data class ReelRequest(
+    val mediaIds: List<Long> = emptyList(),
+)
 
 data class MediaUrlRequest(
     val url: String,

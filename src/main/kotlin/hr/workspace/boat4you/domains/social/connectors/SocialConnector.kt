@@ -75,6 +75,8 @@ data class PublishMedia(
     val sizeBytes: Long,
     val width: Int?,
     val height: Int?,
+    /** Seconds, for a video we could measure (ffprobe). */
+    val durationSec: Int? = null,
     /** The photo as JPEG of at most n bytes (Bluesky). */
     val jpegAtMost: (Int) -> ByteArray,
 )
